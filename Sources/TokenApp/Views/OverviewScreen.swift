@@ -107,7 +107,11 @@ struct OverviewScreen: View {
                     ProviderOverviewList(snapshots: model.overviewSnapshots)
                 }
 
-                ChallengeCard(target: model.challengeTargetTokens, today: model.overviewUsage.metrics.totalTokens)
+                ChallengeCard(
+                    target: model.challengeTargetTokens,
+                    today: model.overviewUsage.metrics.totalTokens,
+                    onTargetChange: { model.updateChallengeTarget($0) }
+                )
                 AlertsStatusRow(text: model.alertStatusText)
             }
             .padding(.bottom, 6)
@@ -431,6 +435,11 @@ struct ChallengeCard: View {
     @Environment(\.tokenPilotLanguage) private var language
     let target: Int
     let today: Int
+    var onTargetChange: ((Int) -> Void)?
+
+    @State private var showTargetPicker = false
+
+    private let presetTargets = [5_000, 10_000, 25_000, 50_000, 100_000]
 
     var body: some View {
         let progress = target > 0 ? min(1, Double(today) / Double(target)) : 0
@@ -454,6 +463,19 @@ struct ChallengeCard: View {
                 }
                 ProgressLine(percent: Int(progress * 100), color: TokenPilotDesign.calm)
             }
+        }
+        .onTapGesture { showTargetPicker = true }
+        .confirmationDialog(
+            localized("Daily challenge target", language: language),
+            isPresented: $showTargetPicker,
+            titleVisibility: .visible
+        ) {
+            ForEach(presetTargets, id: \.self) { preset in
+                Button("\(TokenPilotFormatters.compactNumber(preset)) tok") {
+                    onTargetChange?(preset)
+                }
+            }
+            Button("Cancel", role: .cancel) {}
         }
     }
 }

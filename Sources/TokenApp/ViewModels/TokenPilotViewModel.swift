@@ -37,8 +37,8 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var isRefreshing = false
     @Published var dataSourceMode: DataSourceMode = .disconnected
     /// Daily token challenge target for the ChallengeCard gamification UI.
-    /// Not tied to any provider's actual quota limit; resets on app restart.
-    @Published var challengeTargetTokens = 10_000
+    /// Reads from AppSettings (persisted across restarts).
+    @Published var challengeTargetTokens: Int = 10_000
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
     @Published var exportFormat: UsageExportFormat = .json
@@ -53,6 +53,9 @@ final class TokenPilotViewModel: ObservableObject {
             persistSettingsDebounced(settings)
             if TokenPilotRefreshPolicy.usageRefreshNeeded(from: oldValue, to: settings) {
                 scheduleSettingsDrivenRefresh()
+            }
+            if settings.challengeTargetTokens != oldValue.challengeTargetTokens {
+                challengeTargetTokens = settings.challengeTargetTokens
             }
         }
     }
@@ -84,6 +87,7 @@ final class TokenPilotViewModel: ObservableObject {
     init() {
         let loaded = settingsStore.load()
         self.settings = loaded
+        self.challengeTargetTokens = loaded.challengeTargetTokens
         self.hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
         self.hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
         startAutoRefresh()
@@ -248,6 +252,13 @@ final class TokenPilotViewModel: ObservableObject {
 
     func setMenuBarDisplayTarget(_ provider: Provider?) {
         settings.menuBarDisplayTarget = provider
+    }
+
+    func updateChallengeTarget(_ target: Int) {
+        let clamped = min(max(target, 1_000), 100_000)
+        var next = settings
+        next.challengeTargetTokens = clamped
+        settings = next
     }
 
     func menuBarDisplayTargetLabel(for provider: Provider?) -> String {

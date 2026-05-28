@@ -854,6 +854,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var localization: LocalizationSettings
     public var alertRules: [AlertRule]
     public var showMockDataWhenDisconnected: Bool
+    public var challengeTargetTokens: Int
 
     public init(
         claudeEnabled: Bool = true,
@@ -876,7 +877,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         alertRules: [AlertRule] = AppSettings.defaultAlertRules,
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
-        menuBarDisplayTarget: Provider? = nil
+        menuBarDisplayTarget: Provider? = nil,
+        challengeTargetTokens: Int = 10_000
     ) {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
@@ -899,6 +901,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.localization = localization
         self.alertRules = alertRules
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
+        self.challengeTargetTokens = challengeTargetTokens
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -923,6 +926,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case localization
         case alertRules
         case showMockDataWhenDisconnected
+        case challengeTargetTokens
     }
 
     public init(from decoder: Decoder) throws {
@@ -948,7 +952,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             alertRules: try container.decodeIfPresent([AlertRule].self, forKey: .alertRules) ?? AppSettings.defaultAlertRules,
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
-            menuBarDisplayTarget: try container.decodeIfPresent(Provider.self, forKey: .menuBarDisplayTarget)
+            menuBarDisplayTarget: try container.decodeIfPresent(Provider.self, forKey: .menuBarDisplayTarget),
+            challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000
         )
     }
 

@@ -317,7 +317,10 @@ struct SettingsScreen: View {
             VStack(alignment: .leading, spacing: 10) {
                 Picker(model.t("Language"), selection: $model.settings.localization.language) {
                     ForEach(TokenPilotLanguage.allCases) { language in
-                        Text(model.t(language.displayName)).tag(language)
+                        // Display names intentionally NOT localized — each language
+                        // shows in its own script (한국어, English, 简体中文, 日本語)
+                        // which is the standard UX pattern for language selectors.
+                        Text(language.displayName).tag(language)
                     }
                 }
                 .pickerStyle(.segmented)
