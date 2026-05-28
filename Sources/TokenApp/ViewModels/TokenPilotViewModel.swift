@@ -28,7 +28,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     @Published var selectedScreen: Screen = .overview
-    @Published var selectedHistoryPeriod: HistoryPeriod = .today
+    @Published var selectedHistoryPeriod: HistoryPeriod = .last7Days
     @Published var snapshots: [ProviderSnapshot] = []
     @Published var historySnapshots: [ProviderSnapshot] = []
     @Published var limitHistorySamples: [ProviderLimitSample] = []

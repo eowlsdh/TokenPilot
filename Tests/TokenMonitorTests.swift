@@ -424,13 +424,10 @@ final class TokenMonitorTests: XCTestCase {
             sourceCollapsed.contains(".onChange(of: model.selectedHistoryPeriod"),
             "History should not react to selectedHistoryPeriod changes by mutating the same state during view updates."
         )
-        XCTAssertTrue(
-            sourceCollapsed.contains("private var historyPeriodBinding: Binding<HistoryPeriod>"),
-            "History period changes should flow through a controlled Binding setter instead of a publisher feedback loop."
-        )
-        XCTAssertTrue(
-            sourceCollapsed.contains("set: { model.selectHistoryPeriod($0) }"),
-            "The controlled History period binding should call selectHistoryPeriod exactly from user selection changes."
+        // Period picker was removed — history screen now uses a fixed last7Days period
+        XCTAssertFalse(
+            sourceCollapsed.contains("Picker(model.t(\"Period\")"),
+            "History screen should not have a period picker (removed per user request)."
         )
 
         let selectionBody = try XCTUnwrap(

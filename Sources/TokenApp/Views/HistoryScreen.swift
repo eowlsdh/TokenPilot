@@ -7,13 +7,6 @@ struct HistoryScreen: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
-                Picker(model.t("Period"), selection: historyPeriodBinding) {
-                    ForEach(HistoryPeriod.allCases) { period in
-                        Text(period.localizedLabel(language: model.settings.localization.language)).tag(period)
-                    }
-                }
-                .pickerStyle(.segmented)
-
                 GlassCard {
                     LazyVGrid(columns: [
                         GridItem(.flexible()), GridItem(.flexible()),
@@ -66,13 +59,6 @@ struct HistoryScreen: View {
             }
             .padding(.bottom, 6)
         }
-    }
-
-    private var historyPeriodBinding: Binding<HistoryPeriod> {
-        Binding(
-            get: { model.selectedHistoryPeriod },
-            set: { model.selectHistoryPeriod($0) }
-        )
     }
 
     private func historyStat(label: String, value: String) -> some View {

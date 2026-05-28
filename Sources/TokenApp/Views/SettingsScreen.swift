@@ -503,21 +503,21 @@ struct AlertRuleRow: View {
     @Binding var rule: AlertRule
 
     var body: some View {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
-                    Text("\\(localized(rule.provider.displayName, language: language)) · \\(rule.window.localizedLabel(language: language))")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                    Spacer()
-                    AlertTogglePill(label: localized("macOS", language: language), isOn: $rule.macOSEnabled)
-                    AlertTogglePill(label: localized("TG", language: language), isOn: $rule.telegramEnabled)
-                    AlertTogglePill(label: localized("DC", language: language), isOn: $rule.discordEnabled)
-                }
-            HStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("\(localized(rule.provider.displayName, language: language)) · \(rule.window.localizedLabel(language: language))")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack(spacing: 4) {
+                AlertTogglePill(label: "macOS", isOn: $rule.macOSEnabled)
+                AlertTogglePill(label: "TG", isOn: $rule.telegramEnabled)
+                AlertTogglePill(label: "DC", isOn: $rule.discordEnabled)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 4) {
                 AlertTogglePill(label: localized("Reset", language: language), isOn: $rule.resetEnabled)
-                AlertTogglePill(label: "50", isOn: $rule.fiftyEnabled)
-                AlertTogglePill(label: "80", isOn: $rule.eightyEnabled)
-                AlertTogglePill(label: "100", isOn: $rule.hundredEnabled)
+                AlertTogglePill(label: "50%", isOn: $rule.fiftyEnabled)
+                AlertTogglePill(label: "80%", isOn: $rule.eightyEnabled)
+                AlertTogglePill(label: "100%", isOn: $rule.hundredEnabled)
                 Spacer(minLength: 0)
             }
         }
