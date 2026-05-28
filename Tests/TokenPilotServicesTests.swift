@@ -1909,7 +1909,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let service = MenuBarStatusService()
 
         XCTAssertEqual(service.selectedSnapshot(from: snapshots, settings: settings)?.provider, .codex)
-        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64% · W 56% 추정")
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64 · W 56 추정")
     }
 
     func testMenuBarStatusServiceShowsRemainingPercentagesForFiveHourAndWeekly() {
@@ -1922,7 +1922,7 @@ final class TokenPilotServicesTests: XCTestCase {
         ]
 
         let title = service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
-        XCTAssertEqual(title, "5h 12% · W 38%")
+        XCTAssertEqual(title, "5h 12 · W 38")
         XCTAssertFalse(title.contains("12K"))
     }
 

@@ -173,7 +173,7 @@ public final class MenuBarStatusService: Sendable {
         guard let window else { return nil }
         let noData = TokenPilotLocalizer.localized("No data", language: language)
         if let remainingPercent = window.remainingPercent {
-            return "\(compactMenuLabel(for: window.kind)) \(remainingPercent)%"
+            return "\(compactMenuLabel(for: window.kind)) \(remainingPercent)"
         }
         return "\(compactMenuLabel(for: window.kind)) \(noData)"
     }

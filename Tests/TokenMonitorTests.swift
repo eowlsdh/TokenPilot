@@ -106,7 +106,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18% · W 53%")
+        XCTAssertEqual(title, "5h 18 · W 53")
     }
 
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
