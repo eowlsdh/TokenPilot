@@ -118,7 +118,7 @@
 ## 프로젝트 구조
 
 ```text
-mac_token_c/
+TokenPilot/
 ├── Package.swift
 ├── project.yml
 ├── build.sh
