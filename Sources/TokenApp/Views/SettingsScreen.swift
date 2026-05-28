@@ -323,7 +323,7 @@ struct SettingsScreen: View {
                         Text(language.displayName).tag(language)
                     }
                 }
-                .pickerStyle(.segmented)
+                .pickerStyle(.menu)
                 Text(model.t("Language changes may require restarting TokenPilot."))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)

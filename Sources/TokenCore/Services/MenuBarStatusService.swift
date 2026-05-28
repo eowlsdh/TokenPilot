@@ -72,14 +72,16 @@ public final class MenuBarStatusService: Sendable {
             return base + confidenceSuffix(for: snapshot, language: language)
         }
 
+        // When no rate limits are available, show provider abbreviation + today's tokens
+        let providerAbbr = snapshot.provider.shortName
         if snapshot.todayTokens > 0 {
             let tokenUnit = TokenPilotLocalizer.localized("tok", language: language)
-            return "\(TokenPilotFormatters.compactNumber(snapshot.todayTokens)) \(tokenUnit)" + confidenceSuffix(for: snapshot, language: language)
+            return "\(providerAbbr) \(TokenPilotFormatters.compactNumber(snapshot.todayTokens))\(tokenUnit)" + confidenceSuffix(for: snapshot, language: language)
         }
         if snapshot.isStale {
-            return TokenPilotLocalizer.localized("STALE", language: language)
+            return "\(providerAbbr) \(TokenPilotLocalizer.localized("STALE", language: language))"
         }
-        return "TP · \(modeLabel)"
+        return "\(providerAbbr) · \(modeLabel)"
     }
 
     public func statusLevel(snapshots: [ProviderSnapshot], settings: AppSettings) -> MenuBarStatusLevel {

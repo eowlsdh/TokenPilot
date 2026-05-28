@@ -140,7 +140,7 @@ final class TokenMonitorTests: XCTestCase {
             modeLabel: "LIVE"
         )
 
-        XCTAssertEqual(title, "12K 토큰")
+        XCTAssertEqual(title, "Cl 12K토큰")
     }
 
     func testMenuBarStatusDotOnlyAppearsForWarningOrCriticalRisk() {
