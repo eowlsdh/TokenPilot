@@ -573,7 +573,7 @@ public enum DiscordError: LocalizedError, Equatable {
 public final class KeychainService: @unchecked Sendable {
     private let service: String
 
-    public init(service: String = "com.daejinyoun.TokenPilot") {
+    public init(service: String = "com.tokenpilot.macos") {
         self.service = service
     }
 

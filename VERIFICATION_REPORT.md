@@ -1,7 +1,7 @@
 # TokenPilot Verification Report
 
 **Date:** 2026-05-21 KST  
-**Project path:** `/Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c`  
+**Project path:** `<project-root>`  
 **Scope:** completion-gate audit, menu bar live refresh/currentness fix, Settings→Overview transition stabilization, Claude statusline path sync, Codex/Web/manual estimate labeling, current documentation sync, local automated build/test/smoke/security verification  
 **External side effects:** none — no git, no push, no deploy, no public publish, no API key/OAuth/credential use, no Telegram/Discord live message
 
@@ -37,7 +37,7 @@ Important constraint note:
 Run from project root after scoping the local toolchain:
 
 ```bash
-cd /Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c
+cd <project-root>
 source .toolchain/env.sh
 ```
 

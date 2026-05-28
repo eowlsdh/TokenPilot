@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+
+      - name: Build
+        run: swift build
+
+      - name: Build (warnings as errors)
+        run: swift build -Xswiftc -warnings-as-errors
+
+      - name: Test
+        run: swift test
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Xcode build (unsigned)
+        run: |
+          xcodebuild \
+            -project TokenPilot.xcodeproj \
+            -scheme TokenPilot \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: App bundle smoke test
+        run: |
+          ./build.sh
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' build/TokenPilot.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' build/TokenPilot.app/Contents/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :LSUIElement' build/TokenPilot.app/Contents/Info.plist
+          test -f build/TokenPilot.app/Contents/Resources/TokenMonitor_TokenApp.bundle/Localizable.xcstrings
+          test -f build/TokenPilot.app/Contents/Resources/PrivacyInfo.xcprivacy
+          test -f build/TokenPilot.app/Contents/Resources/TokenPilot.icns

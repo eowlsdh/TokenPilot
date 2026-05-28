@@ -1,7 +1,7 @@
 # TokenPilot Autopilot Closeout Report
 
 **Generated:** 2026-05-22 23:06:01 KST  
-**Project path:** `/Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c`  
+**Project path:** `<project-root>`  
 **Profile roles requested:** `dev`, `default`, `main`, `content`, `research`  
 **External side effects:** none — no git push, deploy, public publish, live Telegram/Discord send, OAuth/API-key use, purchase, external release, or real Codex account call.
 
@@ -59,7 +59,7 @@ Key files touched or verified in this pass:
 - `docs/TokenPilot-autopilot-closeout-report.md`
 - `docs/TokenPilot-autopilot-closeout-report.html`
 
-Project caveat: `/Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c` is currently **not a git repository**, so git diff/commit/branch verification was not available and no commit/push was attempted.
+Project caveat: The project **was not a git repository** at the time of this report, so git diff/commit/branch verification was not available and no commit/push was attempted.
 
 ---
 

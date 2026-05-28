@@ -2,7 +2,7 @@
 
 **문서 상태**: current local completion report  
 **마지막 갱신**: 2026-05-21 KST  
-**프로젝트 경로**: `/Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c`  
+**프로젝트 경로**: 프로젝트 루트  
 **앱 표시 이름**: `TokenPilot`  
 **SwiftPM 실행 타깃**: `TokenMonitor`  
 **외부 side effect**: 없음 — git push/deploy/public release/Telegram·Discord 실발송/API key·credential 사용 없음
@@ -81,7 +81,7 @@ TokenPilot은 현재 local MVP completion gate를 통과할 수 있는 상태를
 ## 4. Verification commands
 
 ```bash
-cd /Volumes/OWC_1M2/daejinyoun/Workspace/project/mac_token_c
+cd <project-root>
 source .toolchain/env.sh
 swift build
 swift test
