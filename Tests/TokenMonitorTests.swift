@@ -454,9 +454,18 @@ final class TokenMonitorTests: XCTestCase {
     }
 
     private static func tokenMonitorAppSource() throws -> String {
-        let appSourceURL = try projectRootURL()
-            .appendingPathComponent("Sources/TokenApp/TokenMonitorApp.swift")
-        return try String(contentsOf: appSourceURL)
+        let tokenAppDir = try projectRootURL()
+            .appendingPathComponent("Sources/TokenApp")
+        let fm = FileManager.default
+        var allFiles: [URL] = []
+        let enumerator = fm.enumerator(at: tokenAppDir, includingPropertiesForKeys: nil)!
+        while let url = enumerator.nextObject() as? URL {
+            if url.pathExtension == "swift" {
+                allFiles.append(url)
+            }
+        }
+        return try allFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { try String(contentsOf: $0) }.joined(separator: "\n")
     }
 }
 
