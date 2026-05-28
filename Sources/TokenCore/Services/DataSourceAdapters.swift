@@ -1309,6 +1309,13 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         let todayStart = calendar.startOfDay(for: now)
         let files = relevantCodexSessionFiles(from: allFiles, now: now)
         guard !files.isEmpty else {
+            // No local session files — try app-server for rate limits before falling back to manual.
+            var appServerSettings = settings
+            appServerSettings.codexManual.webConnectorEnabled = true
+            let appServerResult = await webUsageAdapter.snapshot(settings: appServerSettings)
+            if appServerResult.fiveHour != nil || appServerResult.weekly != nil {
+                return appServerResult
+            }
             return await manualFallback.snapshot(settings: settings)
         }
 
