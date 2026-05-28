@@ -1,0 +1,41 @@
+# Xcode
+*.xcodeproj/project.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+
+# SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Build output
+build/
+DerivedData/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# IDE
+.idea/
+*.swp
+*~
+.vscode/
+
+# App bundle artifacts
+*.app
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Temporary files
+*.tmp
+*.temp
+*.log
