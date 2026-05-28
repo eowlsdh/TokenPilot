@@ -927,14 +927,32 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             dictionary(object["rate_limit"]),
             dictionary(object["rateLimitsByLimitId"]),
             dictionary(object["limits"]),
+            dictionary(object["windows"]),
+            dictionary(object["quota"]),
+            dictionary(object["quotas"]),
             dictionary(value(object, path: "account.rateLimits")),
+            dictionary(value(object, path: "account.rate_limits")),
             dictionary(value(object, path: "status.rateLimits")),
+            dictionary(value(object, path: "result.rateLimits")),
+            dictionary(value(object, path: "result.rate_limits")),
+            dictionary(value(object, path: "params.rateLimits")),
+            dictionary(value(object, path: "params.rate_limits")),
             object
         ].compactMap { $0 }
 
         for container in containers {
-            let fiveHourDictionary = firstDictionary(in: container, keys: ["primary", "primary_window", "primaryWindow", "five_hour", "fiveHour", "5h", "short", "session"])
-            let weeklyDictionary = firstDictionary(in: container, keys: ["secondary", "secondary_window", "secondaryWindow", "weekly", "week", "seven_day", "sevenDay", "7d", "long"])
+            let fiveHourDictionary = firstDictionary(in: container, keys: [
+                "primary", "primary_window", "primaryWindow",
+                "five_hour", "fiveHour", "fivehour", "5h",
+                "short", "session", "session_window", "sessionWindow",
+                "hourly", "hour_5", "fiveHourWindow"
+            ])
+            let weeklyDictionary = firstDictionary(in: container, keys: [
+                "secondary", "secondary_window", "secondaryWindow",
+                "weekly", "week", "seven_day", "sevenDay", "7d",
+                "long", "week_window", "weekWindow",
+                "daily", "daily_window", "dailyWindow"
+            ])
             let fiveHour = codexWebWindow(from: fiveHourDictionary, kind: .fiveHour, confidence: .high)
             let weekly = codexWebWindow(from: weeklyDictionary, kind: .weekly, confidence: .high)
             if fiveHour != nil || weekly != nil {
@@ -974,7 +992,16 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
     private func collectCodexAppServerWindowEntries(from value: Any?, path: String, entries: inout [CodexAppServerWindowEntry]) {
         if let dictionary = dictionary(value) {
             let keys = Set(dictionary.keys.map { $0.lowercased() })
-            let hasWindowFields = !keys.intersection(["used_percent", "used_percentage", "remaining_percent", "remaining_percentage", "window_minutes", "windowminutes", "resets_at", "reset_at", "resetat", "reset_after_seconds"]).isEmpty
+            let hasWindowFields = !keys.intersection([
+                "used_percent", "used_percentage", "usedpercent", "used",
+                "remaining_percent", "remaining_percentage", "remainingpercent", "remaining",
+                "window_minutes", "windowminutes", "limit_window_minutes",
+                "resets_at", "reset_at", "resetat", "reset_after_seconds",
+                "used_requests", "usedrequests", "max_requests", "maxrequests",
+                "used_tokens", "usedtokens", "max_tokens", "maxtokens",
+                "request_count", "requestcount", "consumed", "consumed_requests",
+                "current_usage", "used_count", "current"
+            ]).isEmpty
             if hasWindowFields {
                 entries.append(CodexAppServerWindowEntry(path: path, dictionary: dictionary))
             }
@@ -1061,12 +1088,19 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             dictionary["used_percent"]
                 ?? dictionary["used_percentage"]
                 ?? dictionary["usedPercent"]
+                ?? dictionary["usedpercent"]
                 ?? dictionary["percent"]
+                ?? dictionary["usage_percent"]
+                ?? dictionary["usagePercent"]
+                ?? dictionary["consumed_percent"]
+                ?? dictionary["consumedPercent"]
         )
         let remainingValue = codexWebPercentValue(
             dictionary["remaining_percent"]
                 ?? dictionary["remaining_percentage"]
                 ?? dictionary["remainingPercent"]
+                ?? dictionary["remainingpercent"]
+                ?? dictionary["remaining"]
         )
         let usedFromRawCounts = codexWebUsedPercent(
             dictionary: dictionary,
@@ -1084,8 +1118,14 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
                 "consumed_requests",
                 "consumedTokens",
                 "current_usage",
+                "currentUsage",
                 "used_count",
-                "current"
+                "usedCount",
+                "current",
+                "input_tokens",
+                "inputTokens",
+                "prompt_tokens",
+                "promptTokens"
             ],
             limitKeys: [
                 "limit",
@@ -1102,7 +1142,11 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
                 "quota",
                 "total",
                 "total_requests",
-                "totalRequests"
+                "totalRequests",
+                "total_tokens",
+                "totalTokens",
+                "max_input_tokens",
+                "maxInputTokens"
             ]
         )
         let used = usedValue
@@ -1517,8 +1561,16 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     }
 
     private func parseCodexRateLimits(_ dictionary: [String: Any], timestamp: Date, now: Date = Date()) -> CodexRateLimitSnapshot? {
-        let primary = firstDictionary(in: dictionary, keys: ["primary", "primary_window", "five_hour_limit", "five_hour", "fiveHour", "5h"])
-        let secondary = firstDictionary(in: dictionary, keys: ["secondary", "secondary_window", "weekly_limit", "weekly", "week", "seven_day", "sevenDay", "7d"])
+        let primary = firstDictionary(in: dictionary, keys: [
+            "primary", "primary_window", "primaryWindow",
+            "five_hour_limit", "five_hour", "fiveHour", "fivehour", "5h",
+            "short", "session", "session_window", "sessionWindow"
+        ])
+        let secondary = firstDictionary(in: dictionary, keys: [
+            "secondary", "secondary_window", "secondaryWindow",
+            "weekly_limit", "weekly", "week", "seven_day", "sevenDay", "7d",
+            "long", "week_window", "weekWindow"
+        ])
         let fiveHour = codexLimitWindow(from: primary, fallbackKind: .fiveHour, now: now)
         let weekly = codexLimitWindow(from: secondary, fallbackKind: .weekly, now: now)
         guard fiveHour != nil || weekly != nil else { return nil }
@@ -1528,13 +1580,29 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     private func codexLimitWindow(from dictionary: [String: Any]?, fallbackKind: LimitWindowKind, now: Date = Date()) -> LimitWindow? {
         guard let dictionary else { return nil }
         let kind: LimitWindowKind
-        if let minutes = intValue(dictionary["window_minutes"] ?? dictionary["windowMinutes"]) {
+        if let minutes = intValue(dictionary["window_minutes"] ?? dictionary["windowMinutes"] ?? dictionary["limit_window_minutes"]) {
             kind = minutes >= 7 * 24 * 60 ? .weekly : .fiveHour
         } else {
             kind = fallbackKind
         }
-        let used = intValue(dictionary["used_percent"] ?? dictionary["used_percentage"] ?? dictionary["percent"] ?? dictionary["usage_percent"])
-        let resetAt = dateValue(dictionary["resets_at"] ?? dictionary["reset_at"] ?? dictionary["resetAt"])
+        let used = intValue(
+            dictionary["used_percent"]
+                ?? dictionary["used_percentage"]
+                ?? dictionary["usedPercent"]
+                ?? dictionary["usedpercent"]
+                ?? dictionary["percent"]
+                ?? dictionary["usage_percent"]
+                ?? dictionary["usagePercent"]
+                ?? dictionary["consumed_percent"]
+                ?? dictionary["consumedPercent"]
+        )
+        let resetAt = dateValue(
+            dictionary["resets_at"]
+                ?? dictionary["reset_at"]
+                ?? dictionary["resetAt"]
+                ?? dictionary["reset_at_time"]
+                ?? dictionary["resetAtTime"]
+        )
         if let resetAt, resetAt <= now {
             return LimitWindow(kind: kind, usedPercent: 0, resetAt: nil, confidence: .medium)
         }

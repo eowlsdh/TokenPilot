@@ -10,10 +10,24 @@ public enum CodexStatusParser {
         result.pastedStatusOutput = text
 
         let fiveHourPatterns = [
-            #"(?i)(?:5h|5[- ]?hour|five[- ]?hour|session\s*\(5h\)|5h\s*usage)[^0-9%]{0,40}(\d{1,3})\s*%"#
+            // "5h usage: 45%", "5-hour: 45%", "five hour usage: 45%", "session (5h): 45%"
+            #"(?i)(?:5h|5[- ]?hour|five[- ]?hour|session\s*\(5h\)|5h\s*usage|primary\s*window)[^0-9%]{0,40}(\d{1,3})\s*%"#,
+            // "5h: 45/100" or "5h 45 of 100" — ratio format without %
+            #"(?i)(?:5h|5[- ]?hour|five[- ]?hour|session\s*\(5h\)|primary\s*window)\s*[:：]?\s*(\d{1,3})\s*/\s*\d+"#,
+            // "Used 45% of 5h limit" — used before label
+            #"(?i)used\s+(\d{1,3})\s*%[^0-9]{0,30}(?:5h|5[- ]?hour|five[- ]?hour|primary\s*window)"#,
+            // "5h: 45" — bare number after label (no unit)
+            #"(?i)(?:5h|5[- ]?hour|five[- ]?hour|session\s*\(5h\)|primary\s*window)\s*[:：]\s*(\d{1,3})(?:\s|$)"#
         ]
         let weeklyPatterns = [
-            #"(?i)(?:weekly|week|7d|7[- ]?day|weekly\s*usage)[^0-9%]{0,40}(\d{1,3})\s*%"#
+            // "weekly usage: 45%", "week: 45%", "7-day: 45%", "secondary window: 45%"
+            #"(?i)(?:weekly|week|7d|7[- ]?day|weekly\s*usage|secondary\s*window)[^0-9%]{0,40}(\d{1,3})\s*%"#,
+            // "weekly: 45/100" — ratio format without %
+            #"(?i)(?:weekly|week|7d|7[- ]?day|secondary\s*window)\s*[:：]?\s*(\d{1,3})\s*/\s*\d+"#,
+            // "Used 45% of weekly limit" — used before label
+            #"(?i)used\s+(\d{1,3})\s*%[^0-9]{0,30}(?:weekly|week|7d|7[- ]?day|secondary\s*window)"#,
+            // "weekly: 45" — bare number after label
+            #"(?i)(?:weekly|week|7d|7[- ]?day|secondary\s*window)\s*[:：]\s*(\d{1,3})(?:\s|$)"#
         ]
 
         var matchedWindow = false
