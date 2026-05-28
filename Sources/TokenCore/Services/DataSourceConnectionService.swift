@@ -301,6 +301,3 @@ public final class DataSourceConnectionService: @unchecked Sendable {
     }
 }
 
-private func expandTilde(_ path: String) -> String {
-    (path as NSString).expandingTildeInPath
-}
