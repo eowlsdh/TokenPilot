@@ -480,8 +480,8 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
 
     private func parseWindow(from dict: [String: Any]?, kind: LimitWindowKind, stale: Bool) -> LimitWindow? {
         guard let dict else { return nil }
-        let used = intValue(dict["used_percentage"] ?? dict["used_percent"] ?? dict["percent"] ?? dict["usage_percent"])
-        let resetAt = dateValue(dict["resets_at"] ?? dict["reset_at"] ?? dict["resetAt"])
+        let used = intValue(dict["used_percentage"] ?? dict["used_percent"] ?? dict["percent"] ?? dict["usage_percent"] ?? dict["usedPercent"])
+        let resetAt = dateValue(dict["resets_at"] ?? dict["reset_at"] ?? dict["resetAt"] ?? dict["resetsAt"] ?? dict["reset_at_time"] ?? dict["resetAtTime"])
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: stale ? .medium : .high)
     }
@@ -1152,7 +1152,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         let used = usedValue
             ?? remainingValue.map { min(max(100 - $0, 0), 100) }
             ?? usedFromRawCounts
-        let resetAt = dateValue(dictionary["reset_at"] ?? dictionary["resets_at"] ?? dictionary["resetAt"])
+        let resetAt = dateValue(dictionary["reset_at"] ?? dictionary["resets_at"] ?? dictionary["resetAt"] ?? dictionary["resetsAt"] ?? dictionary["reset_at_time"] ?? dictionary["resetAtTime"])
             ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"]).map { now().addingTimeInterval(TimeInterval(max($0, 0))) }
         if let resetAt, resetAt <= now() {
             return LimitWindow(kind: kind, usedPercent: 0, resetAt: nil, confidence: confidence)
