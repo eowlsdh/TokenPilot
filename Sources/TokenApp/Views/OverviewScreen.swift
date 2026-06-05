@@ -107,6 +107,11 @@ struct OverviewScreen: View {
                     ProviderOverviewList(snapshots: model.overviewSnapshots)
                 }
 
+                if model.overviewUsage.metrics.totalTokens > 0 {
+                    SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)
+                    ProviderShareRow(shares: model.overviewUsage.providerShare)
+                }
+
                 ChallengeCard(
                     target: model.challengeTargetTokens,
                     today: model.overviewUsage.metrics.totalTokens,

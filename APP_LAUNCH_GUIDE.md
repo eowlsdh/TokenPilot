@@ -160,11 +160,11 @@ true
 
 ## 9. 수동 QA 체크리스트
 
-시각/런타임 확인은 다음 문서를 따릅니다.
+앱 실행 후 다음 공개 표면을 직접 확인합니다.
 
-```text
-docs/TokenPilot-visual-qa-checklist.md
-```
+- 메뉴바 label이 `5h`/weekly 남은 숫자를 짧게 표시하는지
+- Overview의 hero/provider row가 같은 source 상태를 일관되게 보여주는지
+- Settings Privacy 영역이 local-first, opt-in connector, credential handling 경계를 과장 없이 설명하는지
 
 ---
 

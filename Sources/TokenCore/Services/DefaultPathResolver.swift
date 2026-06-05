@@ -43,10 +43,41 @@ public final class DefaultPathResolver: Sendable {
     // MARK: - Claude Code
 
     private func resolveClaudePaths() -> [ProviderPathCandidate] {
-        let home = currentHomeDirectory
         var candidates: [ProviderPathCandidate] = []
 
-        // Primary: ~/.claude
+        for entry in claudeHomeCandidates() {
+            appendClaudeHomeCandidates(
+                home: entry.home,
+                source: entry.source,
+                confidence: entry.confidence,
+                to: &candidates
+            )
+        }
+
+        if let configDir = environment["CLAUDE_CONFIG_DIR"], let configURL = urlFromPath(configDir) {
+            let projects = configURL.appendingPathComponent("projects", isDirectory: true)
+            let exists = FileManager.default.fileExists(atPath: projects.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .claude,
+                kind: "config_projects",
+                path: projects.path,
+                source: "CLAUDE_CONFIG_DIR",
+                exists: exists,
+                readable: exists && isReadable(projects),
+                confidence: .high,
+                notes: exists ? "Claude JSONL project logs" : "Claude config projects folder not found"
+            ))
+        }
+
+        return deduplicated(candidates)
+    }
+
+    private func appendClaudeHomeCandidates(
+        home: URL,
+        source: String,
+        confidence: DataConfidence,
+        to candidates: inout [ProviderPathCandidate]
+    ) {
         let claudeRoot = home.appendingPathComponent(".claude")
         let claudeExists = FileManager.default.fileExists(atPath: claudeRoot.path)
 
@@ -59,6 +90,19 @@ public final class DefaultPathResolver: Sendable {
             readable: claudeExists && isReadable(claudeRoot),
             confidence: .high,
             notes: claudeExists ? nil : "Claude Code folder not found"
+        ))
+
+        let projects = claudeRoot.appendingPathComponent("projects", isDirectory: true)
+        let projectsExists = FileManager.default.fileExists(atPath: projects.path)
+        candidates.append(ProviderPathCandidate(
+            provider: .claude,
+            kind: "projects",
+            path: projects.path,
+            source: source,
+            exists: projectsExists,
+            readable: projectsExists && isReadable(projects),
+            confidence: confidence,
+            notes: projectsExists ? "Claude JSONL project logs" : "Claude projects folder not found"
         ))
 
         // Optional TokenPilot statusline file
@@ -74,8 +118,31 @@ public final class DefaultPathResolver: Sendable {
             confidence: .medium,
             notes: statuslineExists ? "Statusline data available" : nil
         ))
+    }
 
-        return candidates
+    private func claudeHomeCandidates() -> [(home: URL, source: String, confidence: DataConfidence)] {
+        var entries: [(URL, String, DataConfidence)] = []
+        if let home = environment["HOME"], let homeURL = urlFromPath(home) {
+            entries.append((homeURL, "HOME", .medium))
+        }
+        entries.append((currentHomeDirectory, "current user home", .medium))
+        for home in additionalHomeDirectories {
+            entries.append((home, claudeFallbackSource(for: home), .medium))
+        }
+
+        var seen = Set<String>()
+        return entries.compactMap { home, source, confidence in
+            let normalized = home.standardizedFileURL
+            guard seen.insert(normalized.path).inserted else { return nil }
+            return (normalized, source, confidence)
+        }
+    }
+
+    private func claudeFallbackSource(for home: URL) -> String {
+        if home.path.hasPrefix("/Users/") {
+            return "macOS user home fallback"
+        }
+        return "home fallback"
     }
 
     // MARK: - Codex

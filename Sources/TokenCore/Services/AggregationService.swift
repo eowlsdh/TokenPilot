@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public final class AggregationService: Sendable {
     public init() {}
@@ -59,18 +60,23 @@ public final class AggregationService: Sendable {
     private func sevenDayBars(from events: [UsageEvent]) -> [DailyUsageBar] {
         let calendar = Calendar.current
         let now = Date()
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "E"
+        let formatter = Self.dayFormatter
 
         return (0..<7).reversed().map { offset in
             let date = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) ?? now
             let tokens = events
                 .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
                 .reduce(0) { $0 + $1.totalTokens }
-            return DailyUsageBar(dayLabel: formatter.string(from: date), tokens: tokens)
+            return DailyUsageBar(dayLabel: formatter.withLock { $0.string(from: date) }, tokens: tokens)
         }
     }
+
+    private static let dayFormatter = OSAllocatedUnfairLock(initialState: {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "E"
+        return formatter
+    }())
 
     private func busiestHour(in events: [UsageEvent]) -> Int? {
         let counts = Dictionary(grouping: events) { event in

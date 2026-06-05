@@ -2,7 +2,7 @@
 
 **문서 상태**: current note  
 **마지막 갱신**: 2026-05-21 KST  
-**상세 검증 문서**: [`CODEX_VERIFICATION_REPORT.md`](CODEX_VERIFICATION_REPORT.md)
+**관련 공개 문서**: [`README.md`](README.md), [`docs/PRIVACY.md`](docs/PRIVACY.md), [`SECURITY.md`](SECURITY.md)
 
 > 이전 문서의 `TokenMonitor`, `CodexParser.swift`, `AITokenTypes.swift`, 5초 타이머 기준 설명은 현재 구조와 맞지 않아 제거했습니다.
 
@@ -51,7 +51,7 @@ TokenPilot은 Codex 화면에서 다음을 지켜야 합니다.
 - `Sources/TokenCore/Services/UsageExportService.swift` — export sanitization
 - `Sources/TokenApp/TokenMonitorApp.swift` — Settings/Overview Codex copy and controls
 - `Tests/TokenPilotServicesTests.swift` — Codex parser, local activity, connector failure-state, export sanitization tests
-- `CODEX_VERIFICATION_REPORT.md` — 상세 검증 메모
+- `README.md` / `README.ko.md` — public positioning and install guidance
 
 ---
 

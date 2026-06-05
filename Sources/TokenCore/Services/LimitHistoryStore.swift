@@ -38,7 +38,14 @@ public final class LimitHistoryStore: @unchecked Sendable {
                 .flatMap { samples(from: $0, referenceDate: referenceDate) }
 
             guard !incoming.isEmpty else {
-                return capped(pruned(loadSamplesUnlocked(), now: referenceDate))
+                let retained = capped(pruned(loadSamplesUnlocked(), now: referenceDate).sorted { lhs, rhs in
+                    if lhs.timestamp == rhs.timestamp {
+                        return sortRank(lhs.window) < sortRank(rhs.window)
+                    }
+                    return lhs.timestamp < rhs.timestamp
+                })
+                saveUnlocked(retained)
+                return retained
             }
 
             let merged = deduplicated(loadSamplesUnlocked() + incoming)

@@ -17,10 +17,12 @@ public enum TokenPilotSecurityScopedBookmarkError: LocalizedError, Equatable, Se
 public struct TokenPilotSecurityScopedResourceAccess: Sendable {
     public let url: URL
     private let didStartAccessing: Bool
+    public let isStale: Bool
 
-    public init(url: URL, didStartAccessing: Bool) {
+    public init(url: URL, didStartAccessing: Bool, isStale: Bool = false) {
         self.url = url
         self.didStartAccessing = didStartAccessing
+        self.isStale = isStale
     }
 
     public func stop() {
@@ -47,11 +49,16 @@ public enum TokenPilotSecurityScopedBookmarks {
             relativeTo: nil,
             bookmarkDataIsStale: &isStale
         )
-        if isStale {
-            throw TokenPilotSecurityScopedBookmarkError.staleBookmark
+        if isStale, let fallbackPath {
+            let fallback = URL(fileURLWithPath: fallbackPath)
+            if fallback == resolvedURL {
+                // Same path; stale flag is informational only.
+            } else {
+                return TokenPilotSecurityScopedResourceAccess(url: fallback, didStartAccessing: false, isStale: true)
+            }
         }
         let didStart = resolvedURL.startAccessingSecurityScopedResource()
-        return TokenPilotSecurityScopedResourceAccess(url: resolvedURL, didStartAccessing: didStart)
+        return TokenPilotSecurityScopedResourceAccess(url: resolvedURL, didStartAccessing: didStart, isStale: isStale)
     }
 
     public static func resolveIfAvailable(bookmarkData: Data?, fallbackURL: URL) -> TokenPilotSecurityScopedResourceAccess {

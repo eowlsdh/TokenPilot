@@ -3,13 +3,17 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Tests](https://img.shields.io/badge/Tests-124%20passed-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-run%20locally-informational.svg)](#testing)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
 > **Track your AI coding costs at a glance.**  
 > See Claude Code, Codex, and Gemini CLI usage in your macOS menu bar — local-first, privacy-first.
+>
+> TokenPilot is not affiliated with OpenAI, Anthropic, or Google.
 
 [한국어 README](README.ko.md) · [Japanese](#) · [中文](#)
+
+![TokenPilot menu bar, Overview, and Settings privacy preview](docs/assets/readme-preview.svg)
 
 ---
 
@@ -33,7 +37,7 @@ That's it. No dashboards. No browser tabs. No cloud.
 |---------|-------------|
 | 🍎 **Menu bar native** | Compact glance without leaving your editor |
 | 📊 **Multi-provider** | Claude Code + Codex + Gemini CLI in one place |
-| 🔒 **Local-first** | No data leaves your machine. Ever. |
+| 🔒 **Local-first by default** | Reads local metadata; optional notifications/connectors run only after explicit setup |
 | 🏷️ **Honest labels** | `est.`, `manual`, `EXPERIMENTAL` — we don't pretend |
 | 🔔 **Smart alerts** | macOS notifications + optional Telegram/Discord |
 | 📈 **Usage history** | Today / 7 days / This month with charts |
@@ -44,20 +48,25 @@ That's it. No dashboards. No browser tabs. No cloud.
 
 ## Quick Start
 
-### Option 1: Build from Source
+### Option 1: Download a Release
+
+Download the latest `.zip` or `.app` bundle from GitHub Releases, unzip it, then open `TokenPilot.app`.
+
+If macOS Gatekeeper asks for confirmation on an unsigned or ad-hoc signed build, right-click the app and choose **Open**.
+
+### Option 2: Build from Source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/TokenPilot.git
+git clone https://github.com/<owner-or-org>/TokenPilot.git
 cd TokenPilot
-swift build
-./build.sh
+make bundle
 open build/TokenPilot.app
 ```
 
-### Option 2: Xcode
+### Option 3: Xcode
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/TokenPilot.git
+git clone https://github.com/<owner-or-org>/TokenPilot.git
 cd TokenPilot
 xcodegen generate
 open TokenPilot.xcodeproj
@@ -73,7 +82,7 @@ TokenPilot reads **usage metadata** from local files — never prompts, response
 | Provider | Data Source | Trust Level |
 |----------|------------|-------------|
 | **Claude Code** | Statusline JSON + local JSONL | High (official format) |
-| **Codex** | Manual input / Local activity / Opt-in connector | Medium (estimated) |
+| **Codex** | Manual input / local activity / opt-in limit hints | Medium (manual, estimated, or unofficial) |
 | **Gemini CLI** | Telemetry log + session JSON | High (official format) |
 
 ### Menu Bar Display
@@ -89,14 +98,11 @@ MOCK 5h 64% · W 56%     ← First-run sample data
 
 ## Screenshots
 
-> 📸 *Screenshots coming soon. The app renders a dark premium utility popover at ~420×620px with provider cards, usage charts, and settings.*
+The preview above shows the three surfaces that matter most on first run:
 
-<!-- 
-![Menu Bar](screenshots/menu-bar.png)
-![Overview](screenshots/overview.png)
-![History](screenshots/history.png)
-![Settings](screenshots/settings.png)
--->
+- Menu bar numbers: compact `5h` and weekly remaining percentages.
+- Overview: provider rows with honest source labels such as `manual`, `est.`, and `limit hint`.
+- Settings privacy: local-first data boundaries and opt-in notifications/connectors.
 
 ---
 
@@ -113,7 +119,7 @@ TokenPilot is designed as a **local-first** utility:
 
 External notifications (Telegram/Discord) are **off by default** and require explicit user configuration.
 
-See [Privacy Policy Draft](docs/TokenPilot-privacy-policy-draft.md) for details.
+See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 
 ---
 
@@ -122,7 +128,7 @@ See [Privacy Policy Draft](docs/TokenPilot-privacy-policy-draft.md) for details.
 ```
 Sources/
 ├── TokenApp/           # SwiftUI app shell, views, ViewModel
-│   ├── TokenMonitorApp.swift      # App entry + ViewModel (2,800+ lines)
+│   ├── TokenMonitorApp.swift      # App entry and MenuBarExtra
 │   └── Resources/Localizable.xcstrings
 └── TokenCore/          # Business logic, adapters, models
     ├── Models/
@@ -146,7 +152,7 @@ Tests/
 
 ```bash
 swift test
-# Executed 124 tests, with 0 failures
+# Executed 149 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings
@@ -170,6 +176,12 @@ TokenPilot supports 4 languages out of the box:
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Before opening a PR, run:
+
+```bash
+make verify
+```
 
 ---
 

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public enum UsageExportFormat: String, CaseIterable, Identifiable, Sendable {
     case json
@@ -7,16 +8,20 @@ public enum UsageExportFormat: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var fileExtension: String { rawValue }
 
-    public var defaultFilename: String {
+    private static let filenameFormatter = OSAllocatedUnfairLock(initialState: {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd-HHmm"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        let stamp = formatter.string(from: Date())
+        return formatter
+    }())
+
+    public var defaultFilename: String {
+        let stamp = Self.filenameFormatter.withLock { $0.string(from: Date()) }
         return "TokenPilot-usage-\(stamp).\(fileExtension)"
     }
 }
 
-public final class UsageExportService: Sendable {
+public final class UsageExportService {
     private static func isoString(from date: Date) -> String {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

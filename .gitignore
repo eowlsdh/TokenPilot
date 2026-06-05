@@ -39,3 +39,19 @@ DerivedData/
 *.tmp
 *.temp
 *.log
+state.json
+.omo/
+
+# Secrets and local credentials
+.env
+.env.*
+*.env
+.secrets/
+*.pem
+*.key
+*.p8
+*.p12
+auth.json
+credentials.json
+token.json
+cookies.txt

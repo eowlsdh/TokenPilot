@@ -268,6 +268,17 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         let fileURL = overrideFileURL ?? URL(fileURLWithPath: expandTilde(settings.claudeStatusFilePath))
         let bookmarkData = overrideFileURL == nil ? settings.claudeStatusFileBookmarkData : nil
         if FileManager.default.fileExists(atPath: fileURL.path) || bookmarkData != nil {
+            if isDirectory(fileURL) {
+                if let fallback = parseLocalJSONLFallback(roots: [fileURL]) {
+                    return fallback
+                }
+                return ProviderSnapshot(
+                    provider: .claude,
+                    confidence: .low,
+                    dataSource: .localLog,
+                    statusMessage: "No Claude JSONL usage rows yet"
+                )
+            }
             return parseStatuslineFile(fileURL, bookmarkData: bookmarkData)
         }
 
@@ -379,8 +390,8 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         }
     }
 
-    private func parseLocalJSONLFallback() -> ProviderSnapshot? {
-        let roots = fallbackProjectRoots ?? defaultClaudeProjectRoots()
+    private func parseLocalJSONLFallback(roots overrideRoots: [URL]? = nil) -> ProviderSnapshot? {
+        let roots = overrideRoots ?? fallbackProjectRoots ?? defaultClaudeProjectRoots()
         let files = candidateFiles(in: roots, allowedExtensions: ["jsonl"], maxFiles: 80)
         guard !files.isEmpty else { return nil }
 
@@ -398,10 +409,21 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
                     continue
                 }
 
-                let canonical = aliases.compactMap { canonicalKeyByAlias[$0] }.first ?? aliases[0]
-                let existing = eventsByCanonicalKey[canonical]
-                if existing == nil || isRicherClaudeEvent(parsed.event, than: existing!) {
-                    eventsByCanonicalKey[canonical] = parsed.event
+                let mappedCanonicals = aliases.compactMap { canonicalKeyByAlias[$0] }
+                let canonical = mappedCanonicals.first ?? aliases[0]
+                let canonicalGroup = Set(mappedCanonicals + [canonical])
+                var richest = parsed.event
+                for key in canonicalGroup {
+                    if let existing = eventsByCanonicalKey[key], isRicherClaudeEvent(existing, than: richest) {
+                        richest = existing
+                    }
+                }
+                for key in canonicalGroup where key != canonical {
+                    eventsByCanonicalKey.removeValue(forKey: key)
+                }
+                eventsByCanonicalKey[canonical] = richest
+                for (alias, mappedCanonical) in canonicalKeyByAlias where canonicalGroup.contains(mappedCanonical) {
+                    canonicalKeyByAlias[alias] = canonical
                 }
                 for alias in aliases {
                     canonicalKeyByAlias[alias] = canonical
@@ -617,15 +639,14 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     private func parseGeminiJSONDictionary(_ json: [String: Any], fallbackTimestamp: Date) -> [UsageEvent] {
         let effectiveFallback = timestampValue(from: json, candidates: [json]) ?? fallbackTimestamp
         var events: [UsageEvent] = []
+        let messageEvents = (json["messages"] as? [Any])?.flatMap { parseGeminiJSONValue($0, fallbackTimestamp: effectiveFallback) } ?? []
         if let telemetry = parseTelemetryEvent(from: json) {
             events.append(telemetry)
-        } else if let session = parseSessionTokenEvent(from: json, fallbackTimestamp: effectiveFallback) {
+        } else if messageEvents.isEmpty, let session = parseSessionTokenEvent(from: json, fallbackTimestamp: effectiveFallback) {
             events.append(session)
         }
-        if let messages = json["messages"] as? [Any] {
-            events.append(contentsOf: messages.flatMap { parseGeminiJSONValue($0, fallbackTimestamp: effectiveFallback) })
-        }
-        if let stats = dictionary(json["stats"]) {
+        events.append(contentsOf: messageEvents)
+        if messageEvents.isEmpty, let stats = dictionary(json["stats"]) {
             events.append(contentsOf: parseGeminiStatsEvents(from: stats, rootJSON: json, fallbackTimestamp: effectiveFallback))
         }
         return events
@@ -831,52 +852,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
     }
 
     private func directHTTPSnapshot() async -> ProviderSnapshot {
-        guard let accessToken = readAccessToken() else {
-            return codexWebErrorSnapshot("Codex auth unavailable · run codex login")
-        }
-
-        var request = URLRequest(url: endpointURL)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        request.setValue("TokenPilot/1.0", forHTTPHeaderField: "User-Agent")
-
-        do {
-            let (data, response) = try await httpClient.data(for: request)
-            guard response.statusCode == 200 else {
-                if response.statusCode == 401 || response.statusCode == 403 {
-                    return codexWebErrorSnapshot("Codex direct limit hints auth expired · run codex login")
-                }
-                return codexWebErrorSnapshot("Codex direct limit hints HTTP \(response.statusCode)")
-            }
-            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let rateLimit = dictionary(object["rate_limit"]) else {
-                return codexWebErrorSnapshot("Codex direct limit hints parse error")
-            }
-
-            let fiveHour = codexWebWindow(from: rateLimit["primary_window"], kind: .fiveHour, confidence: .high)
-            let weekly = codexWebWindow(from: rateLimit["secondary_window"], kind: .weekly, confidence: .high)
-            guard fiveHour != nil || weekly != nil else {
-                return codexWebErrorSnapshot("Codex direct limit hints rate limits unavailable")
-            }
-            let plan = stringValue(object["plan_type"] ?? object["plan"])
-            return ProviderSnapshot(
-                provider: .codex,
-                updatedAt: now(),
-                fiveHour: fiveHour,
-                weekly: weekly,
-                confidence: .high,
-                dataSource: .webUsage,
-                isExperimental: true,
-                isStale: false,
-                statusMessage: "UNOFFICIAL · Codex direct limit hints · token not stored",
-                model: plan,
-                events: []
-            )
-        } catch {
-            return codexWebErrorSnapshot("Codex direct limit hints unavailable")
-        }
+        codexWebErrorSnapshot("Codex app-server limit hints unavailable · direct HTTP disabled")
     }
 
     private func codexAppServerSnapshot(from data: Data) -> ProviderSnapshot {
@@ -899,7 +875,10 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             return codexWebErrorSnapshot("Codex app-server limit hints rate limits unavailable")
         }
 
-        let plan = firstString(in: payload, keys: ["planType", "plan_type", "plan", "chatgptPlanType", "account_plan"])
+        let planKeys = ["planType", "plan_type", "plan", "chatgptPlanType", "account_plan"]
+        let plan = firstString(in: payload, keys: planKeys)
+            ?? firstString(in: dictionary(payload["rateLimits"]) ?? [:], keys: planKeys)
+            ?? firstStringRecursively(in: payload, keys: planKeys)
         return ProviderSnapshot(
             provider: .codex,
             updatedAt: now(),
@@ -1046,6 +1025,29 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         return nil
     }
 
+    private func firstStringRecursively(in object: Any, keys: [String]) -> String? {
+        let normalizedKeys = Set(keys.map { $0.lowercased() })
+        if let dictionary = dictionary(object) {
+            for (key, value) in dictionary where normalizedKeys.contains(key.lowercased()) {
+                if let value = stringValue(value), !value.isEmpty { return value }
+            }
+            for value in dictionary.values {
+                if let nested = firstStringRecursively(in: value, keys: keys) {
+                    return nested
+                }
+            }
+            return nil
+        }
+        if let array = object as? [Any] {
+            for value in array {
+                if let nested = firstStringRecursively(in: value, keys: keys) {
+                    return nested
+                }
+            }
+        }
+        return nil
+    }
+
     private func redactedCodexStatusDetail(_ message: String) -> String {
         var redacted = message
         let patterns = [
@@ -1060,26 +1062,6 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             redacted = regex.stringByReplacingMatches(in: redacted, options: [], range: range, withTemplate: "[REDACTED]")
         }
         return redacted
-    }
-
-    private func readAccessToken() -> String? {
-        let url = resolvedAuthFileURL()
-        guard let data = try? Data(contentsOf: url),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        let tokens = dictionary(object["tokens"])
-        let token = stringValue(tokens?["access_token"] ?? object["access_token"])?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return token?.isEmpty == false ? token : nil
-    }
-
-    private func resolvedAuthFileURL() -> URL {
-        if let authFileURL { return authFileURL }
-        if let codexHome = environment["CODEX_HOME"], !codexHome.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return URL(fileURLWithPath: expandTilde(codexHome)).appendingPathComponent("auth.json")
-        }
-        return currentHomeDirectory
-            .appendingPathComponent(".codex", isDirectory: true)
-            .appendingPathComponent("auth.json")
     }
 
     private func codexWebWindow(from value: Any?, kind: LimitWindowKind, confidence: DataConfidence) -> LimitWindow? {
@@ -1155,7 +1137,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         let resetAt = dateValue(dictionary["reset_at"] ?? dictionary["resets_at"] ?? dictionary["resetAt"] ?? dictionary["resetsAt"] ?? dictionary["reset_at_time"] ?? dictionary["resetAtTime"])
             ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"]).map { now().addingTimeInterval(TimeInterval(max($0, 0))) }
         if let resetAt, resetAt <= now() {
-            return LimitWindow(kind: kind, usedPercent: 0, resetAt: nil, confidence: confidence)
+            return nil
         }
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: confidence)
@@ -1309,13 +1291,6 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         let todayStart = calendar.startOfDay(for: now)
         let files = relevantCodexSessionFiles(from: allFiles, now: now)
         guard !files.isEmpty else {
-            // No local session files — try app-server for rate limits before falling back to manual.
-            var appServerSettings = settings
-            appServerSettings.codexManual.webConnectorEnabled = true
-            let appServerResult = await webUsageAdapter.snapshot(settings: appServerSettings)
-            if appServerResult.fiveHour != nil || appServerResult.weekly != nil {
-                return appServerResult
-            }
             return await manualFallback.snapshot(settings: settings)
         }
 
@@ -1338,37 +1313,6 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             }
         }
 
-        // Auto-try Codex app-server for rate limits when session files lack them
-        if latestRateLimits == nil || (latestRateLimits?.fiveHour == nil && latestRateLimits?.weekly == nil) {
-            var appServerSettings = settings
-            appServerSettings.codexManual.webConnectorEnabled = true
-            let appServerResult = await webUsageAdapter.snapshot(settings: appServerSettings)
-            if appServerResult.fiveHour != nil || appServerResult.weekly != nil {
-                latestRateLimits = CodexRateLimitSnapshot(
-                    timestamp: appServerResult.updatedAt,
-                    fiveHour: appServerResult.fiveHour,
-                    weekly: appServerResult.weekly
-                )
-                events.sort { $0.timestamp < $1.timestamp }
-                let model = events.reversed().first { $0.model?.isEmpty == false }?.model
-                    ?? appServerResult.model
-                return ProviderSnapshot(
-                    provider: .codex,
-                    updatedAt: appServerResult.updatedAt,
-                    fiveHour: appServerResult.fiveHour,
-                    weekly: appServerResult.weekly,
-                    todayTokens: events.reduce(0) { $0 + $1.totalTokens },
-                    confidence: .high,
-                    dataSource: .localLog,
-                    isExperimental: true,
-                    isStale: false,
-                    statusMessage: "Codex app-server limit hints + local log",
-                    model: model,
-                    events: events
-                )
-            }
-        }
-
         let manual = await manualFallback.snapshot(settings: settings)
         guard !events.isEmpty || latestRateLimits?.fiveHour != nil || latestRateLimits?.weekly != nil else {
             return manual
@@ -1377,10 +1321,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         events.sort { $0.timestamp < $1.timestamp }
         let newestEvent = events.map(\.timestamp).max()
         let newest = [newestEvent, latestRateLimits?.timestamp].compactMap { $0 }.max() ?? now
-        let model = events.reversed().first { $0.model?.isEmpty == false }?.model
-            ?? latestModel
-            ?? manual.model
-            ?? "gpt-5"
+        let model = events.reversed().first { $0.model?.isEmpty == false }?.model ?? latestModel ?? manual.model
 
         return ProviderSnapshot(
             provider: .codex,
@@ -1402,7 +1343,18 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         if let id = stringValue(json["id"] ?? json["event_id"] ?? json["eventId"] ?? payload?["id"] ?? payload?["event_id"] ?? info["id"] ?? info["event_id"]), !id.isEmpty {
             return "id:\(id)"
         }
-        return "line:\(rawLine.hashValue)"
+        return "line:\(stableLineFingerprint(rawLine))"
+    }
+
+    private func stableLineFingerprint(_ rawLine: String) -> String {
+        let seed: UInt64 = 1_461_168_601_842_738_7903
+        let prime: UInt64 = 1_099_511_628_211
+        var hash = seed
+        for byte in rawLine.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* prime
+        }
+        return String(format: "%016llx", hash)
     }
 
     private func relevantCodexSessionFiles(from files: [URL], now: Date) -> [URL] {
@@ -1444,7 +1396,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
                 result.latestRateLimits = rateLimits
             }
 
-            let model = codexModel(from: [info, payload, json]) ?? currentModel ?? "gpt-5"
+            let model = codexModel(from: [info, payload, json]) ?? currentModel
             let usage: CodexTokenUsage?
             if let last = dictionary(info["last_token_usage"]) {
                 usage = CodexTokenUsage(last)
@@ -1480,6 +1432,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
                 source: "codex-session-jsonl",
                 dataSource: .localLog,
                 isEstimated: true,
+                isExperimental: true,
                 totalTokensOverride: usage.total
             )
             result.usageEvents.append(CodexParsedUsageEvent(dedupeKey: key, event: event))
@@ -1495,12 +1448,19 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
 
         let size = fileByteSize(file)
         let startOffset = size > largeFileFullScanLimitBytes ? size > largeFileTailBytes ? size - largeFileTailBytes : 0 : 0
+        var buffer = Data()
+        var dropFirstPartialLine = false
+
         if startOffset > 0 {
-            try? handle.seek(toOffset: startOffset)
+            if startOffset < size {
+                try? handle.seek(toOffset: max(0, startOffset - 1))
+                if let previous = try? handle.read(upToCount: 1), let lastByte = previous.first {
+                    dropFirstPartialLine = lastByte != 0x0A
+                }
+                try? handle.seek(toOffset: startOffset)
+            }
         }
 
-        var buffer = Data()
-        var dropFirstPartialLine = startOffset > 0
         let newline = Data([0x0A])
         let chunkSize = 64 * 1_024
         let maxLineBytes = 2 * 1_024 * 1_024
@@ -1571,12 +1531,14 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         let primary = firstDictionary(in: dictionary, keys: [
             "primary", "primary_window", "primaryWindow",
             "five_hour_limit", "five_hour", "fiveHour", "fivehour", "5h",
-            "short", "session", "session_window", "sessionWindow"
+            "short", "session", "session_window", "sessionWindow",
+            "hourly", "hour_5", "fiveHourWindow"
         ])
         let secondary = firstDictionary(in: dictionary, keys: [
             "secondary", "secondary_window", "secondaryWindow",
             "weekly_limit", "weekly", "week", "seven_day", "sevenDay", "7d",
-            "long", "week_window", "weekWindow"
+            "long", "week_window", "weekWindow",
+            "daily", "daily_window", "dailyWindow"
         ])
         let fiveHour = codexLimitWindow(from: primary, fallbackKind: .fiveHour, now: now)
         let weekly = codexLimitWindow(from: secondary, fallbackKind: .weekly, now: now)
@@ -1592,7 +1554,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         } else {
             kind = fallbackKind
         }
-        let used = intValue(
+        let usedValue = codexSessionPercentValue(
             dictionary["used_percent"]
                 ?? dictionary["used_percentage"]
                 ?? dictionary["usedPercent"]
@@ -1603,18 +1565,127 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
                 ?? dictionary["consumed_percent"]
                 ?? dictionary["consumedPercent"]
         )
+        let remainingValue = codexSessionPercentValue(
+            dictionary["remaining_percent"]
+                ?? dictionary["remaining_percentage"]
+                ?? dictionary["remainingPercent"]
+                ?? dictionary["remainingpercent"]
+                ?? dictionary["remaining"]
+        )
+        let usedFromRawCounts = codexSessionUsedPercent(
+            dictionary: dictionary,
+            usedKeys: [
+                "used",
+                "used_requests",
+                "usedRequests",
+                "used_tokens",
+                "usedTokens",
+                "requests_used",
+                "requestsUsed",
+                "request_count",
+                "requestCount",
+                "consumed",
+                "consumed_requests",
+                "consumedTokens",
+                "current_usage",
+                "currentUsage",
+                "used_count",
+                "usedCount",
+                "current",
+                "input_tokens",
+                "inputTokens",
+                "prompt_tokens",
+                "promptTokens"
+            ],
+            limitKeys: [
+                "limit",
+                "max",
+                "max_requests",
+                "maxRequests",
+                "max_tokens",
+                "maxTokens",
+                "request_limit",
+                "requestLimit",
+                "limit_requests",
+                "limitRequests",
+                "capacity",
+                "quota",
+                "total",
+                "total_requests",
+                "totalRequests",
+                "total_tokens",
+                "totalTokens",
+                "max_input_tokens",
+                "maxInputTokens"
+            ]
+        )
+        let used = usedValue
+            ?? remainingValue.map { min(max(100 - $0, 0), 100) }
+            ?? usedFromRawCounts
         let resetAt = dateValue(
             dictionary["resets_at"]
                 ?? dictionary["reset_at"]
                 ?? dictionary["resetAt"]
+                ?? dictionary["resetsAt"]
                 ?? dictionary["reset_at_time"]
                 ?? dictionary["resetAtTime"]
-        )
+        ) ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"])
+            .map { now.addingTimeInterval(TimeInterval(max($0, 0))) }
         if let resetAt, resetAt <= now {
-            return LimitWindow(kind: kind, usedPercent: 0, resetAt: nil, confidence: .medium)
+            return nil
         }
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium)
+    }
+
+    private func codexSessionUsedPercent(dictionary: [String: Any], usedKeys: [String], limitKeys: [String]) -> Int? {
+        guard let used = codexSessionRawValue(from: dictionary, keys: usedKeys),
+              let limit = codexSessionRawValue(from: dictionary, keys: limitKeys),
+              limit > 0 else {
+            return nil
+        }
+        return min(max(Int((used / limit * 100).rounded()), 0), 100)
+    }
+
+    private func codexSessionRawValue(from dictionary: [String: Any], keys: [String]) -> Double? {
+        let keySet = Set(keys.map { $0.lowercased() })
+        for (key, value) in dictionary {
+            if keySet.contains(key.lowercased()), let numeric = codexSessionNumericValue(value) {
+                return numeric
+            }
+        }
+        for value in dictionary.values {
+            if let nestedDictionary = value as? [String: Any],
+               let nested = codexSessionRawValue(from: nestedDictionary, keys: keys) {
+                return nested
+            }
+            if let array = value as? [Any] {
+                for element in array {
+                    guard let nestedDictionary = element as? [String: Any] else { continue }
+                    if let nested = codexSessionRawValue(from: nestedDictionary, keys: keys) {
+                        return nested
+                    }
+                }
+            }
+        }
+        return nil
+    }
+
+    private func codexSessionPercentValue(_ value: Any?) -> Int? {
+        guard let raw = value.flatMap(codexSessionNumericValue) else { return nil }
+        let percent = raw > 0 && raw <= 1 ? raw * 100 : raw
+        return min(max(Int(percent.rounded()), 0), 100)
+    }
+
+    private func codexSessionNumericValue(_ value: Any) -> Double? {
+        if let number = value as? NSNumber { return number.doubleValue }
+        if let double = value as? Double { return double }
+        if let float = value as? Float { return Double(float) }
+        if let int = value as? Int { return Double(int) }
+        if let string = value as? String {
+            return Double(string.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "%", with: ""))
+        }
+        return nil
     }
 
     private func defaultCodexSessionRoots() -> [URL] {

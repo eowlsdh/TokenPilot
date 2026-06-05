@@ -139,7 +139,7 @@ Codex Limit Hints Connector는 Codex local JSONL이 아닌 Codex CLI app-server 
 
 ### 켜졌을 때만 수행하는 작업
 
-- TokenPilot은 `~/.codex/auth.json` 또는 `CODEX_HOME/auth.json`의 token 값을 직접 읽지 않음
+- TokenPilot은 Codex credential file의 token 값을 직접 읽지 않음
 - 로컬 `codex app-server` 프로세스에 JSON-RPC `initialize` 후 `account/rateLimits/read` 요청
 - 인증 처리는 Codex CLI가 담당하며 TokenPilot UI/export/log에는 Codex access token 값을 남기지 않음
 - 응답의 primary/secondary rate limit window와 plan label만 사용량 스냅샷에 반영

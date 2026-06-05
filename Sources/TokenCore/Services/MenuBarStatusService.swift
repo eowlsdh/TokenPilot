@@ -28,13 +28,18 @@ public final class MenuBarStatusService: Sendable {
     public func selectedSnapshot(from snapshots: [ProviderSnapshot], settings: AppSettings) -> ProviderSnapshot? {
         let enabled = snapshots.filter { settings.isProviderEnabled($0.provider) }
         if let target = settings.menuBarDisplayTarget,
-           settings.isProviderEnabled(target),
-           let selected = enabled.first(where: { $0.provider == target }) {
-            return selected
+           settings.isProviderEnabled(target) {
+            if let selected = enabled.first(where: { $0.provider == target }) {
+                return snapshotWithCodexManualMenuBarFallback(selected, settings: settings)
+            }
+            if target == .codex, let manual = codexManualMenuBarSnapshot(settings: settings) {
+                return manual
+            }
         }
-        return enabled.max { lhs, rhs in
+        let selected = enabled.max { lhs, rhs in
             riskScore(lhs) < riskScore(rhs)
         }
+        return snapshotWithCodexManualMenuBarFallback(selected, settings: settings)
     }
 
     public func displayWindow(for snapshot: ProviderSnapshot) -> LimitWindow? {
@@ -150,6 +155,50 @@ public final class MenuBarStatusService: Sendable {
         return " \(TokenPilotLocalizer.localized("est.", language: language))"
     }
 
+    private func snapshotWithCodexManualMenuBarFallback(_ snapshot: ProviderSnapshot?, settings: AppSettings) -> ProviderSnapshot? {
+        guard var snapshot else {
+            return codexManualMenuBarSnapshot(settings: settings)
+        }
+        guard snapshot.provider == .codex,
+              snapshot.fiveHour == nil,
+              snapshot.weekly == nil,
+              snapshot.dailyRequestsPercent == nil,
+              let manual = codexManualMenuBarSnapshot(settings: settings) else {
+            return snapshot
+        }
+        snapshot.fiveHour = manual.fiveHour
+        snapshot.weekly = manual.weekly
+        if snapshot.todayTokens == 0 {
+            snapshot.todayTokens = manual.todayTokens
+        }
+        snapshot.confidence = manual.confidence
+        snapshot.dataSource = manual.dataSource
+        snapshot.statusMessage = manual.statusMessage
+        snapshot.model = snapshot.model ?? manual.model
+        return snapshot
+    }
+
+    private func codexManualMenuBarSnapshot(settings: AppSettings) -> ProviderSnapshot? {
+        guard settings.codexEnabled else { return nil }
+        let manual = settings.codexManual
+        let hasFiveHour = manual.webSnapshotEnabled || manual.fiveHourUsagePercentage > 0
+        let hasWeekly = manual.webSnapshotEnabled || manual.weeklyUsagePercentage > 0
+        guard hasFiveHour || hasWeekly else { return nil }
+
+        let plan = manual.planLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        return ProviderSnapshot(
+            provider: .codex,
+            updatedAt: manual.webSnapshotCapturedAt ?? Date(),
+            fiveHour: hasFiveHour ? LimitWindow(kind: .fiveHour, usedPercent: manual.fiveHourUsagePercentage, confidence: .manual) : nil,
+            weekly: hasWeekly ? LimitWindow(kind: .weekly, usedPercent: manual.weeklyUsagePercentage, confidence: .manual) : nil,
+            todayTokens: manual.webTodayTokens,
+            confidence: .manual,
+            dataSource: .manual,
+            statusMessage: "Manual menu bar estimate",
+            model: plan.isEmpty || plan.lowercased() == "manual" ? nil : plan
+        )
+    }
+
     private func quotaRemainingTitle(for snapshot: ProviderSnapshot, language: TokenPilotLanguage) -> String? {
         var segments: [String] = []
         if let fiveHour = remainingSegment(for: snapshot.fiveHour, language: language) {
@@ -173,7 +222,7 @@ public final class MenuBarStatusService: Sendable {
         guard let window else { return nil }
         let noData = TokenPilotLocalizer.localized("No data", language: language)
         if let remainingPercent = window.remainingPercent {
-            return "\(compactMenuLabel(for: window.kind)) \(remainingPercent)"
+            return "\(compactMenuLabel(for: window.kind)) \(remainingPercent)%"
         }
         return "\(compactMenuLabel(for: window.kind)) \(noData)"
     }

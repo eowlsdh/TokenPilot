@@ -92,6 +92,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     public var source: String
     public var dataSource: UsageDataSource
     public var isEstimated: Bool
+    public var isExperimental: Bool
     public var authType: String?
     public var durationMS: Int?
     public var totalTokensOverride: Int?
@@ -112,6 +113,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         source: String,
         dataSource: UsageDataSource = .unknown,
         isEstimated: Bool = false,
+        isExperimental: Bool = false,
         authType: String? = nil,
         durationMS: Int? = nil,
         totalTokensOverride: Int? = nil
@@ -131,6 +133,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         self.source = source
         self.dataSource = dataSource
         self.isEstimated = isEstimated
+        self.isExperimental = isExperimental
         self.authType = authType
         self.durationMS = durationMS
         self.totalTokensOverride = totalTokensOverride.map { max($0, 0) }
@@ -152,6 +155,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         case source
         case dataSource
         case isEstimated
+        case isExperimental
         case authType
         case durationMS
         case totalTokensOverride
@@ -175,6 +179,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
             source: try container.decodeIfPresent(String.self, forKey: .source) ?? "unknown",
             dataSource: try container.decodeIfPresent(UsageDataSource.self, forKey: .dataSource) ?? .unknown,
             isEstimated: try container.decodeIfPresent(Bool.self, forKey: .isEstimated) ?? false,
+            isExperimental: try container.decodeIfPresent(Bool.self, forKey: .isExperimental) ?? false,
             authType: try container.decodeIfPresent(String.self, forKey: .authType),
             durationMS: try container.decodeIfPresent(Int.self, forKey: .durationMS),
             totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride)
@@ -198,6 +203,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         try container.encode(source, forKey: .source)
         try container.encode(dataSource, forKey: .dataSource)
         try container.encode(isEstimated, forKey: .isEstimated)
+        try container.encode(isExperimental, forKey: .isExperimental)
         try container.encodeIfPresent(authType, forKey: .authType)
         try container.encodeIfPresent(durationMS, forKey: .durationMS)
         try container.encodeIfPresent(totalTokensOverride, forKey: .totalTokensOverride)
@@ -215,7 +221,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     public var cacheTokens: Int { cacheReadTokens + cacheCreationTokens }
 
     public var isWebQuotaComparable: Bool {
-        true
+        !(provider == .codex && dataSource == .localLog && isExperimental)
     }
 }
 
@@ -403,6 +409,10 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
 
     public var isCodexLocalLogOnly: Bool {
         provider == .codex && dataSource == .localLog && isExperimental
+    }
+
+    public var isWebQuotaComparable: Bool {
+        !(provider == .codex && dataSource == .localLog && isExperimental)
     }
 }
 
@@ -684,7 +694,23 @@ public struct DiscordSettings: Codable, Equatable, Sendable {
     public var connectionStatus: String
     public var lastTestSentAt: Date?
 
-    public var webhookSummary: String { "No webhook" }
+    public var webhookSummary: String {
+        guard isEnabled else { return "No webhook" }
+        let normalizedStatus = connectionStatus.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalizedStatus.isEmpty || normalizedStatus == "not configured" {
+            return "Not connected"
+        }
+        if normalizedStatus.contains("connected") || normalizedStatus == "webhook saved securely" {
+            return "Configured"
+        }
+        if normalizedStatus.contains("failed") {
+            return "Invalid"
+        }
+        if normalizedStatus.contains("saved") {
+            return "Saved"
+        }
+        return "Configured"
+    }
 
     public init(isEnabled: Bool = false, connectionStatus: String = "Not configured", lastTestSentAt: Date? = nil) {
         self.isEnabled = isEnabled

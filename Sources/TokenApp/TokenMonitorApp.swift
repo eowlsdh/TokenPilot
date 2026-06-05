@@ -21,26 +21,14 @@ struct TokenMonitorApp: App {
                     Task { await model.refreshAfterPopoverOpen() }
                 }
         } label: {
-            HStack(spacing: 5) {
-                if model.menuBarStatusLevel != .normal {
-                    Circle()
-                        .fill(model.menuBarStatusColor)
-                        .frame(width: 6, height: 6)
-                        .accessibilityHidden(true)
-                }
-                if let provider = model.menuBarSnapshot?.provider {
-                    MenuBarProviderMark(provider: provider)
-                } else {
-                    TokenPilotMenuBarMark()
-                }
-                Text(model.menuBarTitle)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-            .fixedSize(horizontal: true, vertical: false)
-            .help(model.menuBarAccessibilityLabel)
-            .accessibilityLabel(model.menuBarAccessibilityLabel)
+            Text(model.menuBarTitle)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: true, vertical: false)
+                .help(model.menuBarAccessibilityLabel)
+                .accessibilityLabel(model.menuBarAccessibilityLabel)
         }
         .menuBarExtraStyle(.window)
     }

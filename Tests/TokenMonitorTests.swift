@@ -106,7 +106,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18 · W 53")
+        XCTAssertEqual(title, "5h 18% · W 53%")
     }
 
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
@@ -127,6 +127,79 @@ final class TokenMonitorTests: XCTestCase {
         )
 
         XCTAssertEqual(title, "5h 데이터 없음 · W 데이터 없음")
+    }
+
+    func testMenuBarTitleShowsOnlyValidWeeklyWhenFiveHourUnavailable() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .codex,
+            weekly: LimitWindow(kind: .weekly, usedPercent: 32, resetAt: now.addingTimeInterval(18_720)),
+            confidence: .high,
+            dataSource: .webUsage,
+            isExperimental: true,
+            statusMessage: "UNOFFICIAL · Codex app-server limit hints"
+        )
+        var settings = AppSettings()
+        settings.localization.language = .ko
+        settings.menuBarDisplayTarget = .codex
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "W 68%")
+    }
+
+    func testMenuBarTitleDoesNotShowHealthyQuotaWhenCodexLimitWindowsUnavailable() {
+        let snapshot = ProviderSnapshot(
+            provider: .codex,
+            confidence: .low,
+            dataSource: .webUsage,
+            isExperimental: true,
+            statusMessage: "Codex app-server limit hints rate limits unavailable"
+        )
+        var settings = AppSettings()
+        settings.localization.language = .ko
+        settings.menuBarDisplayTarget = .codex
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        XCTAssertEqual(title, "Co · LIVE")
+        XCTAssertFalse(title.contains("100%"))
+        XCTAssertFalse(title.contains("0%"))
+    }
+
+    func testMenuBarTitleUsesSelectedCodexManualValuesBeforeNextRefresh() {
+        let snapshot = ProviderSnapshot(
+            provider: .codex,
+            todayTokens: 4_800,
+            confidence: .low,
+            dataSource: .webUsage,
+            isExperimental: true,
+            statusMessage: "Codex app-server limit hints rate limits unavailable"
+        )
+        var settings = AppSettings()
+        settings.localization.language = .ko
+        settings.menuBarDisplayTarget = .codex
+        settings.codexManual.fiveHourUsagePercentage = 74
+        settings.codexManual.weeklyUsagePercentage = 20
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: Date(timeIntervalSince1970: 1_000_000)
+        )
+
+        XCTAssertEqual(title, "5h 26% · W 80% 추정")
     }
 
     func testMenuBarTitleLocalizesTokenUnitFallback() {
@@ -292,14 +365,33 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("No token event history yet"))
     }
 
-    func testMenuBarLabelUsesVisualRemainingPercentBadges() throws {
+    func testMenuBarLabelUsesSingleLineCompactTitleInsteadOfClippedBadgeStack() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertFalse(source.contains("struct MenuBarRemainingBadgeView"))
         XCTAssertTrue(source.contains("Text(model.menuBarTitle)"))
-        XCTAssertTrue(source.contains("MenuBarRemainingStatusBadge"))
-        XCTAssertFalse(source.contains("MenuBarRemainingBadgeRow(badges:"))
-        XCTAssertFalse(source.contains("menuBarRemainingBadges.isEmpty"))
+        XCTAssertFalse(
+            source.contains("MenuBarProviderMark(provider: provider)"),
+            "Provider marks can become the only visible macOS status item content; keep remaining quota numbers as the direct menu bar label."
+        )
+        XCTAssertFalse(
+            source.contains("TokenPilotMenuBarMark()"),
+            "Fallback marks can hide the compact title in the constrained menu bar label."
+        )
+        XCTAssertFalse(
+            source.contains("MenuBarRemainingBadgeRow(badges: model.menuBarRemainingBadges)"),
+            "MenuBarExtra labels are one-line macOS status items; adding a VStack/badge row clips or hides Codex 5h/W numbers."
+        )
+        XCTAssertFalse(
+            source.contains("if !model.menuBarRemainingBadges.isEmpty"),
+            "Remaining badges belong inside the popover, not in the menu bar label."
+        )
+    }
+
+    func testOverviewNowShows7DayAndProviderShareCardsWhenDataExists() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        XCTAssertTrue(source.contains("SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)"))
+        XCTAssertTrue(source.contains("ProviderShareRow(shares: model.overviewUsage.providerShare)"))
     }
 
     func testCommercialReleaseResourcesArePresentAndPackaged() throws {
@@ -352,6 +444,89 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(
             xcodeGenConfig.contains("Resources/TokenPilot.icns"),
             "Xcode builds should include the manual icns fallback used by CFBundleIconFile."
+        )
+    }
+
+    func testPublicReleaseGitIgnoreCoversSecretAndCredentialFiles() throws {
+        let gitignore = try String(contentsOf: try Self.projectRootURL().appendingPathComponent(".gitignore"))
+        let ignoredPatterns = Set(gitignore.components(separatedBy: .newlines))
+        let requiredPatterns = [
+            ".env",
+            ".env.*",
+            "*.env",
+            ".secrets/",
+            "*.pem",
+            "*.key",
+            "*.p8",
+            "*.p12",
+            "auth.json",
+            "credentials.json",
+            "token.json",
+            "cookies.txt"
+        ]
+
+        for pattern in requiredPatterns {
+            XCTAssertTrue(
+                ignoredPatterns.contains(pattern),
+                "Public release .gitignore should exclude secret or credential file pattern: \(pattern)"
+            )
+        }
+    }
+
+    func testPublicReleaseDocsDoNotExposePersonalLocalPathsOrCredentialFilenames() throws {
+        let rootURL = try Self.projectRootURL()
+        let fileManager = FileManager.default
+        let docsURL = rootURL.appendingPathComponent("docs", isDirectory: true)
+        let publicDocURLs = try [rootURL]
+            .flatMap { root in
+                try fileManager.contentsOfDirectory(
+                    at: root,
+                    includingPropertiesForKeys: nil,
+                    options: [.skipsHiddenFiles]
+                )
+                .filter { ["md", "markdown"].contains($0.pathExtension.lowercased()) }
+            }
+            + (try fileManager.contentsOfDirectory(
+                at: docsURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )
+            .filter { ["md", "markdown", "html"].contains($0.pathExtension.lowercased()) })
+
+        let forbiddenFragments = [
+            "/Users/",
+            "/Volumes/",
+            ".codex/auth.json",
+            "daejinyun",
+            "daejinyoun",
+            "com.daejinyoun"
+        ]
+
+        for url in publicDocURLs {
+            let content = try String(contentsOf: url)
+            for fragment in forbiddenFragments {
+                XCTAssertFalse(
+                    content.contains(fragment),
+                    "Public document \(url.lastPathComponent) should not expose personal local path or credential metadata fragment: \(fragment)"
+                )
+            }
+        }
+    }
+
+    func testCodexLimitHintsSourceDoesNotContainLegacyAuthFileDirectHTTPReader() throws {
+        let source = try Self.tokenCoreServicesSource()
+
+        XCTAssertFalse(
+            source.contains("readAccessToken"),
+            "Public release code should not include a Codex auth-file access-token reader."
+        )
+        XCTAssertFalse(
+            source.contains("resolvedAuthFileURL"),
+            "Public release code should not resolve ~/.codex/auth.json for direct HTTP limit hints."
+        )
+        XCTAssertFalse(
+            source.contains("Bearer \\(accessToken)"),
+            "Public release code should not build a Codex web Authorization header from a local auth file."
         )
     }
 
@@ -456,6 +631,21 @@ final class TokenMonitorTests: XCTestCase {
         let fm = FileManager.default
         var allFiles: [URL] = []
         let enumerator = fm.enumerator(at: tokenAppDir, includingPropertiesForKeys: nil)!
+        while let url = enumerator.nextObject() as? URL {
+            if url.pathExtension == "swift" {
+                allFiles.append(url)
+            }
+        }
+        return try allFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
+            .map { try String(contentsOf: $0) }.joined(separator: "\n")
+    }
+
+    private static func tokenCoreServicesSource() throws -> String {
+        let tokenCoreServicesDir = try projectRootURL()
+            .appendingPathComponent("Sources/TokenCore/Services")
+        let fm = FileManager.default
+        var allFiles: [URL] = []
+        let enumerator = fm.enumerator(at: tokenCoreServicesDir, includingPropertiesForKeys: nil)!
         while let url = enumerator.nextObject() as? URL {
             if url.pathExtension == "swift" {
                 allFiles.append(url)

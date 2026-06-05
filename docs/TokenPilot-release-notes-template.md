@@ -1,7 +1,6 @@
 # TokenPilot Release Notes Template
 
-**Status:** local template  
-**Last updated:** 2026-05-24 23:02 KST
+**Status:** public release checklist template
 
 ---
 
@@ -45,12 +44,12 @@ Known limitations:
 - [ ] `swift test`
 - [ ] `xcodegen generate`
 - [ ] unsigned Xcode Debug build
-- [ ] `bash build.sh`
+- [ ] `make bundle`
 - [ ] manual bundle resource smoke
 - [ ] launch smoke with isolated HOME
-- [ ] visual QA checklist
+- [ ] menu bar numbers, Overview rows, and Settings privacy copy checked manually
 - [ ] screenshots contain no private paths/secrets
-- [ ] privacy policy and App Store metadata match final behavior
+- [ ] privacy/security docs and release notes match final behavior
 - [ ] signing/notarization/TestFlight only after explicit approval
 
 ---

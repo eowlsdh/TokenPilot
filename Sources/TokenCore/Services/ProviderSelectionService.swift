@@ -33,7 +33,8 @@ public final class ProviderSelectionService: Sendable {
     }
 
     public func deselectAll(in settings: inout AppSettings) {
-        // Do nothing — at least one must remain
+        guard let fallback = Provider.allCases.first else { return }
+        settings.monitoredProviders.enabledProviders = [fallback]
     }
 
     public func canDeselect(_ provider: Provider, in settings: AppSettings) -> Bool {

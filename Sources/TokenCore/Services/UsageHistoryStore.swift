@@ -33,6 +33,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
                         enabledProviders.contains(event.provider) && event.isWebQuotaComparable && (event.totalTokens > 0 || event.requestCount > 0)
                     }
                     if !explicitEvents.isEmpty { return explicitEvents }
+                    guard snapshot.isWebQuotaComparable else { return [] }
                     guard snapshot.todayTokens > 0 else { return [] }
                     // Synthetic fallback: no per-field breakdown available, total placed in inputTokens.
                     // Mark as estimated to distinguish from explicit adapter events.
@@ -42,14 +43,23 @@ public final class UsageHistoryStore: @unchecked Sendable {
                         timestamp: snapshot.updatedAt,
                         inputTokens: snapshot.todayTokens,
                         outputTokens: 0,
+                        cacheReadTokens: 0,
+                        cacheCreationTokens: 0,
+                        reasoningTokens: 0,
+                        toolTokens: 0,
                         requestCount: max(snapshot.dailyRequestsUsed ?? 0, 0),
+                        estimatedCostUSD: nil,
                         source: "snapshot-daily-total",
-                        isEstimated: true
-                    )]
+                        dataSource: snapshot.dataSource,
+                        isEstimated: true,
+                        isExperimental: snapshot.isExperimental,
+                        )]
                 }
 
             guard !incoming.isEmpty else {
-                return capped(pruned(loadEventsUnlocked()))
+                let retained = capped(pruned(loadEventsUnlocked()).sorted { $0.timestamp < $1.timestamp })
+                saveUnlocked(retained)
+                return retained
             }
 
             let merged = deduplicated(loadEventsUnlocked() + incoming)
@@ -81,11 +91,11 @@ public final class UsageHistoryStore: @unchecked Sendable {
         return currentSnapshots
             .filter { enabledProviders.contains($0.provider) }
             .map { snapshot in
-                var copy = snapshot
-                let providerEvents = eventsByProvider[snapshot.provider] ?? []
-                copy.events = providerEvents
-                copy.todayTokens = todayTokens(in: providerEvents, referenceDate: referenceDate)
-                return copy
+            var copy = snapshot
+            let providerEvents = snapshot.isWebQuotaComparable ? (eventsByProvider[snapshot.provider] ?? []) : []
+            copy.events = providerEvents
+            copy.todayTokens = todayTokens(in: providerEvents, referenceDate: referenceDate)
+            return copy
             }
     }
 
@@ -125,7 +135,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
     }
 
     private func eventKey(_ event: UsageEvent) -> String {
-        if event.source == "snapshot-daily-total" {
+        if event.source == "snapshot-daily-total" || event.source == "claude-statusline" {
             let day = Self.dayKeyFormatter.string(from: event.timestamp)
             return [event.provider.rawValue, event.source, event.model ?? "", day].joined(separator: "|")
         }

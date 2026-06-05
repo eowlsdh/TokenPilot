@@ -22,6 +22,8 @@ targets:
     sources:
       - path: Sources/TokenCore
         type: group
+        excludes:
+          - AGENTS.md
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tokenpilot.TokenCore
@@ -41,6 +43,8 @@ targets:
     sources:
       - path: Sources/TokenApp
         type: group
+        excludes:
+          - AGENTS.md
       - path: Resources/Assets.xcassets
       - path: Resources/PrivacyInfo.xcprivacy
       - path: Resources/TokenPilot.icns

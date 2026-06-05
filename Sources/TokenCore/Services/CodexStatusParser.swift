@@ -59,8 +59,11 @@ public enum CodexStatusParser {
 
     private static func firstValidPercent(in text: String, patterns: [String]) -> Int? {
         for pattern in patterns {
-            guard let capture = firstCapture(in: text, pattern: pattern), let value = Int(capture), (0...100).contains(value) else { continue }
-            return value
+            for capture in captureMatches(in: text, pattern: pattern).reversed() {
+                if let value = Int(capture), (0...100).contains(value) {
+                    return value
+                }
+            }
         }
         return nil
     }
@@ -70,5 +73,14 @@ public enum CodexStatusParser {
         let range = NSRange(text.startIndex..<text.endIndex, in: text)
         guard let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1, let captureRange = Range(match.range(at: 1), in: text) else { return nil }
         return String(text[captureRange])
+    }
+
+    private static func captureMatches(in text: String, pattern: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.matches(in: text, range: range).compactMap { match in
+            guard match.numberOfRanges > 1, let captureRange = Range(match.range(at: 1), in: text) else { return nil }
+            return String(text[captureRange])
+        }
     }
 }

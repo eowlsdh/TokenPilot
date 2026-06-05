@@ -1,6 +1,37 @@
 import XCTest
 @testable import TokenCore
 
+private final class InMemoryKeychainBackend: KeychainBackend, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: String] = [:]
+
+    func saveSecret(_ secret: String, service: String, account: String) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        values[key(service: service, account: account)] = secret
+    }
+
+    func readSecret(service: String, account: String) throws -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return values[key(service: service, account: account)]
+    }
+
+    func deleteSecret(service: String, account: String, ignoreMissing: Bool) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        let key = key(service: service, account: account)
+        guard values.removeValue(forKey: key) != nil else {
+            if ignoreMissing { return }
+            throw KeychainError.itemNotFound
+        }
+    }
+
+    private func key(service: String, account: String) -> String {
+        "\(service)|\(account)"
+    }
+}
+
 final class TokenPilotServicesTests: XCTestCase {
     func testCodexStatusParserKeepsManualConfidenceLowOrMedium() {
         let parsed = CodexStatusParser.parse(
@@ -50,6 +81,39 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(decoded.claudeStatusFileBookmarkData, claudeBookmark)
         XCTAssertEqual(decoded.geminiTelemetrySourceBookmarkData, geminiBookmark)
+    }
+
+    private func abortKeychainTestOnAuthorizationError(_ error: Error) throws {
+        #if canImport(Security)
+        guard case let KeychainError.unhandledStatus(status) = error,
+              (status == -60006 || status == -60008) else {
+            return
+        }
+        throw XCTSkip("Skipping keychain persistence assertions: keychain authorization unavailable (status: \(status)).")
+        #endif
+    }
+
+    func testKeychainDeleteSecret_ThrowsNotFound_WhenItemMissing() throws {
+        let service = KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+
+        XCTAssertThrowsError(try service.deleteSecret(account: "missing-\(UUID().uuidString)")) { error in
+            XCTAssertEqual(error as? KeychainError, .itemNotFound)
+        }
+    }
+
+    func testKeychainDeleteSecret_SavesThenDeletesValue() throws {
+        let service = KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+        let account = "test-\(UUID().uuidString)"
+        let value = "token-value-\(UUID().uuidString)"
+
+        try service.saveSecret(value, account: account)
+        XCTAssertEqual(try service.readSecret(account: account), value)
+        try service.deleteSecret(account: account)
+        XCTAssertNil(try service.readSecret(account: account))
+        try service.saveSecret(value, account: account)
+        XCTAssertEqual(try service.readSecret(account: account), value)
+        try service.deleteSecret(account: account)
+        XCTAssertNil(try service.readSecret(account: account))
     }
 
     func testSecurityScopedBookmarkServiceResolvesReadOnlyBookmark() throws {
@@ -289,6 +353,40 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(parsed.confidence, .medium)
     }
 
+    func testCodexLocalSessionAdapterBoundaryScanDoesNotDropCompleteLineAtBoundary() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotCodexBoundaryTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("session.jsonl")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let filler = String(repeating: "x", count: 65_000)
+        let tokenLine = "{\"timestamp\":\"\(timestamp)\",\"type\":\"token_count\",\"info\":{\"filler\":\"\(filler)\",\"last_token_usage\":{\"input_tokens\":12,\"output_tokens\":3,\"cached_input_tokens\":2,\"reasoning_output_tokens\":1}}}\n"
+        let content = "x\n" + tokenLine
+        try content.data(using: .utf8)!.write(to: fileURL)
+
+        let payload = ProviderSnapshot(provider: .codex, confidence: .low, statusMessage: "web unavailable")
+        let adapter = CodexLocalSessionAdapter(
+            sessionRoots: [directory],
+            manualFallback: CodexManualAdapter(),
+            webUsageAdapter: FixedProviderAdapter(snapshot: payload),
+            environment: ProcessInfo.processInfo.environment,
+            currentHomeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+            maxSessionFiles: 1,
+            largeFileFullScanLimitBytes: max(64 * 1024, UInt64(tokenLine.utf8.count)),
+            largeFileTailBytes: UInt64(tokenLine.utf8.count)
+        )
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = false
+        settings.codexManual.webSnapshotEnabled = false
+        let snapshot = await adapter.snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.provider, .codex)
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events.first?.totalTokens, 18)
+    }
+
     func testGeminiTelemetryAdapterParsesNestedMetadataTokenFields() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -309,10 +407,45 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.model, "gemini-2.5-pro")
     }
 
+    func testCodexLocalSessionAdapterResolvesDuplicateLineWithoutIDDeduplicatesUsingLineFingerprint() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotCodexDuplicateTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("session.jsonl")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let tokenLine = "{\"timestamp\":\"\(timestamp)\",\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":12,\"output_tokens\":3,\"cached_input_tokens\":2,\"reasoning_output_tokens\":1}}}"
+        let content = tokenLine + "\n" + tokenLine + "\n"
+        try content.data(using: .utf8)!.write(to: fileURL)
+
+        let payload = ProviderSnapshot(provider: .codex, confidence: .low, statusMessage: "web unavailable")
+        let adapter = CodexLocalSessionAdapter(
+            sessionRoots: [directory],
+            manualFallback: CodexManualAdapter(),
+            webUsageAdapter: FixedProviderAdapter(snapshot: payload),
+            environment: ProcessInfo.processInfo.environment,
+            currentHomeDirectory: FileManager.default.homeDirectoryForCurrentUser,
+            maxSessionFiles: 1,
+            largeFileFullScanLimitBytes: 4 * 1_024,
+            largeFileTailBytes: 4 * 1_024
+        )
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = false
+        settings.codexManual.webSnapshotEnabled = false
+        let snapshot = await adapter.snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.events.count, 1)
+    }
+
     func testTokenPilotLocalizerTranslatesCoreKoreanLabels() {
         XCTAssertEqual(TokenPilotLocalizer.localized("Overview", language: .ko), "개요")
         XCTAssertEqual(TokenPilotLocalizer.localized("Total tokens", language: .ko), "전체 토큰")
         XCTAssertEqual(HistoryPeriod.last7Days.localizedLabel(language: .ko), "최근 7일")
+        XCTAssertEqual(
+            TokenPilotLocalizer.localized("No notification channel is enabled or configured.", language: .ko),
+            "켜져 있거나 설정 완료된 알림 채널이 없습니다."
+        )
     }
 
     // MARK: - ClaudeStatuslineAdapter Tests
@@ -779,6 +912,110 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[0].dataSource, .localLog)
     }
 
+    func testDataSourceConnectionServiceMarksClaudeLocalJsonlConnectedFromDefaultProjects() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectDirectory = home.appendingPathComponent(".claude/projects/example", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","requestId":"r-default","message":{"id":"m-default","model":"claude-sonnet-4","usage":{"input_tokens":80,"output_tokens":20}}}
+        """
+        try line.write(to: projectDirectory.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let source = await DataSourceConnectionService(pathResolver: resolver).check(settings: AppSettings(showMockDataWhenDisconnected: false), provider: .claude)
+
+        XCTAssertEqual(source.status, .connected)
+        XCTAssertEqual(source.mode, .custom)
+        XCTAssertEqual(source.confidence, .medium)
+        XCTAssertTrue(source.detectedPaths.contains { $0.kind == "projects" && $0.path == home.appendingPathComponent(".claude/projects", isDirectory: true).path && $0.exists })
+        XCTAssertEqual(source.statusMessage, "Local JSONL · rate limits unavailable")
+    }
+
+    func testUsageStoreDefaultAdaptersUseDetectedClaudeProjectRoots() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectDirectory = home.appendingPathComponent(".claude/projects/example", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","requestId":"usage-store-default","message":{"id":"usage-store-message","model":"claude-sonnet-4","usage":{"input_tokens":100,"output_tokens":25,"cache_read_input_tokens":5}}}
+        """
+        try line.write(to: projectDirectory.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let store = UsageStore(pathResolver: resolver)
+        let result = await store.refresh(settings: AppSettings(showMockDataWhenDisconnected: false))
+        let claude = result.snapshots.first { $0.provider == .claude }
+
+        XCTAssertTrue(result.hasConnectedData)
+        XCTAssertEqual(claude?.dataSource, .localLog)
+        XCTAssertEqual(claude?.todayTokens, 130)
+        XCTAssertEqual(claude?.events.count, 1)
+    }
+
+    func testClaudeAdapterAcceptsDetectedProjectsDirectoryAsConfiguredSource() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectDirectory = directory.appendingPathComponent("projects/example", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","requestId":"configured-project-dir","message":{"id":"configured-project-message","model":"claude-sonnet-4","usage":{"input_tokens":60,"output_tokens":15}}}
+        """
+        try line.write(to: projectDirectory.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.claudeStatusFilePath = directory.appendingPathComponent("projects", isDirectory: true).path
+
+        let snapshot = await ClaudeStatuslineAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.dataSource, .localLog)
+        XCTAssertEqual(snapshot.todayTokens, 75)
+        XCTAssertEqual(snapshot.events.count, 1)
+    }
+
+    func testConnectionServiceAppliesDetectedClaudeProjectsWhenDefaultStatuslineIsMissing() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projects = home.appendingPathComponent(".claude/projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects.appendingPathComponent("example", isDirectory: true), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let service = DataSourceConnectionService(pathResolver: resolver)
+        var source = ProviderDataSource(provider: .claude, detectedPaths: resolver.resolveDefaultPaths(for: .claude), status: .connected, confidence: .medium)
+        source.isEnabled = true
+        let adoption = service.applyingPreferredDetectedSources(settings: AppSettings(showMockDataWhenDisconnected: false), sources: [source])
+
+        XCTAssertEqual(adoption.adoptedProviders, [.claude])
+        XCTAssertEqual(adoption.settings.claudeStatusFilePath, projects.path)
+        XCTAssertNil(adoption.settings.claudeStatusFileBookmarkData)
+    }
+
+    func testConnectionServiceReplacesMissingCustomClaudePathWithDetectedProjects() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectDirectory = home.appendingPathComponent(".claude/projects/example", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","requestId":"missing-custom","message":{"id":"missing-custom-message","model":"claude-sonnet-4","usage":{"input_tokens":40,"output_tokens":10}}}
+        """
+        try line.write(to: projectDirectory.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.claudeStatusFilePath = home.appendingPathComponent("old-missing-statusline.json").path
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let service = DataSourceConnectionService(pathResolver: resolver)
+        let source = await service.check(settings: settings, provider: .claude)
+        let adoption = service.applyingPreferredDetectedSources(settings: settings, sources: [source])
+
+        XCTAssertEqual(source.status, .connected)
+        XCTAssertEqual(adoption.adoptedProviders, [.claude])
+        XCTAssertEqual(adoption.settings.claudeStatusFilePath, home.appendingPathComponent(".claude/projects", isDirectory: true).path)
+    }
+
     func testClaudeLocalJsonlDedupesMessageRequestRowsAndKeepsRicherUsage() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let projectDirectory = directory.appendingPathComponent("projects/example", isDirectory: true)
@@ -822,6 +1059,28 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[0].outputTokens, 20)
     }
 
+    func testClaudeLocalJsonlMergesSplitMessageAndRequestAliases() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let projectDirectory = directory.appendingPathComponent("projects/example", isDirectory: true)
+        try FileManager.default.createDirectory(at: projectDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let jsonlURL = projectDirectory.appendingPathComponent("session.jsonl")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let messageOnly = "{\"timestamp\":\"\(timestamp)\",\"message\":{\"id\":\"msg-bridge\",\"model\":\"claude-sonnet-4\",\"usage\":{\"input_tokens\":10}}}"
+        let requestOnly = "{\"timestamp\":\"\(timestamp)\",\"requestId\":\"req-bridge\",\"message\":{\"model\":\"claude-sonnet-4\",\"usage\":{\"input_tokens\":15}}}"
+        let bridged = "{\"timestamp\":\"\(timestamp)\",\"requestId\":\"req-bridge\",\"message\":{\"id\":\"msg-bridge\",\"model\":\"claude-sonnet-4\",\"usage\":{\"input_tokens\":25,\"output_tokens\":5}}}"
+        try [messageOnly, requestOnly, bridged].joined(separator: "\n").write(to: jsonlURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.claudeStatusFilePath = directory.appendingPathComponent("missing-status.json").path
+        let snapshot = await ClaudeStatuslineAdapter(fileURL: directory.appendingPathComponent("missing-status.json"), fallbackProjectRoots: [projectDirectory]).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.todayTokens, 30)
+        XCTAssertEqual(snapshot.events[0].inputTokens, 25)
+        XCTAssertEqual(snapshot.events[0].outputTokens, 5)
+    }
+
     func testClaudeLocalJsonlTodayCostUsesTodayEventsOnly() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let projectDirectory = directory.appendingPathComponent("projects/example", isDirectory: true)
@@ -844,16 +1103,13 @@ final class TokenPilotServicesTests: XCTestCase {
 
     // MARK: - CodexWebUsageAdapter Tests
 
-    func testCodexWebUsageAdapterLegacyDirectHTTPCompatibilityParsesLimitHintsWithoutLeakingToken() async throws {
+    func testCodexWebUsageAdapterLegacyDirectHTTPIsDisabledEvenWhenAllowedFlagIsSet() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
         let authURL = directory.appendingPathComponent("auth.json")
         try "{\"tokens\":{\"access_token\":\"fixture-access-value\"}}".write(to: authURL, atomically: true, encoding: .utf8)
-        let resetAt = Date(timeIntervalSince1970: 1_800_000_000)
-        let response = """
-        {"plan_type":"plus","rate_limit":{"primary_window":{"used_percent":42,"reset_at":1800000000},"secondary_window":{"used_percent":18,"reset_at":1800000000}}}
-        """.data(using: .utf8)!
-        let client = RecordingCodexWebUsageHTTPClient(data: response)
+        let client = RecordingCodexWebUsageHTTPClient(data: Data(), failIfCalled: true)
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.codexManual.webConnectorEnabled = true
 
@@ -861,17 +1117,15 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(snapshot.provider, .codex)
         XCTAssertEqual(snapshot.dataSource, .webUsage)
-        XCTAssertEqual(snapshot.confidence, .high)
-        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 42)
-        XCTAssertEqual(snapshot.weekly?.usedPercent, 18)
-        XCTAssertEqual(snapshot.fiveHour?.resetAt, resetAt)
-        XCTAssertEqual(snapshot.model, "plus")
-        XCTAssertEqual(snapshot.todayTokens, 0)
+        XCTAssertEqual(snapshot.confidence, .low)
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertNil(snapshot.weekly)
         XCTAssertTrue(snapshot.events.isEmpty)
         let authorizationHeader = await client.authorizationHeader()
         let requestURL = await client.requestURL()
-        XCTAssertEqual(authorizationHeader, "Bearer fixture-access-value")
-        XCTAssertEqual(requestURL?.absoluteString, "https://chatgpt.com/backend-api/wham/usage")
+        XCTAssertNil(authorizationHeader)
+        XCTAssertNil(requestURL)
+        XCTAssertTrue(snapshot.statusMessage?.contains("direct HTTP disabled") == true)
         XCTAssertFalse(snapshot.statusMessage?.contains("fixture-access-value") == true)
     }
 
@@ -896,7 +1150,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.confidence, .low)
         let requestURL = await client.requestURL()
         XCTAssertNil(requestURL)
-        XCTAssertTrue(snapshot.statusMessage?.contains("auth unavailable") == true)
+        XCTAssertTrue(snapshot.statusMessage?.contains("direct HTTP disabled") == true)
     }
 
     func testCodexWebUsageAdapterMissingAccessTokenDoesNotCallHTTP() async throws {
@@ -915,7 +1169,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.confidence, .low)
         let requestURL = await client.requestURL()
         XCTAssertNil(requestURL)
-        XCTAssertTrue(snapshot.statusMessage?.contains("auth unavailable") == true)
+        XCTAssertTrue(snapshot.statusMessage?.contains("direct HTTP disabled") == true)
     }
 
     func testCodexWebUsageAdapterHandlesAuthExpiredWithoutLeakingCredentialMaterial() async throws {
@@ -932,7 +1186,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataSource, .webUsage)
         XCTAssertEqual(snapshot.confidence, .low)
-        XCTAssertTrue(snapshot.statusMessage?.contains("auth expired") == true)
+        XCTAssertTrue(snapshot.statusMessage?.contains("direct HTTP disabled") == true)
         XCTAssertFalse(snapshot.statusMessage?.contains("fixture-expired-value") == true)
     }
 
@@ -951,7 +1205,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(snapshot.dataSource, .webUsage)
         XCTAssertEqual(snapshot.confidence, .low)
-        XCTAssertTrue(snapshot.statusMessage?.contains("rate limits unavailable") == true)
+        XCTAssertTrue(snapshot.statusMessage?.contains("direct HTTP disabled") == true)
         XCTAssertFalse(snapshot.statusMessage?.contains("fixture-malformed-value") == true)
     }
 
@@ -1023,6 +1277,93 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.weekly?.usedPercent, 20)
         XCTAssertEqual(snapshot.fiveHour?.resetAt, ISO8601DateFormatter().date(from: "2027-01-15T00:00:00Z"))
         XCTAssertEqual(snapshot.model, "plus")
+    }
+
+    func testCodexAppServerRateLimitsParseLiveCamelCaseNestedPlanShape() async throws {
+        let referenceNow = Date(timeIntervalSince1970: 1_779_000_000)
+        let fiveHourReset = Date(timeIntervalSince1970: 1_800_000_000)
+        let weeklyReset = Date(timeIntervalSince1970: 1_800_604_800)
+        let response = """
+        {
+            "id":2,
+            "result": {
+                "rateLimits": {
+                    "limitId": "codex",
+                    "planType": "prolite",
+                    "primary": {
+                        "resetsAt": \(Int(fiveHourReset.timeIntervalSince1970)),
+                        "usedPercent": 45,
+                        "windowDurationMins": 300
+                    },
+                    "secondary": {
+                        "resetsAt": \(Int(weeklyReset.timeIntervalSince1970)),
+                        "usedPercent": 50,
+                        "windowDurationMins": 10080
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+        let appServer = StubCodexAppServerRateLimitClient(data: response)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = true
+
+        let snapshot = await CodexWebUsageAdapter(
+            appServerClient: appServer,
+            now: { referenceNow }
+        ).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.provider, .codex)
+        XCTAssertEqual(snapshot.dataSource, .webUsage)
+        XCTAssertEqual(snapshot.confidence, .high)
+        XCTAssertEqual(snapshot.fiveHour?.kind, .fiveHour)
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 45)
+        XCTAssertEqual(snapshot.fiveHour?.resetAt, fiveHourReset)
+        XCTAssertEqual(snapshot.weekly?.kind, .weekly)
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 50)
+        XCTAssertEqual(snapshot.weekly?.resetAt, weeklyReset)
+        XCTAssertEqual(snapshot.model, "prolite")
+    }
+
+    func testCodexAppServerRateLimitsTreatExpiredResetAliasesAsNoHealthyCurrentCapacity() async throws {
+        let frozenNow = Date(timeIntervalSince1970: 1_781_000_000)
+        let expiredPrimaryReset = Date(timeIntervalSince1970: 1_780_420_741)
+        let weeklyReset = Date(timeIntervalSince1970: 1_800_604_800)
+        let response = """
+        {
+            "id":2,
+            "result": {
+                "rateLimits": {
+                    "primary": {
+                        "resetAt": \(Int(expiredPrimaryReset.timeIntervalSince1970)),
+                        "usedPercent": 97,
+                        "windowDurationMins": 300
+                    },
+                    "secondary": {
+                        "resetsAt": \(Int(weeklyReset.timeIntervalSince1970)),
+                        "usedPercent": 50,
+                        "windowDurationMins": 10080
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+        let appServer = StubCodexAppServerRateLimitClient(data: response)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = true
+
+        let snapshot = await CodexWebUsageAdapter(
+            appServerClient: appServer,
+            now: { frozenNow }
+        ).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.provider, .codex)
+        XCTAssertEqual(snapshot.dataSource, .webUsage)
+        XCTAssertEqual(snapshot.confidence, .high)
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.weekly?.kind, .weekly)
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 50)
+        XCTAssertEqual(snapshot.weekly?.resetAt, weeklyReset)
     }
 
     func testCodexAppServerRequestPayloadsUseInitializeAndRateLimitsRead() throws {
@@ -1161,12 +1502,10 @@ final class TokenPilotServicesTests: XCTestCase {
         try """
         {"type":"event_msg","timestamp":"\(timestamp)","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":900000,"output_tokens":100000,"total_tokens":1000000},"model":"gpt-5"}}}
         """.write(to: sessions.appendingPathComponent("rollout.jsonl"), atomically: true, encoding: .utf8)
-        let authURL = directory.appendingPathComponent("auth.json")
-        try "{\"tokens\":{\"access_token\":\"fixture-web-value\"}}".write(to: authURL, atomically: true, encoding: .utf8)
         let response = """
-        {"plan_type":"team","rate_limit":{"primary_window":{"used_percent":7},"secondary_window":{"used_percent":11}}}
+        {"id":2,"result":{"planType":"team","rateLimits":{"primary":{"used_percent":7,"window_minutes":300},"secondary":{"used_percent":11,"window_minutes":10080}}}}
         """.data(using: .utf8)!
-        let webAdapter = CodexWebUsageAdapter(authFileURL: authURL, httpClient: RecordingCodexWebUsageHTTPClient(data: response), appServerClient: nil, allowLegacyDirectHTTP: true)
+        let webAdapter = CodexWebUsageAdapter(appServerClient: StubCodexAppServerRateLimitClient(data: response), allowLegacyDirectHTTP: false)
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.codexManual.webConnectorEnabled = true
 
@@ -1180,6 +1519,28 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     // MARK: - CodexLocalSessionAdapter Tests
+
+    func testDefaultPathResolverIncludesClaudeProjectRootsAndStatuslineDefault() throws {
+        let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let home = sandbox.appendingPathComponent("macos-home", isDirectory: true)
+        let projects = home.appendingPathComponent(".claude/projects", isDirectory: true)
+        let configDir = sandbox.appendingPathComponent("claude-config", isDirectory: true)
+        let configProjects = configDir.appendingPathComponent("projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: projects, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: configProjects, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let resolver = DefaultPathResolver(
+            environment: ["HOME": home.path, "CLAUDE_CONFIG_DIR": configDir.path],
+            currentHomeDirectory: home,
+            additionalHomeDirectories: []
+        )
+        let candidates = resolver.resolveDefaultPaths(for: .claude)
+
+        XCTAssertTrue(candidates.contains { $0.kind == "projects" && $0.path == projects.path && $0.exists && $0.readable })
+        XCTAssertTrue(candidates.contains { $0.kind == "config_projects" && $0.path == configProjects.path && $0.exists && $0.readable })
+        XCTAssertTrue(candidates.contains { $0.kind == "statusline" && $0.path == home.appendingPathComponent("Library/Application Support/TokenPilot/claude-statusline.json").path })
+    }
 
     func testDefaultPathResolverDetectsCodexSessionsInMacOSHomeWhenProcessHomeDiffers() throws {
         let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1383,6 +1744,34 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.model, "gpt-5.5")
     }
 
+    func testCodexLocalSessionAdapterParsesRemainingPercentAndRawCountsFromSessionRateLimits() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sessions = directory.appendingPathComponent("sessions/2026/05/18", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let jsonlURL = sessions.appendingPathComponent("rollout-limit-shapes.jsonl")
+        let now = Date()
+        let timestamp = ISO8601DateFormatter().string(from: now)
+        let reset5h = ISO8601DateFormatter().string(from: now.addingTimeInterval(3_600))
+        let content = """
+        {"type":"event_msg","timestamp":"\(timestamp)","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":20,"output_tokens":5,"total_tokens":25},"rate_limits":{"primary":{"remaining_percent":"37%","resetsAt":"\(reset5h)","window_minutes":300},"secondary":{"used":12,"limit":60,"reset_after_seconds":7200,"window_minutes":10080}}}}}
+        """
+        try content.write(to: jsonlURL, atomically: true, encoding: .utf8)
+
+        let adapter = CodexLocalSessionAdapter(
+            sessionRoots: [directory.appendingPathComponent("sessions")],
+            webUsageAdapter: FixedProviderAdapter(snapshot: ProviderSnapshot(provider: .codex, confidence: .low, statusMessage: "web unavailable"))
+        )
+        let snapshot = await adapter.snapshot(settings: AppSettings(showMockDataWhenDisconnected: false))
+
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 63)
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 20)
+        XCTAssertNotNil(snapshot.fiveHour?.resetAt)
+        XCTAssertNotNil(snapshot.weekly?.resetAt)
+        XCTAssertEqual(snapshot.todayTokens, 25)
+    }
+
     func testDataSourceConnectionServiceMarksCodexLocalLogsConnected() async throws {
         let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let macOSHome = sandbox.appendingPathComponent("macos-home", isDirectory: true)
@@ -1422,8 +1811,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let snapshot = await CodexLocalSessionAdapter(sessionRoots: [directory.appendingPathComponent("sessions")]).snapshot(settings: AppSettings(showMockDataWhenDisconnected: false))
 
-        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 0)
-        XCTAssertNil(snapshot.fiveHour?.resetAt)
+        XCTAssertNil(snapshot.fiveHour)
         XCTAssertEqual(snapshot.weekly?.usedPercent, 32)
         XCTAssertNotNil(snapshot.weekly?.resetAt)
     }
@@ -1571,6 +1959,42 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[0].model, "gemini-2.5-flash")
         XCTAssertEqual(snapshot.events[0].toolTokens, 2)
         XCTAssertEqual(snapshot.events[0].reasoningTokens, 5)
+    }
+
+    func testGeminiAdapterDoesNotDoubleCountMessagesAndAggregateStats() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let chats = directory.appendingPathComponent("project-a/chats", isDirectory: true)
+        try FileManager.default.createDirectory(at: chats, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let jsonURL = chats.appendingPathComponent("conversation-with-stats.json")
+        let content = """
+        {
+          "sessionId": "gemini-session-with-stats",
+          "startTime": "\(timestamp)",
+          "messages": [
+            {
+              "id": "message-a",
+              "timestamp": "\(timestamp)",
+              "type": "gemini",
+              "model": "gemini-2.5-flash",
+              "tokens": {"input": 80, "output": 20, "total": 100}
+            }
+          ],
+          "stats": {
+            "tokens": {"prompt": 80, "candidates": 20, "total_tokens": 100}
+          }
+        }
+        """
+        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = directory.path
+        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.todayTokens, 100)
+        XCTAssertEqual(snapshot.events[0].totalTokens, 100)
     }
 
     func testGeminiAdapterParsesStatsModelsTokenObjects() async throws {
@@ -1872,6 +2296,65 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(result.snapshots.map(\.provider), [.codex])
     }
 
+    func testUsageHistoryStoreDoesNotDoubleCountClaudeStatuslineDailySnapshots() {
+        let suite = "TokenPilotUsageHistoryStatuslineTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UsageHistoryStore(defaults: defaults, key: "usage-statusline-test")
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let firstDate = startOfToday.addingTimeInterval(10)
+        let secondDate = startOfToday.addingTimeInterval(20)
+        let first = UsageEvent(provider: .claude, model: "claude-sonnet-4", timestamp: firstDate, inputTokens: 60, outputTokens: 40, source: "claude-statusline", dataSource: .officialStatusline)
+        let second = UsageEvent(provider: .claude, model: "claude-sonnet-4", timestamp: secondDate, inputTokens: 60, outputTokens: 40, source: "claude-statusline", dataSource: .officialStatusline)
+
+        _ = store.record(snapshots: [ProviderSnapshot(provider: .claude, updatedAt: firstDate, todayTokens: 100, dataSource: .officialStatusline, model: "claude-sonnet-4", events: [first])], enabledProviders: [.claude])
+        _ = store.record(snapshots: [ProviderSnapshot(provider: .claude, updatedAt: secondDate, todayTokens: 100, dataSource: .officialStatusline, model: "claude-sonnet-4", events: [second])], enabledProviders: [.claude])
+
+        let historySnapshots = store.snapshotsForHistory(
+            currentSnapshots: [ProviderSnapshot(provider: .claude, dataSource: .officialStatusline)],
+            events: store.loadEvents(),
+            enabledProviders: [.claude],
+            referenceDate: secondDate
+        )
+        let result = AggregationService().aggregate(snapshots: historySnapshots, period: .today)
+
+        XCTAssertEqual(result.events.count, 1)
+        XCTAssertEqual(result.metrics.totalTokens, 100)
+    }
+
+    func testUsageHistoryStorePrunesPersistedEventsWhenRefreshHasNoIncomingEvents() throws {
+        let suite = "TokenPilotUsageHistoryEmptyRefreshTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "usage-empty-refresh-test"
+        let store = UsageHistoryStore(defaults: defaults, key: key, maxAgeDays: 1)
+        let now = Date()
+        let current = UsageEvent(provider: .claude, timestamp: now.addingTimeInterval(-60), inputTokens: 100, source: "test")
+        let expired = UsageEvent(provider: .claude, timestamp: now.addingTimeInterval(-3 * 24 * 60 * 60), inputTokens: 999, source: "test")
+        defaults.set(try JSONEncoder().encode([expired, current]), forKey: key)
+
+        _ = store.record(snapshots: [], enabledProviders: [.claude])
+
+        XCTAssertEqual(store.loadEvents().map(\.totalTokens), [100])
+    }
+
+    func testLimitHistoryStorePrunesPersistedSamplesWhenRefreshHasNoIncomingSamples() throws {
+        let suite = "TokenPilotLimitHistoryEmptyRefreshTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "limit-empty-refresh-test"
+        let store = LimitHistoryStore(defaults: defaults, key: key, maxAgeDays: 1)
+        let now = Date()
+        let current = ProviderLimitSample(provider: .claude, timestamp: now.addingTimeInterval(-60), window: .fiveHour, usedPercent: 30, remainingPercent: 70, source: "test")
+        let expired = ProviderLimitSample(provider: .claude, timestamp: now.addingTimeInterval(-3 * 24 * 60 * 60), window: .fiveHour, usedPercent: 90, remainingPercent: 10, source: "test")
+        defaults.set(try JSONEncoder().encode([expired, current]), forKey: key)
+
+        _ = store.record(snapshots: [], enabledProviders: [.claude], referenceDate: now)
+
+        XCTAssertEqual(store.loadSamples().map(\.usedPercent), [30])
+    }
+
     func testRefreshPolicyRequestsRefreshForUsageRelevantSettings() {
         var previous = AppSettings()
         var next = previous
@@ -1909,7 +2392,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let service = MenuBarStatusService()
 
         XCTAssertEqual(service.selectedSnapshot(from: snapshots, settings: settings)?.provider, .codex)
-        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64 · W 56 추정")
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64% · W 56% 추정")
     }
 
     func testMenuBarStatusServiceShowsRemainingPercentagesForFiveHourAndWeekly() {
@@ -1922,7 +2405,7 @@ final class TokenPilotServicesTests: XCTestCase {
         ]
 
         let title = service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
-        XCTAssertEqual(title, "5h 12 · W 38")
+        XCTAssertEqual(title, "5h 12% · W 38%")
         XCTAssertFalse(title.contains("12K"))
     }
 
@@ -2011,16 +2494,20 @@ final class TokenPilotServicesTests: XCTestCase {
 
         // MARK: - .thisMonth period
         let monthResult = AggregationService().aggregate(snapshots: snapshots, period: .thisMonth)
-        // Should include all events that fall in the current month
-        // tenDaysAgoEvent is in the current month as long as today ≥ the 10th
-        let monthTotal = todayEvent.totalTokens + yesterdayEvent.totalTokens + sixDaysAgoEvent.totalTokens + tenDaysAgoEvent.totalTokens
+        // Should include all events that actually fall in the current month. This keeps the
+        // test deterministic at the beginning of a month, when 6/10-days-ago can be previous month.
+        let monthEvents = [todayEvent, yesterdayEvent, sixDaysAgoEvent, tenDaysAgoEvent].filter {
+            calendar.isDate($0.timestamp, equalTo: now, toGranularity: .month)
+        }
+        let monthTotal = monthEvents.reduce(0) { $0 + $1.totalTokens }
         XCTAssertEqual(monthResult.metrics.totalTokens, monthTotal, ".thisMonth should count all events in the month")
         XCTAssertEqual(monthResult.metrics.inputTokens, monthTotal)
-        XCTAssertEqual(monthResult.events.count, 4, "Should have all 4 events in this month (assuming 10 days ago is same month)")
+        XCTAssertEqual(monthResult.events.count, monthEvents.count, "Should have only events from the current month")
 
         // Provider share for thisMonth
         if let claudeShare = monthResult.providerShare.first(where: { $0.provider == .claude }) {
-            XCTAssertEqual(claudeShare.tokens, 500) // 100 (today) + 400 (10 days ago)
+            let claudeMonthTotal = monthEvents.filter { $0.provider == .claude }.reduce(0) { $0 + $1.totalTokens }
+            XCTAssertEqual(claudeShare.tokens, claudeMonthTotal)
         }
 
         // Verify period is correctly set on result

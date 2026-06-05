@@ -185,8 +185,23 @@ public final class UsageStore: @unchecked Sendable {
     private let adapters: [any ProviderAdapter]
     private let mockDataService = MockDataService()
 
-    public init(adapters: [any ProviderAdapter] = [ClaudeStatuslineAdapter(), GeminiTelemetryAdapter(), CodexLocalSessionAdapter()]) {
-        self.adapters = adapters
+    public init(adapters: [any ProviderAdapter]? = nil, pathResolver: DefaultPathResolver = DefaultPathResolver()) {
+        self.adapters = adapters ?? Self.defaultAdapters(pathResolver: pathResolver)
+    }
+
+    private static func defaultAdapters(pathResolver: DefaultPathResolver) -> [any ProviderAdapter] {
+        let claudeProjectRoots = pathResolver.resolveDefaultPaths(for: .claude)
+            .filter { ["projects", "config_projects"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let codexSessionRoots = pathResolver.resolveDefaultPaths(for: .codex)
+            .filter { ["sessions", "archived_sessions"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+
+        return [
+            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
+            GeminiTelemetryAdapter(),
+            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots)
+        ]
     }
 
     public func refresh(settings: AppSettings) async -> Result {
@@ -570,16 +585,16 @@ public enum DiscordError: LocalizedError, Equatable {
     }
 }
 
-public final class KeychainService: @unchecked Sendable {
-    private let service: String
+protocol KeychainBackend: Sendable {
+    func saveSecret(_ secret: String, service: String, account: String) throws
+    func readSecret(service: String, account: String) throws -> String?
+    func deleteSecret(service: String, account: String, ignoreMissing: Bool) throws
+}
 
-    public init(service: String = "com.tokenpilot.macos") {
-        self.service = service
-    }
-
-    public func saveSecret(_ secret: String, account: String) throws {
+private struct SecurityKeychainBackend: KeychainBackend {
+    func saveSecret(_ secret: String, service: String, account: String) throws {
         let data = Data(secret.utf8)
-        try deleteSecret(account: account, ignoreMissing: true)
+        try deleteSecret(service: service, account: account, ignoreMissing: true)
         #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -593,7 +608,7 @@ public final class KeychainService: @unchecked Sendable {
         #endif
     }
 
-    public func readSecret(account: String) throws -> String? {
+    func readSecret(service: String, account: String) throws -> String? {
         #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -613,11 +628,7 @@ public final class KeychainService: @unchecked Sendable {
         #endif
     }
 
-    public func deleteSecret(account: String) throws {
-        try deleteSecret(account: account, ignoreMissing: false)
-    }
-
-    private func deleteSecret(account: String, ignoreMissing: Bool) throws {
+    func deleteSecret(service: String, account: String, ignoreMissing: Bool) throws {
         #if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -625,18 +636,49 @@ public final class KeychainService: @unchecked Sendable {
             kSecAttrAccount as String: account
         ]
         let status = SecItemDelete(query as CFDictionary)
-        if status == errSecItemNotFound { return }
+        if status == errSecItemNotFound {
+            if ignoreMissing { return }
+            throw KeychainError.itemNotFound
+        }
         guard status == errSecSuccess else { throw KeychainError.unhandledStatus(status) }
         #endif
     }
 }
 
+public final class KeychainService: @unchecked Sendable {
+    private let service: String
+    private let backend: any KeychainBackend
+
+    public convenience init(service: String = "com.tokenpilot.macos") {
+        self.init(service: service, backend: SecurityKeychainBackend())
+    }
+
+    init(service: String, backend: any KeychainBackend) {
+        self.service = service
+        self.backend = backend
+    }
+
+    public func saveSecret(_ secret: String, account: String) throws {
+        try backend.saveSecret(secret, service: service, account: account)
+    }
+
+    public func readSecret(account: String) throws -> String? {
+        try backend.readSecret(service: service, account: account)
+    }
+
+    public func deleteSecret(account: String) throws {
+        try backend.deleteSecret(service: service, account: account, ignoreMissing: false)
+    }
+}
+
 public enum KeychainError: Error, Equatable, LocalizedError {
+    case itemNotFound
     case unhandledStatus(OSStatus)
     case invalidData
 
     public var errorDescription: String? {
         switch self {
+        case .itemNotFound: return "Requested keychain item was not found."
         case .unhandledStatus(let status): return "Keychain returned status \(status)."
         case .invalidData: return "Keychain item contained invalid data."
         }
@@ -672,13 +714,16 @@ public enum TokenPilotFormatters {
         return "\(minutes)m"
     }
 
-    public static func clock(_ date: Date?) -> String {
-        guard let date else { return "—" }
+    private static let clockFormatter = OSAllocatedUnfairLock(initialState: {
         let formatter = DateFormatter()
         formatter.dateStyle = .none
         formatter.timeStyle = .short
-        return formatter.string(from: date)
+        return formatter
+    }())
+
+    public static func clock(_ date: Date?) -> String {
+        guard let date else { return "—" }
+        return clockFormatter.withLock { $0.string(from: date) }
     }
 }
-
 

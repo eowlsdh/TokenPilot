@@ -88,12 +88,20 @@ final class TokenPilotViewModel: ObservableObject {
         let loaded = settingsStore.load()
         self.settings = loaded
         self.challengeTargetTokens = loaded.challengeTargetTokens
-        self.hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
-        self.hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
+        self.hasSavedTelegramToken = false
+        self.hasSavedDiscordWebhook = false
         startAutoRefresh()
         Task {
             await updatePermissionStatus()
             await refresh(reason: .automaticTimer)
+            refreshStoredCredentialPresence()
+        }
+    }
+
+    func refreshStoredCredentialPresence() {
+        Task {
+            hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
+            hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
         }
     }
 
@@ -228,6 +236,8 @@ final class TokenPilotViewModel: ObservableObject {
         }
         if let keychainError = error as? KeychainError {
             switch keychainError {
+            case .itemNotFound:
+                return t("No saved credential found in Keychain.")
             case .invalidData:
                 return t("Keychain item contained invalid data.")
             case .unhandledStatus(let status):
@@ -414,14 +424,25 @@ final class TokenPilotViewModel: ObservableObject {
 
     func sendTestNotification() async {
         do {
+            let hasStoredTelegramToken = hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasStoredDiscordWebhook = hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            var sentChannelCount = 0
+
             if settings.macOSNotificationsEnabled {
                 try await localNotificationService.send(title: t("TokenPilot"), body: t("✅ TokenPilot test alert. macOS notifications are connected."))
+                sentChannelCount += 1
             }
-            if settings.telegramNotificationsEnabled || settings.telegram.isEnabled {
+            if settings.globalNotificationsEnabled && settings.telegramNotificationsEnabled && settings.telegram.isEnabled && hasStoredTelegramToken {
                 try await sendTelegram(text: t("✅ TokenPilot test alert. Telegram notifications are connected."))
+                sentChannelCount += 1
             }
-            if settings.discordNotificationsEnabled || settings.discord.isEnabled {
+            if settings.globalNotificationsEnabled && settings.discordNotificationsEnabled && settings.discord.isEnabled && hasStoredDiscordWebhook {
                 try await sendDiscord(text: t("✅ TokenPilot test alert. Discord notifications are connected."))
+                sentChannelCount += 1
+            }
+            guard sentChannelCount > 0 else {
+                bannerMessage = t("No notification channel is enabled or configured.")
+                return
             }
             bannerMessage = t("Test notification sent.")
         } catch {
@@ -432,9 +453,9 @@ final class TokenPilotViewModel: ObservableObject {
     func chooseClaudeStatusFile() {
         chooseLocalSource(
             provider: .claude,
-            prompt: t("Choose Claude status JSON"),
-            message: t("Choose the Claude statusline JSON file TokenPilot should read."),
-            canChooseDirectories: false
+            prompt: t("Choose Claude source"),
+            message: t("Choose Claude statusline JSON or a .claude/projects folder."),
+            canChooseDirectories: true
         ) { [weak self] url, bookmarkData in
             guard let self else { return }
             var nextSettings = self.settings
@@ -497,8 +518,20 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func checkAllConnections() async {
-        applyDataSources(await connectionService.checkAll(settings: settings))
-        bannerMessage = t("Connection check complete.")
+        let initialSources = await connectionService.checkAll(settings: settings)
+        let adoption = connectionService.applyingPreferredDetectedSources(settings: settings, sources: initialSources)
+        if adoption.settings != settings {
+            settings = adoption.settings
+            let adoptedNames = adoption.adoptedProviders.map { t($0.displayName) }.joined(separator: ", ")
+            applyDataSources(await connectionService.checkAll(settings: adoption.settings))
+            await refresh(reason: .settings)
+            bannerMessage = adoptedNames.isEmpty
+                ? t("Connection check complete.")
+                : String(format: t("Auto-detected sources: %@"), adoptedNames)
+        } else {
+            applyDataSources(initialSources)
+            bannerMessage = t("Connection check complete.")
+        }
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {
@@ -647,6 +680,8 @@ final class TokenPilotViewModel: ObservableObject {
             try keychain.deleteSecret(account: Self.telegramTokenAccount)
             telegramTokenInput = ""
             hasSavedTelegramToken = false
+            settings.telegram.isEnabled = false
+            settings.telegramNotificationsEnabled = false
             settings.telegram.connectionStatus = "Not configured"
             bannerMessage = t("Telegram token deleted.")
         } catch {
@@ -756,15 +791,20 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func deliver(_ events: [AlertEvent]) async {
         guard !events.isEmpty else { return }
+        let hasStoredTelegramToken = hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasStoredDiscordWebhook = hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        guard settings.globalNotificationsEnabled else {
+            return
+        }
         for event in events {
             guard let rule = settings.alertRules.first(where: { $0.provider == event.provider && $0.window == event.window }) else { continue }
             if settings.macOSNotificationsEnabled && rule.macOSEnabled {
                 try? await localNotificationService.send(title: event.title, body: event.body)
             }
-            if settings.telegramNotificationsEnabled && settings.telegram.isEnabled && rule.telegramEnabled {
+            if settings.telegramNotificationsEnabled && settings.telegram.isEnabled && rule.telegramEnabled && hasStoredTelegramToken {
                 try? await sendTelegram(text: event.body)
             }
-            if settings.discordNotificationsEnabled && settings.discord.isEnabled && rule.discordEnabled {
+            if settings.discordNotificationsEnabled && settings.discord.isEnabled && rule.discordEnabled && hasStoredDiscordWebhook {
                 try? await sendDiscord(text: event.body)
             }
         }

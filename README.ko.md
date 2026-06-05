@@ -2,13 +2,16 @@
 
 **TokenPilot**은 Claude Code, Codex, Gemini CLI의 사용량 메타데이터를 local-first 방식으로 모아 macOS 메뉴바에서 5시간/주간/일일 한도, 오늘 사용량, 위험도를 빠르게 확인하는 유틸리티입니다.
 
-- **상태**: MVP 코어 구현 완료, 자동화 빌드/테스트/앱 smoke 게이트 통과
-- **최근 문서 갱신**: 2026-05-28 KST — 코드 리뷰/개선 완료, 문서 정합성 동기화
+- **상태**: public alpha 준비 중, 로컬 빌드/테스트/앱 bundle 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
 - **Swift Package / 실행 타깃 이름**: `TokenMonitor`
 - **앱 번들 산출물**: `build/TokenPilot.app`
 
 > 핵심 원칙: TokenPilot은 사용량 메타데이터 중심으로 동작합니다. 프롬프트/응답 본문, 브라우저 쿠키, 임의 Keychain 항목은 읽지 않습니다. Codex 웹 사용량은 기본 OFF인 opt-in connector로만 분리되어 있습니다.
+>
+> TokenPilot은 OpenAI, Anthropic, Google과 제휴하거나 공식 인증을 받은 제품이 아닙니다.
+
+![TokenPilot 메뉴바 숫자, Overview, Settings privacy 미리보기](docs/assets/readme-preview.svg)
 
 ---
 
@@ -123,10 +126,10 @@ TokenPilot/
 ├── project.yml
 ├── build.sh
 ├── README.md
-├── VERIFICATION_REPORT.md
 ├── APP_LAUNCH_GUIDE.md
 ├── SETTINGS_GUIDE.md
-├── docs/TokenPilot-visual-qa-checklist.md
+├── SECURITY.md
+├── docs/PRIVACY.md
 ├── Resources/
 ├── Sources/
 │   ├── TokenApp/
@@ -134,12 +137,7 @@ TokenPilot/
 └── Tests/
 ```
 
-현재 코드 규모(2026-05-28 기준):
-
-- Swift 파일: 16개
-- 테스트 파일: 2개
-- 테스트 메서드: 124개
-- Markdown 문서: 16개
+공개 저장소에는 사용자 설치/실행/기여/보안 보고에 필요한 문서만 남기는 것을 목표로 합니다. 내부 감사 리포트, closeout, 작업 로그, store metadata draft는 public repo 첫인상을 흐릴 수 있어 배포 전 제거 대상입니다.
 
 ---
 
@@ -188,7 +186,7 @@ xcodebuild \
 
 ```bash
 source .toolchain/env.sh
-./build.sh
+make bundle
 ```
 
 생성 위치:
@@ -256,21 +254,17 @@ TokenPilot이 credential에 대해 하지 않는 것:
 
 ## 현재 검증 상태
 
-최신 상세 결과는 [`VERIFICATION_REPORT.md`](VERIFICATION_REPORT.md)를 보세요.
+최근 로컬 검증 기준:
 
-2026-05-28 기준 자동화 검증 결과:
-
-- `swift test`: 124 tests / 0 failures
-- `swift build -Xswiftc -warnings-as-errors`: PASS
-- `xcodegen generate`: PASS
-- `xcodebuild ... CODE_SIGNING_ALLOWED=NO build`: PASS
-- `./build.sh`: PASS
-- `build/TokenPilot.app` plist/process smoke: PASS
-- secret-like scan: 0 findings
+```text
+swift test                                  PASS — 149 tests
+swift build -Xswiftc -warnings-as-errors   PASS
+make bundle                                PASS
+```
 
 수동/환경 의존 QA:
 
-- 실제 메뉴바 시각 확인 및 multi-language visual QA는 [`docs/TokenPilot-visual-qa-checklist.md`](docs/TokenPilot-visual-qa-checklist.md)를 따릅니다.
+- 실제 메뉴바 숫자, Overview provider row, Settings privacy 문구는 앱 실행 상태에서 수동 확인합니다.
 - 실제 Telegram/Discord 발송, 실제 Codex Limit Hints Connector 네트워크 요청(비공식 한도 힌트)은 사용자 credential/명시 승인 없이는 수행하지 않습니다.
 
 ---
@@ -281,7 +275,7 @@ TokenPilot이 credential에 대해 하지 않는 것:
    - TokenPilot은 macOS SwiftUI 메뉴바 앱이며 repo에 HTML/JS 웹앱 서버가 없습니다. 브라우저 smoke는 문서/정적 표면 외 앱 기능을 검증하지 못하므로 앱 launch/plist smoke로 대체합니다.
 
 2. **Codex Limit Hints Connector는 opt-in / unofficial**
-   - 정확한 Codex web quota에 가까운 값을 얻기 위한 connector는 기본 OFF입니다.
+   - Codex CLI app-server가 제공하는 비공식 한도 힌트를 보기 위한 connector는 기본 OFF입니다.
    - endpoint 변경, 인증 만료, 응답 형식 변경 시 low-confidence 상태로 떨어집니다.
 
 3. **Codex local JSONL은 official quota가 아님**

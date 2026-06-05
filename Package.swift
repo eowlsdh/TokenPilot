@@ -14,18 +14,21 @@ let package = Package(
         .target(
             name: "TokenCore",
             dependencies: [],
-            path: "Sources/TokenCore"
+            path: "Sources/TokenCore",
+            exclude: ["AGENTS.md"]
         ),
         .executableTarget(
             name: "TokenApp",
             dependencies: ["TokenCore"],
             path: "Sources/TokenApp",
+            exclude: ["AGENTS.md"],
             resources: [.process("Resources")]
         ),
         .testTarget(
             name: "TokenTests",
             dependencies: ["TokenCore"],
-            path: "Tests"
+            path: "Tests",
+            exclude: ["AGENTS.md"]
         )
     ]
 )

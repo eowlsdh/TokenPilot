@@ -17,6 +17,9 @@ struct SettingsScreen: View {
             }
             .padding(.bottom, 16)
         }
+        .onAppear {
+            model.refreshStoredCredentialPresence()
+        }
     }
 
     private var dataSources: some View {
@@ -32,7 +35,7 @@ struct SettingsScreen: View {
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                     HStack(spacing: 8) {
-                        Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
+                        Button(model.t("Auto-detect & apply sources")) { Task { await model.checkAllConnections() } }
                             .buttonStyle(.bordered)
                         Spacer(minLength: 0)
                         Text(model.t("Scans only local default paths and user-selected files."))

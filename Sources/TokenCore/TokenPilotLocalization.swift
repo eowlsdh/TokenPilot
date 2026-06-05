@@ -286,6 +286,8 @@ public enum TokenPilotLocalizer {
         "Discord webhook URL is invalid.": "Discord webhook URL is invalid.",
         "Discord request failed.": "Discord request failed.",
         "Keychain item contained invalid data.": "Keychain item contained invalid data.",
+        "Keychain item not found.": "Keychain item not found.",
+        "No notification channel is enabled or configured.": "No notification channel is enabled or configured.",
         "Keychain.status.error": "Keychain returned status %d."
     ]
 
@@ -842,6 +844,7 @@ public enum TokenPilotLocalizer {
         "Token saved securely": "토큰이 안전하게 저장됨",
         "No usage data": "사용량 데이터 없음",
         "Test notification sent.": "테스트 알림이 전송되었습니다.",
+        "No notification channel is enabled or configured.": "켜져 있거나 설정 완료된 알림 채널이 없습니다.",
         "Copied.": "복사됨.",
         "Telegram token saved in TokenPilot Keychain item.": "TokenPilot 키체인 항목에 봇 토큰이 저장되었습니다.",
         "Telegram token deleted.": "텔레그램 토큰이 삭제되었습니다.",
