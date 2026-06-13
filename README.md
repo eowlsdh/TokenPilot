@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Tests](https://img.shields.io/badge/Tests-170%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-171%20passing-brightgreen.svg)](#testing)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
 > **A local-first macOS menu bar monitor for AI coding quota and usage.**
@@ -11,9 +11,9 @@
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, or DeepSeek.
 
-[한국어 README](README.ko.md) · App UI fallback locales: 日本語 / 简体中文
+[한국어 README](README.ko.md) · [日本語 README](README.ja.md) · [简体中文 README](README.zh-CN.md)
 
-![TokenPilot screenshot showing remaining quota overview and privacy-first settings](docs/assets/readme-screenshot.png)
+![TokenPilot screenshot showing remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
 
 ---
 
@@ -122,9 +122,9 @@ DS $12.34                # selected DeepSeek topped-up balance
 
 The README screenshot is a release-facing composite of the current app surfaces:
 
-- Menu bar: compact remaining quota.
-- Overview: remaining-first quota and provider rows only; no duplicate 7-day chart/provider-share block.
-- Settings: provider diagnostics and privacy boundaries.
+- Menu bar: compact remaining quota plus selected DeepSeek balance (`DS $12.34`).
+- Overview: remaining-first quota and provider rows including DeepSeek topped-up balance; no duplicate 7-day chart/provider-share block.
+- Settings: provider diagnostics, DeepSeek Keychain setup, topped-up balance, low-balance alert, and privacy boundaries.
 
 The 7-day chart and provider share are intentionally kept in **History**, not Overview.
 
@@ -191,7 +191,7 @@ Tests/
 
 ```bash
 swift test
-# Executed 170 tests, with 0 failures
+# Executed 171 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings

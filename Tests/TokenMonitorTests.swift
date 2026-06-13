@@ -499,9 +499,26 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(readme.contains("Settings → Provider Diagnostics"))
         XCTAssertTrue(readme.contains("docs/assets/readme-screenshot.png"))
         XCTAssertTrue(readme.contains("Release copy must stay evidence-bound"))
-        XCTAssertTrue(readme.contains("# Executed 170 tests, with 0 failures"))
+        XCTAssertTrue(readme.contains("# Executed 171 tests, with 0 failures"))
         XCTAssertTrue(readme.contains("do not claim notarization"))
         XCTAssertFalse(readme.contains("notarized and App Store-ready"))
+        XCTAssertTrue(readme.contains("DeepSeek balance"))
+        XCTAssertTrue(readme.contains("DS $12.34"))
+        XCTAssertTrue(readme.contains("README.ja.md"))
+        XCTAssertTrue(readme.contains("README.zh-CN.md"))
+    }
+
+    func testLocalizedReadmesDocumentDeepSeekAndScreenshot() throws {
+        let rootURL = try Self.projectRootURL()
+        let readmePaths = ["README.ko.md", "README.ja.md", "README.zh-CN.md"]
+
+        for path in readmePaths {
+            let readme = try String(contentsOf: rootURL.appendingPathComponent(path))
+            XCTAssertTrue(readme.contains("docs/assets/readme-screenshot.png"), "\(path) should show the README screenshot.")
+            XCTAssertTrue(readme.contains("DeepSeek"), "\(path) should document DeepSeek.")
+            XCTAssertTrue(readme.contains("topped_up_balance"), "\(path) should name the official DeepSeek balance field.")
+            XCTAssertTrue(readme.contains("/user/balance"), "\(path) should document the DeepSeek balance endpoint.")
+        }
     }
 
     func testPublicReleaseGitIgnoreCoversSecretAndCredentialFiles() throws {

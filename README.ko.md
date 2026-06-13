@@ -11,7 +11,8 @@
 >
 > TokenPilot은 OpenAI, Anthropic, Google, DeepSeek와 제휴하거나 공식 인증을 받은 제품이 아닙니다.
 
-![TokenPilot 남은 한도 중심 Overview와 privacy-first Settings 스크린샷](docs/assets/readme-screenshot.png)
+![TokenPilot 남은 한도 중심 Overview, DeepSeek balance, privacy-first Settings 스크린샷](docs/assets/readme-screenshot.png)
+[English](README.md) · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
 
 ---
 
@@ -160,7 +161,7 @@ TokenPilot/
 
 ```bash
 swift test
-# Executed 170 tests, with 0 failures
+# Executed 171 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings
@@ -183,7 +184,7 @@ open build/TokenPilot.app
 최근 로컬 검증 기준:
 
 ```text
-swift test                                  PASS — 170 tests
+swift test                                  PASS — 171 tests
 swift build -Xswiftc -warnings-as-errors   PASS
 make bundle / make verify                  PASS
 ```
