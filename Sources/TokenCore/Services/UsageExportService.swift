@@ -37,11 +37,12 @@ public final class UsageExportService {
         format: UsageExportFormat,
         generatedAt: Date = Date()
     ) throws -> Data {
+        let exportUsage = sanitizedUsageForExport(usage)
         switch format {
         case .json:
-            return try makeJSONData(usage: usage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt)
+            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt)
         case .csv:
-            return makeCSVData(usage: usage)
+            return makeCSVData(usage: exportUsage)
         }
     }
 
@@ -51,20 +52,29 @@ public final class UsageExportService {
         dataMode: String,
         generatedAt: Date = Date()
     ) throws -> Data {
+        let exportUsage = sanitizedUsageForExport(usage)
         let payload = UsageExportPayload(
             generatedAt: generatedAt,
             period: usage.period,
             dataMode: dataMode,
-            metrics: usage.metrics,
-            sevenDayBars: usage.sevenDayBars,
-            providerShare: usage.providerShare,
+            metrics: exportUsage.metrics,
+            sevenDayBars: exportUsage.sevenDayBars,
+            providerShare: exportUsage.providerShare,
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
-            events: usage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:))
+            events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:))
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(payload)
+    }
+
+    private func sanitizedUsageForExport(_ usage: AggregatedUsage) -> AggregatedUsage {
+        let events = usage.events.filter(\.isWebQuotaComparable)
+        let snapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(provider: provider, events: events.filter { $0.provider == provider })
+        }
+        return AggregationService().aggregate(snapshots: snapshots, period: usage.period)
     }
 
     public func makeCSVString(usage: AggregatedUsage) -> String {

@@ -6,6 +6,28 @@ import Darwin
 import Glibc
 #endif
 
+private func tokenPilotBoundedTextContents(of file: URL, maxBytes: UInt64 = 4 * 1_024 * 1_024) throws -> String {
+    let handle = try FileHandle(forReadingFrom: file)
+    defer { try? handle.close() }
+
+    let size = tokenPilotFileByteSize(file)
+    let start = size > maxBytes ? size - maxBytes : 0
+    if start > 0 {
+        try handle.seek(toOffset: start)
+    }
+    let data = try handle.readToEnd() ?? Data()
+    let text = String(data: data, encoding: .utf8) ?? ""
+    guard start > 0, let newlineIndex = text.firstIndex(of: "\n") else {
+        return text
+    }
+    return String(text[text.index(after: newlineIndex)...])
+}
+
+private func tokenPilotFileByteSize(_ file: URL) -> UInt64 {
+    guard let size = try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? NSNumber else { return 0 }
+    return size.uint64Value
+}
+
 public protocol CodexWebUsageHTTPClient: Sendable {
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
 }
@@ -399,7 +421,7 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         var eventsByCanonicalKey: [String: UsageEvent] = [:]
         var canonicalKeyByAlias: [String: String] = [:]
         for file in files where !isForbiddenCredentialPath(file) {
-            guard let content = try? String(contentsOf: file, encoding: .utf8) else { continue }
+            guard let content = try? tokenPilotBoundedTextContents(of: file) else { continue }
             let fileDate = fileModificationDate(file) ?? Date()
             for line in content.components(separatedBy: .newlines) {
                 guard let json = jsonObject(fromLine: line), let parsed = parseClaudeJSONLEvent(json, fallbackTimestamp: fileDate) else { continue }
@@ -555,7 +577,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         do {
             let files = geminiInputFiles(from: readableLogURL)
             let events = try files.flatMap { file -> [UsageEvent] in
-                let content = try String(contentsOf: file, encoding: .utf8)
+                let content = try tokenPilotBoundedTextContents(of: file)
                 return parseEvents(from: content, fileURL: file)
             }
 

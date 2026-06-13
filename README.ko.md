@@ -2,10 +2,10 @@
 
 **TokenPilot**은 Claude Code, Codex, Gemini CLI의 사용량 메타데이터를 local-first 방식으로 모아 macOS 메뉴바에서 5시간/주간/일일 한도, 오늘 사용량, 위험도를 빠르게 확인하는 유틸리티입니다.
 
-- **상태**: public alpha 준비 중, 로컬 빌드/테스트/앱 bundle 검증 경로 유지
+- **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
 - **Swift Package / 실행 타깃 이름**: `TokenMonitor`
-- **앱 번들 산출물**: `build/TokenPilot.app`
+- **앱 번들 산출물**: `build/TokenPilot.app`, `build/TokenPilot.zip`
 
 > 핵심 원칙: TokenPilot은 사용량 메타데이터 중심으로 동작합니다. 프롬프트/응답 본문, 브라우저 쿠키, 임의 Keychain 항목은 읽지 않습니다. Codex 웹 사용량은 기본 OFF인 opt-in connector로만 분리되어 있습니다.
 >
@@ -31,7 +31,7 @@
 - 화면 구성
   - **Overview**: 오늘 토큰, 최고 위험도, Best tool, provider 카드, Daily Challenge, 알림 상태
   - **History**: Today / Last 7 days / This month 기간별 집계, 7일 bar chart, provider share, JSON/CSV export
-  - **Settings**: Data Sources, Notifications, Telegram, Discord, Language, Setup Guide, Privacy
+  - **Settings**: Provider Diagnostics, Data Sources, Notifications, Telegram, Discord, Language, Setup Guide, Privacy
 
 ### 2. Provider 지원
 
@@ -193,6 +193,7 @@ make bundle
 
 ```text
 build/TokenPilot.app
+build/TokenPilot.zip
 ```
 
 실행:
@@ -257,7 +258,7 @@ TokenPilot이 credential에 대해 하지 않는 것:
 최근 로컬 검증 기준:
 
 ```text
-swift test                                  PASS — 149 tests
+swift test                                  PASS — 155 tests
 swift build -Xswiftc -warnings-as-errors   PASS
 make bundle                                PASS
 ```
@@ -279,7 +280,7 @@ make bundle                                PASS
    - endpoint 변경, 인증 만료, 응답 형식 변경 시 low-confidence 상태로 떨어집니다.
 
 3. **Codex local JSONL은 official quota가 아님**
-   - local activity/history/export는 web-comparable totals에서 제외합니다.
+   - 앱 내부 통계/History에는 실제 로컬 activity 토큰을 포함하되, official web quota로 주장하지 않고 export에서는 보수적으로 sanitizing합니다.
 
 4. **Security-scoped bookmark flow는 별도 작업**
    - 앱 sandbox/distribution 단계에서는 파일/folder picker와 bookmark persistence 검증이 필요합니다.

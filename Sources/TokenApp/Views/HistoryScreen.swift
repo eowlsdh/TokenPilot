@@ -167,6 +167,11 @@ struct HistoryEmptyState: View {
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Button(model.t("Open Provider Diagnostics")) {
+                        model.selectedScreen = .settings
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(TokenPilotDesign.calm)
                 }
             }
         }

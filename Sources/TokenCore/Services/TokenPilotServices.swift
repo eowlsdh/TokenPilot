@@ -64,6 +64,10 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)
+        if !copy.codexManual.pastedStatusOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            copy.codexManual = CodexStatusParser.safeParse(copy.codexManual.pastedStatusOutput, previous: copy.codexManual)
+            copy.codexManual.pastedStatusOutput = ""
+        }
         copy.normalizeProviderEnablement()
         return copy
     }

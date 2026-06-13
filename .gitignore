@@ -41,6 +41,12 @@ DerivedData/
 *.log
 state.json
 .omo/
+.gjc/
+*.xcresult
+*.crash
+*.ips
+TokenPilot-usage-*.json
+TokenPilot-usage-*.csv
 
 # Secrets and local credentials
 .env
@@ -55,3 +61,24 @@ auth.json
 credentials.json
 token.json
 cookies.txt
+*.cer
+*.csr
+*.certSigningRequest
+*.der
+*.pfx
+*.mobileprovision
+*.provisionprofile
+*.jks
+*.keystore
+*.asc
+*.gpg
+*.age
+*.kdbx
+id_rsa
+id_ed25519
+known_hosts
+codex-auth.json
+claude-statusline.json
+telemetry.log
+sessions/
+archived_sessions/

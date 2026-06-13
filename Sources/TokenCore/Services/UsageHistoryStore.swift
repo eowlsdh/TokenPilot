@@ -30,7 +30,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
                 .filter { enabledProviders.contains($0.provider) }
                 .flatMap { snapshot -> [UsageEvent] in
                     let explicitEvents = snapshot.events.filter { event in
-                        enabledProviders.contains(event.provider) && event.isWebQuotaComparable && (event.totalTokens > 0 || event.requestCount > 0)
+                        enabledProviders.contains(event.provider) && (event.totalTokens > 0 || event.requestCount > 0)
                     }
                     if !explicitEvents.isEmpty { return explicitEvents }
                     guard snapshot.isWebQuotaComparable else { return [] }
@@ -87,12 +87,12 @@ public final class UsageHistoryStore: @unchecked Sendable {
         enabledProviders: Set<Provider>,
         referenceDate: Date = Date()
     ) -> [ProviderSnapshot] {
-        let eventsByProvider = Dictionary(grouping: events.filter { enabledProviders.contains($0.provider) && $0.isWebQuotaComparable }, by: \.provider)
+        let eventsByProvider = Dictionary(grouping: events.filter { enabledProviders.contains($0.provider) }, by: \.provider)
         return currentSnapshots
             .filter { enabledProviders.contains($0.provider) }
             .map { snapshot in
             var copy = snapshot
-            let providerEvents = snapshot.isWebQuotaComparable ? (eventsByProvider[snapshot.provider] ?? []) : []
+            let providerEvents = eventsByProvider[snapshot.provider] ?? []
             copy.events = providerEvents
             copy.todayTokens = todayTokens(in: providerEvents, referenceDate: referenceDate)
             return copy
@@ -106,7 +106,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
               let decoded = try? decoder.decode([UsageEvent].self, from: data) else {
             return []
         }
-        return decoded.filter(\.isWebQuotaComparable)
+        return decoded
     }
 
     private func saveUnlocked(_ events: [UsageEvent]) {

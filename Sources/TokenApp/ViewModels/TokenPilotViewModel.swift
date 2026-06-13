@@ -189,7 +189,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private var enabledSnapshots: [ProviderSnapshot] {
-        snapshots.filter { settings.isProviderEnabled($0.provider) }
+        menuBarStatusService.presentationSnapshots(from: snapshots, settings: settings)
     }
 
     var filteredSnapshots: [ProviderSnapshot] {
@@ -363,12 +363,9 @@ final class TokenPilotViewModel: ObservableObject {
         snapshots = result.snapshots
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData)
         rebuildUsageFromHistory(using: result.snapshots)
-        let sources = await connectionService.checkAll(settings: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {
             scheduleSettingsDrivenRefresh()
-        } else {
-            applyDataSources(sources)
         }
         let events = notificationRuleService.evaluate(snapshots: result.snapshots, settings: settingsAtStart, language: settings.localization.language)
         await deliver(events)
@@ -570,17 +567,67 @@ final class TokenPilotViewModel: ObservableObject {
             if settings.codexManual.webConnectorEnabled {
                 return t("Asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot does not read, store, display, or export Codex access tokens.")
             }
-            if let path = connectionService.preferredUsablePath(in: source) {
-                return "\(t("Detected")): \(path) · \(t("Local log")) · \(t("Not web quota"))"
+            if connectionService.preferredUsablePath(in: source) != nil {
+                return "\(t("Detected")) · \(t("Local log")) · \(t("Not web quota"))"
             }
             return t("Run /status in Codex CLI and paste the result.")
         }
-        if let path = connectionService.preferredUsablePath(in: source) {
-            return "\(t("Detected")): \(path)"
+        if connectionService.preferredUsablePath(in: source) != nil {
+            return "\(t("Detected")) · \(t("Local source"))"
         }
         let found = source.detectedPaths.filter(\.exists).count
         let total = source.detectedPaths.count
         return "\(t("Detected paths")): \(found)/\(total)"
+    }
+
+    var providerDiagnostics: [ProviderConnectionDiagnostic] {
+        Provider.allCases.map { provider in
+            if let source = dataSources[provider] {
+                return source.connectionDiagnostic()
+            }
+            return ProviderDataSource(
+                provider: provider,
+                isEnabled: settings.isProviderEnabled(provider),
+                status: settings.isProviderEnabled(provider) ? .notFound : .disabled,
+                confidence: .low
+            ).connectionDiagnostic()
+        }
+    }
+
+    func diagnosticStatusText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
+        sourceStatusText(
+            ProviderDataSource(
+                provider: diagnostic.provider,
+                isEnabled: diagnostic.status != .disabled,
+                lastScanAt: diagnostic.lastCheckedAt,
+                status: diagnostic.status,
+                confidence: diagnostic.confidence
+            )
+        )
+    }
+
+    func diagnosticLastCheckedText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
+        guard let lastCheckedAt = diagnostic.lastCheckedAt else {
+            return t("Never checked")
+        }
+        return TokenPilotFormatters.clock(lastCheckedAt)
+    }
+
+    func diagnosticNextActionText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
+        t(diagnostic.nextAction.localizationKey)
+    }
+
+    func diagnosticDetailText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
+        t(diagnostic.redactedDetail)
+    }
+
+    func diagnosticStatusColor(_ diagnostic: ProviderConnectionDiagnostic) -> Color {
+        switch diagnostic.status {
+        case .connected: return TokenPilotDesign.calm
+        case .stale, .estimated, .manual, .noUsableData: return TokenPilotDesign.warning
+        case .notFound, .permissionDenied, .invalidFormat: return TokenPilotDesign.danger
+        case .disabled: return TokenPilotDesign.textSecondary
+        }
     }
 
     func sourceStatusColor(_ provider: Provider) -> Color {
@@ -617,30 +664,21 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func parseCodexStatus() {
-        settings.codexManual = CodexStatusParser.safeParse(
+        var parsed = CodexStatusParser.safeParse(
             settings.codexManual.pastedStatusOutput,
             previous: settings.codexManual
         )
+        parsed.pastedStatusOutput = ""
+        settings.codexManual = parsed
         connectionStatus[.codex] = "\(t("Parsed /status")) · \(settings.codexManual.confidence.localizedLabel(language: settings.localization.language))"
     }
 
     func pasteCodexStatusFromClipboard() {
         if let string = NSPasteboard.general.string(forType: .string) {
-            let manual = settings.codexManual
-            settings.codexManual = CodexManualSettings(
-                planLabel: manual.planLabel,
-                fiveHourUsagePercentage: manual.fiveHourUsagePercentage,
-                weeklyUsagePercentage: manual.weeklyUsagePercentage,
-                resetTimeText: manual.resetTimeText,
-                notes: manual.notes,
-                pastedStatusOutput: string,
-                confidence: manual.confidence,
-                webSnapshotEnabled: manual.webSnapshotEnabled,
-                webConnectorEnabled: manual.webConnectorEnabled,
-                webTodayTokens: manual.webTodayTokens,
-                webSnapshotCapturedAt: manual.webSnapshotCapturedAt
-            )
-            parseCodexStatus()
+            var parsed = CodexStatusParser.safeParse(string, previous: settings.codexManual)
+            parsed.pastedStatusOutput = ""
+            settings.codexManual = parsed
+            connectionStatus[.codex] = "\(t("Parsed /status")) · \(settings.codexManual.confidence.localizedLabel(language: settings.localization.language))"
         }
     }
 

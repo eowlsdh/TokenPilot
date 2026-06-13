@@ -73,6 +73,22 @@ struct SettingsScreen: View {
                 }
             }
 
+            SettingsCard(title: model.t("Provider Diagnostics"), icon: "stethoscope") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(model.t("Before diagnostics, TokenPilot checks local usage metadata and selected files only. It excludes prompts, responses, secrets, credentials, browser cookies, raw events, and raw paths from summaries and exports."))
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                    ForEach(model.providerDiagnostics) { diagnostic in
+                        providerDiagnosticRow(diagnostic)
+                    }
+
+                    Button(model.t("Check all providers")) { Task { await model.checkAllConnections() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(TokenPilotDesign.calm)
+                }
+            }
+
             ProviderSetupCard(provider: .claude, title: "Claude Code", status: model.sourceStatusText(.claude), statusColor: model.sourceStatusColor(.claude), detail: model.sourceDetailText(.claude)) {
                 Text(model.t("Status file path"))
                     .font(.caption)
@@ -421,6 +437,39 @@ struct SettingsScreen: View {
         )
     }
 
+    private func providerDiagnosticRow(_ diagnostic: ProviderConnectionDiagnostic) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.t(diagnostic.provider.displayName))
+                        .font(.caption.weight(.bold))
+                    Text("\(model.t("Last checked")): \(model.diagnosticLastCheckedText(diagnostic))")
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+                Spacer(minLength: 0)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(model.diagnosticStatusText(diagnostic))
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(model.diagnosticStatusColor(diagnostic))
+                    Text("\(model.t("Confidence")): \(diagnostic.confidence.localizedLabel(language: model.settings.localization.language))")
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+            }
+
+            Text(model.diagnosticNextActionText(diagnostic))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textPrimary)
+            Text(model.diagnosticDetailText(diagnostic))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(2)
+        }
+        .padding(9)
+        .background(Color.white.opacity(0.025))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
     private func providerToggle(_ provider: Provider) -> some View {
         Toggle(
             model.t(provider.displayName),

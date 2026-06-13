@@ -223,6 +223,36 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(badges.map(\.remainingPercent), [18, 53])
         XCTAssertEqual(badges.map(\.usedPercent), [82, 47])
     }
+    func testCodexPresentationSnapshotsMatchMenuBarManualFallbackWhenConnectorIsOff() {
+        var settings = AppSettings()
+        settings.menuBarDisplayTarget = .codex
+        settings.codexManual.webConnectorEnabled = false
+        settings.codexManual.webSnapshotEnabled = false
+        settings.codexManual.fiveHourUsagePercentage = 74
+        settings.codexManual.weeklyUsagePercentage = 20
+        settings.codexManual.webTodayTokens = 12_345
+
+        let localLogOnly = ProviderSnapshot(
+            provider: .codex,
+            todayTokens: 4_321,
+            confidence: .medium,
+            dataSource: .localLog,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · local Codex log · not web quota"
+        )
+
+        let service = MenuBarStatusService()
+        let menuBadges = service.remainingBadges(snapshots: [localLogOnly], settings: settings)
+        let presentation = service.presentationSnapshots(from: [localLogOnly], settings: settings)
+
+        XCTAssertEqual(menuBadges.map(\.remainingPercent), [26, 80])
+        XCTAssertEqual(presentation.count, 1)
+        XCTAssertEqual(presentation.first?.provider, .codex)
+        XCTAssertEqual(presentation.first?.fiveHour?.usedPercent, 74)
+        XCTAssertEqual(presentation.first?.weekly?.usedPercent, 20)
+        XCTAssertEqual(presentation.first?.primaryUsedPercent, 74)
+        XCTAssertEqual(presentation.first?.todayTokens, 4_321)
+    }
 
     func testNotificationThresholdDeduplicatesWithinResetCycle() {
         let defaults = UserDefaults(suiteName: "TokenPilotTests-\(UUID().uuidString)")!
@@ -837,6 +867,24 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(loaded.codexManual.weeklyUsagePercentage, 0)
     }
 
+    func testSettingsStoreParsesAndDropsRawCodexStatusOutput() {
+        let suite = "TokenPilotTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TokenPilotSettingsStore(defaults: defaults)
+        var settings = AppSettings()
+        settings.codexManual.pastedStatusOutput = "Plan: Pro\nSession (5h): 82% resets 1h24m\nWeek (7d): 47%"
+
+        store.save(settings)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.codexManual.planLabel, "Pro")
+        XCTAssertEqual(loaded.codexManual.fiveHourUsagePercentage, 82)
+        XCTAssertEqual(loaded.codexManual.weeklyUsagePercentage, 47)
+        XCTAssertEqual(loaded.codexManual.confidence, .medium)
+        XCTAssertEqual(loaded.codexManual.pastedStatusOutput, "")
+    }
+
     func testCodexAdapter_ParsedStatus_ShowsMediumConfidenceWithEst() async throws {
         var settings = AppSettings()
         settings.codexManual.pastedStatusOutput = "Plan: Pro\nSession (5h): 82% resets 1h24m\nWeek (7d): 47%"
@@ -931,6 +979,45 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(source.confidence, .medium)
         XCTAssertTrue(source.detectedPaths.contains { $0.kind == "projects" && $0.path == home.appendingPathComponent(".claude/projects", isDirectory: true).path && $0.exists })
         XCTAssertEqual(source.statusMessage, "Local JSONL · rate limits unavailable")
+    }
+
+    func testProviderConnectionDiagnosticMapsEveryStatusToNextAction() throws {
+        let expectations: [ProviderDataSourceStatus: ProviderConnectionNextAction] = [
+            .connected: .refreshWhenStale,
+            .notFound: .chooseLocalSource,
+            .permissionDenied: .grantFileAccess,
+            .noUsableData: .verifyTelemetry,
+            .stale: .runProviderAndRefresh,
+            .invalidFormat: .chooseValidSource,
+            .disabled: .enableProvider,
+            .manual: .pasteCodexStatus,
+            .estimated: .reviewManualEstimate
+        ]
+
+        for (status, expectedAction) in expectations {
+            let diagnostic = ProviderDataSource(
+                provider: .claude,
+                lastScanAt: Date(timeIntervalSince1970: 1_700_000_000),
+                status: status,
+                confidence: .medium
+            ).connectionDiagnostic()
+
+            XCTAssertEqual(diagnostic.nextAction, expectedAction, "Unexpected next action for \(status)")
+            XCTAssertFalse(diagnostic.redactedDetail.contains("/Users/"))
+            XCTAssertFalse(diagnostic.redactedDetail.contains("prompt"))
+            XCTAssertFalse(diagnostic.redactedDetail.contains("token"))
+        }
+    }
+
+    func testProviderConnectionDiagnosticUsesCodexManualActionWhenNotFound() throws {
+        let diagnostic = ProviderDataSource(
+            provider: .codex,
+            status: .notFound,
+            confidence: .low
+        ).connectionDiagnostic()
+
+        XCTAssertEqual(diagnostic.nextAction, .pasteCodexStatus)
+        XCTAssertEqual(diagnostic.status, .notFound)
     }
 
     func testUsageStoreDefaultAdaptersUseDetectedClaudeProjectRoots() async throws {
@@ -2173,7 +2260,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(retained.first?.totalTokens, 1_500)
     }
 
-    func testAggregationExcludesExperimentalCodexLocalLogTokensFromWebComparableTotals() {
+    func testAggregationIncludesExperimentalCodexLocalLogTokensInInAppStats() {
         let now = Date()
         let codexLocal = UsageEvent(
             provider: .codex,
@@ -2182,7 +2269,8 @@ final class TokenPilotServicesTests: XCTestCase {
             outputTokens: 0,
             source: "codex-session-jsonl",
             dataSource: .localLog,
-            isEstimated: true
+            isEstimated: true,
+            isExperimental: true,
         )
         let claude = UsageEvent(provider: .claude, timestamp: now, inputTokens: 100, outputTokens: 0, source: "claude-status")
         let snapshots = [
@@ -2197,7 +2285,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(usage.providerShare.first(where: { $0.provider == .claude })?.tokens, 100)
     }
 
-    func testUsageHistoryStoreSkipsExperimentalCodexLocalLogEvents() {
+    func testUsageHistoryStoreKeepsExperimentalCodexLocalLogEventsForInAppStats() {
         let suite = "TokenPilotTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -2209,7 +2297,8 @@ final class TokenPilotServicesTests: XCTestCase {
             outputTokens: 0,
             source: "codex-session-jsonl",
             dataSource: .localLog,
-            isEstimated: true
+            isEstimated: true,
+            isExperimental: true
         )
         let snapshot = ProviderSnapshot(provider: .codex, todayTokens: 2_000, dataSource: .localLog, isExperimental: true, events: [codexLocal])
 
@@ -2217,6 +2306,15 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(retained.count, 1)
         XCTAssertEqual(store.loadEvents().count, 1)
+
+        let historySnapshots = store.snapshotsForHistory(
+            currentSnapshots: [snapshot],
+            events: retained,
+            enabledProviders: [.codex]
+        )
+
+        XCTAssertEqual(historySnapshots.first?.events.count, 1)
+        XCTAssertEqual(historySnapshots.first?.todayTokens, 2_000)
     }
 
     func testUsageExportSanitizesExperimentalCodexLocalLogSnapshotTokens() throws {

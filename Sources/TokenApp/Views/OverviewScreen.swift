@@ -98,11 +98,18 @@ struct OverviewScreen: View {
                 BestToolCard(snapshot: model.bestToolSnapshot)
 
                 if model.overviewSnapshots.isEmpty {
-                    EmptyStateCard(
-                        icon: "tray",
-                        title: model.t("No data"),
-                        message: model.t("Connect a data source.")
-                    )
+                    VStack(alignment: .leading, spacing: 8) {
+                        EmptyStateCard(
+                            icon: "tray",
+                            title: model.t("No data"),
+                            message: model.t("Run Provider Diagnostics in Settings to connect Claude, Codex, or Gemini.")
+                        )
+                        Button(model.t("Open Provider Diagnostics")) {
+                            model.selectedScreen = .settings
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(TokenPilotDesign.calm)
+                    }
                 } else {
                     ProviderOverviewList(snapshots: model.overviewSnapshots)
                 }

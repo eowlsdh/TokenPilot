@@ -41,6 +41,19 @@ public final class MenuBarStatusService: Sendable {
         }
         return snapshotWithCodexManualMenuBarFallback(selected, settings: settings)
     }
+    public func presentationSnapshots(from snapshots: [ProviderSnapshot], settings: AppSettings) -> [ProviderSnapshot] {
+        var displaySnapshots = snapshots
+            .filter { settings.isProviderEnabled($0.provider) }
+            .map { snapshotWithCodexManualMenuBarFallback($0, settings: settings) ?? $0 }
+
+        if settings.isProviderEnabled(.codex),
+           !displaySnapshots.contains(where: { $0.provider == .codex }),
+           let manual = codexManualMenuBarSnapshot(settings: settings) {
+            displaySnapshots.append(manual)
+        }
+
+        return displaySnapshots.sorted { $0.provider.rawValue < $1.provider.rawValue }
+    }
 
     public func displayWindow(for snapshot: ProviderSnapshot) -> LimitWindow? {
         if let weekly = snapshot.weekly { return weekly }

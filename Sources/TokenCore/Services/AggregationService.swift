@@ -5,8 +5,8 @@ public final class AggregationService: Sendable {
     public init() {}
 
     public func aggregate(snapshots: [ProviderSnapshot], period: HistoryPeriod) -> AggregatedUsage {
-        let webComparableEvents = snapshots.flatMap { $0.events }.filter(\.isWebQuotaComparable)
-        let filteredEvents = filterEvents(webComparableEvents, period: period)
+        let usageEvents = snapshots.flatMap { $0.events }
+        let filteredEvents = filterEvents(usageEvents, period: period)
 
         let totalTokens = filteredEvents.reduce(0) { $0 + $1.totalTokens }
         let inputTokens = filteredEvents.reduce(0) { $0 + $1.inputTokens }
@@ -36,7 +36,7 @@ public final class AggregationService: Sendable {
                 mostUsedProvider: mostUsed,
                 busiestHour: busiestHour(in: filteredEvents)
             ),
-            sevenDayBars: sevenDayBars(from: webComparableEvents),
+            sevenDayBars: sevenDayBars(from: usageEvents),
             providerShare: share,
             events: filteredEvents
         )

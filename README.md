@@ -11,7 +11,7 @@
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, or Google.
 
-[한국어 README](README.ko.md) · [Japanese](#) · [中文](#)
+[한국어 README](README.ko.md) · App UI fallback locales: 日本語 / 简体中文
 
 ![TokenPilot menu bar, Overview, and Settings privacy preview](docs/assets/readme-preview.svg)
 
@@ -52,12 +52,12 @@ That's it. No dashboards. No browser tabs. No cloud.
 
 Download the latest `.zip` or `.app` bundle from GitHub Releases, unzip it, then open `TokenPilot.app`.
 
-If macOS Gatekeeper asks for confirmation on an unsigned or ad-hoc signed build, right-click the app and choose **Open**.
+The GitHub Release path for this repo is `build/TokenPilot.app` plus `build/TokenPilot.zip` from `make bundle`. If macOS Gatekeeper asks for confirmation on an unsigned or ad-hoc signed build, right-click the app and choose **Open**.
 
 ### Option 2: Build from Source
 
 ```bash
-git clone https://github.com/<owner-or-org>/TokenPilot.git
+git clone https://github.com/eowlsdh/TokenPilot.git
 cd TokenPilot
 make bundle
 open build/TokenPilot.app
@@ -66,7 +66,7 @@ open build/TokenPilot.app
 ### Option 3: Xcode
 
 ```bash
-git clone https://github.com/<owner-or-org>/TokenPilot.git
+git clone https://github.com/eowlsdh/TokenPilot.git
 cd TokenPilot
 xcodegen generate
 open TokenPilot.xcodeproj
@@ -84,6 +84,15 @@ TokenPilot reads **usage metadata** from local files — never prompts, response
 | **Claude Code** | Statusline JSON + local JSONL | High (official format) |
 | **Codex** | Manual input / local activity / opt-in limit hints | Medium (manual, estimated, or unofficial) |
 | **Gemini CLI** | Telemetry log + session JSON | High (official format) |
+
+### Provider diagnostics
+
+First-run setup is centered in **Settings → Provider Diagnostics**:
+
+- Claude Code, Codex, and Gemini each get status, confidence, last checked, and next action.
+- Diagnostics read local usage metadata and selected files only.
+- Diagnostics summaries exclude prompts, responses, credentials, browser cookies, raw events, and raw paths.
+- Codex remains clearly labeled as manual, estimated, local activity, or opt-in limit hints — never official account quota unless the provider exposes that directly.
 
 ### Menu Bar Display
 
@@ -105,6 +114,19 @@ The preview above shows the three surfaces that matter most on first run:
 - Settings privacy: local-first data boundaries and opt-in notifications/connectors.
 
 ---
+
+## GitHub Release positioning
+
+TokenPilot is positioned as a **local-first AI coding usage meter for the macOS menu bar**:
+
+- **No cloud dashboard**: usage stays on-device.
+- **No account required**: no TokenPilot account or provider login flow.
+- **No provider token collection**: Codex/Telegram/Discord secrets are not shown or exported.
+- **Honest confidence labels**: official, local, manual, estimated, and experimental sources are visibly distinct.
+- **Release artifacts**: `make bundle` produces `build/TokenPilot.app`; the release zip is `build/TokenPilot.zip`.
+
+Release copy must stay evidence-bound: do not claim notarization, App Store availability, provider account validation, or exact provider billing/quota authority unless those checks were actually performed.
+
 
 ## Privacy
 
@@ -152,7 +174,7 @@ Tests/
 
 ```bash
 swift test
-# Executed 149 tests, with 0 failures
+# Executed 155 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings

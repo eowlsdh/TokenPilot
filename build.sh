@@ -4,6 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$PROJECT_DIR/build"
 APP_DIR="$BUILD_DIR/TokenPilot.app"
+ZIP_PATH="$BUILD_DIR/TokenPilot.zip"
 INFO_TEMPLATE="$PROJECT_DIR/Resources/Info.plist"
 PRIVACY_MANIFEST="$PROJECT_DIR/Resources/PrivacyInfo.xcprivacy"
 APP_ICON_FILE="$PROJECT_DIR/Resources/TokenPilot.icns"
@@ -18,6 +19,7 @@ swift build -c release
 
 # 2. 앱 번들 디렉토리 구조 생성
 echo "📂 Step 2: 앱 번들 구조 생성..."
+rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS"
 mkdir -p "$APP_DIR/Contents/Resources"
 
@@ -110,9 +112,18 @@ else
     echo "⚠️  codesign을 찾지 못해 서명을 건너뜁니다."
 fi
 
-# 8. 앱 생성 확인
+# 8. GitHub Release용 zip 생성
+echo "🗜️  Step 8: GitHub Release zip 생성..."
+rm -f "$ZIP_PATH"
+(
+    cd "$BUILD_DIR"
+    ditto -c -k --keepParent "TokenPilot.app" "TokenPilot.zip"
+)
+
+# 9. 앱 생성 확인
 printf '\n✅ 앱 빌드 완료!\n\n'
 echo "📍 위치: $APP_DIR"
+echo "📦 zip: $ZIP_PATH"
 printf '\n🚀 앱 실행:\n'
 echo "   open \"$APP_DIR\""
 printf '\n또는 메뉴바 아이콘을 찾아보세요! 💻\n'

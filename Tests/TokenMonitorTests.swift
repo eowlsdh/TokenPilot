@@ -256,7 +256,8 @@ final class TokenMonitorTests: XCTestCase {
             language: .ko
         )
 
-        XCTAssertTrue(copy.contains("사용량 합계"))
+        XCTAssertTrue(copy.contains("선택한 기록 사용량"))
+        XCTAssertTrue(copy.contains("제공자 요약"))
         XCTAssertTrue(copy.contains("비밀 토큰"))
         XCTAssertTrue(copy.contains("원문 프롬프트/응답 본문"))
     }
@@ -356,6 +357,26 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(source.contains("Divider().padding(.vertical, 4)"))
     }
 
+    func testSettingsShowsProviderDiagnosticsMVPWithoutRawPathSummary() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        XCTAssertTrue(source.contains("Provider Diagnostics"))
+        XCTAssertTrue(source.contains("model.providerDiagnostics"))
+        XCTAssertTrue(source.contains("Check all providers"))
+        XCTAssertTrue(source.contains("Before diagnostics, TokenPilot checks local usage metadata"))
+        XCTAssertTrue(source.contains("ProviderConnectionDiagnostic"))
+        XCTAssertTrue(source.contains("diagnosticNextActionText"))
+    }
+
+    func testOverviewAndHistoryEmptyStatesLinkToProviderDiagnostics() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        XCTAssertTrue(source.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Gemini."))
+        XCTAssertTrue(source.contains("Open Provider Diagnostics"))
+        XCTAssertTrue(source.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(source.contains("HistoryEmptyState("))
+    }
+
     func testHistoryScreenShowsLimitSignalsAndHelpfulEmptyState() throws {
         let source = try Self.tokenMonitorAppSource()
 
@@ -431,6 +452,8 @@ final class TokenMonitorTests: XCTestCase {
         let buildScript = try String(contentsOf: rootURL.appendingPathComponent("build.sh"))
         XCTAssertTrue(buildScript.contains("PrivacyInfo.xcprivacy"))
         XCTAssertTrue(buildScript.contains("TokenPilot.icns"))
+        XCTAssertTrue(buildScript.contains("TokenPilot.zip"))
+        XCTAssertTrue(buildScript.contains("ditto -c -k --keepParent"))
 
         let xcodeGenConfig = try String(contentsOf: rootURL.appendingPathComponent("project.yml"))
         XCTAssertTrue(
@@ -445,6 +468,21 @@ final class TokenMonitorTests: XCTestCase {
             xcodeGenConfig.contains("Resources/TokenPilot.icns"),
             "Xcode builds should include the manual icns fallback used by CFBundleIconFile."
         )
+    }
+
+    func testReadmeDocumentsGitHubReleasePositioningWithoutOverclaims() throws {
+        let readme = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("README.md"))
+
+        XCTAssertTrue(readme.contains("GitHub Release positioning"))
+        XCTAssertTrue(readme.contains("build/TokenPilot.zip"))
+        XCTAssertTrue(readme.contains("No cloud dashboard"))
+        XCTAssertTrue(readme.contains("No account required"))
+        XCTAssertTrue(readme.contains("No provider token collection"))
+        XCTAssertTrue(readme.contains("Settings → Provider Diagnostics"))
+        XCTAssertTrue(readme.contains("Release copy must stay evidence-bound"))
+        XCTAssertTrue(readme.contains("# Executed 155 tests, with 0 failures"))
+        XCTAssertTrue(readme.contains("do not claim notarization"))
+        XCTAssertFalse(readme.contains("notarized and App Store-ready"))
     }
 
     func testPublicReleaseGitIgnoreCoversSecretAndCredentialFiles() throws {
@@ -462,7 +500,34 @@ final class TokenMonitorTests: XCTestCase {
             "auth.json",
             "credentials.json",
             "token.json",
-            "cookies.txt"
+            "cookies.txt",
+            ".gjc/",
+            "*.xcresult",
+            "*.crash",
+            "*.ips",
+            "TokenPilot-usage-*.json",
+            "TokenPilot-usage-*.csv",
+            "*.cer",
+            "*.csr",
+            "*.certSigningRequest",
+            "*.der",
+            "*.pfx",
+            "*.mobileprovision",
+            "*.provisionprofile",
+            "*.jks",
+            "*.keystore",
+            "*.asc",
+            "*.gpg",
+            "*.age",
+            "*.kdbx",
+            "id_rsa",
+            "id_ed25519",
+            "known_hosts",
+            "codex-auth.json",
+            "claude-statusline.json",
+            "telemetry.log",
+            "sessions/",
+            "archived_sessions/",
         ]
 
         for pattern in requiredPatterns {
@@ -584,6 +649,42 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(
             popoverRefreshBody.collapsedWhitespace.contains("menuBarNow = Date()"),
             "Popover open should only update lightweight time-dependent menu/overview labels."
+        )
+    }
+
+    func testReleaseBuildAndSettingsAvoidStaleArtifactsRawPathsAndRefreshStorms() throws {
+        let rootURL = try Self.projectRootURL()
+        let buildScript = try String(contentsOf: rootURL.appendingPathComponent("build.sh"))
+        let appSource = try Self.tokenMonitorAppSource()
+        let refreshBody = try XCTUnwrap(
+            appSource.swiftFunctionBody(named: "performRefreshPass"),
+            "Could not find performRefreshPass body"
+        )
+        let detailBody = try XCTUnwrap(
+            appSource.swiftFunctionBody(named: "sourceDetailText"),
+            "Could not find sourceDetailText body"
+        )
+
+        XCTAssertTrue(
+            buildScript.contains("rm -rf \"$APP_DIR\""),
+            "Release bundle creation must delete the previous .app first so stale resources do not ship in TokenPilot.zip."
+        )
+        XCTAssertFalse(
+            refreshBody.contains("connectionService.checkAll"),
+            "Automatic refresh should not repeatedly run full provider diagnostics or spawn the Codex app-server every few seconds."
+        )
+        XCTAssertFalse(
+            detailBody.contains("\\(path)"),
+            "Settings status copy must not expose raw local source paths in release-facing diagnostics."
+        )
+    }
+
+    func testProviderAdaptersUseBoundedFileReadsForLargeLogs() throws {
+        let serviceSource = try Self.tokenCoreServicesSource()
+        XCTAssertTrue(serviceSource.contains("tokenPilotBoundedTextContents"))
+        XCTAssertFalse(
+            serviceSource.contains("String(contentsOf: file, encoding: .utf8)"),
+            "Provider adapters must not full-read arbitrary large log/session files in the menu bar app."
         )
     }
 
