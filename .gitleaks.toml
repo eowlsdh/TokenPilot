@@ -1,0 +1,10 @@
+title = "TokenPilot gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Historical completion checklist prose; gitleaks treats the credential-status wording as a generic API key."
+commits = ["e431acb604693d83c9bebd5471c8b87a9c6a5a91"]
+paths = ['''COMPLETION_REPORT\.md$''']
+regexes = ['''(?i)credentials:\s+[a-z]+''']

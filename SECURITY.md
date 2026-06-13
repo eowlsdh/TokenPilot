@@ -14,11 +14,36 @@ TokenPilot should not read, display, log, export, or store provider access token
 
 Optional Telegram and Discord notification secrets are stored only in TokenPilot-owned Keychain items. They are off by default and are used only when the user explicitly enables those notification channels.
 
+Telegram Bot API endpoints include the bot token in the URL path by design. TokenPilot must not log, export, persist, proxy-debug, or surface full Telegram request URLs. Error messages should stay generic and should not include request URLs or token values.
+
 Codex values are intentionally conservative:
 
 - Local Codex activity is experimental local activity, not official web quota.
 - Codex Limit Hints Connector is opt-in and asks the local Codex CLI app-server for limit hints.
 - Manual Codex values are user-entered estimates.
+
+## Secret Scanning
+
+Run gitleaks with the repository configuration before public release or CI enforcement:
+
+```bash
+make security-scan
+```
+
+The target runs the same repository configuration as:
+
+```bash
+gitleaks detect --source . --redact --no-banner
+gitleaks dir . --redact --no-banner
+```
+
+The checked-in `.gitleaks.toml` keeps the default gitleaks rules and allowlists one historical false positive in `COMPLETION_REPORT.md`. Do not use broad regex allowlists for new findings; inspect and fix real secrets first.
+
+## macOS Sandbox Posture
+
+The default local build uses `Resources/TokenPilot.entitlements`, which is intentionally empty today because TokenPilot still depends on local usage-file discovery and local CLI/process integration. Enabling App Sandbox on that path without a migration can break existing source detection.
+
+For public App Store-style distribution, start from `Resources/TokenPilot-AppStore.entitlements`: App Sandbox on, read-only user-selected file access, and outbound network client access for explicitly enabled integrations. Validate source selection, security-scoped bookmarks, notifications, and Codex connector behavior before switching `CODE_SIGN_ENTITLEMENTS` to that file.
 
 ## Supported Versions
 

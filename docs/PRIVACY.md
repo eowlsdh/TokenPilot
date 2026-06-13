@@ -28,6 +28,8 @@ TokenPilot can optionally send alert messages to Telegram or Discord only after 
 
 External alert messages should contain usage-alert context only. They should not include credentials, provider auth material, prompts, responses, local file paths, or webhook URLs.
 
+Telegram's Bot API places the bot token in the request URL path. TokenPilot treats those URLs as secret-bearing data: they should never be logged, exported, proxied for debugging, or shown in user-facing errors.
+
 ## Storage
 
 TokenPilot stores app preferences locally on the Mac. TokenPilot-owned notification secrets, if configured, are stored in TokenPilot's own Keychain items and hidden after saving.
@@ -35,3 +37,7 @@ TokenPilot stores app preferences locally on the Mac. TokenPilot-owned notificat
 ## Network Use
 
 The default product promise is local-first. Network use is limited to features that the user explicitly enables, such as optional external notifications or an opt-in local connector. Any external submission, account login, or credential-based provider access must be clearly labeled.
+
+## macOS Sandbox
+
+TokenPilot supports security-scoped bookmarks for user-selected Claude and Gemini sources. A stricter App Store distribution should use the sandbox-ready entitlement profile in `Resources/TokenPilot-AppStore.entitlements` and re-verify local source access before release. The default local entitlement file remains unsandboxed until that migration is validated, so existing automatic local metadata discovery keeps working.

@@ -1,4 +1,4 @@
-.PHONY: build test run clean xcode all help
+.PHONY: build test run clean xcode all help security-scan
 
 # Default target
 all: build test
@@ -14,6 +14,11 @@ build-strict:
 # Run tests
 test:
 	swift test
+
+# Run secret scans for the git history and current worktree
+security-scan:
+	gitleaks detect --source . --redact --no-banner
+	gitleaks dir . --redact --no-banner
 
 # Generate Xcode project
 xcode:
@@ -55,6 +60,7 @@ help:
 	@echo "  make build       Build Swift Package"
 	@echo "  make build-strict Build with warnings as errors"
 	@echo "  make test        Run all tests"
+	@echo "  make security-scan Run gitleaks history and worktree scans"
 	@echo "  make xcode       Generate Xcode project"
 	@echo "  make xcode-build Build Xcode project (unsigned)"
 	@echo "  make bundle      Build app bundle (build/TokenPilot.app)"
