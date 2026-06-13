@@ -32,6 +32,30 @@ private final class InMemoryKeychainBackend: KeychainBackend, @unchecked Sendabl
     }
 }
 
+private final class StubDeepSeekHTTPClient: DeepSeekBalanceHTTPClient, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "StubDeepSeekHTTPClient")
+    private var responses: [(Data, Int)]
+
+    init(data: Data, statusCode: Int = 200) {
+        self.responses = [(data, statusCode)]
+    }
+
+    init(responses: [(Data, Int)]) {
+        self.responses = responses
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let responsePayload = queue.sync { responses.count > 1 ? responses.removeFirst() : responses[0] }
+        let response = HTTPURLResponse(
+            url: request.url ?? URL(string: "https://api.deepseek.com/user/balance")!,
+            statusCode: responsePayload.1,
+            httpVersion: nil,
+            headerFields: nil
+        )!
+        return (responsePayload.0, response)
+    }
+}
+
 final class TokenPilotServicesTests: XCTestCase {
     func testCodexStatusParserKeepsManualConfidenceLowOrMedium() {
         let parsed = CodexStatusParser.parse(
@@ -1580,7 +1604,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
     func testCodexWebUsageAdapterRedactsAppServerErrorDetails() async throws {
         let response = """
-        {"error":{"code":-32000,"message":"upstream failed with Bearer fixture-super-secret-token-value-123456789012345678901234567890"},"id":2}
+        {"error":{"code":-32000,"message":"upstream failed with Bearer fixture-token"},"id":2}
         """.data(using: .utf8)!
         let appServer = StubCodexAppServerRateLimitClient(data: response)
         let httpClient = RecordingCodexWebUsageHTTPClient(data: Data(), failIfCalled: true)
@@ -1595,7 +1619,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(snapshot.confidence, .low)
         XCTAssertTrue(snapshot.statusMessage?.contains("[REDACTED]") == true)
-        XCTAssertFalse(snapshot.statusMessage?.contains("fixture-super-secret") == true)
+        XCTAssertFalse(snapshot.statusMessage?.contains("fixture-token") == true)
         let requestURL = await httpClient.requestURL()
         XCTAssertNil(requestURL)
     }
@@ -2416,9 +2440,154 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(settings.setProviderEnabled(.claude, isEnabled: false))
         XCTAssertTrue(settings.setProviderEnabled(.gemini, isEnabled: false))
 
-        XCTAssertFalse(settings.setProviderEnabled(.codex, isEnabled: false))
-        XCTAssertEqual(settings.enabledProviders, [.codex])
-        XCTAssertTrue(settings.isProviderEnabled(.codex))
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
+        XCTAssertEqual(settings.enabledProviders, [.deepseek])
+        XCTAssertTrue(settings.isProviderEnabled(.deepseek))
+    }
+
+    func testDeepSeekDefaultsOnForLegacyMonitoredProviderSets() {
+        let legacyMonitored = MonitoredProviderSettings(enabledProviders: [.claude, .codex, .gemini])
+        let settings = AppSettings(monitoredProviders: legacyMonitored)
+
+        XCTAssertTrue(settings.deepseekEnabled)
+        XCTAssertTrue(settings.isProviderEnabled(.deepseek))
+        XCTAssertEqual(settings.enabledProviders, [.claude, .codex, .gemini, .deepseek])
+    }
+
+    func testDeepSeekDiagnosticsRequireAPIKeyBeforeConnection() async {
+        let service = DataSourceConnectionService()
+        var settings = AppSettings()
+        settings.deepseekAPIKeyConfigured = false
+
+        let source = await service.check(settings: settings, provider: .deepseek)
+        let diagnostic = source.connectionDiagnostic()
+
+        XCTAssertEqual(source.status, .manual)
+        XCTAssertEqual(source.statusMessage, "API key required")
+        XCTAssertEqual(diagnostic.nextAction, .enterAPIKey)
+        XCTAssertFalse(diagnostic.redactedDetail.contains("sk-"))
+        XCTAssertFalse(diagnostic.redactedDetail.contains("Authorization"))
+    }
+
+    func testDeepSeekDiagnosticsShowConnectedWhenAPIKeyIsSaved() async {
+        let service = DataSourceConnectionService()
+        var settings = AppSettings()
+        settings.deepseekAPIKeyConfigured = true
+
+        let source = await service.check(settings: settings, provider: .deepseek)
+        let diagnostic = source.connectionDiagnostic()
+
+        XCTAssertEqual(source.status, .connected)
+        XCTAssertEqual(source.statusMessage, "API key saved in Keychain")
+        XCTAssertEqual(diagnostic.nextAction, .refreshWhenStale)
+    }
+
+    func testDeepSeekBalanceParserUsesToppedUpBalanceAndCurrency() throws {
+        let data = """
+        {
+          "is_available": true,
+          "balance_infos": [
+            {
+              "currency": "USD",
+              "total_balance": "11.50",
+              "granted_balance": "1.25",
+              "topped_up_balance": "10.25"
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let balance = try DeepSeekBalanceParser().parse(data)
+
+        XCTAssertEqual(balance.currency, "USD")
+        XCTAssertEqual(balance.totalBalance, Decimal(string: "11.50"))
+        XCTAssertEqual(balance.grantedBalance, Decimal(string: "1.25"))
+        XCTAssertEqual(balance.toppedUpBalance, Decimal(string: "10.25"))
+        XCTAssertEqual(DeepSeekBalanceFormatter.display(balance), "$10.25")
+    }
+
+    func testDeepSeekBalanceParserKeepsUnavailableZeroBalance() throws {
+        let data = """
+        {"is_available":false,"balance_infos":[{"currency":"USD","total_balance":"0.00","granted_balance":"0","topped_up_balance":"0.00"}]}
+        """.data(using: .utf8)!
+
+        let balance = try DeepSeekBalanceParser().parse(data)
+
+        XCTAssertEqual(balance.currency, "USD")
+        XCTAssertEqual(balance.toppedUpBalance, Decimal(0))
+        XCTAssertEqual(DeepSeekBalanceFormatter.display(balance), "$0.00")
+    }
+
+    func testDeepSeekBalanceFormatterKeepsNativeNonUSDCurrency() {
+        let balance = ProviderBalance(currency: "cny", toppedUpBalance: Decimal(string: "42.8")!)
+
+        XCTAssertEqual(DeepSeekBalanceFormatter.display(balance), "CNY 42.80")
+    }
+
+    func testDeepSeekBalanceAdapterUsesKeychainAPIAndStaleLastSuccess() async throws {
+        let keychain = KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+        try keychain.saveSecret("sk-test-secret", account: "deepseek.apiKey")
+        let firstPayload = """
+        {"is_available":true,"balance_infos":[{"currency":"USD","total_balance":"8.00","granted_balance":"0","topped_up_balance":"8.00"}]}
+        """.data(using: .utf8)!
+        let adapter = DeepSeekBalanceAdapter(httpClient: StubDeepSeekHTTPClient(responses: [(firstPayload, 200), (Data(), 500)]), keychain: keychain)
+
+        let first = await adapter.snapshot(settings: AppSettings(deepseekAPIKeyConfigured: true))
+        XCTAssertEqual(first.balance?.toppedUpBalance, Decimal(8))
+        XCTAssertEqual(first.model, "$8.00")
+        XCTAssertEqual(first.confidence, .high)
+        XCTAssertFalse(first.isStale)
+
+        let staleAdapter = adapter
+        let stale = await staleAdapter.snapshot(settings: AppSettings(deepseekAPIKeyConfigured: true))
+        XCTAssertEqual(stale.balance?.toppedUpBalance, Decimal(8))
+        XCTAssertTrue(stale.isStale)
+        XCTAssertEqual(stale.confidence, .medium)
+    }
+
+    func testDeepSeekManualFallbackAndLowBalanceAlert() async {
+        var settings = AppSettings()
+        settings.deepSeekBalance.manualFallbackEnabled = true
+        settings.deepSeekBalance.manualBalanceText = "4.99"
+        settings.deepSeekBalance.manualCurrency = "USD"
+        settings.deepSeekBalance.lowBalanceThreshold = 5
+
+        let snapshot = await DeepSeekBalanceAdapter(
+            httpClient: StubDeepSeekHTTPClient(data: Data(), statusCode: 500),
+            keychain: KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+        ).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.balance?.toppedUpBalance, Decimal(string: "4.99"))
+        XCTAssertEqual(snapshot.model, "$4.99")
+        XCTAssertEqual(snapshot.confidence, .manual)
+
+        let events = NotificationRuleService(store: AlertDeduplicationStore(defaults: UserDefaults(suiteName: "deepseek-alert-\(UUID().uuidString)")!))
+            .evaluate(snapshots: [snapshot], settings: settings)
+        XCTAssertEqual(events.count, 1)
+        XCTAssertEqual(events.first?.provider, .deepseek)
+        XCTAssertTrue(events.first?.body.contains("$4.99") == true)
+    }
+
+    func testDeepSeekLowBalanceAlertDedupesWithinCycleAndResetsNextCycle() {
+        let defaults = UserDefaults(suiteName: "deepseek-alert-cycle-\(UUID().uuidString)")!
+        let service = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults))
+        var settings = AppSettings()
+        settings.deepSeekBalance.lowBalanceThreshold = 5
+        let today = Date(timeIntervalSince1970: 1_800_000_000)
+        let tomorrow = today.addingTimeInterval(86_400)
+        let todaySnapshot = ProviderSnapshot(
+            provider: .deepseek,
+            balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(1), capturedAt: today)
+        )
+        let tomorrowSnapshot = ProviderSnapshot(
+            provider: .deepseek,
+            balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(1), capturedAt: tomorrow)
+        )
+
+        XCTAssertEqual(service.evaluate(snapshots: [todaySnapshot], settings: settings).count, 1)
+        XCTAssertEqual(service.evaluate(snapshots: [todaySnapshot], settings: settings).count, 0)
+        XCTAssertEqual(service.evaluate(snapshots: [tomorrowSnapshot], settings: settings).count, 1)
+        XCTAssertEqual(service.evaluate(snapshots: [tomorrowSnapshot], settings: settings).count, 0)
     }
 
     func testUsageStoreOnlyRefreshesEnabledProviders() async {
@@ -2508,6 +2677,16 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(next.setProviderEnabled(.gemini, isEnabled: false))
 
         XCTAssertTrue(TokenPilotRefreshPolicy.usageRefreshNeeded(from: previous, to: next))
+
+        previous = AppSettings()
+        next = previous
+        next.deepseekAPIKeyConfigured = true
+        XCTAssertTrue(TokenPilotRefreshPolicy.usageRefreshNeeded(from: previous, to: next))
+
+        previous = AppSettings()
+        next = previous
+        next.deepSeekBalance.manualBalanceText = "12.34"
+        XCTAssertTrue(TokenPilotRefreshPolicy.usageRefreshNeeded(from: previous, to: next))
     }
 
     func testRefreshPolicyIgnoresDisplayOnlySettings() {
@@ -2534,6 +2713,20 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(service.selectedSnapshot(from: snapshots, settings: settings)?.provider, .codex)
         XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64% · W 56% 추정")
+    }
+
+    func testMenuBarStatusServiceShowsSelectedDeepSeekBalance() {
+        var settings = AppSettings()
+        settings.menuBarDisplayTarget = .deepseek
+        let snapshot = ProviderSnapshot(
+            provider: .deepseek,
+            confidence: .high,
+            balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "12.34")!)
+        )
+
+        let title = MenuBarStatusService().title(snapshots: [snapshot], settings: settings, modeLabel: "LIVE")
+
+        XCTAssertEqual(title, "DS $12.34")
     }
 
     func testMenuBarStatusServiceShowsRemainingPercentagesForFiveHourAndWeekly() {

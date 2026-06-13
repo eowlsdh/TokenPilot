@@ -40,6 +40,7 @@ enum TokenPilotDesign {
         case .claude: return Color(red: 1.0, green: 0.64, blue: 0.23)
         case .codex: return Color(red: 0.16, green: 0.74, blue: 0.37)
         case .gemini: return Color(red: 0.48, green: 0.48, blue: 0.95)
+        case .deepseek: return Color(red: 0.25, green: 0.76, blue: 1.0)
         }
     }
 

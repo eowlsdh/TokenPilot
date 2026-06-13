@@ -75,6 +75,9 @@ public final class MenuBarStatusService: Sendable {
         }
 
         let language = settings.localization.language
+        if let balance = snapshot.balance {
+            return "\(snapshot.provider.shortName) \(DeepSeekBalanceFormatter.display(balance))" + confidenceSuffix(for: snapshot, language: language)
+        }
         if let quotaTitle = quotaRemainingTitle(for: snapshot, language: language) {
             return quotaTitle + confidenceSuffix(for: snapshot, language: language)
         }

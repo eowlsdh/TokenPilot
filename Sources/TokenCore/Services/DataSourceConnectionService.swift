@@ -70,6 +70,8 @@ public final class DataSourceConnectionService: @unchecked Sendable {
             let roots = codexSessionRoots(from: candidates)
             let snapshot = await CodexLocalSessionAdapter(sessionRoots: roots.isEmpty ? nil : roots).snapshot(settings: settings)
             return classifyCodex(settings: settings, candidates: candidates, snapshot: snapshot)
+        case .deepseek:
+            return classifyDeepSeek(settings: settings)
         }
     }
 
@@ -79,6 +81,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .claude: preferredKinds = ["statusline", "projects", "config_projects"]
         case .gemini: preferredKinds = ["telemetry", "tmp", "history"]
         case .codex: preferredKinds = ["sessions", "archived_sessions", "history", "root"]
+        case .deepseek: preferredKinds = []
         }
 
         return source.detectedPaths.first {
@@ -108,8 +111,8 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                     next.geminiTelemetrySourceBookmarkData = nil
                     adopted.append(.gemini)
                 }
-            case .codex:
-                // Codex uses default session roots directly; there is no persisted custom token path.
+            case .codex, .deepseek:
+                // Codex uses default session roots directly; DeepSeek uses Keychain/API instead of local token paths.
                 continue
             }
         }
@@ -255,6 +258,21 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         )
     }
 
+
+    private func classifyDeepSeek(settings: AppSettings) -> ProviderDataSource {
+        ProviderDataSource(
+            provider: .deepseek,
+            isEnabled: settings.deepseekEnabled,
+            mode: settings.deepseekAPIKeyConfigured ? .auto : .custom,
+            detectedPaths: [],
+            customPath: nil,
+            lastScanAt: Date(),
+            status: settings.deepseekAPIKeyConfigured ? .connected : .manual,
+            confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
+            statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
+        )
+    }
+
     private func codexSessionRoots(from candidates: [ProviderPathCandidate]) -> [URL] {
         candidates
             .filter { ["sessions", "archived_sessions"].contains($0.kind) && $0.exists && $0.readable }
@@ -333,7 +351,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .gemini:
             let path = settings.geminiTelemetryLogPath.trimmingCharacters(in: .whitespacesAndNewlines)
             return path.isEmpty ? nil : path
-        case .codex:
+        case .codex, .deepseek:
             return nil
         }
     }
@@ -349,7 +367,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         switch provider {
         case .claude: kind = "statusline"
         case .gemini: kind = "telemetry"
-        case .codex: kind = "manual"
+        case .codex, .deepseek: kind = "manual"
         }
         return ProviderPathCandidate(
             provider: provider,

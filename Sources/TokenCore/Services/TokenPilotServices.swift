@@ -21,6 +21,8 @@ public enum TokenPilotRefreshPolicy {
         previous.geminiTelemetrySourceBookmarkData != next.geminiTelemetrySourceBookmarkData ||
         previous.geminiDailyRequestCap != next.geminiDailyRequestCap ||
         previous.codexManual != next.codexManual ||
+        previous.deepseekAPIKeyConfigured != next.deepseekAPIKeyConfigured ||
+        previous.deepSeekBalance != next.deepSeekBalance ||
         previous.showMockDataWhenDisconnected != next.showMockDataWhenDisconnected
     }
 }
@@ -204,7 +206,8 @@ public final class UsageStore: @unchecked Sendable {
         return [
             ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
             GeminiTelemetryAdapter(),
-            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots)
+            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
+            DeepSeekBalanceAdapter()
         ]
     }
 
@@ -216,7 +219,7 @@ public final class UsageStore: @unchecked Sendable {
             snapshots.append(snapshot)
         }
 
-        let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil }
+        let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil || $0.balance != nil }
         let ordered = snapshots.sorted { $0.provider.rawValue < $1.provider.rawValue }
 
         if settings.showMockDataWhenDisconnected && !hasConnectedData {
@@ -329,8 +332,44 @@ public final class NotificationRuleService: @unchecked Sendable {
             state.lastResetAt = resetAt
             states[key] = state
         }
+        appendDeepSeekLowBalanceEvents(snapshotsByProvider: snapshotsByProvider, settings: settings, language: language, states: &states, events: &events)
         store.save(states)
         return events
+    }
+
+    private func appendDeepSeekLowBalanceEvents(
+        snapshotsByProvider: [Provider: ProviderSnapshot],
+        settings: AppSettings,
+        language: TokenPilotLanguage,
+        states: inout [String: AlertDeliveryState],
+        events: inout [AlertEvent]
+    ) {
+        guard settings.globalNotificationsEnabled,
+              settings.deepseekEnabled,
+              let balance = snapshotsByProvider[.deepseek]?.balance,
+              balance.toppedUpBalance <= settings.deepSeekBalance.lowBalanceThreshold else {
+            return
+        }
+        let cycleID = "deepseek-balance-\(Int(balance.capturedAt.timeIntervalSince1970 / 86_400))"
+        let key = "deepseek.balance.low"
+        var state = states[key] ?? AlertDeliveryState(provider: .deepseek, window: .dailyRequests, resetCycleId: cycleID)
+        if state.resetCycleId != cycleID {
+            state = AlertDeliveryState(provider: .deepseek, window: .dailyRequests, resetCycleId: cycleID)
+        }
+        guard !state.sent50 else { return }
+        let display = DeepSeekBalanceFormatter.display(balance)
+        let threshold = DeepSeekBalanceFormatter.display(ProviderBalance(currency: balance.currency, toppedUpBalance: settings.deepSeekBalance.lowBalanceThreshold))
+        events.append(AlertEvent(
+            provider: .deepseek,
+            window: .dailyRequests,
+            threshold: .fifty,
+            resetCycleId: cycleID,
+            title: TokenPilotLocalizer.localized("DeepSeek low balance", language: language),
+            body: String(format: TokenPilotLocalizer.localized("DeepSeek topped-up balance is %@ (threshold %@).", language: language), display, threshold)
+        ))
+        state.sent50 = true
+        state.lastSentAt = Date()
+        states[key] = state
     }
 
     private func windowValue(snapshot: ProviderSnapshot, window: LimitWindowKind) -> Int? {

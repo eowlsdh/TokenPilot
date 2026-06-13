@@ -3,31 +3,40 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Tests](https://img.shields.io/badge/Tests-run%20locally-informational.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-170%20passing-brightgreen.svg)](#testing)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
-> **Track your AI coding costs at a glance.**  
-> See Claude Code, Codex, and Gemini CLI usage in your macOS menu bar — local-first, privacy-first.
+> **A local-first macOS menu bar monitor for AI coding quota and usage.**
+> TokenPilot keeps Claude Code, Codex, Gemini CLI, and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector.
 >
-> TokenPilot is not affiliated with OpenAI, Anthropic, or Google.
+> TokenPilot is not affiliated with OpenAI, Anthropic, Google, or DeepSeek.
 
 [한국어 README](README.ko.md) · App UI fallback locales: 日本語 / 简体中文
 
-![TokenPilot menu bar, Overview, and Settings privacy preview](docs/assets/readme-preview.svg)
+![TokenPilot screenshot showing remaining quota overview and privacy-first settings](docs/assets/readme-screenshot.png)
 
 ---
 
 ## Why TokenPilot?
 
-You use Claude Code, Codex, and Gemini CLI every day. But you never know **how much you've actually used** until you hit a rate limit.
+AI coding tools expose usage signals in different places: statusline JSON, local session logs, telemetry logs, manual `/status` output, or unofficial limit-hint APIs. TokenPilot turns those scattered local signals into one compact macOS menu bar readout:
 
-TokenPilot sits in your menu bar and shows you:
-
-```
-5h 64% · W 56%
+```text
+5h 18% · W 53%
 ```
 
-That's it. No dashboards. No browser tabs. No cloud.
+The numbers are **remaining quota percentages**. When confidence is estimated or unofficial, TokenPilot says so.
+
+---
+
+## Current app surfaces
+
+| Surface | What changed / what it shows |
+|---|---|
+| **Menu bar** | Single-line remaining quota label: `5h`, weekly, and estimated/manual suffixes when needed. |
+| **Overview** | Current remaining quota, provider rows, daily challenge, and alert status. The duplicate 7-day usage chart and provider-share blocks are intentionally removed from Overview. |
+| **History** | Today / Last 7 days / This month token history, latest limit signals, 7-day chart, provider share, and JSON/CSV export. |
+| **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
 
 ---
 
@@ -35,14 +44,16 @@ That's it. No dashboards. No browser tabs. No cloud.
 
 | Feature | Description |
 |---------|-------------|
-| 🍎 **Menu bar native** | Compact glance without leaving your editor |
-| 📊 **Multi-provider** | Claude Code + Codex + Gemini CLI in one place |
-| 🔒 **Local-first by default** | Reads local metadata; optional notifications/connectors run only after explicit setup |
-| 🏷️ **Honest labels** | `est.`, `manual`, `EXPERIMENTAL` — we don't pretend |
-| 🔔 **Smart alerts** | macOS notifications + optional Telegram/Discord |
-| 📈 **Usage history** | Today / 7 days / This month with charts |
-| 🌐 **4 languages** | English, 한국어, 日本語, 简体中文 |
-| 📦 **Zero dependencies** | Pure Swift, no third-party packages |
+| 🍎 **Native menu bar utility** | `MenuBarExtra` app with compact quota display and no Dock icon. |
+| 📊 **Multi-provider monitoring** | Claude Code, Codex, Gemini CLI, and DeepSeek balance in one place. |
+| 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
+| 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
+| 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
+| 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
+| 💵 **DeepSeek balance** | Optional `/user/balance` integration shows topped-up balance, native currency, manual fallback, and low-balance alerts. |
+| 📈 **History + export** | Period-based token history, 7-day chart in History only, provider share, JSON/CSV export. |
+| 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
+| 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
 
 ---
 
@@ -50,9 +61,9 @@ That's it. No dashboards. No browser tabs. No cloud.
 
 ### Option 1: Download a Release
 
-Download the latest `.zip` or `.app` bundle from GitHub Releases, unzip it, then open `TokenPilot.app`.
+Download the latest `TokenPilot.zip` from GitHub Releases, unzip it, then open `TokenPilot.app`.
 
-The GitHub Release path for this repo is `build/TokenPilot.app` plus `build/TokenPilot.zip` from `make bundle`. If macOS Gatekeeper asks for confirmation on an unsigned or ad-hoc signed build, right-click the app and choose **Open**.
+If macOS Gatekeeper asks for confirmation on an unsigned or ad-hoc signed build, right-click the app and choose **Open**.
 
 ### Option 2: Build from Source
 
@@ -77,41 +88,45 @@ open TokenPilot.xcodeproj
 
 ## How It Works
 
-TokenPilot reads **usage metadata** from local files — never prompts, responses, or credentials.
+TokenPilot reads **usage metadata** from local files and explicitly configured sources. It does not read prompts, responses, browser cookies, or provider auth files.
 
 | Provider | Data Source | Trust Level |
-|----------|------------|-------------|
-| **Claude Code** | Statusline JSON + local JSONL | High (official format) |
-| **Codex** | Manual input / local activity / opt-in limit hints | Medium (manual, estimated, or unofficial) |
-| **Gemini CLI** | Telemetry log + session JSON | High (official format) |
+|----------|-------------|-------------|
+| **Claude Code** | Statusline JSON + local project JSONL fallback | High when statusline/rate-limit fields are present. |
+| **Codex** | Opt-in Codex CLI limit hints, manual `/status` / manual estimates, local activity JSONL | Medium/estimated/unofficial unless Codex exposes stable official quota metadata. |
+| **Gemini CLI** | Telemetry log + session JSON | High for telemetry/session metadata. |
+| **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
 
 ### Provider diagnostics
 
 First-run setup is centered in **Settings → Provider Diagnostics**:
 
-- Claude Code, Codex, and Gemini each get status, confidence, last checked, and next action.
-- Diagnostics read local usage metadata and selected files only.
-- Diagnostics summaries exclude prompts, responses, credentials, browser cookies, raw events, and raw paths.
-- Codex remains clearly labeled as manual, estimated, local activity, or opt-in limit hints — never official account quota unless the provider exposes that directly.
+- Each provider shows status, confidence, last checked time, and next action.
+- Diagnostics summarize local metadata availability without showing raw paths, prompts, responses, cookies, tokens, or raw events.
+- Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
+- DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
 
-### Menu Bar Display
+### Menu bar display
 
-```
-5h 64% · W 56%          ← 5-hour and weekly remaining %
-5h 12% · W 38% ⚠️       ← Warning state
-5h 64% · W 56% est.     ← Estimated (Codex local activity)
-MOCK 5h 64% · W 56%     ← First-run sample data
+```text
+5h 18% · W 53%          # remaining 5-hour and weekly quota
+5h 8% · W 31% ⚠️        # low remaining quota / warning state
+5h 74% · W 80% est.     # estimated/manual Codex values
+Co 12.3Ktok             # fallback when only local activity exists
+DS $12.34                # selected DeepSeek topped-up balance
 ```
 
 ---
 
 ## Screenshots
 
-The preview above shows the three surfaces that matter most on first run:
+The README screenshot is a release-facing composite of the current app surfaces:
 
-- Menu bar numbers: compact `5h` and weekly remaining percentages.
-- Overview: provider rows with honest source labels such as `manual`, `est.`, and `limit hint`.
-- Settings privacy: local-first data boundaries and opt-in notifications/connectors.
+- Menu bar: compact remaining quota.
+- Overview: remaining-first quota and provider rows only; no duplicate 7-day chart/provider-share block.
+- Settings: provider diagnostics and privacy boundaries.
+
+The 7-day chart and provider share are intentionally kept in **History**, not Overview.
 
 ---
 
@@ -121,12 +136,13 @@ TokenPilot is positioned as a **local-first AI coding usage meter for the macOS 
 
 - **No cloud dashboard**: usage stays on-device.
 - **No account required**: no TokenPilot account or provider login flow.
-- **No provider token collection**: Codex/Telegram/Discord secrets are not shown or exported.
-- **Honest confidence labels**: official, local, manual, estimated, and experimental sources are visibly distinct.
-- **Release artifacts**: `make bundle` produces `build/TokenPilot.app`; the release zip is `build/TokenPilot.zip`.
+- **No provider token collection**: Codex/Telegram/Discord/DeepSeek secrets are stored only when explicitly configured, never shown or exported.
+- **Honest confidence labels**: official, local, manual, estimated, experimental, and limit-hint sources are visibly distinct.
+- **Release artifacts**: `make bundle` produces `build/TokenPilot.app` and `build/TokenPilot.zip`.
 
 Release copy must stay evidence-bound: do not claim notarization, App Store availability, provider account validation, or exact provider billing/quota authority unless those checks were actually performed.
 
+---
 
 ## Privacy
 
@@ -137,9 +153,11 @@ TokenPilot is designed as a **local-first** utility:
 | Claude statusline JSON | Browser cookies |
 | Gemini telemetry log | Provider auth files |
 | User-entered Codex values | Raw prompts/responses |
-| Local session JSONL | Arbitrary Keychain items |
+| User-saved DeepSeek API key in TokenPilot Keychain item | Exported secrets |
+| Local session JSONL metadata | Arbitrary Keychain items |
+| TokenPilot-owned notification credentials | Other apps' Keychain items |
 
-External notifications (Telegram/Discord) are **off by default** and require explicit user configuration.
+External notifications (Telegram/Discord) are **off by default** and require explicit user configuration. Codex Limit Hints Connector is also off by default and talks to the local Codex CLI app-server rather than reading Codex auth files directly. DeepSeek balance is opt-in and uses a TokenPilot-owned Keychain item for the API key; exports omit secrets.
 
 See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 
@@ -147,21 +165,20 @@ See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 
 ## Architecture
 
-```
+```text
 Sources/
-├── TokenApp/           # SwiftUI app shell, views, ViewModel
-│   ├── TokenMonitorApp.swift      # App entry and MenuBarExtra
+├── TokenApp/                         # SwiftUI app shell, views, ViewModel
+│   ├── TokenMonitorApp.swift          # App entry and MenuBarExtra
+│   ├── Views/                         # Overview, History, Settings, components
 │   └── Resources/Localizable.xcstrings
-└── TokenCore/          # Business logic, adapters, models
-    ├── Models/
-    │   ├── TokenPilotModels.swift       # Data models, AppSettings
-    │   └── ProviderSelectionModels.swift
+└── TokenCore/                         # Business logic, adapters, models
+    ├── Models/                        # Provider snapshots, settings, usage models
     ├── Services/
-    │   ├── DataSourceAdapters.swift     # Claude/Codex/Gemini adapters
-    │   ├── AggregationService.swift     # Usage aggregation
-    │   ├── MenuBarStatusService.swift   # Menu bar label formatting
-    │   ├── TokenPilotServices.swift     # Notifications, Keychain, export
-    │   └── ... (12 service files)
+    │   ├── DataSourceAdapters.swift    # Claude/Codex/Gemini/DeepSeek adapters
+    │   ├── AggregationService.swift    # Usage aggregation
+    │   ├── MenuBarStatusService.swift  # Menu bar label formatting
+    │   ├── UsageHistoryStore.swift     # Historical usage persistence
+    │   └── TokenPilotServices.swift    # Notifications, Keychain, export
     └── TokenPilotLocalization.swift
 Tests/
 ├── TokenMonitorTests.swift
@@ -174,17 +191,18 @@ Tests/
 
 ```bash
 swift test
-# Executed 155 tests, with 0 failures
+# Executed 170 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings
+
+make verify
+# build + tests + release bundle smoke
 ```
 
 ---
 
 ## Localization
-
-TokenPilot supports 4 languages out of the box:
 
 | Language | Status |
 |----------|--------|
@@ -197,9 +215,7 @@ TokenPilot supports 4 languages out of the box:
 
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-Before opening a PR, run:
+Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) and run:
 
 ```bash
 make verify

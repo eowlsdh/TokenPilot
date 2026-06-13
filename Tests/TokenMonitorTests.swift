@@ -349,6 +349,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("ProviderSetupCard(provider: .claude"))
         XCTAssertTrue(source.contains("ProviderSetupCard(provider: .codex"))
         XCTAssertTrue(source.contains("ProviderSetupCard(provider: .gemini"))
+        XCTAssertTrue(source.contains("ProviderSetupCard(provider: .deepseek"))
+        XCTAssertTrue(source.contains("Use Manual DeepSeek Balance"))
         XCTAssertFalse(source.contains("Divider().padding(.vertical, 4)"))
     }
 
@@ -361,6 +363,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("Before diagnostics, TokenPilot checks local usage metadata"))
         XCTAssertTrue(source.contains("ProviderConnectionDiagnostic"))
         XCTAssertTrue(source.contains("diagnosticNextActionText"))
+        XCTAssertTrue(source.contains("updateDeepSeekDataSourceForCredentialState()"))
     }
 
     func testOverviewAndHistoryEmptyStatesLinkToProviderDiagnostics() throws {
@@ -490,8 +493,9 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(readme.contains("No account required"))
         XCTAssertTrue(readme.contains("No provider token collection"))
         XCTAssertTrue(readme.contains("Settings → Provider Diagnostics"))
+        XCTAssertTrue(readme.contains("docs/assets/readme-screenshot.png"))
         XCTAssertTrue(readme.contains("Release copy must stay evidence-bound"))
-        XCTAssertTrue(readme.contains("# Executed 155 tests, with 0 failures"))
+        XCTAssertTrue(readme.contains("# Executed 170 tests, with 0 failures"))
         XCTAssertTrue(readme.contains("do not claim notarization"))
         XCTAssertFalse(readme.contains("notarized and App Store-ready"))
     }
@@ -525,6 +529,7 @@ final class TokenMonitorTests: XCTestCase {
             "*.pfx",
             "*.mobileprovision",
             "*.provisionprofile",
+            "*.xcarchive",
             "*.jks",
             "*.keystore",
             "*.asc",
@@ -537,8 +542,28 @@ final class TokenMonitorTests: XCTestCase {
             "codex-auth.json",
             "claude-statusline.json",
             "telemetry.log",
+            "openai-auth.json",
+            "anthropic-auth.json",
+            "gemini-auth.json",
+            "deepseek-auth.json",
+            ".netrc",
+            "*.token",
+            "*.tokens",
+            "*.secret",
+            "*.secrets",
+            "*.credentials",
+            "*.credentials.json",
+            "api-key*.txt",
+            "*-api-key.txt",
+            "deepseek-api-key*",
+            "deepseek-balance*.json",
+            "deepseek-response*.json",
+            "gemini-telemetry.log",
             "sessions/",
             "archived_sessions/",
+            "codex-sessions/",
+            "gemini-sessions/",
+            "claude-projects/",
         ]
 
         for pattern in requiredPatterns {

@@ -284,6 +284,17 @@ struct ProviderSignatureMark: View {
                     .offset(x: size * 0.17, y: -size * 0.16)
                     .scaleEffect(isVisible ? 1 : 0.4)
             }
+        case .deepseek:
+            ZStack {
+                Circle()
+                    .stroke(TokenPilotDesign.accent(for: provider).opacity(0.95), lineWidth: size * 0.08)
+                    .frame(width: size * 0.42, height: size * 0.42)
+                Text("$")
+                    .font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
+                    .foregroundStyle(TokenPilotDesign.accent(for: provider))
+                    .scaleEffect(isVisible ? 1 : 0.7)
+            }
+            .padding(size * 0.22)
         }
     }
 }
@@ -422,6 +433,7 @@ private extension Provider {
         case .claude: return 0.04
         case .codex: return 0.10
         case .gemini: return 0.16
+        case .deepseek: return 0.22
         }
     }
 }

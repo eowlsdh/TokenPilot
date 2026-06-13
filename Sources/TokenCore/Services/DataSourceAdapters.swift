@@ -1820,6 +1820,153 @@ private struct CodexTokenUsage: Equatable {
     }
 }
 
+// MARK: - DeepSeek Balance Adapter
+
+public protocol DeepSeekBalanceHTTPClient: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse)
+}
+
+public struct URLSessionDeepSeekBalanceHTTPClient: DeepSeekBalanceHTTPClient {
+    public init() {}
+
+    public func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw DeepSeekBalanceError.invalidHTTPResponse
+        }
+        return (data, httpResponse)
+    }
+}
+
+public enum DeepSeekBalanceError: Error, Equatable, Sendable {
+    case invalidHTTPResponse
+    case httpStatus(Int)
+    case invalidPayload
+    case unavailable
+}
+
+public struct DeepSeekBalanceParser: Sendable {
+    public init() {}
+
+    public func parse(_ data: Data, capturedAt: Date = Date()) throws -> ProviderBalance {
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw DeepSeekBalanceError.invalidPayload
+        }
+        // DeepSeek's `is_available` means balance sufficiency, not payload validity.
+        // Keep parsing `balance_infos` so zero/insufficient balances can display and alert.
+        guard let infos = json["balance_infos"] as? [[String: Any]], !infos.isEmpty else {
+            throw DeepSeekBalanceError.invalidPayload
+        }
+        let preferred = infos.first { info in
+            decimalValue(info["topped_up_balance"]).map { $0 > 0 } ?? false
+        } ?? infos[0]
+        guard let currency = stringValue(preferred["currency"])?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !currency.isEmpty,
+              let toppedUp = decimalValue(preferred["topped_up_balance"]) else {
+            throw DeepSeekBalanceError.invalidPayload
+        }
+        return ProviderBalance(
+            currency: currency,
+            totalBalance: decimalValue(preferred["total_balance"]),
+            grantedBalance: decimalValue(preferred["granted_balance"]),
+            toppedUpBalance: toppedUp,
+            capturedAt: capturedAt
+        )
+    }
+}
+
+public final class DeepSeekBalanceAdapter: ProviderAdapter, @unchecked Sendable {
+    public let provider: Provider = .deepseek
+    private let httpClient: any DeepSeekBalanceHTTPClient
+    private let keychain: KeychainService
+    private let parser: DeepSeekBalanceParser
+    private let endpoint: URL
+    private var lastSuccessfulBalance: ProviderBalance?
+
+    public init(
+        httpClient: any DeepSeekBalanceHTTPClient = URLSessionDeepSeekBalanceHTTPClient(),
+        keychain: KeychainService = KeychainService(),
+        parser: DeepSeekBalanceParser = DeepSeekBalanceParser(),
+        endpoint: URL = URL(string: "https://api.deepseek.com/user/balance")!
+    ) {
+        self.httpClient = httpClient
+        self.keychain = keychain
+        self.parser = parser
+        self.endpoint = endpoint
+    }
+
+    public func snapshot(settings: AppSettings) async -> ProviderSnapshot {
+        guard settings.deepseekEnabled else {
+            return ProviderSnapshot(provider: .deepseek, confidence: .low, statusMessage: "Disabled")
+        }
+
+        if let apiKey = try? keychain.readSecret(account: "deepseek.apiKey"), !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                var request = URLRequest(url: endpoint)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await httpClient.data(for: request)
+                guard (200..<300).contains(response.statusCode) else {
+                    throw DeepSeekBalanceError.httpStatus(response.statusCode)
+                }
+                let balance = try parser.parse(data)
+                lastSuccessfulBalance = balance
+                return snapshot(balance: balance, confidence: .high, dataSource: .officialTelemetry, isStale: false, message: "DeepSeek balance")
+            } catch {
+                if let lastSuccessfulBalance {
+                    return snapshot(balance: lastSuccessfulBalance, confidence: .medium, dataSource: .officialTelemetry, isStale: true, message: "DeepSeek balance stale · last successful value")
+                }
+                if let manual = manualBalance(settings: settings) {
+                    return snapshot(balance: manual, confidence: .manual, dataSource: .manual, isStale: true, message: "DeepSeek manual fallback")
+                }
+                return ProviderSnapshot(provider: .deepseek, confidence: .low, dataSource: .officialTelemetry, statusMessage: "DeepSeek balance unavailable")
+            }
+        }
+
+        if let manual = manualBalance(settings: settings) {
+            return snapshot(balance: manual, confidence: .manual, dataSource: .manual, isStale: false, message: "DeepSeek manual fallback")
+        }
+
+        return ProviderSnapshot(provider: .deepseek, confidence: .manual, dataSource: .manual, statusMessage: "API key required")
+    }
+
+    private func manualBalance(settings: AppSettings) -> ProviderBalance? {
+        guard settings.deepSeekBalance.manualFallbackEnabled,
+              let balance = Decimal(string: settings.deepSeekBalance.manualBalanceText.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return nil
+        }
+        return ProviderBalance(
+            currency: settings.deepSeekBalance.manualCurrency,
+            toppedUpBalance: balance,
+            capturedAt: settings.deepSeekBalance.manualCapturedAt ?? Date()
+        )
+    }
+
+    private func snapshot(balance: ProviderBalance, confidence: DataConfidence, dataSource: UsageDataSource, isStale: Bool, message: String) -> ProviderSnapshot {
+        ProviderSnapshot(
+            provider: .deepseek,
+            updatedAt: balance.capturedAt,
+            confidence: confidence,
+            dataSource: dataSource,
+            isStale: isStale,
+            statusMessage: message,
+            model: DeepSeekBalanceFormatter.display(balance),
+            events: [],
+            balance: balance
+        )
+    }
+}
+
+public enum DeepSeekBalanceFormatter {
+    public static func display(_ balance: ProviderBalance) -> String {
+        let amount = NSDecimalNumber(decimal: balance.toppedUpBalance).doubleValue
+        if balance.currency.uppercased() == "USD" {
+            return String(format: "$%.2f", amount)
+        }
+        return "\(balance.currency.uppercased()) " + String(format: "%.2f", amount)
+    }
+}
 // MARK: - Codex Manual Adapter
 
 public final class CodexManualAdapter: ProviderAdapter, Sendable {

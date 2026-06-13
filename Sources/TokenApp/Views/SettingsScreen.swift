@@ -30,6 +30,7 @@ struct SettingsScreen: View {
                         providerToggle(.claude)
                         providerToggle(.codex)
                         providerToggle(.gemini)
+                        providerToggle(.deepseek)
                     }
                     Text(model.t("Toggle providers shown on Overview. Disabled providers are hidden and not refreshed."))
                         .font(.caption2)
@@ -134,6 +135,61 @@ struct SettingsScreen: View {
                 }
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
                     .buttonStyle(.bordered)
+            }
+
+
+
+            ProviderSetupCard(provider: .deepseek, title: "DeepSeek", status: model.sourceStatusText(.deepseek), statusColor: model.sourceStatusColor(.deepseek), detail: model.sourceDetailText(.deepseek)) {
+                HStack {
+                    StatusBadge(
+                        label: model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required"),
+                        color: model.hasSavedDeepSeekAPIKey ? TokenPilotDesign.calm : TokenPilotDesign.warning
+                    )
+                    Spacer(minLength: 0)
+                    Text(model.t("Official balance API"))
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+                SecureField(model.hasSavedDeepSeekAPIKey ? model.t("Saved API key hidden") : model.t("DeepSeek API Key"), text: $model.deepSeekAPIKeyInput)
+                    .textFieldStyle(.roundedBorder)
+                Text(model.t("TokenPilot stores only its own DeepSeek API key Keychain item and calls the official /user/balance endpoint."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                HStack {
+                    Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
+                        .buttonStyle(.borderedProminent)
+                        .tint(TokenPilotDesign.calm)
+                    Button(model.t("Delete API Key")) { model.deleteDeepSeekAPIKey() }
+                        .buttonStyle(.bordered)
+                        .disabled(!model.hasSavedDeepSeekAPIKey)
+                    Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
+                        .buttonStyle(.bordered)
+                }
+                Divider()
+                    .opacity(0.25)
+                Text(model.t("Manual DeepSeek balance fallback"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                Toggle(model.t("Use Manual DeepSeek Balance"), isOn: $model.settings.deepSeekBalance.manualFallbackEnabled)
+                HStack {
+                    TextField(model.t("Balance"), text: $model.settings.deepSeekBalance.manualBalanceText)
+                        .textFieldStyle(.roundedBorder)
+                    TextField(model.t("Currency"), text: $model.settings.deepSeekBalance.manualCurrency)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 90)
+                    Button(model.t("Mark Balance Now")) {
+                        model.settings.deepSeekBalance.manualCapturedAt = Date()
+                    }
+                }
+                Stepper(
+                    String(format: model.t("Low balance alert: %.2f"), NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue),
+                    value: Binding(
+                        get: { NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue },
+                        set: { model.settings.deepSeekBalance.lowBalanceThreshold = Decimal(max($0, 0)) }
+                    ),
+                    in: 0...10_000,
+                    step: 1
+                )
             }
 
             ProviderSetupCard(provider: .codex, title: "Codex", status: model.sourceStatusText(.codex), statusColor: model.sourceStatusColor(.codex), detail: model.sourceDetailText(.codex)) {

@@ -45,8 +45,10 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var bannerMessage: String?
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
+    @Published var deepSeekAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
+    @Published var hasSavedDeepSeekAPIKey = false
     @Published private var menuBarNow = Date()
     @Published var settings: AppSettings {
         didSet {
@@ -90,6 +92,7 @@ final class TokenPilotViewModel: ObservableObject {
         self.challengeTargetTokens = loaded.challengeTargetTokens
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
+        self.hasSavedDeepSeekAPIKey = false
         startAutoRefresh()
         Task {
             await updatePermissionStatus()
@@ -102,11 +105,17 @@ final class TokenPilotViewModel: ObservableObject {
         Task {
             hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
             hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
+            let hasDeepSeekKey = ((try? keychain.readSecret(account: Self.deepSeekAPIKeyAccount)) ?? nil) != nil
+            hasSavedDeepSeekAPIKey = hasDeepSeekKey
+            if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
+                settings.deepseekAPIKeyConfigured = hasDeepSeekKey
+            }
         }
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
+    static let deepSeekAPIKeyAccount = "deepseek.apiKey"
 
     var menuBarTitle: String {
         menuBarStatusService.title(
@@ -530,7 +539,12 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusText(_ provider: Provider) -> String {
-        guard let source = dataSources[provider] else { return t("Not checked") }
+        guard let source = dataSources[provider] else {
+            if provider == .deepseek {
+                return settings.deepseekAPIKeyConfigured ? t("API key saved") : t("API key required")
+            }
+            return t("Not checked")
+        }
         return sourceStatusText(source)
     }
 
@@ -555,6 +569,11 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceDetailText(_ provider: Provider) -> String {
+        if provider == .deepseek {
+            return settings.deepseekAPIKeyConfigured
+                ? t("DeepSeek API key saved in TokenPilot Keychain item.")
+                : t("Save a DeepSeek API key to enable official balance checks.")
+        }
         guard let source = dataSources[provider] else { return t("Run Check Connection to scan local paths.") }
         if provider == .codex {
             if settings.codexManual.webConnectorEnabled {
@@ -578,6 +597,15 @@ final class TokenPilotViewModel: ObservableObject {
             if let source = dataSources[provider] {
                 return source.connectionDiagnostic()
             }
+            if provider == .deepseek {
+                return ProviderDataSource(
+                    provider: provider,
+                    isEnabled: settings.isProviderEnabled(provider),
+                    status: settings.isProviderEnabled(provider) ? (settings.deepseekAPIKeyConfigured ? .connected : .manual) : .disabled,
+                    confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
+                    statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
+                ).connectionDiagnostic()
+            }
             return ProviderDataSource(
                 provider: provider,
                 isEnabled: settings.isProviderEnabled(provider),
@@ -588,7 +616,17 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func diagnosticStatusText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
-        sourceStatusText(
+        if diagnostic.provider == .deepseek {
+            switch diagnostic.status {
+            case .connected:
+                return t("Connected") + " · " + t("API key saved")
+            case .manual:
+                return t("Manual mode") + " · " + t("API key required")
+            default:
+                break
+            }
+        }
+        return sourceStatusText(
             ProviderDataSource(
                 provider: diagnostic.provider,
                 isEnabled: diagnostic.status != .disabled,
@@ -624,7 +662,12 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusColor(_ provider: Provider) -> Color {
-        guard let status = dataSources[provider]?.status else { return TokenPilotDesign.textSecondary }
+        guard let status = dataSources[provider]?.status else {
+            if provider == .deepseek {
+                return settings.deepseekAPIKeyConfigured ? TokenPilotDesign.calm : TokenPilotDesign.warning
+            }
+            return TokenPilotDesign.textSecondary
+        }
         switch status {
         case .connected: return TokenPilotDesign.calm
         case .stale, .estimated, .manual, .noUsableData: return TokenPilotDesign.warning
@@ -687,6 +730,52 @@ final class TokenPilotViewModel: ObservableObject {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         bannerMessage = t("Copied.")
+    }
+
+
+    private func updateDeepSeekDataSourceForCredentialState() {
+        let source = ProviderDataSource(
+            provider: .deepseek,
+            isEnabled: settings.isProviderEnabled(.deepseek),
+            mode: settings.deepseekAPIKeyConfigured ? .auto : .custom,
+            lastScanAt: Date(),
+            status: settings.deepseekAPIKeyConfigured ? .connected : .manual,
+            confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
+            statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
+        )
+        dataSources[.deepseek] = source
+        connectionStatus[.deepseek] = sourceStatusText(source)
+    }
+
+    func saveDeepSeekAPIKey() {
+        let key = deepSeekAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            bannerMessage = t("Enter a DeepSeek API key first.")
+            return
+        }
+        do {
+            try keychain.saveSecret(key, account: Self.deepSeekAPIKeyAccount)
+            deepSeekAPIKeyInput = ""
+            hasSavedDeepSeekAPIKey = true
+            settings.deepseekAPIKeyConfigured = true
+            updateDeepSeekDataSourceForCredentialState()
+            bannerMessage = t("DeepSeek API key saved in TokenPilot Keychain item.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func deleteDeepSeekAPIKey() {
+        do {
+            try keychain.deleteSecret(account: Self.deepSeekAPIKeyAccount)
+            deepSeekAPIKeyInput = ""
+            hasSavedDeepSeekAPIKey = false
+            settings.deepseekAPIKeyConfigured = false
+            updateDeepSeekDataSourceForCredentialState()
+            bannerMessage = t("DeepSeek API key deleted.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
     }
 
     func saveTelegramToken() {

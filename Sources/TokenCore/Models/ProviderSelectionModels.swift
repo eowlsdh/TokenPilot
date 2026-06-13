@@ -27,6 +27,7 @@ public enum ProviderConnectionNextAction: String, Codable, CaseIterable, Sendabl
     case enableProvider
     case pasteCodexStatus
     case reviewManualEstimate
+    case enterAPIKey
 
     public var localizationKey: String {
         switch self {
@@ -48,6 +49,8 @@ public enum ProviderConnectionNextAction: String, Codable, CaseIterable, Sendabl
             return "Paste /status or enter manual estimates."
         case .reviewManualEstimate:
             return "Review the manual estimate and confidence label."
+        case .enterAPIKey:
+            return "Save a provider API key in TokenPilot Keychain."
         }
     }
 }
@@ -164,6 +167,7 @@ public extension ProviderDataSource {
         case .connected:
             return .refreshWhenStale
         case .notFound:
+            if provider == .deepseek { return .enterAPIKey }
             return provider == .codex ? .pasteCodexStatus : .chooseLocalSource
         case .permissionDenied:
             return .grantFileAccess
@@ -176,7 +180,7 @@ public extension ProviderDataSource {
         case .disabled:
             return .enableProvider
         case .manual:
-            return .pasteCodexStatus
+            return provider == .deepseek ? .enterAPIKey : .pasteCodexStatus
         case .estimated:
             return .reviewManualEstimate
         }
@@ -199,7 +203,7 @@ public extension ProviderDataSource {
         case .disabled:
             return "This provider is disabled and skipped during refresh."
         case .manual:
-            return "Codex is waiting for pasted /status output or manual estimates."
+            return provider == .deepseek ? "DeepSeek is waiting for an API key saved in TokenPilot Keychain or manual balance fallback." : "Codex is waiting for pasted /status output or manual estimates."
         case .estimated:
             return "TokenPilot is using manual or unofficial estimate data."
         }
@@ -213,7 +217,7 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
     public var scanDisabledProviders: Bool
 
     public init(
-        enabledProviders: Set<Provider> = [.claude, .codex, .gemini],
+        enabledProviders: Set<Provider> = [.claude, .codex, .gemini, .deepseek],
         providerModes: [Provider: ProviderMode] = [:],
         customPaths: [Provider: String] = [:],
         scanDisabledProviders: Bool = false

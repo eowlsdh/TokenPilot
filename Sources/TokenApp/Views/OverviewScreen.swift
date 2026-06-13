@@ -340,6 +340,9 @@ struct ProviderOverviewRow: View {
     }
 
     private var valueText: String {
+        if let balance = snapshot.balance {
+            return DeepSeekBalanceFormatter.display(balance)
+        }
         guard let remainingPercent else {
             if snapshot.todayTokens > 0 { return TokenPilotFormatters.compactNumber(snapshot.todayTokens) }
             return "—"
@@ -351,6 +354,10 @@ struct ProviderOverviewRow: View {
     }
 
     private var detailText: String {
+        if let balance = snapshot.balance {
+            let prefix = snapshot.isStale ? "\(localized("STALE", language: language)) · " : ""
+            return prefix + String(format: localized("Topped-up balance · %@", language: language), balance.currency)
+        }
         let limits = limitSegments
         if !limits.isEmpty {
             return limits.joined(separator: " · ")

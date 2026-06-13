@@ -4,6 +4,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case claude
     case codex
     case gemini
+    case deepseek
 
     public var id: String { rawValue }
 
@@ -12,6 +13,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
         case .gemini: return "Gemini CLI"
+        case .deepseek: return "DeepSeek"
         }
     }
 
@@ -20,6 +22,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: return "Cl"
         case .codex: return "Co"
         case .gemini: return "Ge"
+        case .deepseek: return "DS"
         }
     }
 
@@ -28,6 +31,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .claude: return "brain"
         case .codex: return "terminal"
         case .gemini: return "sparkles"
+        case .deepseek: return "dollarsign.circle"
         }
     }
 }
@@ -280,6 +284,22 @@ public struct LimitWindow: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+public struct ProviderBalance: Codable, Equatable, Sendable {
+    public var currency: String
+    public var totalBalance: Decimal?
+    public var grantedBalance: Decimal?
+    public var toppedUpBalance: Decimal
+    public var capturedAt: Date
+
+    public init(currency: String, totalBalance: Decimal? = nil, grantedBalance: Decimal? = nil, toppedUpBalance: Decimal, capturedAt: Date = Date()) {
+        self.currency = currency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        self.totalBalance = totalBalance
+        self.grantedBalance = grantedBalance
+        self.toppedUpBalance = max(toppedUpBalance, 0)
+        self.capturedAt = capturedAt
+    }
+}
+
 public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var id: Provider { provider }
     public var provider: Provider
@@ -298,6 +318,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var model: String?
     public var contextWindowUsedPercent: Int?
     public var events: [UsageEvent]
+    public var balance: ProviderBalance?
 
     public init(
         provider: Provider,
@@ -315,7 +336,8 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         statusMessage: String? = nil,
         model: String? = nil,
         contextWindowUsedPercent: Int? = nil,
-        events: [UsageEvent] = []
+        events: [UsageEvent] = [],
+        balance: ProviderBalance? = nil
     ) {
         self.provider = provider
         self.updatedAt = updatedAt
@@ -333,6 +355,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         self.model = model
         self.contextWindowUsedPercent = contextWindowUsedPercent.map { min(max($0, 0), 100) }
         self.events = events
+        self.balance = balance
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -352,6 +375,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         case model
         case contextWindowUsedPercent
         case events
+        case balance
     }
 
     public init(from decoder: Decoder) throws {
@@ -372,7 +396,8 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
             statusMessage: try container.decodeIfPresent(String.self, forKey: .statusMessage),
             model: try container.decodeIfPresent(String.self, forKey: .model),
             contextWindowUsedPercent: try container.decodeIfPresent(Int.self, forKey: .contextWindowUsedPercent),
-            events: try container.decodeIfPresent([UsageEvent].self, forKey: .events) ?? []
+            events: try container.decodeIfPresent([UsageEvent].self, forKey: .events) ?? [],
+            balance: try container.decodeIfPresent(ProviderBalance.self, forKey: .balance)
         )
     }
 
@@ -394,6 +419,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(model, forKey: .model)
         try container.encodeIfPresent(contextWindowUsedPercent, forKey: .contextWindowUsedPercent)
         try container.encode(events, forKey: .events)
+        try container.encodeIfPresent(balance, forKey: .balance)
     }
 
     public var dailyRequestsPercent: Int? {
@@ -413,6 +439,28 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
 
     public var isWebQuotaComparable: Bool {
         !(provider == .codex && dataSource == .localLog && isExperimental)
+    }
+}
+
+public struct DeepSeekBalanceSettings: Codable, Equatable, Sendable {
+    public var manualFallbackEnabled: Bool
+    public var manualBalanceText: String
+    public var manualCurrency: String
+    public var manualCapturedAt: Date?
+    public var lowBalanceThreshold: Decimal
+
+    public init(
+        manualFallbackEnabled: Bool = false,
+        manualBalanceText: String = "",
+        manualCurrency: String = "USD",
+        manualCapturedAt: Date? = nil,
+        lowBalanceThreshold: Decimal = 5
+    ) {
+        self.manualFallbackEnabled = manualFallbackEnabled
+        self.manualBalanceText = manualBalanceText
+        self.manualCurrency = manualCurrency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        self.manualCapturedAt = manualCapturedAt
+        self.lowBalanceThreshold = max(lowBalanceThreshold, 0)
     }
 }
 
@@ -862,6 +910,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var claudeEnabled: Bool
     public var codexEnabled: Bool
     public var geminiEnabled: Bool
+    public var deepseekEnabled: Bool
+    public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
     public var claudeStatusFilePath: String
@@ -879,6 +929,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var discord: DiscordSettings
     public var localization: LocalizationSettings
     public var alertRules: [AlertRule]
+    public var deepSeekBalance: DeepSeekBalanceSettings
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
 
@@ -886,6 +937,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         claudeEnabled: Bool = true,
         codexEnabled: Bool = true,
         geminiEnabled: Bool = true,
+        deepseekEnabled: Bool = true,
+        deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
         geminiTelemetryLogPath: String = "~/.gemini/telemetry.log",
@@ -901,6 +954,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         discord: DiscordSettings = DiscordSettings(),
         localization: LocalizationSettings = LocalizationSettings(),
         alertRules: [AlertRule] = AppSettings.defaultAlertRules,
+        deepSeekBalance: DeepSeekBalanceSettings = DeepSeekBalanceSettings(),
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
@@ -909,6 +963,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
         self.geminiEnabled = geminiEnabled
+        self.deepseekEnabled = deepseekEnabled
+        self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
         self.claudeStatusFilePath = claudeStatusFilePath
@@ -926,6 +982,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.discord = discord
         self.localization = localization
         self.alertRules = alertRules
+        self.deepSeekBalance = deepSeekBalance
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
     }
@@ -934,6 +991,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case claudeEnabled
         case codexEnabled
         case geminiEnabled
+        case deepseekEnabled
+        case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
         case claudeStatusFilePath
@@ -951,6 +1010,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case discord
         case localization
         case alertRules
+        case deepSeekBalance
         case showMockDataWhenDisconnected
         case challengeTargetTokens
     }
@@ -961,6 +1021,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             claudeEnabled: try container.decodeIfPresent(Bool.self, forKey: .claudeEnabled) ?? true,
             codexEnabled: try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? true,
             geminiEnabled: try container.decodeIfPresent(Bool.self, forKey: .geminiEnabled) ?? true,
+            deepseekEnabled: try container.decodeIfPresent(Bool.self, forKey: .deepseekEnabled) ?? true,
+            deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
             geminiTelemetryLogPath: try container.decodeIfPresent(String.self, forKey: .geminiTelemetryLogPath) ?? "~/.gemini/telemetry.log",
@@ -976,6 +1038,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             discord: try container.decodeIfPresent(DiscordSettings.self, forKey: .discord) ?? DiscordSettings(),
             localization: try container.decodeIfPresent(LocalizationSettings.self, forKey: .localization) ?? LocalizationSettings(),
             alertRules: try container.decodeIfPresent([AlertRule].self, forKey: .alertRules) ?? AppSettings.defaultAlertRules,
+            deepSeekBalance: try container.decodeIfPresent(DeepSeekBalanceSettings.self, forKey: .deepSeekBalance) ?? DeepSeekBalanceSettings(),
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: try container.decodeIfPresent(Provider.self, forKey: .menuBarDisplayTarget),

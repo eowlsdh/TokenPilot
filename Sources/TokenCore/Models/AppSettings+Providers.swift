@@ -8,7 +8,14 @@ extension AppSettings {
         let legacyEnabled = Set(Provider.allCases.filter { isLegacyProviderFlagEnabled($0) })
         let monitoredEnabled = monitoredProviders.enabledProviders
         let effective = monitoredEnabled.isEmpty ? legacyEnabled : legacyEnabled.intersection(monitoredEnabled)
-        let fallback = !effective.isEmpty ? effective : (!legacyEnabled.isEmpty ? legacyEnabled : (!monitoredEnabled.isEmpty ? monitoredEnabled : Set(Provider.allCases)))
+        var fallback = !effective.isEmpty ? effective : (!legacyEnabled.isEmpty ? legacyEnabled : (!monitoredEnabled.isEmpty ? monitoredEnabled : Set(Provider.allCases)))
+        // Default-on migration for provider sets persisted before DeepSeek existed:
+        // old monitoredProviders can contain every legacy provider but not the new case.
+        if deepseekEnabled,
+           !fallback.contains(.deepseek),
+           monitoredEnabled.isSuperset(of: Set([Provider.claude, .codex, .gemini])) {
+            fallback.insert(.deepseek)
+        }
         return Provider.allCases.filter { fallback.contains($0) }
     }
 
@@ -22,7 +29,7 @@ extension AppSettings {
             return claudeStatusFileBookmarkData
         case .gemini:
             return geminiTelemetrySourceBookmarkData
-        case .codex:
+        case .codex, .deepseek:
             return nil
         }
     }
@@ -33,7 +40,7 @@ extension AppSettings {
             claudeStatusFileBookmarkData = data
         case .gemini:
             geminiTelemetrySourceBookmarkData = data
-        case .codex:
+        case .codex, .deepseek:
             break
         }
     }
@@ -62,6 +69,7 @@ extension AppSettings {
         case .claude: return claudeEnabled
         case .codex: return codexEnabled
         case .gemini: return geminiEnabled
+        case .deepseek: return deepseekEnabled
         }
     }
 
@@ -70,6 +78,7 @@ extension AppSettings {
         claudeEnabled = safeProviders.contains(.claude)
         codexEnabled = safeProviders.contains(.codex)
         geminiEnabled = safeProviders.contains(.gemini)
+        deepseekEnabled = safeProviders.contains(.deepseek)
         monitoredProviders.enabledProviders = safeProviders
     }
 }
