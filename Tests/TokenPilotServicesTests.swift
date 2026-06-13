@@ -1366,6 +1366,49 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.model, "plus")
     }
 
+    func testCodexAppServerRateLimitsDoNotTreatBareRemainingAsPercent() async throws {
+        let referenceNow = Date(timeIntervalSince1970: 1_779_000_000)
+        let fiveHourReset = Date(timeIntervalSince1970: 1_800_000_000)
+        let response = """
+        {
+            "id":2,
+            "result": {
+                "planType":"plus",
+                "rateLimits": {
+                    "primary": {
+                        "remaining": 0,
+                        "window_minutes": 300,
+                        "resets_at": \(Int(fiveHourReset.timeIntervalSince1970))
+                    }
+                }
+            }
+        }
+        """.data(using: .utf8)!
+        let appServer = StubCodexAppServerRateLimitClient(data: response)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = true
+
+        let snapshot = await CodexWebUsageAdapter(
+            appServerClient: appServer,
+            now: { referenceNow }
+        ).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.provider, .codex)
+        XCTAssertEqual(snapshot.dataSource, .webUsage)
+        XCTAssertEqual(snapshot.confidence, .high)
+        XCTAssertEqual(snapshot.fiveHour?.kind, .fiveHour)
+        XCTAssertNil(snapshot.fiveHour?.usedPercent)
+        XCTAssertEqual(snapshot.fiveHour?.resetAt, fiveHourReset)
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: referenceNow
+        )
+        XCTAssertFalse(title.contains("5h 0%"))
+    }
+
     func testCodexAppServerRateLimitsParseLiveCamelCaseNestedPlanShape() async throws {
         let referenceNow = Date(timeIntervalSince1970: 1_779_000_000)
         let fiveHourReset = Date(timeIntervalSince1970: 1_800_000_000)
@@ -2550,12 +2593,16 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(todayResult.metrics.inputTokens, 100)
         XCTAssertEqual(todayResult.metrics.outputTokens, 0)
 
-        // sevenDayBars always uses ALL web-comparable events regardless of period
+        // sevenDayBars always shows the actual last seven calendar days, regardless of selected summary period.
         XCTAssertEqual(todayResult.sevenDayBars.count, 7, "sevenDayBars must have exactly 7 entries")
-        // Bars are reversed: [6d-ago, 5d-ago, ..., yesterday, today]
-        XCTAssertGreaterThan(todayResult.sevenDayBars[6].tokens, 0, "Today's bar (index 6) should have tokens > 0")
-        XCTAssertGreaterThan(todayResult.sevenDayBars[5].tokens, 0, "Yesterday's bar (index 5) should have tokens > 0")
-        XCTAssertGreaterThan(todayResult.sevenDayBars[0].tokens, 0, "6-days-ago bar (index 0) should have tokens > 0")
+        // Bars are reversed: [6d-ago, 5d-ago, ..., yesterday, today].
+        XCTAssertEqual(todayResult.sevenDayBars[6].tokens, 100, "Today's bar should include today's tokens only")
+        XCTAssertEqual(todayResult.sevenDayBars[5].tokens, 200, "Yesterday's bar should include yesterday's tokens only")
+        XCTAssertEqual(todayResult.sevenDayBars[0].tokens, 300, "6-days-ago bar should include the oldest in-window day")
+        XCTAssertFalse(
+            todayResult.sevenDayBars.contains { $0.tokens == 400 },
+            "Events older than the seven calendar-day chart window must not appear in sevenDayBars"
+        )
 
         // providerShare should have 3 providers (all cases)
         XCTAssertEqual(todayResult.providerShare.count, Provider.allCases.count)

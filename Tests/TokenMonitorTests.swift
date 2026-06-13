@@ -306,18 +306,13 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(copy.contains("연결된 것처럼"))
     }
 
-    func testOverviewRecommendationCopyAvoidsOverclaimingBestTool() throws {
-        XCTAssertEqual(
-            TokenPilotLocalizer.localized("Lowest current usage", language: .ko),
-            "현재 사용률이 가장 낮은 툴"
-        )
-
+    func testOverviewDoesNotShowToolRecommendationCard() throws {
         let source = try Self.tokenMonitorAppSource()
-        XCTAssertTrue(source.contains("localized(\"Lowest current usage\""))
-        XCTAssertFalse(
-            source.contains("localized(\"Best tool now\""),
-            "Overview should frame the card as observed usage, not a definitive best-tool recommendation."
-        )
+
+        XCTAssertFalse(source.contains("BestToolCard("))
+        XCTAssertFalse(source.contains("struct BestToolCard"))
+        XCTAssertFalse(source.contains("localized(\"Lowest current usage\""))
+        XCTAssertFalse(source.contains("localized(\"Best tool now\""))
     }
 
     func testFilePickerStoresSecurityScopedBookmarksForAppStoreSandboxReadiness() throws {
@@ -408,11 +403,27 @@ final class TokenMonitorTests: XCTestCase {
         )
     }
 
-    func testOverviewNowShows7DayAndProviderShareCardsWhenDataExists() throws {
+    func testOverviewOmitsSevenDayAndProviderShareCards() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertTrue(source.contains("SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)"))
-        XCTAssertTrue(source.contains("ProviderShareRow(shares: model.overviewUsage.providerShare)"))
+        XCTAssertFalse(source.contains("SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)"))
+        XCTAssertFalse(source.contains("ProviderShareRow(shares: model.overviewUsage.providerShare)"))
+        XCTAssertTrue(source.contains("SevenDayBarChart(bars: model.historyUsage.sevenDayBars)"))
+        XCTAssertTrue(source.contains("ProviderShareRow(shares: model.historyUsage.providerShare)"))
+    }
+
+    func testLimitCardsPreferRemainingPercentCopy() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        XCTAssertTrue(source.contains("remainingPercentText"))
+        XCTAssertTrue(source.contains("localized(\"Lowest remaining\""))
+        XCTAssertTrue(source.contains("ProgressLine(percent: remainingPercent"))
+        XCTAssertTrue(source.contains("return \"\\(remainingPercent)%\""))
+        XCTAssertFalse(source.contains("return TokenPilotFormatters.remainingTime(until: resetAt)"))
+        XCTAssertTrue(source.contains("remainingPercentText(window.remainingPercent)"))
+        XCTAssertTrue(source.contains("String(format: localized(\"Remaining %d%%\""))
+        XCTAssertFalse(source.contains("Text(percentText)"))
+        XCTAssertFalse(source.contains("value: percentText(window.usedPercent)"))
     }
 
     func testCommercialReleaseResourcesArePresentAndPackaged() throws {

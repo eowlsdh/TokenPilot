@@ -1099,12 +1099,11 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
                 ?? dictionary["consumed_percent"]
                 ?? dictionary["consumedPercent"]
         )
-        let remainingValue = codexWebPercentValue(
+        let remainingPercentValue = codexWebPercentValue(
             dictionary["remaining_percent"]
                 ?? dictionary["remaining_percentage"]
                 ?? dictionary["remainingPercent"]
                 ?? dictionary["remainingpercent"]
-                ?? dictionary["remaining"]
         )
         let usedFromRawCounts = codexWebUsedPercent(
             dictionary: dictionary,
@@ -1153,9 +1152,41 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
                 "maxInputTokens"
             ]
         )
+        let usedFromRemainingRawCounts = codexWebUsedPercentFromRemaining(
+            dictionary: dictionary,
+            remainingKeys: [
+                "remaining",
+                "remaining_requests",
+                "remainingRequests",
+                "remaining_tokens",
+                "remainingTokens"
+            ],
+            limitKeys: [
+                "limit",
+                "max",
+                "max_requests",
+                "maxRequests",
+                "max_tokens",
+                "maxTokens",
+                "request_limit",
+                "requestLimit",
+                "limit_requests",
+                "limitRequests",
+                "capacity",
+                "quota",
+                "total",
+                "total_requests",
+                "totalRequests",
+                "total_tokens",
+                "totalTokens",
+                "max_input_tokens",
+                "maxInputTokens"
+            ]
+        )
         let used = usedValue
-            ?? remainingValue.map { min(max(100 - $0, 0), 100) }
+            ?? remainingPercentValue.map { min(max(100 - $0, 0), 100) }
             ?? usedFromRawCounts
+            ?? usedFromRemainingRawCounts
         let resetAt = dateValue(dictionary["reset_at"] ?? dictionary["resets_at"] ?? dictionary["resetAt"] ?? dictionary["resetsAt"] ?? dictionary["reset_at_time"] ?? dictionary["resetAtTime"])
             ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"]).map { now().addingTimeInterval(TimeInterval(max($0, 0))) }
         if let resetAt, resetAt <= now() {
@@ -1171,6 +1202,16 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
               limit > 0 else {
             return nil
         }
+        return min(max(Int((used / limit * 100).rounded()), 0), 100)
+    }
+
+    private func codexWebUsedPercentFromRemaining(dictionary: [String: Any], remainingKeys: [String], limitKeys: [String]) -> Int? {
+        guard let remaining = codexWebRawValue(from: dictionary, keys: remainingKeys),
+              let limit = codexWebRawValue(from: dictionary, keys: limitKeys),
+              limit > 0 else {
+            return nil
+        }
+        let used = max(limit - remaining, 0)
         return min(max(Int((used / limit * 100).rounded()), 0), 100)
     }
 

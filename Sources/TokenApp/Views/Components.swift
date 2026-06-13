@@ -113,22 +113,24 @@ struct ProviderSnapshotCard: View {
         VStack(alignment: .leading, spacing: 5) {
             MetricRow(
                 label: localized(window.label, language: language),
-                value: percentText(window.usedPercent),
+                value: remainingPercentText(window.remainingPercent),
                 detail: limitDetail(window)
             )
-            ProgressLine(percent: window.usedPercent, color: TokenPilotDesign.riskColor(window.usedPercent))
+            ProgressLine(percent: window.remainingPercent, color: TokenPilotDesign.riskColor(window.usedPercent))
         }
     }
 
     private func requestMetric(used: Int, limit: Int) -> some View {
-        let percent = snapshot.dailyRequestsPercent ?? 0
+        let usedPercent = snapshot.dailyRequestsPercent ?? 0
+        let remaining = max(limit - used, 0)
+        let remainingPercent = min(max(100 - usedPercent, 0), 100)
         return VStack(alignment: .leading, spacing: 5) {
             MetricRow(
                 label: localized("Daily", language: language),
-                value: "\(TokenPilotFormatters.compactNumber(used)) / \(TokenPilotFormatters.compactNumber(limit))",
-                detail: "\(percent)%"
+                value: "\(TokenPilotFormatters.compactNumber(remaining)) / \(TokenPilotFormatters.compactNumber(limit))",
+                detail: String(format: localized("Remaining %d%%", language: language), remainingPercent)
             )
-            ProgressLine(percent: percent, color: TokenPilotDesign.riskColor(percent))
+            ProgressLine(percent: remainingPercent, color: TokenPilotDesign.riskColor(usedPercent))
         }
     }
 
@@ -158,7 +160,7 @@ struct ProviderSnapshotCard: View {
         return "\(localized("Daily cap", language: language)) \(TokenPilotFormatters.compactNumber(cap))"
     }
 
-    private func percentText(_ percent: Int?) -> String {
+    private func remainingPercentText(_ percent: Int?) -> String {
         guard let percent else { return "—" }
         if shouldShowEstimatedLabel {
             return "\(percent)% \(localized("est.", language: language))"
@@ -176,9 +178,6 @@ struct ProviderSnapshotCard: View {
 
     private func limitDetail(_ window: LimitWindow) -> String? {
         var parts: [String] = []
-        if let remaining = window.remainingPercent {
-            parts.append(String(format: localized("Remaining %d%%", language: language), remaining))
-        }
         if let reset = resetText(window.resetAt) {
             parts.append(reset)
         }

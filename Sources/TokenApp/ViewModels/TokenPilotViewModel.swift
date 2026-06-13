@@ -180,13 +180,6 @@ final class TokenPilotViewModel: ObservableObject {
         nearestReset.map { TokenPilotFormatters.remainingTime(until: $0) } ?? localized("—", language: settings.localization.language)
     }
 
-    var bestToolSnapshot: ProviderSnapshot? {
-        let candidates = enabledSnapshots.compactMap { snapshot -> (ProviderSnapshot, Int)? in
-            guard let value = snapshot.primaryUsedPercent else { return nil }
-            return (snapshot, value)
-        }
-        return candidates.min(by: { $0.1 < $1.1 })?.0
-    }
 
     private var enabledSnapshots: [ProviderSnapshot] {
         menuBarStatusService.presentationSnapshots(from: snapshots, settings: settings)

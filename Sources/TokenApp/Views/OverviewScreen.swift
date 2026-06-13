@@ -95,8 +95,6 @@ struct OverviewScreen: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
                 ResetHeroCard(model: model)
-                BestToolCard(snapshot: model.bestToolSnapshot)
-
                 if model.overviewSnapshots.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         EmptyStateCard(
@@ -114,10 +112,6 @@ struct OverviewScreen: View {
                     ProviderOverviewList(snapshots: model.overviewSnapshots)
                 }
 
-                if model.overviewUsage.metrics.totalTokens > 0 {
-                    SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)
-                    ProviderShareRow(shares: model.overviewUsage.providerShare)
-                }
 
                 ChallengeCard(
                     target: model.challengeTargetTokens,
@@ -159,14 +153,14 @@ struct ResetHeroCard: View {
 
                     VStack(alignment: .trailing, spacing: 8) {
                         StatusBadge(label: riskLabel, color: riskColor)
-                        Text(percentText)
+                        Text(remainingPercentText)
                             .font(.system(size: 16, weight: .bold, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(riskColor)
                     }
                 }
 
-                ProgressLine(percent: usedPercent, color: riskColor)
+                ProgressLine(percent: remainingPercent, color: riskColor)
 
                 HStack(spacing: 8) {
                     HeroStatPill(
@@ -174,8 +168,8 @@ struct ResetHeroCard: View {
                         value: "\(TokenPilotFormatters.compactNumber(model.overviewUsage.metrics.totalTokens)) \(localized("tok", language: language))"
                     )
                     HeroStatPill(
-                        label: localized("Highest risk", language: language),
-                        value: highestRiskText,
+                        label: localized("Lowest remaining", language: language),
+                        value: lowestRemainingText,
                         color: TokenPilotDesign.riskColor(model.highestRiskProvider?.percent)
                     )
                     HeroStatPill(
@@ -192,6 +186,11 @@ struct ResetHeroCard: View {
     private var snapshot: ProviderSnapshot? { model.menuBarSnapshot }
     private var window: LimitWindow? { model.menuBarDisplayWindow }
     private var usedPercent: Int? { window?.usedPercent ?? snapshot?.primaryUsedPercent }
+    private var remainingPercent: Int? {
+        if let remaining = window?.remainingPercent { return remaining }
+        if let usedPercent { return min(max(100 - usedPercent, 0), 100) }
+        return nil
+    }
 
     private var heroEyebrow: String {
         let limit = localized("Limit", language: language)
@@ -200,11 +199,8 @@ struct ResetHeroCard: View {
     }
 
     private var heroValue: String {
-        guard let resetAt = window?.resetAt, resetAt > Date() else {
-            if let usedPercent { return "\(usedPercent)%" }
-            return "—"
-        }
-        return TokenPilotFormatters.remainingTime(until: resetAt)
+        guard let remainingPercent else { return "—" }
+        return "\(remainingPercent)%"
     }
 
     private var nextResetText: String {
@@ -213,9 +209,9 @@ struct ResetHeroCard: View {
         return "\(label) · \(TokenPilotFormatters.clock(resetAt))"
     }
 
-    private var percentText: String {
-        guard let usedPercent else { return "—" }
-        return "\(usedPercent)%"
+    private var remainingPercentText: String {
+        guard let remainingPercent else { return "—" }
+        return String(format: localized("Remaining %d%%", language: language), remainingPercent)
     }
 
     private var riskLabel: String {
@@ -229,9 +225,9 @@ struct ResetHeroCard: View {
         TokenPilotDesign.riskColor(usedPercent)
     }
 
-    private var highestRiskText: String {
+    private var lowestRemainingText: String {
         guard let highest = model.highestRiskProvider else { return "—" }
-        return "\(highest.provider.shortName) \(highest.percent)%"
+        return "\(highest.provider.shortName) \(min(max(100 - highest.percent, 0), 100))%"
     }
 
     private var updatedText: String {
@@ -323,7 +319,7 @@ struct ProviderOverviewRow: View {
                     .lineLimit(1)
             }
 
-            ProgressLine(percent: usedPercent, color: TokenPilotDesign.riskColor(usedPercent))
+            ProgressLine(percent: remainingPercent, color: TokenPilotDesign.riskColor(usedPercent))
         }
     }
 
@@ -338,15 +334,20 @@ struct ProviderOverviewRow: View {
         .max()
     }
 
+    private var remainingPercent: Int? {
+        guard let usedPercent else { return nil }
+        return min(max(100 - usedPercent, 0), 100)
+    }
+
     private var valueText: String {
-        guard let usedPercent else {
+        guard let remainingPercent else {
             if snapshot.todayTokens > 0 { return TokenPilotFormatters.compactNumber(snapshot.todayTokens) }
             return "—"
         }
         if snapshot.provider == .codex || snapshot.confidence == .manual {
-            return "\(usedPercent)% \(localized("est.", language: language))"
+            return "\(remainingPercent)% \(localized("est.", language: language))"
         }
-        return "\(usedPercent)%"
+        return "\(remainingPercent)%"
     }
 
     private var detailText: String {
@@ -369,79 +370,20 @@ struct ProviderOverviewRow: View {
             segments.append(limitText(for: weekly))
         }
         if let dailyRequestsPercent = snapshot.dailyRequestsPercent {
-            segments.append("\(localized(LimitWindowKind.dailyRequests.label, language: language)) \(dailyRequestsPercent)%")
+            let remaining = min(max(100 - dailyRequestsPercent, 0), 100)
+            segments.append("\(localized(LimitWindowKind.dailyRequests.label, language: language)) \(String(format: localized("Remaining %d%%", language: language), remaining))")
         }
         return segments
     }
 
     private func limitText(for window: LimitWindow) -> String {
         let label = localized(window.kind.label, language: language)
-        guard let used = window.usedPercent else { return "\(label) —" }
+        guard let remaining = window.remainingPercent else { return "\(label) —" }
         let suffix = (snapshot.provider == .codex || window.confidence == .manual) ? " \(localized("est.", language: language))" : ""
-        return "\(label) \(used)%\(suffix)"
+        return "\(label) \(String(format: localized("Remaining %d%%", language: language), remaining))\(suffix)"
     }
 }
 
-struct BestToolCard: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    let snapshot: ProviderSnapshot?
-
-    var body: some View {
-        GlassCard {
-            HStack(spacing: 10) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(accent.opacity(0.12))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .stroke(accent.opacity(0.18), lineWidth: 1)
-                        )
-                    Image(systemName: snapshot == nil ? "sparkle.magnifyingglass" : "checkmark.seal")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(accent)
-                }
-                .frame(width: 28, height: 28)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localized("Lowest current usage", language: language))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                    if let snapshot {
-                        Text(bestToolTitle(for: snapshot))
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(TokenPilotDesign.textPrimary)
-                            .lineLimit(1)
-                    } else {
-                        Text(localized("Connect providers in Settings", language: language))
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .lineLimit(1)
-                    }
-                }
-
-                Spacer(minLength: 0)
-
-                if let pct = snapshot?.primaryUsedPercent {
-                    StatusBadge(label: "\(pct)%", color: TokenPilotDesign.riskColor(pct))
-                }
-            }
-        }
-    }
-
-    private var accent: Color {
-        if let snapshot {
-            return TokenPilotDesign.accent(for: snapshot.provider)
-        }
-        return TokenPilotDesign.textSecondary
-    }
-
-    private func bestToolTitle(for snapshot: ProviderSnapshot) -> String {
-        if snapshot.confidence == .manual {
-            return "\(localized(snapshot.provider.displayName, language: language)) · \(localized("est.", language: language))"
-        }
-        return localized(snapshot.provider.displayName, language: language)
-    }
-}
 
 struct ChallengeCard: View {
     @Environment(\.tokenPilotLanguage) private var language
