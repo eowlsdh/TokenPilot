@@ -81,25 +81,41 @@ struct HistoryScreen: View {
 struct HistoryLimitSignalCard: View {
     let samples: [ProviderLimitSample]
     @ObservedObject var model: TokenPilotViewModel
+    @State private var isExpanded = false
 
     var body: some View {
         GlassCard {
             VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Label(model.t("Latest limit signals"), systemImage: "waveform.path.ecg.rectangle")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Spacer()
-                    StatusBadge(label: "\(samples.count)", color: TokenPilotDesign.textSecondary)
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.86)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack {
+                        Label(model.t("Latest limit signals"), systemImage: "waveform.path.ecg.rectangle")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TokenPilotDesign.textPrimary)
+                        Spacer()
+                        StatusBadge(label: "\(samples.count)", color: TokenPilotDesign.textSecondary)
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .frame(width: 18, height: 18)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel(model.t(isExpanded ? "Hide latest limit signals" : "Show latest limit signals"))
 
-                VStack(spacing: 0) {
-                    ForEach(Array(samples.prefix(8).enumerated()), id: \.element.id) { index, sample in
-                        HistoryLimitSignalRow(sample: sample, model: model)
-                        if index < min(samples.count, 8) - 1 {
-                            Divider()
-                                .overlay(TokenPilotDesign.border.opacity(0.8))
-                                .padding(.vertical, 8)
+                if isExpanded {
+                    VStack(spacing: 0) {
+                        ForEach(Array(samples.prefix(8).enumerated()), id: \.element.id) { index, sample in
+                            HistoryLimitSignalRow(sample: sample, model: model)
+                            if index < min(samples.count, 8) - 1 {
+                                Divider()
+                                    .overlay(TokenPilotDesign.border.opacity(0.8))
+                                    .padding(.vertical, 8)
+                            }
                         }
                     }
                 }

@@ -382,6 +382,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("HistoryLimitSignalCard(samples: model.limitHistorySamples"))
         XCTAssertTrue(source.contains("HistoryEmptyState("))
         XCTAssertTrue(source.contains("No token event history yet"))
+        XCTAssertTrue(source.contains("@State private var isExpanded = false"))
+        XCTAssertTrue(source.contains("if isExpanded {"))
+        XCTAssertTrue(source.contains("Show latest limit signals"))
+        XCTAssertTrue(source.contains("Hide latest limit signals"))
     }
 
     func testMenuBarLabelUsesSingleLineCompactTitleInsteadOfClippedBadgeStack() throws {
