@@ -354,6 +354,24 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(source.contains("Divider().padding(.vertical, 4)"))
     }
 
+    func testAntigravitySetupSnippetInstallsPrivacySafeStatuslineBridge() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        XCTAssertTrue(source.contains("statusLine"))
+        XCTAssertTrue(source.contains("antigravity-statusline.json"))
+        XCTAssertTrue(source.contains("antigravity-statusline-writer.py"))
+        XCTAssertTrue(source.contains("safe_text"))
+        XCTAssertTrue(source.contains("safe_int"))
+        XCTAssertTrue(source.contains("except FileNotFoundError"))
+        XCTAssertTrue(source.contains("TokenPilot could not parse"))
+        XCTAssertFalse(source.contains("\"outfile\": \"~/.gemini/telemetry.log\""))
+        XCTAssertFalse(source.contains("\"log_file\""))
+        XCTAssertFalse(source.contains("\"email\""))
+        XCTAssertFalse(source.contains("\"plan_tier\""))
+        XCTAssertFalse(source.contains("\"cwd\""))
+        XCTAssertFalse(source.contains("\"workspace\""))
+    }
+
     func testSettingsShowsProviderDiagnosticsMVPWithoutRawPathSummary() throws {
         let source = try Self.tokenMonitorAppSource()
 
@@ -369,7 +387,7 @@ final class TokenMonitorTests: XCTestCase {
     func testOverviewAndHistoryEmptyStatesLinkToProviderDiagnostics() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertTrue(source.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Gemini."))
+        XCTAssertTrue(source.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."))
         XCTAssertTrue(source.contains("Open Provider Diagnostics"))
         XCTAssertTrue(source.contains("model.selectedScreen = .settings"))
         XCTAssertTrue(source.contains("HistoryEmptyState("))
@@ -562,6 +580,9 @@ final class TokenMonitorTests: XCTestCase {
             "known_hosts",
             "codex-auth.json",
             "claude-statusline.json",
+            "antigravity-statusline.json",
+            "antigravity-statusline-writer.py",
+            "antigravity-statusline.sh",
             "telemetry.log",
             "openai-auth.json",
             "anthropic-auth.json",
@@ -615,14 +636,14 @@ final class TokenMonitorTests: XCTestCase {
             )
             .filter { ["md", "markdown", "html"].contains($0.pathExtension.lowercased()) })
 
+        let localUserFragments = [NSUserName(), NSFullUserName()]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && $0 != "root" }
         let forbiddenFragments = [
             "/Users/",
             "/Volumes/",
-            ".codex/auth.json",
-            "daejinyun",
-            "daejinyoun",
-            "com.daejinyoun"
-        ]
+            ".codex/auth.json"
+        ] + localUserFragments
 
         for url in publicDocURLs {
             let content = try String(contentsOf: url)

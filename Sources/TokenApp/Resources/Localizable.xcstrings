@@ -1204,119 +1204,343 @@
           }
         }
       }
-    }
-  },
-  "version": "1.0",
-  "Claude Code": {
-    "localizations": {
-      "ko": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Claude Code"
+    },
+    "Antigravity CLI": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI"
+          }
         }
-      },
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Claude Code"
+      }
+    },
+    "Connect Antigravity CLI": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI 연결"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connect Antigravity CLI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "连接 Antigravity CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity CLI を接続"
+          }
         }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Claude Code"
+      }
+    },
+    "Statusline / telemetry source": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statusline / 텔레메트리 소스"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statusline / telemetry source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statusline / telemetry 数据源"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Statusline / telemetry ソース"
+          }
         }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Claude Code"
+      }
+    },
+    "You can select Antigravity statusline JSON, legacy Gemini telemetry.log, or a session folder.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity statusline JSON, 레거시 Gemini telemetry.log 또는 세션 폴더를 선택할 수 있습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can select Antigravity statusline JSON, legacy Gemini telemetry.log, or a session folder."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以选择 Antigravity statusline JSON、旧版 Gemini telemetry.log 或会话文件夹。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity statusline JSON、従来の Gemini telemetry.log、またはセッションフォルダを選択できます。"
+          }
+        }
+      }
+    },
+    "Choose Antigravity source": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity 소스 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Antigravity source"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 Antigravity 数据源"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antigravity ソースを選択"
+          }
+        }
+      }
+    },
+    "Choose antigravity-statusline.json, legacy telemetry.log, or a session folder.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "antigravity-statusline.json, 레거시 telemetry.log 또는 세션 폴더를 선택하세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose antigravity-statusline.json, legacy telemetry.log, or a session folder."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择 antigravity-statusline.json、旧版 telemetry.log 或会话文件夹。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "antigravity-statusline.json、従来の telemetry.log、またはセッションフォルダを選択してください。"
+          }
+        }
+      }
+    },
+    "Install the local statusLine bridge, then run Check Connection.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 statusLine 브리지를 설치한 뒤 연결 확인을 실행하세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install the local statusLine bridge, then run Check Connection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安装本地 statusLine 桥接，然后运行检查连接。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル statusLine ブリッジをインストールしてから接続確認を実行します。"
+          }
+        }
+      }
+    },
+    "Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정의 제공자 진단에서 Claude, Codex, Antigravity를 연결하세요."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在设置中的提供方诊断里连接 Claude、Codex 或 Antigravity。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定のプロバイダ診断で Claude、Codex、Antigravity を接続してください。"
+          }
+        }
+      }
+    },
+    "Claude Code": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude Code"
+          }
+        }
+      }
+    },
+    "Codex": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex"
+          }
+        }
+      }
+    },
+    "Gemini CLI": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini CLI"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini CLI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gemini CLI"
+          }
+        }
+      }
+    },
+    "Toggle providers shown on Overview. Disabled providers are not removed.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overview에 표시할 공급자를 선택하세요. 비활성화해도 데이터는 삭제되지 않습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toggle providers shown on Overview. Disabled providers are not removed."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择显示在概述中的供应商。禁用不会删除数据。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overviewに表示するプロバイダーを選択してください。無効化してもデータは削除されません。"
+          }
         }
       }
     }
   },
-  "Codex": {
-    "localizations": {
-      "ko": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Codex"
-        }
-      },
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Codex"
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Codex"
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Codex"
-        }
-      }
-    }
-  },
-  "Gemini CLI": {
-    "localizations": {
-      "ko": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Gemini CLI"
-        }
-      },
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Gemini CLI"
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Gemini CLI"
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Gemini CLI"
-        }
-      }
-    }
-  },
-  "Toggle providers shown on Overview. Disabled providers are not removed.": {
-    "localizations": {
-      "ko": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Overview에 표시할 공급자를 선택하세요. 비활성화해도 데이터는 삭제되지 않습니다."
-        }
-      },
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Toggle providers shown on Overview. Disabled providers are not removed."
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "选择显示在概述中的供应商。禁用不会删除数据。"
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Overviewに表示するプロバイダーを選択してください。無効化してもデータは削除されません。"
-        }
-      }
-    }
-  }
+  "version": "1.0"
 }

@@ -87,6 +87,13 @@ final class TokenPilotServicesTests: XCTestCase {
             "~/Library/Application Support/TokenPilot/claude-statusline.json"
         )
     }
+    func testAppSettingsDefaultsGeminiSourceToAntigravityStatusline() throws {
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+
+        XCTAssertEqual(decoded.geminiTelemetryLogPath, AppSettings.defaultAntigravityStatuslinePath)
+        XCTAssertEqual(AppSettings().geminiTelemetryLogPath, "~/Library/Application Support/TokenPilot/antigravity-statusline.json")
+    }
+
 
     func testAppSettingsPersistsSecurityScopedBookmarksForUserSelectedSources() throws {
         let claudeBookmark = Data([0x01, 0x02, 0x03])
@@ -660,7 +667,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(snapshot.provider, .gemini)
         XCTAssertEqual(snapshot.confidence, .low)
-        XCTAssertEqual(snapshot.statusMessage, "Select telemetry.log or session folder")
+        XCTAssertEqual(snapshot.statusMessage, "Select Antigravity statusline JSON or legacy Gemini source")
         XCTAssertTrue(snapshot.events.isEmpty)
     }
 
@@ -675,7 +682,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.confidence, .low)
-        XCTAssertEqual(snapshot.statusMessage, "No Gemini token events yet")
+        XCTAssertEqual(snapshot.statusMessage, "No Antigravity or Gemini token events yet")
         XCTAssertEqual(snapshot.events.count, 0)
     }
 
@@ -700,6 +707,320 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.events[0].outputTokens, 30)
         XCTAssertEqual(snapshot.events[0].cacheReadTokens, 10)
         XCTAssertEqual(snapshot.model, "gemini-2.5-flash")
+    }
+
+    func testGeminiAdapter_ParsesPrettyPrintedOpenTelemetryLogRecords() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let logURL = directory.appendingPathComponent("telemetry.log")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let content = """
+        {
+          "body": "API response from gemini-2.5-pro. Status: 200. Duration: 456ms.",
+          "attributes": {
+            "event.name": "gemini_cli.api_response",
+            "event.timestamp": "\(timestamp)",
+            "model": "gemini-2.5-pro",
+            "duration_ms": 456,
+            "input_token_count": 80,
+            "output_token_count": 40,
+            "cached_content_token_count": 10,
+            "thoughts_token_count": 5,
+            "tool_token_count": 0,
+            "total_token_count": 150,
+            "auth_type": "oauth",
+            "response_text": "must not be surfaced"
+          }
+        }
+        {
+          "body": "API response from gemini-2.5-flash. Status: 200. Duration: 123ms.",
+          "attributes": {
+            "event.name": "gemini_cli.api_response",
+            "event.timestamp": "\(timestamp)",
+            "model": "gemini-2.5-flash",
+            "duration_ms": 123,
+            "input_token_count": 40,
+            "output_token_count": 20,
+            "cached_content_token_count": 5,
+            "thoughts_token_count": 10,
+            "tool_token_count": 0,
+            "total_token_count": 75,
+            "auth_type": "oauth"
+          }
+        }
+        """
+        try content.write(to: logURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = logURL.path
+        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.confidence, .high)
+        XCTAssertEqual(snapshot.events.count, 2)
+        XCTAssertEqual(snapshot.dailyRequestsUsed, 2)
+        XCTAssertEqual(snapshot.todayTokens, 225)
+        XCTAssertEqual(snapshot.model, "gemini-2.5-flash")
+        XCTAssertEqual(snapshot.events[0].authType, "oauth")
+        XCTAssertFalse(snapshot.events.contains { $0.model?.contains("must not be surfaced") == true })
+    }
+    func testGeminiAdapterParsesAntigravityStatuslineContextWindowUsage() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let statuslineURL = directory.appendingPathComponent("antigravity-statusline.json")
+        let content = """
+        {
+          "product": "antigravity-cli",
+          "model": {
+            "id": "gemini-3.5-pro",
+            "display_name": "Gemini 3.5 Pro"
+          },
+          "context_window": {
+            "context_window_size": 1048576,
+            "used_percentage": 12,
+            "remaining_percentage": 88,
+            "current_usage": {
+              "input_tokens": 120,
+              "output_tokens": 80,
+              "cache_creation_input_tokens": 30,
+              "cache_read_input_tokens": 170
+            }
+          }
+        }
+        """
+        try content.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = statuslineURL.path
+        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.confidence, .high)
+        XCTAssertEqual(snapshot.dataSource, .officialStatusline)
+        XCTAssertEqual(snapshot.statusMessage, "Connected")
+        XCTAssertNil(snapshot.dailyRequestsUsed)
+        XCTAssertNil(snapshot.dailyRequestsLimit)
+        XCTAssertEqual(snapshot.todayTokens, 400)
+        XCTAssertEqual(snapshot.model, "Gemini 3.5 Pro")
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events[0].source, "antigravity-statusline")
+        XCTAssertEqual(snapshot.events[0].requestCount, 0)
+        XCTAssertEqual(snapshot.events[0].totalTokens, 400)
+    }
+
+    func testGeminiAdapterPrefersAntigravityContextWindowTotalsWhenPresent() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let statuslineURL = directory.appendingPathComponent("antigravity-statusline.json")
+        let content = """
+        {
+          "product": "antigravity-cli",
+          "model": {
+            "id": "gemini-next",
+            "display_name": "Gemini Next"
+          },
+          "context_window": {
+            "total_input_tokens": 88244,
+            "total_output_tokens": 61074,
+            "context_window_size": 1048576,
+            "used_percentage": 8.4,
+            "remaining_percentage": 91.6,
+            "current_usage": {
+              "input_tokens": 63382,
+              "output_tokens": 346,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 20857
+            }
+          },
+          "email": "developer@example.com"
+        }
+        """
+        try content.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = statuslineURL.path
+        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.dataSource, .officialStatusline)
+        XCTAssertEqual(snapshot.todayTokens, 149_318)
+        XCTAssertEqual(snapshot.model, "Gemini Next")
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.events[0].inputTokens, 88_244)
+        XCTAssertEqual(snapshot.events[0].outputTokens, 61_074)
+        XCTAssertEqual(snapshot.events[0].cacheReadTokens, 0)
+        XCTAssertEqual(snapshot.events[0].totalTokens, 149_318)
+        XCTAssertNil(snapshot.events[0].authType)
+    }
+
+    func testGeminiAdapterFallsBackToLegacyTelemetryWhenAntigravityStatuslineHasNoUsableTokens() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let statuslineURL = directory.appendingPathComponent("antigravity-statusline.json")
+        let legacyURL = directory.appendingPathComponent("telemetry.log")
+        try """
+        {
+          "product": "antigravity-cli",
+          "context_window": {
+            "current_usage": {
+              "input_tokens": 0,
+              "output_tokens": 0,
+              "cache_creation_input_tokens": 0,
+              "cache_read_input_tokens": 0
+            }
+          }
+        }
+        """.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        try """
+        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro"}}
+        """.write(to: legacyURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = statuslineURL.path
+        let snapshot = await GeminiTelemetryAdapter(logURLs: [legacyURL]).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.dataSource, .officialTelemetry)
+        XCTAssertEqual(snapshot.todayTokens, 90)
+        XCTAssertEqual(snapshot.model, "gemini-2.5-pro")
+        XCTAssertEqual(snapshot.events.count, 1)
+    }
+
+    func testGeminiAdapterPrefersAntigravityStatuslineOverPersistedLegacyDefaultWhenBothExist() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tokenPilotDir = home.appendingPathComponent("Library/Application Support/TokenPilot", isDirectory: true)
+        let legacyGeminiDir = home.appendingPathComponent(".gemini", isDirectory: true)
+        try FileManager.default.createDirectory(at: tokenPilotDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: legacyGeminiDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let statuslineURL = tokenPilotDir.appendingPathComponent("antigravity-statusline.json")
+        let legacyURL = legacyGeminiDir.appendingPathComponent("telemetry.log")
+        try """
+        {
+          "product": "antigravity-cli",
+          "model": { "display_name": "Gemini Antigravity" },
+          "context_window": {
+            "total_input_tokens": 1000,
+            "total_output_tokens": 250,
+            "current_usage": {
+              "input_tokens": 40,
+              "output_tokens": 10
+            }
+          }
+        }
+        """.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        try """
+        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"legacy-gemini"}}
+        """.write(to: legacyURL, atomically: true, encoding: .utf8)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = legacyURL.path
+        let snapshot = await GeminiTelemetryAdapter(logURLs: [statuslineURL, legacyURL]).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.dataSource, .officialStatusline)
+        XCTAssertEqual(snapshot.todayTokens, 1_250)
+        XCTAssertEqual(snapshot.model, "Gemini Antigravity")
+        XCTAssertEqual(snapshot.events.map(\.source), ["antigravity-statusline"])
+    }
+
+
+    func testUsageStoreUsesDetectedGeminiSessionFolderWhenDefaultTelemetryLogMissing() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let geminiTmp = home.appendingPathComponent(".gemini/tmp", isDirectory: true)
+        try FileManager.default.createDirectory(at: geminiTmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let sessionURL = geminiTmp.appendingPathComponent("session-tokenpilot.json")
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro"}}
+        """
+        try line.write(to: sessionURL, atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(environment: [:], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let store = UsageStore(pathResolver: resolver)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        _ = settings.setProviderEnabled(.claude, isEnabled: false)
+        _ = settings.setProviderEnabled(.codex, isEnabled: false)
+        _ = settings.setProviderEnabled(.deepseek, isEnabled: false)
+        let result = await store.refresh(settings: settings)
+        let snapshot = try XCTUnwrap(result.snapshots.first { $0.provider == .gemini })
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.todayTokens, 90)
+        XCTAssertEqual(snapshot.model, "gemini-2.5-pro")
+    }
+    func testUsageStoreUsesDetectedAntigravityStatuslineWhenDefaultPathMissingInInjectedHome() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tokenPilotDir = home.appendingPathComponent("Library/Application Support/TokenPilot", isDirectory: true)
+        try FileManager.default.createDirectory(at: tokenPilotDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let statuslineURL = tokenPilotDir.appendingPathComponent("antigravity-statusline.json")
+        let content = """
+        {
+          "product": "antigravity-cli",
+          "model": { "display_name": "Gemini Antigravity" },
+          "context_window": {
+            "current_usage": {
+              "input_tokens": 200,
+              "output_tokens": 50
+            }
+          }
+        }
+        """
+        try content.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let store = UsageStore(pathResolver: resolver)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.geminiTelemetryLogPath = AppSettings.defaultAntigravityStatuslinePath
+        _ = settings.setProviderEnabled(.claude, isEnabled: false)
+        _ = settings.setProviderEnabled(.codex, isEnabled: false)
+        _ = settings.setProviderEnabled(.deepseek, isEnabled: false)
+        let result = await store.refresh(settings: settings)
+        let snapshot = try XCTUnwrap(result.snapshots.first { $0.provider == .gemini })
+
+        XCTAssertTrue(result.hasConnectedData)
+        XCTAssertEqual(snapshot.dataSource, .officialStatusline)
+        XCTAssertEqual(snapshot.todayTokens, 250)
+        XCTAssertEqual(snapshot.model, "Gemini Antigravity")
+        XCTAssertNil(snapshot.dailyRequestsUsed)
+    }
+
+    func testUsageStoreDeduplicatesGeminiEventAcrossDetectedTelemetryAndSessionFiles() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let geminiRoot = home.appendingPathComponent(".gemini", isDirectory: true)
+        let geminiTmp = geminiRoot.appendingPathComponent("tmp", isDirectory: true)
+        try FileManager.default.createDirectory(at: geminiTmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let line = """
+        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro","auth_type":"oauth","duration_ms":123}}
+        """
+        try line.write(to: geminiRoot.appendingPathComponent("telemetry.log"), atomically: true, encoding: .utf8)
+        try line.write(to: geminiTmp.appendingPathComponent("session-tokenpilot.json"), atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(environment: [:], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let store = UsageStore(pathResolver: resolver)
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        _ = settings.setProviderEnabled(.claude, isEnabled: false)
+        _ = settings.setProviderEnabled(.codex, isEnabled: false)
+        _ = settings.setProviderEnabled(.deepseek, isEnabled: false)
+        let result = await store.refresh(settings: settings)
+        let snapshot = try XCTUnwrap(result.snapshots.first { $0.provider == .gemini })
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertEqual(snapshot.todayTokens, 90)
+        XCTAssertEqual(snapshot.dailyRequestsUsed, 1)
     }
 
     func testGeminiAdapter_SkipsMalformedLines() async throws {
@@ -1004,6 +1325,38 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(source.detectedPaths.contains { $0.kind == "projects" && $0.path == home.appendingPathComponent(".claude/projects", isDirectory: true).path && $0.exists })
         XCTAssertEqual(source.statusMessage, "Local JSONL · rate limits unavailable")
     }
+    func testDataSourceConnectionServiceMarksAntigravityStatuslineConnectedFromDefaultPath() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let tokenPilotDir = home.appendingPathComponent("Library/Application Support/TokenPilot", isDirectory: true)
+        try FileManager.default.createDirectory(at: tokenPilotDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let statuslineURL = tokenPilotDir.appendingPathComponent("antigravity-statusline.json")
+        let content = """
+        {
+          "product": "antigravity-cli",
+          "model": { "id": "gemini-3.5-pro" },
+          "context_window": {
+            "current_usage": {
+              "input_tokens": 70,
+              "output_tokens": 30
+            }
+          }
+        }
+        """
+        try content.write(to: statuslineURL, atomically: true, encoding: .utf8)
+
+        let settings = AppSettings(showMockDataWhenDisconnected: false)
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let source = await DataSourceConnectionService(pathResolver: resolver).check(settings: settings, provider: .gemini)
+
+        XCTAssertEqual(source.status, .connected)
+        XCTAssertEqual(source.mode, .custom)
+        XCTAssertEqual(source.confidence, .high)
+        XCTAssertEqual(source.statusMessage, "Connected")
+        XCTAssertTrue(source.detectedPaths.contains { $0.kind == "antigravity_statusline" && $0.path == statuslineURL.path && $0.exists })
+    }
+
 
     func testProviderConnectionDiagnosticMapsEveryStatusToNextAction() throws {
         let expectations: [ProviderDataSourceStatus: ProviderConnectionNextAction] = [
@@ -1694,6 +2047,29 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(candidates.contains { $0.kind == "projects" && $0.path == projects.path && $0.exists && $0.readable })
         XCTAssertTrue(candidates.contains { $0.kind == "config_projects" && $0.path == configProjects.path && $0.exists && $0.readable })
         XCTAssertTrue(candidates.contains { $0.kind == "statusline" && $0.path == home.appendingPathComponent("Library/Application Support/TokenPilot/claude-statusline.json").path })
+    }
+    func testDefaultPathResolverIncludesAntigravityStatuslineAndLegacyGeminiSources() throws {
+        let sandbox = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let home = sandbox.appendingPathComponent("macos-home", isDirectory: true)
+        let tokenPilotDir = home.appendingPathComponent("Library/Application Support/TokenPilot", isDirectory: true)
+        let legacyGeminiTmp = home.appendingPathComponent(".gemini/tmp", isDirectory: true)
+        try FileManager.default.createDirectory(at: tokenPilotDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: legacyGeminiTmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sandbox) }
+
+        let antigravityStatusline = tokenPilotDir.appendingPathComponent("antigravity-statusline.json")
+        try "{}".write(to: antigravityStatusline, atomically: true, encoding: .utf8)
+
+        let resolver = DefaultPathResolver(
+            environment: ["HOME": home.path],
+            currentHomeDirectory: home,
+            additionalHomeDirectories: []
+        )
+        let candidates = resolver.resolveDefaultPaths(for: .gemini)
+
+        XCTAssertTrue(candidates.contains { $0.kind == "antigravity_statusline" && $0.path == antigravityStatusline.path && $0.exists && $0.readable })
+        XCTAssertFalse(candidates.contains { $0.kind == "antigravity_settings" || $0.kind == "settings" })
+        XCTAssertTrue(candidates.contains { $0.kind == "tmp" && $0.path == legacyGeminiTmp.path && $0.exists && $0.readable })
     }
 
     func testDefaultPathResolverDetectsCodexSessionsInMacOSHomeWhenProcessHomeDiffers() throws {
@@ -2631,6 +3007,32 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(result.events.count, 1)
         XCTAssertEqual(result.metrics.totalTokens, 100)
+    }
+    func testUsageHistoryStoreDoesNotDoubleCountAntigravityStatuslineDailySnapshots() {
+        let suite = "TokenPilotUsageHistoryAntigravityTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UsageHistoryStore(defaults: defaults, key: "usage-antigravity-statusline-test")
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let firstDate = startOfToday.addingTimeInterval(10)
+        let secondDate = startOfToday.addingTimeInterval(20)
+        let first = UsageEvent(provider: .gemini, model: "gemini-3.5-pro", timestamp: firstDate, inputTokens: 60, outputTokens: 40, source: "antigravity-statusline", dataSource: .officialStatusline)
+        let second = UsageEvent(provider: .gemini, model: "gemini-3.5-pro", timestamp: secondDate, inputTokens: 70, outputTokens: 50, source: "antigravity-statusline", dataSource: .officialStatusline)
+
+        _ = store.record(snapshots: [ProviderSnapshot(provider: .gemini, updatedAt: firstDate, todayTokens: 100, dataSource: .officialStatusline, model: "gemini-3.5-pro", events: [first])], enabledProviders: [.gemini])
+        _ = store.record(snapshots: [ProviderSnapshot(provider: .gemini, updatedAt: secondDate, todayTokens: 120, dataSource: .officialStatusline, model: "gemini-3.5-pro", events: [second])], enabledProviders: [.gemini])
+
+        let historySnapshots = store.snapshotsForHistory(
+            currentSnapshots: [ProviderSnapshot(provider: .gemini, dataSource: .officialStatusline)],
+            events: store.loadEvents(),
+            enabledProviders: [.gemini],
+            referenceDate: secondDate
+        )
+        let result = AggregationService().aggregate(snapshots: historySnapshots, period: .today)
+
+        XCTAssertEqual(result.events.count, 1)
+        XCTAssertEqual(result.metrics.totalTokens, 120)
     }
 
     func testUsageHistoryStorePrunesPersistedEventsWhenRefreshHasNoIncomingEvents() throws {

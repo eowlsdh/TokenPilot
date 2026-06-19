@@ -90,10 +90,11 @@ swift build
 - Claude statusline JSON 또는 local JSONL fallback을 사용합니다.
 - 권장 statusline 경로: `~/Library/Application Support/TokenPilot/claude-statusline.json`
 
-### Gemini CLI
+### Antigravity CLI / 레거시 Gemini CLI
 
-- `~/.gemini/telemetry.log` 또는 session JSON/JSONL token object를 사용합니다.
-- `gemini_cli.api_response` 이벤트만 사용량으로 집계합니다.
+- 기본은 `~/Library/Application Support/TokenPilot/antigravity-statusline.json`에 저장된 Antigravity `statusLine` JSON입니다.
+- 기존 `~/.gemini/telemetry.log`와 `~/.gemini/tmp`, `~/.gemini/history` session JSON/JSONL token object는 fallback으로 유지합니다.
+- 레거시 telemetry에서는 `gemini_cli.api_response` 이벤트만 사용량으로 집계합니다.
 
 ### Codex
 

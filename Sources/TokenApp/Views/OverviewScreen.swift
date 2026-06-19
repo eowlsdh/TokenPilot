@@ -100,7 +100,7 @@ struct OverviewScreen: View {
                         EmptyStateCard(
                             icon: "tray",
                             title: model.t("No data"),
-                            message: model.t("Run Provider Diagnostics in Settings to connect Claude, Codex, or Gemini.")
+                            message: model.t("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity.")
                         )
                         Button(model.t("Open Provider Diagnostics")) {
                             model.selectedScreen = .settings

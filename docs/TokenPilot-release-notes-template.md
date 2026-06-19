@@ -20,13 +20,13 @@ TokenPilot is a local-first macOS menu bar utility for monitoring AI coding-tool
 Initial release candidate includes:
 
 - Compact menu bar glance for supported provider usage pressure.
-- Overview cards for Claude Code, Codex, and Gemini CLI usage signals.
+- Overview cards for Claude Code, Codex, and Antigravity CLI / legacy Gemini CLI usage signals.
 - History view with local usage summaries.
 - Settings for data sources, alerts, language, and privacy.
 - Optional sample preview data, off by default.
 - Conservative Codex limit hints/manual estimates, clearly labeled.
 - App privacy manifest and icon resources prepared.
-- User-selected Claude/Gemini source bookmarks for sandbox-readiness.
+- User-selected Claude/Antigravity/Gemini source bookmarks for sandbox-readiness.
 
 Known limitations:
 

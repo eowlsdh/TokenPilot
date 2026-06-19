@@ -106,8 +106,8 @@ struct SettingsScreen: View {
                     .buttonStyle(.bordered)
             }
 
-            ProviderSetupCard(provider: .gemini, title: "Gemini CLI", status: model.sourceStatusText(.gemini), statusColor: model.sourceStatusColor(.gemini), detail: model.sourceDetailText(.gemini)) {
-                Text(model.t("Telemetry source"))
+            ProviderSetupCard(provider: .gemini, title: "Antigravity CLI", status: model.sourceStatusText(.gemini), statusColor: model.sourceStatusColor(.gemini), detail: model.sourceDetailText(.gemini)) {
+                Text(model.t("Statusline / telemetry source"))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack {
@@ -115,7 +115,7 @@ struct SettingsScreen: View {
                         .textFieldStyle(.roundedBorder)
                     Button(model.t("Choose…")) { model.chooseGeminiTelemetrySource() }
                 }
-                Text(model.t("You can select telemetry.log or a .gemini session folder."))
+                Text(model.t("You can select Antigravity statusline JSON, legacy Gemini telemetry.log, or a session folder."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 VStack(alignment: .leading, spacing: 3) {
@@ -421,11 +421,11 @@ struct SettingsScreen: View {
                     onCopy: { model.copyToClipboard(claudeStatuslineScript) }
                 )
                 GuideCard(
-                    title: model.t("Connect Gemini CLI"),
+                    title: model.t("Connect Antigravity CLI"),
                     status: model.sourceStatusText(.gemini),
                     statusColor: model.sourceStatusColor(.gemini),
                     detail: model.sourceDetailText(.gemini),
-                    explanation: model.t("Enable local telemetry and choose telemetry.log."),
+                    explanation: model.t("Install the local statusLine bridge, then run Check Connection."),
                     primaryAction: model.t("Check Connection"),
                     copyText: geminiSettingsSnippet,
                     onPrimary: { Task { await model.checkConnection(.gemini) } },
@@ -595,13 +595,133 @@ struct SettingsScreen: View {
 
     private var geminiSettingsSnippet: String {
         """
-        {
-          "telemetry": {
-            "enabled": true,
-            "target": "local",
-            "log_file": "~/.gemini/telemetry.log"
-          }
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        TOKENPILOT_DIR="$HOME/Library/Application Support/TokenPilot"
+        ANTIGRAVITY_DIR="$HOME/.gemini/antigravity-cli"
+        WRITER="$TOKENPILOT_DIR/antigravity-statusline-writer.py"
+        COMMAND="$TOKENPILOT_DIR/antigravity-statusline.sh"
+        SETTINGS="$ANTIGRAVITY_DIR/settings.json"
+
+        mkdir -p "$TOKENPILOT_DIR" "$ANTIGRAVITY_DIR"
+
+        cat > "$WRITER" <<'PY'
+        #!/usr/bin/env python3
+        import json
+        import os
+        import sys
+        import tempfile
+
+        def safe_int(value):
+            if isinstance(value, bool):
+                return 0
+            try:
+                return max(int(value), 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def safe_float(value):
+            if isinstance(value, bool):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def safe_text(value, limit=120):
+            if isinstance(value, str):
+                text = value
+            elif isinstance(value, (int, float, bool)):
+                text = str(value)
+            else:
+                return None
+            text = " ".join(text.split())
+            if not text:
+                return None
+            return text[:limit]
+
+        raw = sys.stdin.read()
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except Exception:
+            data = {}
+
+        context = data.get("context_window") if isinstance(data.get("context_window"), dict) else {}
+        usage = context.get("current_usage") if isinstance(context.get("current_usage"), dict) else {}
+        model = data.get("model") if isinstance(data.get("model"), dict) else {}
+        safe = {
+            "product": safe_text(data.get("product"), 64),
+            "model": {
+                "id": safe_text(model.get("id"), 120),
+                "display_name": safe_text(model.get("display_name"), 120)
+            },
+            "context_window": {
+                "total_input_tokens": safe_int(context.get("total_input_tokens")),
+                "total_output_tokens": safe_int(context.get("total_output_tokens")),
+                "context_window_size": safe_int(context.get("context_window_size")),
+                "used_percentage": safe_float(context.get("used_percentage")),
+                "remaining_percentage": safe_float(context.get("remaining_percentage")),
+                "current_usage": {
+                    "input_tokens": safe_int(usage.get("input_tokens")),
+                    "output_tokens": safe_int(usage.get("output_tokens")),
+                    "cache_creation_input_tokens": safe_int(usage.get("cache_creation_input_tokens")),
+                    "cache_read_input_tokens": safe_int(usage.get("cache_read_input_tokens"))
+                }
+            }
         }
+
+        target = os.path.expanduser("~/Library/Application Support/TokenPilot/antigravity-statusline.json")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".antigravity-statusline-", suffix=".json", dir=os.path.dirname(target))
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(safe, handle, ensure_ascii=False, separators=(",", ":"))
+            handle.write(chr(10))
+        os.replace(tmp, target)
+
+        current = safe["context_window"]["current_usage"]
+        tokens = sum(safe_int(current.get(key)) for key in current)
+        label = safe["model"]["display_name"] or safe["model"]["id"] or "Antigravity CLI"
+        print(f"{label} · {tokens} tok")
+        PY
+
+        cat > "$COMMAND" <<'SH'
+        #!/usr/bin/env bash
+        python3 "$HOME/Library/Application Support/TokenPilot/antigravity-statusline-writer.py"
+        SH
+        chmod 700 "$WRITER" "$COMMAND"
+
+        python3 - "$SETTINGS" "$COMMAND" <<'PY'
+        import json
+        import os
+        import sys
+        import tempfile
+
+        settings_path, command_path = sys.argv[1], sys.argv[2]
+        try:
+            with open(settings_path, "r", encoding="utf-8") as handle:
+                settings = json.load(handle)
+        except FileNotFoundError:
+            settings = {}
+        except Exception as error:
+            raise SystemExit(f"TokenPilot could not parse {settings_path}. Fix or back it up before installing: {error}")
+        if not isinstance(settings, dict):
+            raise SystemExit(f"TokenPilot expected {settings_path} to contain a JSON object.")
+
+        settings["statusLine"] = {
+            "type": "command",
+            "command": command_path
+        }
+
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".settings-", suffix=".json", dir=os.path.dirname(settings_path))
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, ensure_ascii=False, indent=2)
+            handle.write(chr(10))
+        os.replace(tmp, settings_path)
+        PY
+
+        echo "TokenPilot Antigravity statusLine bridge installed."
         """
     }
 }

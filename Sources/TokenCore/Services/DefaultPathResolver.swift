@@ -244,11 +244,24 @@ public final class DefaultPathResolver: Sendable {
         return "home fallback"
     }
 
-    // MARK: - Gemini CLI
+    // MARK: - Antigravity CLI / Gemini CLI
 
     private func resolveGeminiPaths() -> [ProviderPathCandidate] {
         let home = currentHomeDirectory
         var candidates: [ProviderPathCandidate] = []
+
+        let antigravityStatusline = home.appendingPathComponent("Library/Application Support/TokenPilot/antigravity-statusline.json")
+        candidates.append(ProviderPathCandidate(
+            provider: .gemini,
+            kind: "antigravity_statusline",
+            path: antigravityStatusline.path,
+            source: "default",
+            exists: FileManager.default.fileExists(atPath: antigravityStatusline.path),
+            readable: isReadable(antigravityStatusline),
+            confidence: .high,
+            notes: "Antigravity CLI statusLine JSON exported for TokenPilot"
+        ))
+
 
         let geminiRoot = home.appendingPathComponent(".gemini")
         let geminiExists = FileManager.default.fileExists(atPath: geminiRoot.path)
@@ -261,7 +274,7 @@ public final class DefaultPathResolver: Sendable {
             exists: geminiExists,
             readable: geminiExists && isReadable(geminiRoot),
             confidence: .high,
-            notes: geminiExists ? nil : "Gemini CLI folder not found"
+            notes: geminiExists ? "Legacy Gemini CLI folder" : "Legacy Gemini CLI folder not found"
         ))
 
         if geminiExists {
@@ -292,17 +305,6 @@ public final class DefaultPathResolver: Sendable {
                 ))
             }
 
-            // settings.json (read-only, for telemetry.outfile discovery)
-            let settings = geminiRoot.appendingPathComponent("settings.json")
-            candidates.append(ProviderPathCandidate(
-                provider: .gemini,
-                kind: "settings",
-                path: settings.path,
-                source: "default",
-                exists: FileManager.default.fileExists(atPath: settings.path),
-                readable: isReadable(settings),
-                confidence: .medium
-            ))
         }
 
         return candidates

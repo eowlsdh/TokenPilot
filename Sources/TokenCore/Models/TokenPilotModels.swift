@@ -12,7 +12,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return "Claude Code"
         case .codex: return "Codex"
-        case .gemini: return "Gemini CLI"
+        case .gemini: return "Antigravity CLI"
         case .deepseek: return "DeepSeek"
         }
     }
@@ -21,7 +21,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         switch self {
         case .claude: return "Cl"
         case .codex: return "Co"
-        case .gemini: return "Ge"
+        case .gemini: return "AG"
         case .deepseek: return "DS"
         }
     }
@@ -933,6 +933,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
 
+    public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
+    public static let legacyGeminiTelemetryPath = "~/.gemini/telemetry.log"
+
     public init(
         claudeEnabled: Bool = true,
         codexEnabled: Bool = true,
@@ -941,7 +944,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
-        geminiTelemetryLogPath: String = "~/.gemini/telemetry.log",
+        geminiTelemetryLogPath: String = AppSettings.defaultAntigravityStatuslinePath,
         geminiTelemetrySourceBookmarkData: Data? = nil,
         geminiDailyRequestCap: Int = 1000,
         codexManual: CodexManualSettings = CodexManualSettings(),
@@ -1025,7 +1028,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
-            geminiTelemetryLogPath: try container.decodeIfPresent(String.self, forKey: .geminiTelemetryLogPath) ?? "~/.gemini/telemetry.log",
+            geminiTelemetryLogPath: try container.decodeIfPresent(String.self, forKey: .geminiTelemetryLogPath) ?? AppSettings.defaultAntigravityStatuslinePath,
             geminiTelemetrySourceBookmarkData: try container.decodeIfPresent(Data.self, forKey: .geminiTelemetrySourceBookmarkData),
             geminiDailyRequestCap: try container.decodeIfPresent(Int.self, forKey: .geminiDailyRequestCap) ?? 1000,
             codexManual: try container.decodeIfPresent(CodexManualSettings.self, forKey: .codexManual) ?? CodexManualSettings(),

@@ -467,8 +467,8 @@ final class TokenPilotViewModel: ObservableObject {
     func chooseGeminiTelemetrySource() {
         chooseLocalSource(
             provider: .gemini,
-            prompt: t("Choose Gemini source"),
-            message: t("Choose telemetry.log or a Gemini session folder."),
+            prompt: t("Choose Antigravity source"),
+            message: t("Choose antigravity-statusline.json, legacy telemetry.log, or a session folder."),
             canChooseDirectories: true
         ) { [weak self] url, bookmarkData in
             guard let self else { return }

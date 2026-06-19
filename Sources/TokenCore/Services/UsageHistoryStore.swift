@@ -135,7 +135,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
     }
 
     private func eventKey(_ event: UsageEvent) -> String {
-        if event.source == "snapshot-daily-total" || event.source == "claude-statusline" {
+        if event.source == "snapshot-daily-total" || event.source == "claude-statusline" || event.source == "antigravity-statusline" {
             let day = Self.dayKeyFormatter.string(from: event.timestamp)
             return [event.provider.rawValue, event.source, event.model ?? "", day].joined(separator: "|")
         }

@@ -96,6 +96,9 @@ deepseek-api-key*
 deepseek-balance*.json
 deepseek-response*.json
 claude-statusline.json
+antigravity-statusline.json
+antigravity-statusline-writer.py
+antigravity-statusline.sh
 telemetry.log
 gemini-telemetry.log
 sessions/

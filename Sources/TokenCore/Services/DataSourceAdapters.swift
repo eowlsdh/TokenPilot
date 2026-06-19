@@ -548,10 +548,12 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
 public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     public let provider: Provider = .gemini
     private let overrideLogURL: URL?
+    private let fallbackLogURLs: [URL]
     private let staleThreshold: TimeInterval
 
-    public init(logURL: URL? = nil, staleThreshold: TimeInterval = 300) {
+    public init(logURL: URL? = nil, logURLs: [URL] = [], staleThreshold: TimeInterval = 300) {
         self.overrideLogURL = logURL
+        self.fallbackLogURLs = logURLs
         self.staleThreshold = staleThreshold
     }
 
@@ -561,65 +563,171 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         }
 
         let path = settings.geminiTelemetryLogPath.trimmingCharacters(in: .whitespacesAndNewlines)
-        let logURL = overrideLogURL ?? (path.isEmpty ? nil : URL(fileURLWithPath: expandTilde(path)))
+        let configuredURL = overrideLogURL ?? (path.isEmpty ? nil : URL(fileURLWithPath: expandTilde(path)))
         let bookmarkData = overrideLogURL == nil ? settings.geminiTelemetrySourceBookmarkData : nil
-        guard let logURL, FileManager.default.fileExists(atPath: logURL.path) || bookmarkData != nil else {
-            return ProviderSnapshot(provider: .gemini, confidence: .low, statusMessage: "Select telemetry.log or session folder")
+        let configuredExists = configuredURL.map { FileManager.default.fileExists(atPath: $0.path) } ?? false
+        let scopedAccess: TokenPilotSecurityScopedResourceAccess?
+        var inputURLs: [URL] = []
+
+        if let configuredURL, configuredExists || bookmarkData != nil {
+            let access = TokenPilotSecurityScopedBookmarks.resolveIfAvailable(
+                bookmarkData: bookmarkData,
+                fallbackURL: configuredURL
+            )
+            scopedAccess = access
+            inputURLs.append(access.url)
+        } else {
+            scopedAccess = nil
         }
 
-        let scopedAccess = TokenPilotSecurityScopedBookmarks.resolveIfAvailable(
-            bookmarkData: bookmarkData,
-            fallbackURL: logURL
+        let fallbackInputURLs = overrideLogURL == nil && bookmarkData == nil
+            ? fallbackLogURLsExcludingConfigured(configuredURL)
+            : []
+        let usesFallbackImmediately = shouldUseFallbackLogURLs(configuredPath: path, configuredExists: configuredExists)
+        if overrideLogURL == nil,
+           bookmarkData == nil,
+           configuredPathAllowsFallback(path),
+           let antigravityStatuslineURL = fallbackInputURLs.first(where: isAntigravityStatuslineURL) {
+            inputURLs.append(antigravityStatuslineURL)
+        }
+        if overrideLogURL == nil, bookmarkData == nil, usesFallbackImmediately {
+            inputURLs.append(contentsOf: fallbackInputURLs)
+        }
+        inputURLs = deduplicateURLs(inputURLs)
+
+        guard !inputURLs.isEmpty else {
+            return ProviderSnapshot(provider: .gemini, confidence: .low, statusMessage: "Select Antigravity statusline JSON or legacy Gemini source")
+        }
+        defer { scopedAccess?.stop() }
+
+        func readEvents(from urls: [URL]) -> ([UsageEvent], Error?) {
+            let files = urls.flatMap { geminiInputFiles(from: $0) }
+            var collectedEvents: [UsageEvent] = []
+            var collectedReadError: Error?
+            for file in files {
+                do {
+                    let content = try tokenPilotBoundedTextContents(of: file)
+                    collectedEvents.append(contentsOf: parseEvents(from: content, fileURL: file))
+                } catch {
+                    collectedReadError = error
+                }
+            }
+            return (deduplicatedGeminiEvents(collectedEvents), collectedReadError)
+        }
+
+        var (events, readError) = readEvents(from: inputURLs)
+        events = preferAntigravityStatuslineEvents(events)
+        if events.isEmpty, readError == nil, !usesFallbackImmediately, !fallbackInputURLs.isEmpty {
+            let fallbackResult = readEvents(from: fallbackInputURLs)
+            events = preferAntigravityStatuslineEvents(fallbackResult.0)
+            readError = fallbackResult.1
+        }
+
+        guard !events.isEmpty else {
+            let message = readError == nil ? "No Antigravity or Gemini token events yet" : "Antigravity/Gemini data could not be read"
+            return ProviderSnapshot(provider: .gemini, confidence: .low, dataSource: .unknown, isStale: readError != nil, statusMessage: message)
+        }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfLast7Days = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
+        let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfToday
+        let retainedStart = min(startOfLast7Days, startOfMonth)
+        let retainedEvents = events.filter { $0.timestamp >= retainedStart }
+        let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayRequests = todayEvents.reduce(0) { $0 + $1.requestCount }
+        let shouldShowDailyRequests = todayRequests > 0
+        let newestTimestamp = events.map(\.timestamp).max() ?? Date.distantPast
+        let isStale = Date().timeIntervalSince(newestTimestamp) > staleThreshold
+        let confidence: DataConfidence = isStale ? .medium : .high
+        let model = events.reversed().first { $0.model?.isEmpty == false }?.model
+        let dataSource = dominantGeminiDataSource(in: retainedEvents)
+
+        return ProviderSnapshot(
+            provider: .gemini,
+            updatedAt: newestTimestamp,
+            dailyRequestsUsed: shouldShowDailyRequests ? todayRequests : nil,
+            dailyRequestsLimit: shouldShowDailyRequests ? settings.geminiDailyRequestCap : nil,
+            todayTokens: todayTokens,
+            confidence: confidence,
+            dataSource: dataSource,
+            isStale: isStale,
+            statusMessage: isStale ? "STALE · older than 5 minutes" : "Connected",
+            model: model,
+            events: retainedEvents
         )
-        defer { scopedAccess.stop() }
-        let readableLogURL = scopedAccess.url
+    }
 
-        do {
-            let files = geminiInputFiles(from: readableLogURL)
-            let events = try files.flatMap { file -> [UsageEvent] in
-                let content = try tokenPilotBoundedTextContents(of: file)
-                return parseEvents(from: content, fileURL: file)
-            }
+    private func shouldUseFallbackLogURLs(configuredPath: String, configuredExists: Bool) -> Bool {
+        configuredPathAllowsFallback(configuredPath) && !configuredExists
+    }
 
-            guard !events.isEmpty else {
-                return ProviderSnapshot(provider: .gemini, confidence: .low, dataSource: .unknown, statusMessage: "No Gemini token events yet")
-            }
+    private func configuredPathAllowsFallback(_ configuredPath: String) -> Bool {
+        let trimmed = configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return true }
+        let configured = URL(fileURLWithPath: expandTilde(trimmed)).standardizedFileURL.path
+        let configuredName = URL(fileURLWithPath: expandTilde(trimmed)).lastPathComponent.lowercased()
+        let defaultPath = URL(fileURLWithPath: expandTilde(AppSettings.defaultAntigravityStatuslinePath)).standardizedFileURL.path
+        let legacyPath = URL(fileURLWithPath: expandTilde(AppSettings.legacyGeminiTelemetryPath)).standardizedFileURL.path
+        let legacySuffix = "/.gemini/telemetry.log"
+        if configuredName == "antigravity-statusline.json" { return true }
+        if configured.hasSuffix(legacySuffix) { return true }
+        return configured == defaultPath || configured == legacyPath
+    }
 
-            let calendar = Calendar.current
-            let now = Date()
-            let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
-            let startOfToday = calendar.startOfDay(for: now)
-            let startOfLast7Days = calendar.date(byAdding: .day, value: -6, to: startOfToday) ?? startOfToday
-            let startOfMonth = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? startOfToday
-            let retainedStart = min(startOfLast7Days, startOfMonth)
-            let retainedEvents = events.filter { $0.timestamp >= retainedStart }
-            let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
-            let todayRequests = todayEvents.reduce(0) { $0 + $1.requestCount }
-            let newestTimestamp = events.map(\.timestamp).max() ?? Date.distantPast
-            let isStale = Date().timeIntervalSince(newestTimestamp) > staleThreshold
-            let confidence: DataConfidence = isStale ? .medium : .high
-            let model = events.reversed().first { $0.model?.isEmpty == false }?.model
-            let dataSource: UsageDataSource = retainedEvents.allSatisfy { $0.dataSource == .officialTelemetry } ? .officialTelemetry : .localLog
+    private func fallbackLogURLsExcludingConfigured(_ configuredURL: URL?) -> [URL] {
+        let configuredPath = configuredURL?.standardizedFileURL.path
+        return fallbackLogURLs.filter { url in
+            FileManager.default.fileExists(atPath: url.path)
+                && url.standardizedFileURL.path != configuredPath
+        }
+    }
 
-            return ProviderSnapshot(
-                provider: .gemini,
-                updatedAt: newestTimestamp,
-                dailyRequestsUsed: todayRequests,
-                dailyRequestsLimit: settings.geminiDailyRequestCap,
-                todayTokens: todayTokens,
-                confidence: confidence,
-                dataSource: dataSource,
-                isStale: isStale,
-                statusMessage: isStale ? "STALE · older than 5 minutes" : "Connected",
-                model: model,
-                events: retainedEvents
-            )
-        } catch {
-            return ProviderSnapshot(provider: .gemini, confidence: .low, isStale: true, statusMessage: "Gemini data could not be read")
+    private func isAntigravityStatuslineURL(_ url: URL) -> Bool {
+        url.lastPathComponent.lowercased() == "antigravity-statusline.json"
+    }
+
+    private func preferAntigravityStatuslineEvents(_ events: [UsageEvent]) -> [UsageEvent] {
+        let statuslineEvents = events.filter { $0.source == "antigravity-statusline" }
+        return statuslineEvents.isEmpty ? events : statuslineEvents
+    }
+
+    private func deduplicateURLs(_ urls: [URL]) -> [URL] {
+        var seen = Set<String>()
+        return urls.filter { url in
+            seen.insert(url.standardizedFileURL.path).inserted
+        }
+    }
+
+    private func dominantGeminiDataSource(in events: [UsageEvent]) -> UsageDataSource {
+        guard let first = events.first?.dataSource else { return .unknown }
+        return events.allSatisfy { $0.dataSource == first } ? first : .localLog
+    }
+
+    private func deduplicatedGeminiEvents(_ events: [UsageEvent]) -> [UsageEvent] {
+        var seen = Set<String>()
+        return events.filter { event in
+            let key = [
+                "\(Int(event.timestamp.timeIntervalSince1970 * 1_000))",
+                event.model ?? "",
+                "\(event.inputTokens)",
+                "\(event.outputTokens)",
+                "\(event.cacheReadTokens)",
+                "\(event.cacheCreationTokens)",
+                "\(event.reasoningTokens)",
+                "\(event.toolTokens)",
+                "\(event.totalTokens)",
+                event.authType ?? "",
+                event.durationMS.map(String.init) ?? ""
+            ].joined(separator: "|")
+            return seen.insert(key).inserted
         }
     }
 
     private func geminiInputFiles(from url: URL) -> [URL] {
+        guard !isForbiddenCredentialPath(url) else { return [] }
         if isDirectory(url) {
             return candidateFiles(in: [url], allowedExtensions: ["jsonl", "json", "log"], maxFiles: 120)
                 .filter { file in
@@ -637,15 +745,66 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
 
     private func parseEvents(from content: String, fileURL: URL) -> [UsageEvent] {
         let fallbackTimestamp = fileModificationDate(fileURL) ?? Date()
-        if let data = content.data(using: .utf8),
-           let root = try? JSONSerialization.jsonObject(with: data) {
-            return parseGeminiJSONValue(root, fallbackTimestamp: fallbackTimestamp)
-        }
-
-        return content.components(separatedBy: .newlines).flatMap { line -> [UsageEvent] in
+        let jsonDocuments = parseJSONDocuments(from: content)
+        let documentEvents = jsonDocuments.flatMap { parseGeminiJSONValue($0, fallbackTimestamp: fallbackTimestamp) }
+        let lineEvents = content.components(separatedBy: .newlines).flatMap { line -> [UsageEvent] in
             guard let json = jsonObject(fromLine: line) else { return [] }
             return parseGeminiJSONDictionary(json, fallbackTimestamp: fallbackTimestamp)
         }
+        if !documentEvents.isEmpty {
+            return lineEvents.count > documentEvents.count ? lineEvents : documentEvents
+        }
+        return lineEvents
+    }
+
+    private func parseJSONDocuments(from content: String) -> [Any] {
+        guard let data = content.data(using: .utf8) else { return [] }
+        if let root = try? JSONSerialization.jsonObject(with: data) {
+            return [root]
+        }
+
+        var documents: [Any] = []
+        var startIndex: String.Index?
+        var depth = 0
+        var inString = false
+        var escaping = false
+        var index = content.startIndex
+
+        while index < content.endIndex {
+            let character = content[index]
+
+            if inString {
+                if escaping {
+                    escaping = false
+                } else if character == "\\" {
+                    escaping = true
+                } else if character == "\"" {
+                    inString = false
+                }
+            } else if character == "\"" {
+                inString = true
+            } else if character == "{" || character == "[" {
+                if depth == 0 {
+                    startIndex = index
+                }
+                depth += 1
+            } else if character == "}" || character == "]", depth > 0 {
+                depth -= 1
+                if depth == 0, let documentStart = startIndex {
+                    let endIndex = content.index(after: index)
+                    let fragment = String(content[documentStart..<endIndex])
+                    if let fragmentData = fragment.data(using: .utf8),
+                       let root = try? JSONSerialization.jsonObject(with: fragmentData) {
+                        documents.append(root)
+                    }
+                    startIndex = nil
+                }
+            }
+
+            index = content.index(after: index)
+        }
+
+        return documents
     }
 
     private func parseGeminiJSONValue(_ value: Any, fallbackTimestamp: Date) -> [UsageEvent] {
@@ -662,7 +821,9 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         let effectiveFallback = timestampValue(from: json, candidates: [json]) ?? fallbackTimestamp
         var events: [UsageEvent] = []
         let messageEvents = (json["messages"] as? [Any])?.flatMap { parseGeminiJSONValue($0, fallbackTimestamp: effectiveFallback) } ?? []
-        if let telemetry = parseTelemetryEvent(from: json) {
+        if let antigravity = parseAntigravityStatuslineEvent(from: json, fallbackTimestamp: effectiveFallback) {
+            events.append(antigravity)
+        } else if let telemetry = parseTelemetryEvent(from: json) {
             events.append(telemetry)
         } else if messageEvents.isEmpty, let session = parseSessionTokenEvent(from: json, fallbackTimestamp: effectiveFallback) {
             events.append(session)
@@ -707,15 +868,66 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         return events
     }
 
+    private func parseAntigravityStatuslineEvent(from json: [String: Any], fallbackTimestamp: Date) -> UsageEvent? {
+        let product = stringValue(json["product"])?.lowercased()
+        guard product == "antigravity-cli" || product == "antigravity" else { return nil }
+
+        guard let contextWindow = dictionary(json["context_window"]) else { return nil }
+        let currentUsage = dictionary(contextWindow["current_usage"]) ?? [:]
+
+        let contextInputTokens = intValue(contextWindow["total_input_tokens"] ?? contextWindow["totalInputTokens"]) ?? 0
+        let contextOutputTokens = intValue(contextWindow["total_output_tokens"] ?? contextWindow["totalOutputTokens"]) ?? 0
+        let contextTotalTokens = contextInputTokens + contextOutputTokens
+
+        let currentInputTokens = intValue(currentUsage["input_tokens"] ?? currentUsage["inputTokens"]) ?? 0
+        let currentOutputTokens = intValue(currentUsage["output_tokens"] ?? currentUsage["outputTokens"]) ?? 0
+        let currentCacheCreation = intValue(currentUsage["cache_creation_input_tokens"] ?? currentUsage["cacheCreationInputTokens"] ?? currentUsage["cache_creation_tokens"]) ?? 0
+        let currentCacheRead = intValue(currentUsage["cache_read_input_tokens"] ?? currentUsage["cacheReadInputTokens"] ?? currentUsage["cache_read_tokens"]) ?? 0
+        let currentTotalTokens = currentInputTokens + currentOutputTokens + currentCacheCreation + currentCacheRead
+        guard contextTotalTokens > 0 || currentTotalTokens > 0 else { return nil }
+
+        let usesContextTotals = contextTotalTokens > 0
+        let modelName = stringValue(value(json, path: "model.display_name"))
+            ?? stringValue(value(json, path: "model.id"))
+            ?? stringValue(json["model"])
+        let timestamp = timestampValue(from: json, candidates: [contextWindow, currentUsage, json]) ?? fallbackTimestamp
+        return UsageEvent(
+            provider: .gemini,
+            model: modelName,
+            timestamp: timestamp,
+            inputTokens: usesContextTotals ? contextInputTokens : currentInputTokens,
+            outputTokens: usesContextTotals ? contextOutputTokens : currentOutputTokens,
+            cacheReadTokens: usesContextTotals ? 0 : currentCacheRead,
+            cacheCreationTokens: usesContextTotals ? 0 : currentCacheCreation,
+            requestCount: 0,
+            source: "antigravity-statusline",
+            dataSource: .officialStatusline,
+            totalTokensOverride: usesContextTotals ? contextTotalTokens : nil
+        )
+    }
+
     private func parseTelemetryEvent(from json: [String: Any]) -> UsageEvent? {
-        let eventName = stringValue(json["name"] ?? json["event"] ?? value(json, path: "attributes.event.name") ?? value(json, path: "metadata.event.name"))
+        let attributes = dictionary(json["attributes"])
+        let metadata = dictionary(json["metadata"])
+        let eventName = stringValue(
+            json["name"]
+                ?? json["event"]
+                ?? json["event.name"]
+                ?? attributes?["event.name"]
+                ?? attributes?["name"]
+                ?? attributes?["event"]
+                ?? metadata?["event.name"]
+                ?? value(json, path: "attributes.event.name")
+                ?? value(json, path: "metadata.event.name")
+        )
         guard eventName == "gemini_cli.api_response" || containsString("gemini_cli.api_response", in: json) else { return nil }
 
         let candidates = [
             dictionary(json["payload"]),
-            dictionary(json["attributes"]),
-            dictionary(json["metadata"]),
+            attributes,
+            metadata,
             dictionary(value(json, path: "resource.attributes")),
+            dictionary(json["body"]),
             dictionary(value(json, path: "body")),
             json
         ].compactMap { $0 }
@@ -798,12 +1010,33 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     }
 
     private func timestampValue(from json: [String: Any], candidates: [[String: Any]]) -> Date? {
-        if let direct = dateValue(json["timestamp"] ?? json["time"] ?? json["observedTimestamp"] ?? json["startTime"] ?? json["start_time"] ?? json["createdAt"] ?? json["created_at"]) { return direct }
+        if let direct = dateFromTimestampFields(in: json) { return direct }
         for candidate in candidates {
-            if let date = dateValue(candidate["timestamp"] ?? candidate["time"] ?? candidate["observedTimestamp"] ?? candidate["startTime"] ?? candidate["start_time"] ?? candidate["createdAt"] ?? candidate["created_at"]) { return date }
-            if let nanos = int64Value(candidate["time_unix_nano"] ?? candidate["timeUnixNano"] ?? candidate["observed_time_unix_nano"]), nanos > 0 {
-                return Date(timeIntervalSince1970: TimeInterval(nanos) / 1_000_000_000)
-            }
+            if let date = dateFromTimestampFields(in: candidate) { return date }
+        }
+        return nil
+    }
+
+    private func dateFromTimestampFields(in dictionary: [String: Any]) -> Date? {
+        if let date = dateValue(
+            dictionary["timestamp"]
+                ?? dictionary["event.timestamp"]
+                ?? dictionary["time"]
+                ?? dictionary["observedTimestamp"]
+                ?? dictionary["startTime"]
+                ?? dictionary["start_time"]
+                ?? dictionary["createdAt"]
+                ?? dictionary["created_at"]
+        ) {
+            return date
+        }
+        if let nanos = int64Value(dictionary["time_unix_nano"] ?? dictionary["timeUnixNano"] ?? dictionary["observed_time_unix_nano"]), nanos > 0 {
+            return Date(timeIntervalSince1970: TimeInterval(nanos) / 1_000_000_000)
+        }
+        if let hrTime = dictionary["hrTime"] as? [Any], hrTime.count >= 2,
+           let seconds = int64Value(hrTime[0]),
+           let nanos = int64Value(hrTime[1]) {
+            return Date(timeIntervalSince1970: TimeInterval(seconds) + TimeInterval(nanos) / 1_000_000_000)
         }
         return nil
     }

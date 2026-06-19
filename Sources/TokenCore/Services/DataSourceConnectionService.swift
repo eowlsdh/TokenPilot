@@ -58,12 +58,13 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                 snapshot: snapshot
             )
         case .gemini:
-            let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+            let geminiSources = geminiInputURLs(from: candidates)
+            let snapshot = await GeminiTelemetryAdapter(logURLs: geminiSources).snapshot(settings: settings)
             return classifyFileBackedProvider(
                 provider: provider,
                 settings: settings,
                 candidates: candidates,
-                relevantKinds: ["telemetry", "tmp", "history"],
+                relevantKinds: ["antigravity_statusline", "telemetry", "tmp", "history"],
                 snapshot: snapshot
             )
         case .codex:
@@ -79,7 +80,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         let preferredKinds: [String]
         switch source.provider {
         case .claude: preferredKinds = ["statusline", "projects", "config_projects"]
-        case .gemini: preferredKinds = ["telemetry", "tmp", "history"]
+        case .gemini: preferredKinds = ["antigravity_statusline"]
         case .codex: preferredKinds = ["sessions", "archived_sessions", "history", "root"]
         case .deepseek: preferredKinds = []
         }
@@ -139,7 +140,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                 lastScanAt: now,
                 status: .notFound,
                 confidence: .low,
-                statusMessage: provider == .claude ? "Claude status file not found" : "Gemini telemetry log not found"
+                statusMessage: provider == .claude ? "Claude status file not found" : "Antigravity statusline or Gemini telemetry not found"
             )
         }
 
@@ -151,7 +152,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                 lastScanAt: now,
                 status: .notFound,
                 confidence: .low,
-                statusMessage: provider == .claude ? "Claude status file not found" : "Gemini telemetry log not found"
+                statusMessage: provider == .claude ? "Claude status file not found" : "Antigravity statusline or Gemini telemetry not found"
             )
         }
 
@@ -325,6 +326,12 @@ public final class DataSourceConnectionService: @unchecked Sendable {
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
     }
 
+    private func geminiInputURLs(from candidates: [ProviderPathCandidate]) -> [URL] {
+        candidates
+            .filter { ["antigravity_statusline", "telemetry", "tmp", "history"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: ["tmp", "history"].contains($0.kind)) }
+    }
+
     private func shouldUseClaudeProjectFallback(settings: AppSettings) -> Bool {
         let configured = URL(fileURLWithPath: expandTilde(settings.claudeStatusFilePath)).standardizedFileURL.path
         let defaultPath = URL(fileURLWithPath: expandTilde(AppSettings().claudeStatusFilePath)).standardizedFileURL.path
@@ -365,9 +372,13 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         let exists = fileManager.fileExists(atPath: resolvedPath)
         let kind: String
         switch provider {
-        case .claude: kind = "statusline"
-        case .gemini: kind = "telemetry"
-        case .codex, .deepseek: kind = "manual"
+        case .claude:
+            kind = "statusline"
+        case .gemini:
+            let name = URL(fileURLWithPath: resolvedPath).lastPathComponent.lowercased()
+            kind = name == "antigravity-statusline.json" || resolvedPath.lowercased().contains("/antigravity-statusline") ? "antigravity_statusline" : "telemetry"
+        case .codex, .deepseek:
+            kind = "manual"
         }
         return ProviderPathCandidate(
             provider: provider,

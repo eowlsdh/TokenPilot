@@ -8,7 +8,7 @@ External notifications are optional and off by default.
 
 - AI tool usage metadata such as token counts, request counts, limit window percentages, reset hints, timestamps, and model labels.
 - User-selected local file or folder paths for supported metadata sources.
-- Security-scoped bookmark data for user-selected Claude/Gemini source files or folders, so the app can attempt to read those sources again after relaunch.
+- Security-scoped bookmark data for user-selected Claude, Antigravity, or legacy Gemini source files or folders, so the app can attempt to read those sources again after relaunch.
 - App preferences such as enabled providers, language, alert thresholds, and display settings.
 - Optional manually entered Codex limit hints.
 
@@ -40,4 +40,4 @@ The default product promise is local-first. Network use is limited to features t
 
 ## macOS Sandbox
 
-TokenPilot supports security-scoped bookmarks for user-selected Claude and Gemini sources. A stricter App Store distribution should use the sandbox-ready entitlement profile in `Resources/TokenPilot-AppStore.entitlements` and re-verify local source access before release. The default local entitlement file remains unsandboxed until that migration is validated, so existing automatic local metadata discovery keeps working.
+TokenPilot supports security-scoped bookmarks for user-selected Claude, Antigravity, and legacy Gemini sources. A stricter App Store distribution should use the sandbox-ready entitlement profile in `Resources/TokenPilot-AppStore.entitlements` and re-verify local source access before release. The default local entitlement file remains unsandboxed until that migration is validated, so existing automatic local metadata discovery keeps working.

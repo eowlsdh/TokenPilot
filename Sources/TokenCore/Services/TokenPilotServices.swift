@@ -202,10 +202,13 @@ public final class UsageStore: @unchecked Sendable {
         let codexSessionRoots = pathResolver.resolveDefaultPaths(for: .codex)
             .filter { ["sessions", "archived_sessions"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let geminiSourceURLs = pathResolver.resolveDefaultPaths(for: .gemini)
+            .filter { ["antigravity_statusline", "telemetry", "tmp", "history"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: ["tmp", "history"].contains($0.kind)) }
 
         return [
             ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
-            GeminiTelemetryAdapter(),
+            GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
             CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
             DeepSeekBalanceAdapter()
         ]

@@ -1,6 +1,6 @@
 # TokenPilot — macOS 메뉴바 AI 한도/사용량 모니터
 
-**TokenPilot**은 Claude Code, Codex, Gemini CLI, DeepSeek balance 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
+**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini CLI), DeepSeek balance 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
 
 - **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
@@ -31,7 +31,7 @@
 
 - **macOS 메뉴바 앱**: Dock 아이콘 없는 `MenuBarExtra` 유틸리티.
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
-- **Claude / Codex / Gemini / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
+- **Claude / Codex / Antigravity(레거시 Gemini) / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭에서 7일 chart와 provider share를 유지하고 JSON/CSV export를 제공합니다.
@@ -95,10 +95,10 @@ open TokenPilot.xcodeproj
 - connector는 기본 OFF입니다.
 - local JSONL은 official quota가 아니므로 `EXPERIMENTAL`, `Local log`, `not web quota`, `est.` 맥락으로만 표시합니다.
 
-### Gemini CLI
+### Antigravity CLI / 레거시 Gemini CLI
 
-- `~/.gemini`, `~/.gemini/telemetry.log`, `~/.gemini/tmp`, `~/.gemini/history`
-- `gemini_cli.api_response` telemetry log와 session JSON/JSONL token object를 파싱합니다.
+- 기본 경로는 `~/Library/Application Support/TokenPilot/antigravity-statusline.json`입니다.
+- Antigravity CLI의 `statusLine` JSON에서 context window token usage를 읽고, 레거시 `~/.gemini/telemetry.log`, `~/.gemini/tmp`, `~/.gemini/history`도 fallback으로 지원합니다.
 - input/output/cache/reasoning/tool token, total token override, model, auth type, duration, daily request cap을 지원합니다.
 
 ### DeepSeek
@@ -115,8 +115,8 @@ open TokenPilot.xcodeproj
 TokenPilot이 읽는 것:
 
 - 사용자가 선택한 Claude statusline JSON
-- Claude/Codex/Gemini의 로컬 사용량 로그 또는 세션 메타데이터
-- Gemini telemetry log
+- Claude/Codex/Antigravity/Gemini의 로컬 사용량 로그 또는 세션 메타데이터
+- Antigravity statusLine JSON / 레거시 Gemini telemetry log
 - 사용자가 입력한 Codex status 텍스트 / manual limit snapshot
 - 사용자가 직접 저장한 Telegram bot token / Discord webhook의 존재 여부
 - 사용자가 켠 경우 로컬 Codex CLI app-server가 반환하는 한도 힌트
