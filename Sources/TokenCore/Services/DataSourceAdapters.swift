@@ -1018,17 +1018,18 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     }
 
     private func dateFromTimestampFields(in dictionary: [String: Any]) -> Date? {
-        if let date = dateValue(
-            dictionary["timestamp"]
-                ?? dictionary["event.timestamp"]
-                ?? dictionary["time"]
-                ?? dictionary["observedTimestamp"]
-                ?? dictionary["startTime"]
-                ?? dictionary["start_time"]
-                ?? dictionary["createdAt"]
-                ?? dictionary["created_at"]
-        ) {
-            return date
+        let dateCandidates: [Any?] = [
+            dictionary["timestamp"],
+            dictionary["event.timestamp"],
+            dictionary["time"],
+            dictionary["observedTimestamp"],
+            dictionary["startTime"],
+            dictionary["start_time"],
+            dictionary["createdAt"],
+            dictionary["created_at"]
+        ]
+        for candidate in dateCandidates {
+            if let date = dateValue(candidate) { return date }
         }
         if let nanos = int64Value(dictionary["time_unix_nano"] ?? dictionary["timeUnixNano"] ?? dictionary["observed_time_unix_nano"]), nanos > 0 {
             return Date(timeIntervalSince1970: TimeInterval(nanos) / 1_000_000_000)
@@ -1320,113 +1321,102 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
     }
 
     private func codexWebWindow(from value: Any?, kind: LimitWindowKind, confidence: DataConfidence) -> LimitWindow? {
-        guard let dictionary = dictionary(value) else { return nil }
-        let usedValue = codexWebPercentValue(
-            dictionary["used_percent"]
-                ?? dictionary["used_percentage"]
-                ?? dictionary["usedPercent"]
-                ?? dictionary["usedpercent"]
-                ?? dictionary["percent"]
-                ?? dictionary["usage_percent"]
-                ?? dictionary["usagePercent"]
-                ?? dictionary["consumed_percent"]
-                ?? dictionary["consumedPercent"]
-        )
-        let remainingPercentValue = codexWebPercentValue(
-            dictionary["remaining_percent"]
-                ?? dictionary["remaining_percentage"]
-                ?? dictionary["remainingPercent"]
-                ?? dictionary["remainingpercent"]
-        )
+        guard let payload = dictionary(value) else { return nil }
+
+        let usedPercentKeys: [String] = [
+            "used_percent", "used_percentage", "usedPercent", "usedpercent",
+            "percent", "usage_percent", "usagePercent",
+            "consumed_percent", "consumedPercent"
+        ]
+        let remainingPercentKeys: [String] = [
+            "remaining_percent", "remaining_percentage", "remainingPercent", "remainingpercent"
+        ]
+        let usedRawKeys: [String] = [
+            "used", "used_requests", "usedRequests",
+            "used_tokens", "usedTokens",
+            "requests_used", "requestsUsed",
+            "request_count", "requestCount",
+            "consumed", "consumed_requests", "consumedTokens",
+            "current_usage", "currentUsage",
+            "used_count", "usedCount", "current",
+            "input_tokens", "inputTokens",
+            "prompt_tokens", "promptTokens"
+        ]
+        let remainingRawKeys: [String] = [
+            "remaining", "remaining_requests", "remainingRequests",
+            "remaining_tokens", "remainingTokens"
+        ]
+        let limitRawKeys: [String] = [
+            "limit", "max",
+            "max_requests", "maxRequests",
+            "max_tokens", "maxTokens",
+            "request_limit", "requestLimit",
+            "limit_requests", "limitRequests",
+            "capacity", "quota", "total",
+            "total_requests", "totalRequests",
+            "total_tokens", "totalTokens",
+            "max_input_tokens", "maxInputTokens"
+        ]
+
+        let usedValue = codexWebPercentValue(firstCodexWebValue(in: payload, keys: usedPercentKeys))
+        let remainingPercentValue = codexWebPercentValue(firstCodexWebValue(in: payload, keys: remainingPercentKeys))
         let usedFromRawCounts = codexWebUsedPercent(
-            dictionary: dictionary,
-            usedKeys: [
-                "used",
-                "used_requests",
-                "usedRequests",
-                "used_tokens",
-                "usedTokens",
-                "requests_used",
-                "requestsUsed",
-                "request_count",
-                "requestCount",
-                "consumed",
-                "consumed_requests",
-                "consumedTokens",
-                "current_usage",
-                "currentUsage",
-                "used_count",
-                "usedCount",
-                "current",
-                "input_tokens",
-                "inputTokens",
-                "prompt_tokens",
-                "promptTokens"
-            ],
-            limitKeys: [
-                "limit",
-                "max",
-                "max_requests",
-                "maxRequests",
-                "max_tokens",
-                "maxTokens",
-                "request_limit",
-                "requestLimit",
-                "limit_requests",
-                "limitRequests",
-                "capacity",
-                "quota",
-                "total",
-                "total_requests",
-                "totalRequests",
-                "total_tokens",
-                "totalTokens",
-                "max_input_tokens",
-                "maxInputTokens"
-            ]
+            dictionary: payload,
+            usedKeys: usedRawKeys,
+            limitKeys: limitRawKeys
         )
         let usedFromRemainingRawCounts = codexWebUsedPercentFromRemaining(
-            dictionary: dictionary,
-            remainingKeys: [
-                "remaining",
-                "remaining_requests",
-                "remainingRequests",
-                "remaining_tokens",
-                "remainingTokens"
-            ],
-            limitKeys: [
-                "limit",
-                "max",
-                "max_requests",
-                "maxRequests",
-                "max_tokens",
-                "maxTokens",
-                "request_limit",
-                "requestLimit",
-                "limit_requests",
-                "limitRequests",
-                "capacity",
-                "quota",
-                "total",
-                "total_requests",
-                "totalRequests",
-                "total_tokens",
-                "totalTokens",
-                "max_input_tokens",
-                "maxInputTokens"
-            ]
+            dictionary: payload,
+            remainingKeys: remainingRawKeys,
+            limitKeys: limitRawKeys
         )
-        let used = usedValue
-            ?? remainingPercentValue.map { min(max(100 - $0, 0), 100) }
-            ?? usedFromRawCounts
-            ?? usedFromRemainingRawCounts
-        let resetAt = dateValue(dictionary["reset_at"] ?? dictionary["resets_at"] ?? dictionary["resetAt"] ?? dictionary["resetsAt"] ?? dictionary["reset_at_time"] ?? dictionary["resetAtTime"])
-            ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"]).map { now().addingTimeInterval(TimeInterval(max($0, 0))) }
+
+        var used = usedValue
+        if used == nil, let remainingPercentValue {
+            used = min(max(100 - remainingPercentValue, 0), 100)
+        }
+        if used == nil {
+            used = usedFromRawCounts
+        }
+        if used == nil {
+            used = usedFromRemainingRawCounts
+        }
+
+        let resetAt = codexWebResetAt(from: payload)
         if let resetAt, resetAt <= now() {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: confidence)
+    }
+
+    private func firstCodexWebValue(in dictionary: [String: Any], keys: [String]) -> Any? {
+        for key in keys {
+            if let value = dictionary[key] {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func codexWebResetAt(from dictionary: [String: Any]) -> Date? {
+        let resetDateKeys: [String] = [
+            "reset_at", "resets_at", "resetAt", "resetsAt",
+            "reset_at_time", "resetAtTime"
+        ]
+        for key in resetDateKeys {
+            if let date = dateValue(dictionary[key]) {
+                return date
+            }
+        }
+
+        let resetAfterKeys: [String] = ["reset_after_seconds", "resetAfterSeconds"]
+        for key in resetAfterKeys {
+            if let seconds = intValue(dictionary[key]) {
+                return now().addingTimeInterval(TimeInterval(max(seconds, 0)))
+            }
+        }
+        return nil
     }
 
     private func codexWebUsedPercent(dictionary: [String: Any], usedKeys: [String], limitKeys: [String]) -> Int? {
@@ -1636,8 +1626,19 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     }
 
     private func codexLineDedupeKey(json: [String: Any], payload: [String: Any]?, info: [String: Any], rawLine: String) -> String {
-        if let id = stringValue(json["id"] ?? json["event_id"] ?? json["eventId"] ?? payload?["id"] ?? payload?["event_id"] ?? info["id"] ?? info["event_id"]), !id.isEmpty {
-            return "id:\(id)"
+        let idCandidates: [Any?] = [
+            json["id"],
+            json["event_id"],
+            json["eventId"],
+            payload?["id"],
+            payload?["event_id"],
+            info["id"],
+            info["event_id"]
+        ]
+        for candidate in idCandidates {
+            if let id = stringValue(candidate), !id.isEmpty {
+                return "id:\(id)"
+            }
         }
         return "line:\(stableLineFingerprint(rawLine))"
     }
