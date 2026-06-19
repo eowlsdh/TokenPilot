@@ -514,6 +514,8 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.tokenpilot.macos;
+				PRODUCT_MODULE_NAME = TokenPilot;
+				PRODUCT_NAME = TokenPilot;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -586,6 +588,8 @@
 					"@executable_path/../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.tokenpilot.macos;
+				PRODUCT_MODULE_NAME = TokenPilot;
+				PRODUCT_NAME = TokenPilot;
 				SDKROOT = macosx;
 			};
 			name = Debug;

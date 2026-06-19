@@ -53,6 +53,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.tokenpilot.macos
+        PRODUCT_NAME: TokenPilot
+        PRODUCT_MODULE_NAME: TokenPilot
         INFOPLIST_FILE: Resources/Info.plist
         CODE_SIGN_ENTITLEMENTS: Resources/TokenPilot.entitlements
         LD_RUNPATH_SEARCH_PATHS:
