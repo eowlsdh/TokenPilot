@@ -52,8 +52,8 @@ public final class UsageHistoryStore: @unchecked Sendable {
                         source: "snapshot-daily-total",
                         dataSource: snapshot.dataSource,
                         isEstimated: true,
-                        isExperimental: snapshot.isExperimental,
-                        )]
+                        isExperimental: snapshot.isExperimental
+                    )]
                 }
 
             guard !incoming.isEmpty else {
