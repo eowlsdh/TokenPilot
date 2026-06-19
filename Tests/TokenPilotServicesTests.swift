@@ -2713,7 +2713,7 @@ final class TokenPilotServicesTests: XCTestCase {
             source: "codex-session-jsonl",
             dataSource: .localLog,
             isEstimated: true,
-            isExperimental: true,
+            isExperimental: true
         )
         let claude = UsageEvent(provider: .claude, timestamp: now, inputTokens: 100, outputTokens: 0, source: "claude-status")
         let snapshots = [
