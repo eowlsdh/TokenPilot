@@ -909,18 +909,26 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     private func parseTelemetryEvent(from json: [String: Any]) -> UsageEvent? {
         let attributes = dictionary(json["attributes"])
         let metadata = dictionary(json["metadata"])
-        let eventName = stringValue(
-            json["name"]
-                ?? json["event"]
-                ?? json["event.name"]
-                ?? attributes?["event.name"]
-                ?? attributes?["name"]
-                ?? attributes?["event"]
-                ?? metadata?["event.name"]
-                ?? value(json, path: "attributes.event.name")
-                ?? value(json, path: "metadata.event.name")
-        )
-        guard eventName == "gemini_cli.api_response" || containsString("gemini_cli.api_response", in: json) else { return nil }
+        let eventNameCandidates: [Any?] = [
+            json["name"],
+            json["event"],
+            json["event.name"],
+            attributes?["event.name"],
+            attributes?["name"],
+            attributes?["event"],
+            metadata?["event.name"],
+            value(json, path: "attributes.event.name"),
+            value(json, path: "metadata.event.name")
+        ]
+        var eventName: String?
+        for candidate in eventNameCandidates {
+            if let candidateName = stringValue(candidate), !candidateName.isEmpty {
+                eventName = candidateName
+                break
+            }
+        }
+        let isAPIResponseEvent = eventName == "gemini_cli.api_response" || containsString("gemini_cli.api_response", in: json)
+        guard isAPIResponseEvent else { return nil }
 
         let candidates = [
             dictionary(json["payload"]),
