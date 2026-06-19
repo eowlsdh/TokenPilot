@@ -1844,95 +1844,99 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     }
 
     private func codexLimitWindow(from dictionary: [String: Any]?, fallbackKind: LimitWindowKind, now: Date = Date()) -> LimitWindow? {
-        guard let dictionary else { return nil }
+        guard let payload = dictionary else { return nil }
+
+        let windowMinutesKeys: [String] = ["window_minutes", "windowMinutes", "limit_window_minutes"]
+        let usedPercentKeys: [String] = [
+            "used_percent", "used_percentage", "usedPercent", "usedpercent",
+            "percent", "usage_percent", "usagePercent",
+            "consumed_percent", "consumedPercent"
+        ]
+        let remainingPercentKeys: [String] = [
+            "remaining_percent", "remaining_percentage", "remainingPercent",
+            "remainingpercent", "remaining"
+        ]
+        let usedRawKeys: [String] = [
+            "used", "used_requests", "usedRequests",
+            "used_tokens", "usedTokens",
+            "requests_used", "requestsUsed",
+            "request_count", "requestCount",
+            "consumed", "consumed_requests", "consumedTokens",
+            "current_usage", "currentUsage",
+            "used_count", "usedCount", "current",
+            "input_tokens", "inputTokens",
+            "prompt_tokens", "promptTokens"
+        ]
+        let limitRawKeys: [String] = [
+            "limit", "max",
+            "max_requests", "maxRequests",
+            "max_tokens", "maxTokens",
+            "request_limit", "requestLimit",
+            "limit_requests", "limitRequests",
+            "capacity", "quota", "total",
+            "total_requests", "totalRequests",
+            "total_tokens", "totalTokens",
+            "max_input_tokens", "maxInputTokens"
+        ]
+
         let kind: LimitWindowKind
-        if let minutes = intValue(dictionary["window_minutes"] ?? dictionary["windowMinutes"] ?? dictionary["limit_window_minutes"]) {
+        if let minutes = intValue(firstCodexSessionValue(in: payload, keys: windowMinutesKeys)) {
             kind = minutes >= 7 * 24 * 60 ? .weekly : .fiveHour
         } else {
             kind = fallbackKind
         }
-        let usedValue = codexSessionPercentValue(
-            dictionary["used_percent"]
-                ?? dictionary["used_percentage"]
-                ?? dictionary["usedPercent"]
-                ?? dictionary["usedpercent"]
-                ?? dictionary["percent"]
-                ?? dictionary["usage_percent"]
-                ?? dictionary["usagePercent"]
-                ?? dictionary["consumed_percent"]
-                ?? dictionary["consumedPercent"]
-        )
-        let remainingValue = codexSessionPercentValue(
-            dictionary["remaining_percent"]
-                ?? dictionary["remaining_percentage"]
-                ?? dictionary["remainingPercent"]
-                ?? dictionary["remainingpercent"]
-                ?? dictionary["remaining"]
-        )
+
+        let usedValue = codexSessionPercentValue(firstCodexSessionValue(in: payload, keys: usedPercentKeys))
+        let remainingValue = codexSessionPercentValue(firstCodexSessionValue(in: payload, keys: remainingPercentKeys))
         let usedFromRawCounts = codexSessionUsedPercent(
-            dictionary: dictionary,
-            usedKeys: [
-                "used",
-                "used_requests",
-                "usedRequests",
-                "used_tokens",
-                "usedTokens",
-                "requests_used",
-                "requestsUsed",
-                "request_count",
-                "requestCount",
-                "consumed",
-                "consumed_requests",
-                "consumedTokens",
-                "current_usage",
-                "currentUsage",
-                "used_count",
-                "usedCount",
-                "current",
-                "input_tokens",
-                "inputTokens",
-                "prompt_tokens",
-                "promptTokens"
-            ],
-            limitKeys: [
-                "limit",
-                "max",
-                "max_requests",
-                "maxRequests",
-                "max_tokens",
-                "maxTokens",
-                "request_limit",
-                "requestLimit",
-                "limit_requests",
-                "limitRequests",
-                "capacity",
-                "quota",
-                "total",
-                "total_requests",
-                "totalRequests",
-                "total_tokens",
-                "totalTokens",
-                "max_input_tokens",
-                "maxInputTokens"
-            ]
+            dictionary: payload,
+            usedKeys: usedRawKeys,
+            limitKeys: limitRawKeys
         )
-        let used = usedValue
-            ?? remainingValue.map { min(max(100 - $0, 0), 100) }
-            ?? usedFromRawCounts
-        let resetAt = dateValue(
-            dictionary["resets_at"]
-                ?? dictionary["reset_at"]
-                ?? dictionary["resetAt"]
-                ?? dictionary["resetsAt"]
-                ?? dictionary["reset_at_time"]
-                ?? dictionary["resetAtTime"]
-        ) ?? intValue(dictionary["reset_after_seconds"] ?? dictionary["resetAfterSeconds"])
-            .map { now.addingTimeInterval(TimeInterval(max($0, 0))) }
+
+        var used = usedValue
+        if used == nil, let remainingValue {
+            used = min(max(100 - remainingValue, 0), 100)
+        }
+        if used == nil {
+            used = usedFromRawCounts
+        }
+
+        let resetAt = codexSessionResetAt(from: payload, now: now)
         if let resetAt, resetAt <= now {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium)
+    }
+
+    private func firstCodexSessionValue(in dictionary: [String: Any], keys: [String]) -> Any? {
+        for key in keys {
+            if let value = dictionary[key] {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private func codexSessionResetAt(from dictionary: [String: Any], now: Date) -> Date? {
+        let resetDateKeys: [String] = [
+            "resets_at", "reset_at", "resetAt", "resetsAt",
+            "reset_at_time", "resetAtTime"
+        ]
+        for key in resetDateKeys {
+            if let date = dateValue(dictionary[key]) {
+                return date
+            }
+        }
+
+        let resetAfterKeys: [String] = ["reset_after_seconds", "resetAfterSeconds"]
+        for key in resetAfterKeys {
+            if let seconds = intValue(dictionary[key]) {
+                return now.addingTimeInterval(TimeInterval(max(seconds, 0)))
+            }
+        }
+        return nil
     }
 
     private func codexSessionUsedPercent(dictionary: [String: Any], usedKeys: [String], limitKeys: [String]) -> Int? {
