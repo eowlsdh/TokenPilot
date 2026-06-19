@@ -10,18 +10,30 @@ jobs:
   build-and-test:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
       - name: Install XcodeGen
+        env:
+          XCODEGEN_VERSION: 2.45.4
         run: |
-          if command -v xcodegen; then
+          set -euo pipefail
+
+          if command -v xcodegen >/dev/null 2>&1; then
             xcodegen --version
-          else
-            brew install xcodegen
+            exit 0
           fi
+
+          curl -fsSL \
+            "https://github.com/yonaskolb/XcodeGen/releases/download/${XCODEGEN_VERSION}/xcodegen.zip" \
+            -o /tmp/xcodegen.zip
+          rm -rf /tmp/xcodegen
+          mkdir -p /tmp/xcodegen
+          unzip -q /tmp/xcodegen.zip -d /tmp/xcodegen
+          sudo install /tmp/xcodegen/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
+          xcodegen --version
 
       - name: Build
         run: swift build
