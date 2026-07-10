@@ -155,10 +155,6 @@ final class TokenPilotViewModel: ObservableObject {
         menuBarSnapshot.flatMap { menuBarStatusService.displayWindow(for: $0) }
     }
 
-    var menuBarRemainingBadges: [MenuBarRemainingStatusBadge] {
-        menuBarStatusService.remainingBadges(snapshots: snapshots, settings: settings)
-    }
-
     var menuBarSystemImage: String {
         guard let snapshot = menuBarStatusService.selectedSnapshot(from: snapshots, settings: settings) else {
             return "chart.bar.xaxis"
@@ -166,12 +162,8 @@ final class TokenPilotViewModel: ObservableObject {
         return snapshot.provider.iconName
     }
 
-    var highestRiskProvider: (provider: Provider, percent: Int)? {
-        let candidates = enabledSnapshots.compactMap { snapshot -> (provider: Provider, percent: Int)? in
-            guard let percent = snapshot.primaryUsedPercent else { return nil }
-            return (provider: snapshot.provider, percent: percent)
-        }
-        return candidates.max(by: { $0.percent < $1.percent })
+    var lowestRemainingSummary: MenuBarLowestRemainingSummary? {
+        menuBarStatusService.lowestRemainingSummary(snapshots: snapshots, settings: settings)
     }
 
     var nearestReset: Date? {

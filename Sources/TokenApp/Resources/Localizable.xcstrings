@@ -1513,6 +1513,34 @@
         }
       }
     },
+    "Auto-detect sources": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "소스 자동 감지"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto-detect sources"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动检测数据源"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "データソースを自動検出"
+          }
+        }
+      }
+    },
     "Toggle providers shown on Overview. Disabled providers are not removed.": {
       "localizations": {
         "ko": {

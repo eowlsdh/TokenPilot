@@ -222,8 +222,7 @@ struct UsageSummaryCard: View {
     }
 
     private var lowestRemainingText: String {
-        guard let highest = model.highestRiskProvider else { return "—" }
-        return "\(highest.provider.shortName) \(min(max(100 - highest.percent, 0), 100))%"
+        model.lowestRemainingSummary?.displayText ?? "—"
     }
 
     private var updatedText: String {

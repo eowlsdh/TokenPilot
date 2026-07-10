@@ -6,19 +6,17 @@ public enum MenuBarStatusLevel: String, Sendable {
     case critical
 }
 
-public struct MenuBarRemainingStatusBadge: Equatable, Identifiable, Sendable {
-    public var id: String
-    public var label: String
+public struct MenuBarLowestRemainingSummary: Equatable, Sendable {
+    public var provider: Provider
     public var remainingPercent: Int
-    public var usedPercent: Int
-    public var isEstimated: Bool
 
-    public init(label: String, remainingPercent: Int, usedPercent: Int, isEstimated: Bool = false) {
-        self.label = label
+    public var displayText: String {
+        "\(provider.shortName) \(remainingPercent)%"
+    }
+
+    public init(provider: Provider, remainingPercent: Int) {
+        self.provider = provider
         self.remainingPercent = min(max(remainingPercent, 0), 100)
-        self.usedPercent = min(max(usedPercent, 0), 100)
-        self.isEstimated = isEstimated
-        self.id = "\(label)-\(self.remainingPercent)-\(self.usedPercent)-\(isEstimated)"
     }
 }
 
@@ -119,29 +117,14 @@ public final class MenuBarStatusService: Sendable {
         statusLevel(snapshots: snapshots, settings: settings) != .normal
     }
 
-    public func remainingBadges(snapshots: [ProviderSnapshot], settings: AppSettings) -> [MenuBarRemainingStatusBadge] {
-        guard let snapshot = selectedSnapshot(from: snapshots, settings: settings) else { return [] }
-        return remainingBadges(for: snapshot)
-    }
-
-    public func remainingBadges(for snapshot: ProviderSnapshot) -> [MenuBarRemainingStatusBadge] {
-        var badges: [MenuBarRemainingStatusBadge] = []
-        if let badge = remainingBadge(for: snapshot.fiveHour, snapshot: snapshot) {
-            badges.append(badge)
-        }
-        if let badge = remainingBadge(for: snapshot.weekly, snapshot: snapshot) {
-            badges.append(badge)
-        }
-        if badges.isEmpty,
-           let dailyRequestsPercent = snapshot.dailyRequestsPercent {
-            badges.append(MenuBarRemainingStatusBadge(
-                label: compactMenuLabel(for: .dailyRequests),
-                remainingPercent: min(max(100 - dailyRequestsPercent, 0), 100),
-                usedPercent: dailyRequestsPercent,
-                isEstimated: snapshot.confidence == .manual || snapshot.dataSource == .manual || snapshot.dataSource == .estimated
-            ))
-        }
-        return badges
+    public func lowestRemainingSummary(snapshots: [ProviderSnapshot], settings: AppSettings) -> MenuBarLowestRemainingSummary? {
+        presentationSnapshots(from: snapshots, settings: settings)
+            .compactMap { snapshot -> MenuBarLowestRemainingSummary? in
+                lowestRemainingPercent(for: snapshot).map {
+                    MenuBarLowestRemainingSummary(provider: snapshot.provider, remainingPercent: $0)
+                }
+            }
+            .min { lhs, rhs in lhs.remainingPercent < rhs.remainingPercent }
     }
 
     public func accessibilityLabel(
@@ -243,20 +226,6 @@ public final class MenuBarStatusService: Sendable {
         return "\(compactMenuLabel(for: window.kind)) \(noData)"
     }
 
-    private func remainingBadge(for window: LimitWindow?, snapshot: ProviderSnapshot) -> MenuBarRemainingStatusBadge? {
-        guard let window,
-              let remainingPercent = window.remainingPercent,
-              let usedPercent = window.usedPercent else {
-            return nil
-        }
-        return MenuBarRemainingStatusBadge(
-            label: compactMenuLabel(for: window.kind),
-            remainingPercent: remainingPercent,
-            usedPercent: usedPercent,
-            isEstimated: snapshot.confidence == .manual || window.confidence == .manual || snapshot.dataSource == .manual || snapshot.dataSource == .estimated
-        )
-    }
-
     private func compactMenuLabel(for kind: LimitWindowKind) -> String {
         switch kind {
         case .fiveHour:
@@ -290,5 +259,15 @@ public final class MenuBarStatusService: Sendable {
         ]
         .compactMap { $0 }
         .max()
+    }
+
+    private func lowestRemainingPercent(for snapshot: ProviderSnapshot) -> Int? {
+        [
+            snapshot.fiveHour?.remainingPercent,
+            snapshot.weekly?.remainingPercent,
+            snapshot.dailyRequestsPercent.map { min(max(100 - $0, 0), 100) }
+        ]
+        .compactMap { $0 }
+        .min()
     }
 }

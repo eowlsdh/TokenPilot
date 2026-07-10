@@ -26,7 +26,10 @@ struct SettingsScreen: View {
         VStack(spacing: 10) {
             SettingsCard(title: model.t("1. Data Sources"), icon: "externaldrive") {
                 VStack(alignment: .leading, spacing: 14) {
-                    HStack(spacing: 8) {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible()), GridItem(.flexible())],
+                        spacing: 8
+                    ) {
                         providerToggle(.claude)
                         providerToggle(.codex)
                         providerToggle(.gemini)
@@ -35,14 +38,12 @@ struct SettingsScreen: View {
                     Text(model.t("Toggle providers shown on Overview. Disabled providers are hidden and not refreshed."))
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
-                    HStack(spacing: 8) {
-                        Button(model.t("Auto-detect & apply sources")) { Task { await model.checkAllConnections() } }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
                             .buttonStyle(.bordered)
-                        Spacer(minLength: 0)
                         Text(model.t("Scans only local default paths and user-selected files."))
                             .font(.caption2)
                             .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .multilineTextAlignment(.trailing)
                     }
 
                     VStack(alignment: .leading, spacing: 8) {
@@ -537,6 +538,7 @@ struct SettingsScreen: View {
         .toggleStyle(.button)
         .buttonStyle(.bordered)
         .tint(model.isProviderEnabled(provider) ? TokenPilotDesign.accent(for: provider) : .secondary)
+        .frame(maxWidth: .infinity)
     }
 
     private func sourceBlock<Content: View>(title: String, icon: String, provider: Provider, @ViewBuilder content: () -> Content) -> some View {

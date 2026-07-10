@@ -240,20 +240,53 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(today.allSatisfy { $0.provider == .claude && $0.totalTokens == nil })
     }
 
-    func testMenuBarRemainingBadgesExposeVisualRemainingPercentValues() {
-        let now = Date(timeIntervalSince1970: 1_000_000)
+    func testMenuBarLowestRemainingUsesMinimumEnabledWindowAcrossPresentationSnapshots() {
         let snapshot = ProviderSnapshot(
-            provider: .claude,
-            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
-            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720))
+            provider: .codex,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 21),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
         )
 
-        let badges = MenuBarStatusService().remainingBadges(snapshots: [snapshot], settings: AppSettings())
+        let summary = MenuBarStatusService().lowestRemainingSummary(snapshots: [snapshot], settings: AppSettings())
 
-        XCTAssertEqual(badges.map(\.label), ["5h", "W"])
-        XCTAssertEqual(badges.map(\.remainingPercent), [18, 53])
-        XCTAssertEqual(badges.map(\.usedPercent), [82, 47])
+        XCTAssertEqual(summary?.provider, .codex)
+        XCTAssertEqual(summary?.remainingPercent, 66)
+        XCTAssertEqual(summary?.displayText, "Co 66%")
+
+        let codex = ProviderSnapshot(
+            provider: .codex,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 21),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
+        )
+        let claude = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 73)
+        )
+
+        let globalSummary = MenuBarStatusService().lowestRemainingSummary(snapshots: [codex, claude], settings: AppSettings())
+
+        XCTAssertEqual(globalSummary?.provider, .claude)
+        XCTAssertEqual(globalSummary?.remainingPercent, 27)
+        XCTAssertEqual(globalSummary?.displayText, "Cl 27%")
+
+        var settings = AppSettings()
+        settings.claudeEnabled = false
+        let disabledClaude = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 95)
+        )
+        let enabledCodex = ProviderSnapshot(
+            provider: .codex,
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
+        )
+
+        let enabledSummary = MenuBarStatusService().lowestRemainingSummary(snapshots: [disabledClaude, enabledCodex], settings: settings)
+
+        XCTAssertEqual(enabledSummary?.provider, .codex)
+        XCTAssertEqual(enabledSummary?.remainingPercent, 66)
+        XCTAssertEqual(enabledSummary?.displayText, "Co 66%")
     }
+
     func testCodexPresentationSnapshotsMatchMenuBarManualFallbackWhenConnectorIsOff() {
         var settings = AppSettings()
         settings.menuBarDisplayTarget = .codex
@@ -273,10 +306,12 @@ final class TokenPilotServicesTests: XCTestCase {
         )
 
         let service = MenuBarStatusService()
-        let menuBadges = service.remainingBadges(snapshots: [localLogOnly], settings: settings)
+        let summary = service.lowestRemainingSummary(snapshots: [localLogOnly], settings: settings)
         let presentation = service.presentationSnapshots(from: [localLogOnly], settings: settings)
 
-        XCTAssertEqual(menuBadges.map(\.remainingPercent), [26, 80])
+        XCTAssertEqual(summary?.provider, .codex)
+        XCTAssertEqual(summary?.remainingPercent, 26)
+        XCTAssertEqual(summary?.displayText, "Co 26%")
         XCTAssertEqual(presentation.count, 1)
         XCTAssertEqual(presentation.first?.provider, .codex)
         XCTAssertEqual(presentation.first?.fiveHour?.usedPercent, 74)
