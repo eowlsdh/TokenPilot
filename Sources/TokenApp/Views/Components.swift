@@ -222,7 +222,6 @@ struct ProviderSignatureMark: View {
                     RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
                         .stroke(TokenPilotDesign.accent(for: provider).opacity(isVisible ? 0.56 : 0.24), lineWidth: 1)
                 )
-                .shadow(color: TokenPilotDesign.accent(for: provider).opacity(isVisible ? 0.24 : 0), radius: 10, x: 0, y: 4)
 
             providerGlyph
                 .scaleEffect(isVisible ? 1 : 0.78)
@@ -311,9 +310,8 @@ struct TokenPilotBrandMark: View {
                         .stroke(TokenPilotDesign.calm.opacity(0.35), lineWidth: 1)
                 )
             Text("TP")
-                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .font(.system(size: 10, weight: .heavy, design: .monospaced))
                 .foregroundStyle(TokenPilotDesign.textPrimary)
-                .tracking(-0.8)
             Circle()
                 .fill(TokenPilotDesign.calm)
                 .frame(width: 4, height: 4)
@@ -326,92 +324,6 @@ struct TokenPilotBrandMark: View {
             }
         }
         .accessibilityHidden(true)
-    }
-}
-
-struct MenuBarProviderMark: View {
-    let provider: Provider
-
-    var body: some View {
-        Text(provider.shortName)
-            .font(.system(size: 8, weight: .heavy, design: .monospaced))
-            .foregroundStyle(TokenPilotDesign.accent(for: provider))
-            .frame(width: 15, height: 15)
-            .background(TokenPilotDesign.accent(for: provider).opacity(0.14))
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-struct TokenPilotMenuBarMark: View {
-    var body: some View {
-        Text("TP")
-            .font(.system(size: 8, weight: .heavy, design: .monospaced))
-            .foregroundStyle(TokenPilotDesign.textSecondary)
-            .frame(width: 15, height: 15)
-            .background(TokenPilotDesign.cardMuted.opacity(0.8))
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
-            .accessibilityHidden(true)
-    }
-}
-
-struct MenuBarRemainingBadge: View {
-    let badge: MenuBarRemainingStatusBadge
-    let compactMode: Bool
-
-    init(_ badge: MenuBarRemainingStatusBadge, compactMode: Bool = true) {
-        self.badge = badge
-        self.compactMode = compactMode
-    }
-
-    var body: some View {
-        HStack(spacing: compactMode ? 3 : 4) {
-            Text(badge.label)
-                .font(.system(size: compactMode ? 8 : 10, weight: .semibold, design: .monospaced))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(1)
-            HStack(spacing: 1) {
-                Text("\(badge.remainingPercent)%")
-                    .font(.system(size: compactMode ? 8.5 : 10, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(TokenPilotDesign.riskColor(badge.usedPercent))
-                    .monospacedDigit()
-                if badge.isEstimated {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: compactMode ? 8 : 9, weight: .bold))
-                        .foregroundStyle(TokenPilotDesign.warning)
-                }
-            }
-            .lineLimit(1)
-        }
-        .padding(.horizontal, compactMode ? 6 : 8)
-        .padding(.vertical, compactMode ? 2.5 : 4)
-        .background(Color.black.opacity(compactMode ? 0.26 : 0.2))
-        .overlay(
-            Capsule()
-                .stroke(TokenPilotDesign.riskColor(badge.usedPercent).opacity(0.22), lineWidth: compactMode ? 1 : 0.8)
-        )
-        .clipShape(Capsule())
-        .help(
-            String(
-                format: TokenPilotLocalizer.localized("Remaining percent: %@, used: %@", language: .system),
-                "\(badge.remainingPercent)%",
-                "\(badge.usedPercent)%"
-            )
-        )
-    }
-}
-
-struct MenuBarRemainingBadgeRow: View {
-    let badges: [MenuBarRemainingStatusBadge]
-
-    var body: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(badges.prefix(2).enumerated()), id: \.offset) { index, badge in
-                MenuBarRemainingBadge(badge)
-                    .accessibilityIdentifier("menuBarRemainingBadge_\(badge.label)")
-                    .opacity(index == 0 ? 1 : 0.96)
-            }
-        }
     }
 }
 
@@ -489,7 +401,13 @@ struct ProgressLine: View {
             }
         }
         .frame(height: 4)
-        .accessibilityLabel("\(percent ?? 0)%")
+        .accessibilityLabel(progressAssistiveText)
+        .accessibilityValue(progressAssistiveText)
+    }
+
+    private var progressAssistiveText: String {
+        guard let percent else { return "--" }
+        return "\(percent)%"
     }
 
     private func progressWidth(in width: CGFloat) -> CGFloat {
@@ -503,7 +421,7 @@ struct EmptyInlineState: View {
 
     var body: some View {
         Text(text)
-            .font(.caption2)
+            .font(.system(size: 10, weight: .medium))
             .foregroundStyle(TokenPilotDesign.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 2)
@@ -528,7 +446,7 @@ struct EmptyStateCard: View {
                     Text(title)
                         .font(.caption.weight(.semibold))
                     Text(message)
-                        .font(.caption2)
+                        .font(.system(size: 10, weight: .regular))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
                 Spacer(minLength: 0)
@@ -543,7 +461,7 @@ struct StatusBadge: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
             .monospacedDigit()
             .lineLimit(1)
             .padding(.horizontal, 6)
@@ -591,14 +509,14 @@ struct SevenDayBarChart: View {
                         Text(TokenPilotFormatters.compactNumber(totalTokens))
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
                         Text(localized("Total", language: language))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                     }
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(TokenPilotFormatters.compactNumber(averageTokens))
                             .font(.system(size: 12, weight: .bold, design: .monospaced))
                         Text(localized("Avg/day", language: language))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                     }
                 }
@@ -619,7 +537,7 @@ struct SevenDayBarChart: View {
                             VStack(spacing: 6) {
                                 if bar.tokens > 0 {
                                     Text(TokenPilotFormatters.compactNumber(bar.tokens))
-                                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                                         .foregroundStyle(TokenPilotDesign.textSecondary)
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.75)
@@ -644,7 +562,7 @@ struct SevenDayBarChart: View {
                                 .frame(height: barTrackHeight)
 
                                 Text(bar.dayLabel)
-                                    .font(.caption2)
+                                    .font(.system(size: 10, weight: .medium))
                                     .foregroundStyle(TokenPilotDesign.textSecondary)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.8)
@@ -655,11 +573,11 @@ struct SevenDayBarChart: View {
 
                 HStack {
                     Text(summaryText)
-                        .font(.system(size: 9, weight: .medium))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                     Spacer()
                     Text("\(localized("Peak", language: language)) \(TokenPilotFormatters.compactNumber(highest))")
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
             }
@@ -713,7 +631,7 @@ struct ProviderShareRow: View {
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                     Spacer()
                     Text(localized("total", language: language))
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
 
@@ -731,7 +649,7 @@ struct ProviderShareRow: View {
                                 Text("\(share.percent)%")
                                     .font(.system(size: 11, design: .monospaced).weight(.bold))
                                 Text("•")
-                                    .font(.system(size: 8, weight: .bold))
+                                    .font(.system(size: 10, weight: .bold))
                                     .foregroundStyle(TokenPilotDesign.textSecondary)
                                 Text(TokenPilotFormatters.compactNumber(share.tokens))
                                     .font(.system(size: 10, design: .monospaced).weight(.semibold))
@@ -776,9 +694,8 @@ struct GlassCard<Content: View>: View {
             }
             .overlay(
                 RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous)
-                    .stroke(TokenPilotDesign.glassEdgeGlow, lineWidth: 0.8)
+                    .stroke(TokenPilotDesign.border.opacity(0.72), lineWidth: 0.8)
             )
             .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous))
-            .shadow(color: Color.black.opacity(0.18), radius: 10, x: 0, y: 5)
     }
 }

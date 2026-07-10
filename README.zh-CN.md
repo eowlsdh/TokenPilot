@@ -1,6 +1,6 @@
 # TokenPilot — macOS 菜单栏 AI 额度 / 用量监控
 
-**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini CLI）和 DeepSeek balance 信号，让你在 macOS 菜单栏中查看剩余额度和使用历史。
+**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini CLI fallback）和 DeepSeek balance 信号，让你在 macOS 菜单栏中查看剩余额度和使用历史。
 
 > TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie、provider auth 文件或任意 Keychain 项。
 >
@@ -27,7 +27,7 @@
 
 - **macOS 菜单栏应用**：无 Dock 图标的 `MenuBarExtra` 工具。
 - **剩余额度优先 UI**：优先显示“还剩多少”，而不是“已经用了多少”。
-- **Claude / Codex / Antigravity（旧版 Gemini）/ DeepSeek 集成**：把各 provider 的本地元数据和可选 balance 信号汇总到一个界面。
+- **Claude / Codex / Antigravity（旧版 Gemini fallback）/ DeepSeek 集成**：把各 provider 的本地元数据和可选 balance 信号汇总到一个界面。
 - **DeepSeek balance**：保存 API key 后，使用官方 `/user/balance` 的 `topped_up_balance`，并按 native currency 显示。
 - **Manual fallback 与 stale 标记**：没有 API key 或请求失败时，也会清楚标出数据可信度。
 - **低余额提醒**：当 topped-up balance 不高于 $5 时可以触发提醒。
@@ -48,9 +48,11 @@
 2. **Manual Limit Snapshot / `/status` parse**：根据用户输入推算 5h / weekly 值。
 3. **Local Activity Beta**：实验性读取 local session JSONL 中的 token_count 类 row。
 
-### Antigravity CLI / 旧版 Gemini CLI
+### Antigravity CLI / 旧版 Gemini fallback
 
-- 默认读取 `~/Library/Application Support/TokenPilot/antigravity-statusline.json` 中的 Antigravity `statusLine` JSON。
+- 默认读取 `~/Library/Application Support/TokenPilot/antigravity-statusline.json` 中的 Antigravity `statusLine` bridge output。
+- 在 Settings → Setup Guide → **Connect Antigravity CLI** 安装 bridge，重启或重新打开 Antigravity CLI 后运行任意 prompt，JSON 就会更新。
+- 保存的只有 model、context-window input/output total、current usage token count、percentage 等 allowlist metadata。不会保存 prompt/response、email、cwd/workspace 或 provider auth material。
 - 旧版 `~/.gemini` telemetry log 与 session JSON/JSONL token object 仍作为 fallback 支持。
 
 ### DeepSeek
@@ -66,7 +68,7 @@
 
 ```bash
 swift test
-# Executed 171 tests, with 0 failures
+# Executed 187 tests, with 0 failures
 
 make bundle
 open build/TokenPilot.app

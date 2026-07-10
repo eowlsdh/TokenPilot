@@ -3,23 +3,23 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Tests](https://img.shields.io/badge/Tests-184%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen.svg)](#testing)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
 > **A local-first macOS menu bar monitor for AI coding quota and usage.**
-> TokenPilot keeps Claude Code, Codex, Antigravity CLI (legacy Gemini CLI), and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector.
+> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini CLI fallback, and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector.
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, or DeepSeek.
 
 [한국어 README](README.ko.md) · [日本語 README](README.ja.md) · [简体中文 README](README.zh-CN.md)
 
-![TokenPilot screenshot showing remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
+![TokenPilot screenshot showing Antigravity CLI statusLine diagnostics, remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
 
 ---
 
 ## Why TokenPilot?
 
-AI coding tools expose usage signals in different places: statusline JSON, local session logs, telemetry logs, manual `/status` output, or unofficial limit-hint APIs. TokenPilot turns those scattered local signals into one compact macOS menu bar readout:
+AI coding tools expose usage signals in different places: Claude statusline JSON, Antigravity `statusLine` JSON, local session logs, telemetry logs, manual `/status` output, or unofficial limit-hint APIs. TokenPilot turns those scattered local signals into one compact macOS menu bar readout:
 
 ```text
 5h 18% · W 53%
@@ -45,7 +45,7 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Native menu bar utility** | `MenuBarExtra` app with compact quota display and no Dock icon. |
-| 📊 **Multi-provider monitoring** | Claude Code, Codex, Antigravity CLI (legacy Gemini CLI), and DeepSeek balance in one place. |
+| 📊 **Multi-provider monitoring** | Claude Code, Codex, Antigravity CLI with legacy Gemini fallback, and DeepSeek balance in one place. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
@@ -94,7 +94,7 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 |----------|-------------|-------------|
 | **Claude Code** | Statusline JSON + local project JSONL fallback | High when statusline/rate-limit fields are present. |
 | **Codex** | Opt-in Codex CLI limit hints, manual `/status` / manual estimates, local activity JSONL | Medium/estimated/unofficial unless Codex exposes stable official quota metadata. |
-| **Antigravity CLI / legacy Gemini CLI** | TokenPilot Antigravity statusLine JSON bridge, plus legacy Gemini telemetry log + session JSON fallback | High for statusLine/telemetry metadata; local session JSON remains local/metadata-only. |
+| **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini telemetry/session paths remain fallback-only | High for Antigravity statusLine and legacy telemetry metadata; local session JSON remains local/metadata-only. |
 | **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
 
 ### Provider diagnostics
@@ -105,6 +105,20 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - Diagnostics summarize local metadata availability without showing raw paths, prompts, responses, cookies, tokens, or raw events.
 - Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
+
+### Antigravity CLI setup
+
+The Gemini-facing provider slot now defaults to **Antigravity CLI**:
+
+1. Open **Settings → Setup Guide → Connect Antigravity CLI**.
+2. Run the generated bridge script once; it registers Antigravity's `statusLine` command.
+3. Restart or re-open Antigravity CLI, run any prompt, then check this file in TokenPilot:
+
+   ```text
+   ~/Library/Application Support/TokenPilot/antigravity-statusline.json
+   ```
+
+The bridge stores only allowlisted token metadata such as model id/display name, context-window input/output totals, current usage token counts, and percentages. It does **not** store prompt text, response text, email, cwd/workspace path, provider auth material, or arbitrary Keychain data. Existing `~/.gemini/telemetry.log`, `~/.gemini/tmp`, and `~/.gemini/history` sources remain supported only as legacy fallbacks.
 
 ### Menu bar display
 
@@ -123,8 +137,8 @@ DS $12.34                # selected DeepSeek topped-up balance
 The README screenshot is a release-facing composite of the current app surfaces:
 
 - Menu bar: compact remaining quota plus selected DeepSeek balance (`DS $12.34`).
-- Overview: remaining-first quota and provider rows including DeepSeek topped-up balance; no duplicate 7-day chart/provider-share block.
-- Settings: provider diagnostics, DeepSeek Keychain setup, topped-up balance, low-balance alert, and privacy boundaries.
+- Overview: remaining-first quota and provider rows including Antigravity CLI and DeepSeek topped-up balance; no duplicate 7-day chart/provider-share block.
+- Settings: provider diagnostics, Antigravity statusLine bridge, Codex limit hints, DeepSeek Keychain setup, and privacy boundaries.
 
 The 7-day chart and provider share are intentionally kept in **History**, not Overview.
 
@@ -151,7 +165,7 @@ TokenPilot is designed as a **local-first** utility:
 | ✅ Reads | ❌ Never reads |
 |----------|---------------|
 | Claude statusline JSON | Browser cookies |
-| Antigravity statusLine JSON / legacy Gemini telemetry log | Provider auth files |
+| Antigravity statusLine JSON bridge output / legacy Gemini telemetry log | Provider auth files |
 | User-entered Codex values | Raw prompts/responses |
 | User-saved DeepSeek API key in TokenPilot Keychain item | Exported secrets |
 | Local session JSONL metadata | Arbitrary Keychain items |
@@ -174,7 +188,7 @@ Sources/
 └── TokenCore/                         # Business logic, adapters, models
     ├── Models/                        # Provider snapshots, settings, usage models
     ├── Services/
-    │   ├── DataSourceAdapters.swift    # Claude/Codex/Antigravity-Gemini/DeepSeek adapters
+    │   ├── DataSourceAdapters.swift    # Claude/Codex/Antigravity/legacy-Gemini/DeepSeek adapters
     │   ├── AggregationService.swift    # Usage aggregation
     │   ├── MenuBarStatusService.swift  # Menu bar label formatting
     │   ├── UsageHistoryStore.swift     # Historical usage persistence
@@ -191,7 +205,7 @@ Tests/
 
 ```bash
 swift test
-# Executed 171 tests, with 0 failures
+# Executed 187 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings

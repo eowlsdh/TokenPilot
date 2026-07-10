@@ -1,6 +1,6 @@
 # TokenPilot — macOS メニューバー AI クォータ / 使用量モニター
 
-**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini CLI）、DeepSeek balance シグナルを local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。
+**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini CLI fallback）、DeepSeek balance シグナルを local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。
 
 > TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、provider auth ファイル、任意の Keychain 項目は読みません。
 >
@@ -27,7 +27,7 @@
 
 - **macOS メニューバーアプリ**: Dock アイコンなしの `MenuBarExtra` ユーティリティ。
 - **残りクォータ優先 UI**: 使用済みではなく「どれだけ残っているか」を優先表示します。
-- **Claude / Codex / Antigravity（従来の Gemini）/ DeepSeek 統合**: 各 provider のローカルメタデータと任意の balance シグナルを1つの画面に集約します。
+- **Claude / Codex / Antigravity（従来の Gemini fallback）/ DeepSeek 統合**: 各 provider のローカルメタデータと任意の balance シグナルを1つの画面に集約します。
 - **DeepSeek balance**: API key を Keychain に保存した場合、公式 `/user/balance` の `topped_up_balance` を native currency で表示します。
 - **手動 fallback と stale 表示**: API key がない、または取得に失敗した場合でも値の信頼度を明示します。
 - **低残高アラート**: topped-up balance が $5 以下になった場合に通知できます。
@@ -48,10 +48,12 @@
 2. **Manual Limit Snapshot / `/status` parse**: ユーザー入力値から 5h / weekly を推定します。
 3. **Local Activity Beta**: local session JSONL の token_count 系 row を実験的に読みます。
 
-### Antigravity CLI / 従来の Gemini CLI
+### Antigravity CLI / 従来の Gemini fallback
 
-- 既定では `~/Library/Application Support/TokenPilot/antigravity-statusline.json` の Antigravity `statusLine` JSON を読みます。
-- 従来の `~/.gemini` telemetry log と session JSON/JSONL token object も fallback としてサポートします。
+- 既定では `~/Library/Application Support/TokenPilot/antigravity-statusline.json` の Antigravity `statusLine` bridge output を読みます。
+- Settings → Setup Guide → **Connect Antigravity CLI** で bridge をインストールし、Antigravity CLI を再起動して任意の prompt を実行すると JSON が更新されます。
+- 保存されるのは model、context-window input/output total、current usage token count、percentage などの allowlist metadata だけです。prompt/response、email、cwd/workspace、provider auth material は保存しません。
+- 従来の `~/.gemini` telemetry log と session JSON/JSONL token object は fallback として引き続きサポートします。
 
 ### DeepSeek
 
@@ -66,7 +68,7 @@
 
 ```bash
 swift test
-# Executed 171 tests, with 0 failures
+# Executed 187 tests, with 0 failures
 
 make bundle
 open build/TokenPilot.app

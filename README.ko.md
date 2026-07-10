@@ -1,6 +1,6 @@
 # TokenPilot — macOS 메뉴바 AI 한도/사용량 모니터
 
-**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini CLI), DeepSeek balance 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
+**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini CLI fallback), DeepSeek balance 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
 
 - **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
@@ -31,7 +31,7 @@
 
 - **macOS 메뉴바 앱**: Dock 아이콘 없는 `MenuBarExtra` 유틸리티.
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
-- **Claude / Codex / Antigravity(레거시 Gemini) / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
+- **Claude / Codex / Antigravity(레거시 Gemini fallback) / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭에서 7일 chart와 provider share를 유지하고 JSON/CSV export를 제공합니다.
@@ -95,11 +95,12 @@ open TokenPilot.xcodeproj
 - connector는 기본 OFF입니다.
 - local JSONL은 official quota가 아니므로 `EXPERIMENTAL`, `Local log`, `not web quota`, `est.` 맥락으로만 표시합니다.
 
-### Antigravity CLI / 레거시 Gemini CLI
+### Antigravity CLI / 레거시 Gemini fallback
 
 - 기본 경로는 `~/Library/Application Support/TokenPilot/antigravity-statusline.json`입니다.
-- Antigravity CLI의 `statusLine` JSON에서 context window token usage를 읽고, 레거시 `~/.gemini/telemetry.log`, `~/.gemini/tmp`, `~/.gemini/history`도 fallback으로 지원합니다.
-- input/output/cache/reasoning/tool token, total token override, model, auth type, duration, daily request cap을 지원합니다.
+- Settings → Setup Guide → **Connect Antigravity CLI**가 설치하는 statusLine bridge를 통해 Antigravity CLI의 context window token usage를 읽습니다.
+- 저장되는 값은 model, context-window input/output total, current usage token count, percentage 같은 allowlist metadata뿐입니다. prompt/response, email, cwd/workspace, provider auth material은 저장하지 않습니다.
+- 레거시 `~/.gemini/telemetry.log`, `~/.gemini/tmp`, `~/.gemini/history`는 fallback source로 계속 지원합니다.
 
 ### DeepSeek
 
@@ -115,8 +116,8 @@ open TokenPilot.xcodeproj
 TokenPilot이 읽는 것:
 
 - 사용자가 선택한 Claude statusline JSON
-- Claude/Codex/Antigravity/Gemini의 로컬 사용량 로그 또는 세션 메타데이터
-- Antigravity statusLine JSON / 레거시 Gemini telemetry log
+- Claude/Codex/Antigravity/레거시 Gemini의 로컬 사용량 로그 또는 세션 메타데이터
+- Antigravity statusLine JSON bridge output / 레거시 Gemini telemetry log
 - 사용자가 입력한 Codex status 텍스트 / manual limit snapshot
 - 사용자가 직접 저장한 Telegram bot token / Discord webhook의 존재 여부
 - 사용자가 켠 경우 로컬 Codex CLI app-server가 반환하는 한도 힌트
@@ -161,7 +162,7 @@ TokenPilot/
 
 ```bash
 swift test
-# Executed 171 tests, with 0 failures
+# Executed 187 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
 # Build complete — zero warnings
@@ -184,7 +185,7 @@ open build/TokenPilot.app
 최근 로컬 검증 기준:
 
 ```text
-swift test                                  PASS — 171 tests
+swift test                                  PASS — 187 tests
 swift build -Xswiftc -warnings-as-errors   PASS
 make bundle / make verify                  PASS
 ```

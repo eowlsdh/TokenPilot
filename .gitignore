@@ -48,6 +48,37 @@ state.json
 TokenPilot-usage-*.json
 TokenPilot-usage-*.csv
 
+# Keep project source types visible when user-level global ignores contain
+# broad token patterns. Directory-only rules avoid exposing local metadata.
+!Sources/
+!Sources/**/
+!Sources/**/*.swift
+!Sources/**/*.xcstrings
+!Tests/
+!Tests/**/
+!Tests/**/*.swift
+!Resources/
+!Resources/**/
+!Resources/**/*.json
+!Resources/**/*.png
+!Resources/**/*.plist
+!Resources/**/*.xcprivacy
+!Resources/**/*.entitlements
+!Resources/**/*.icns
+!docs/
+!docs/**/
+!docs/**/*.md
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!docs/**/*.gif
+!docs/**/*.webp
+!docs/**/*.svg
+!TokenPilot.xcodeproj/
+!TokenPilot.xcodeproj/project.pbxproj
+!TokenPilot.xcodeproj/project.xcworkspace/
+!TokenPilot.xcodeproj/project.xcworkspace/contents.xcworkspacedata
+
 # Secrets and local credentials
 .env
 .env.*

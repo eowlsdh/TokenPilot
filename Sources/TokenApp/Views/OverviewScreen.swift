@@ -94,7 +94,7 @@ struct OverviewScreen: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
-                ResetHeroCard(model: model)
+                UsageSummaryCard(model: model)
                 if model.overviewSnapshots.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         EmptyStateCard(
@@ -125,54 +125,54 @@ struct OverviewScreen: View {
     }
 }
 
-struct ResetHeroCard: View {
+struct UsageSummaryCard: View {
     @Environment(\.tokenPilotLanguage) private var language
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 15) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 5) {
+        GlassCard(padding: 13) {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(heroEyebrow)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
-                        Text(heroValue)
-                            .font(.system(size: 32, weight: .semibold, design: .monospaced))
+                            .lineLimit(1)
+                        Text(remainingText)
+                            .font(.system(size: 30, weight: .semibold, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.textPrimary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.72)
-                        Text(nextResetText)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .lineLimit(1)
                     }
 
                     Spacer(minLength: 0)
 
-                    VStack(alignment: .trailing, spacing: 8) {
-                        StatusBadge(label: riskLabel, color: riskColor)
-                        Text(remainingPercentText)
-                            .font(.system(size: 16, weight: .bold, design: .monospaced))
-                            .monospacedDigit()
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text(statusText)
+                            .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(riskColor)
+                            .lineLimit(1)
+                        Text(nextResetText)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.82)
                     }
                 }
 
                 ProgressLine(percent: remainingPercent, color: riskColor)
 
-                HStack(spacing: 8) {
-                    HeroStatPill(
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    summaryMetric(
                         label: localized("Today tokens", language: language),
                         value: "\(TokenPilotFormatters.compactNumber(model.overviewUsage.metrics.totalTokens)) \(localized("tok", language: language))"
                     )
-                    HeroStatPill(
+                    summaryMetric(
                         label: localized("Lowest remaining", language: language),
-                        value: lowestRemainingText,
-                        color: TokenPilotDesign.riskColor(model.highestRiskProvider?.percent)
+                        value: lowestRemainingText
                     )
-                    HeroStatPill(
+                    summaryMetric(
                         label: localized("Last updated", language: language),
                         value: updatedText
                     )
@@ -181,6 +181,7 @@ struct ResetHeroCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(model.menuBarAccessibilityLabel)
+        .accessibilityValue("\(statusText), \(remainingText)")
     }
 
     private var snapshot: ProviderSnapshot? { model.menuBarSnapshot }
@@ -198,7 +199,7 @@ struct ResetHeroCard: View {
         return "\(localized(window.kind.label, language: language)) \(limit)"
     }
 
-    private var heroValue: String {
+    private var remainingText: String {
         guard let remainingPercent else { return "—" }
         return "\(remainingPercent)%"
     }
@@ -209,12 +210,7 @@ struct ResetHeroCard: View {
         return "\(label) · \(TokenPilotFormatters.clock(resetAt))"
     }
 
-    private var remainingPercentText: String {
-        guard let remainingPercent else { return "—" }
-        return String(format: localized("Remaining %d%%", language: language), remainingPercent)
-    }
-
-    private var riskLabel: String {
+    private var statusText: String {
         guard let usedPercent else { return localized(model.dataSourceMode.displayLabel, language: language) }
         if usedPercent >= 85 { return localized("Critical", language: language) }
         if usedPercent >= 70 { return localized("Warning", language: language) }
@@ -234,32 +230,22 @@ struct ResetHeroCard: View {
         guard let snapshot else { return "—" }
         return TokenPilotFormatters.clock(snapshot.updatedAt)
     }
-}
 
-struct HeroStatPill: View {
-    let label: String
-    let value: String
-    var color: Color = TokenPilotDesign.textPrimary
-
-    var body: some View {
+    private func summaryMetric(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(value)
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
                 .monospacedDigit()
-                .foregroundStyle(color)
+                .foregroundStyle(TokenPilotDesign.textPrimary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.78)
             Text(label)
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 10, weight: .medium))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.04))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -419,7 +405,7 @@ struct ChallengeCard: View {
                         .font(.system(.caption, design: .monospaced).weight(.bold))
                     Spacer()
                     Text(localized("Today tokens", language: language))
-                        .font(.caption2)
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
                 ProgressLine(percent: Int(progress * 100), color: TokenPilotDesign.calm)

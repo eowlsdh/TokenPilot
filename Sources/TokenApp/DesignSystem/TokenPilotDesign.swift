@@ -2,26 +2,16 @@ import SwiftUI
 import TokenCore
 
 enum TokenPilotDesign {
-    // Quiet premium macOS utility palette — nearly monochrome with status accents only.
+    // Quiet premium macOS utility palette with status accents only.
     static let background = Color(red: 0.039, green: 0.039, blue: 0.043)       // #0a0a0b
     static let card = Color(red: 0.067, green: 0.071, blue: 0.078)             // #111214
     static let cardElevated = Color(red: 0.082, green: 0.086, blue: 0.096)     // #151618
     static let cardMuted = Color(red: 0.090, green: 0.098, blue: 0.114)        // #17191d
     static let border = Color(red: 0.145, green: 0.153, blue: 0.173)           // #25272c
 
-    // Liquid glass layers
+    // Subtle surface layers.
     static let glassTint = Color.black.opacity(0.18)
     static let glassHighlight = Color.white.opacity(0.06)
-    static let glassEdgeGlow = LinearGradient(
-        colors: [Color.white.opacity(0.10), Color.white.opacity(0.03), Color.clear, Color.white.opacity(0.06)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
-    static let glassInnerGlow = LinearGradient(
-        colors: [Color.white.opacity(0.04), Color.clear, Color.black.opacity(0.04)],
-        startPoint: .topLeading,
-        endPoint: .bottomTrailing
-    )
 
     static let textPrimary = Color(red: 0.957, green: 0.957, blue: 0.961)      // #f4f4f5
     static let textSecondary = Color(red: 0.631, green: 0.631, blue: 0.667)    // #a1a1aa
@@ -30,7 +20,7 @@ enum TokenPilotDesign {
     static let warning = Color(red: 0.961, green: 0.647, blue: 0.141)          // #f5a524
     static let calm = Color(red: 0.188, green: 0.820, blue: 0.345)             // #30d158
 
-    static let cardRadius: CGFloat = 14
+    static let cardRadius: CGFloat = 8
     static let cardPadding: CGFloat = 13
     static let rowSpacing: CGFloat = 8
     static let sectionSpacing: CGFloat = 10
@@ -84,7 +74,7 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - Liquid Glass Components
+// MARK: - Surface Components
 
 /// NSVisualEffectView-backed frosted glass for macOS
 struct VisualEffectBackground: NSViewRepresentable {
@@ -103,38 +93,21 @@ struct VisualEffectBackground: NSViewRepresentable {
     func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }
 
-/// Frosted glass backdrop + liquid shimmer overlay
+/// Frosted utility surface with restrained contrast.
 struct LiquidGlassBackground: View {
-    var cornerRadius: CGFloat = 14
+    var cornerRadius: CGFloat = 8
     var intensity: CGFloat = 1.0
 
     var body: some View {
         ZStack {
-            // Glass material — samples frosted root behind for layered depth
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(.regularMaterial)
-
-            // Dark tint for readability
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                 .fill(Color.black.opacity(0.18 * intensity))
-
-            // Liquid inner glow — subtle top-left illumination
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .fill(TokenPilotDesign.glassInnerGlow)
-
-            // Edge highlight line (top/left)
+                .fill(TokenPilotDesign.card.opacity(0.58))
             RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                .stroke(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(0.08 * intensity),
-                            Color.clear
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 1.0
-                )
+                .stroke(TokenPilotDesign.border.opacity(0.9), lineWidth: 1.0)
                 .padding(0.5)
         }
     }

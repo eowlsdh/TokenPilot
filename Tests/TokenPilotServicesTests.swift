@@ -1410,7 +1410,11 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
         let store = UsageStore(pathResolver: resolver)
-        let result = await store.refresh(settings: AppSettings(showMockDataWhenDisconnected: false))
+        let settings = AppSettings(
+            showMockDataWhenDisconnected: false,
+            monitoredProviders: MonitoredProviderSettings(enabledProviders: [.claude])
+        )
+        let result = await store.refresh(settings: settings)
         let claude = result.snapshots.first { $0.provider == .claude }
 
         XCTAssertTrue(result.hasConnectedData)

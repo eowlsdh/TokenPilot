@@ -1,6 +1,6 @@
 <svg width="1280" height="760" viewBox="0 0 1280 760" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
   <title id="title">TokenPilot menu bar, overview, and privacy settings preview</title>
-  <desc id="desc">A public, composited preview showing TokenPilot menu bar remaining percentages, the Overview screen, and Settings privacy boundaries.</desc>
+  <desc id="desc">A public, composited preview showing TokenPilot menu bar remaining percentages, Antigravity CLI metadata, the Overview screen, and Settings privacy boundaries.</desc>
   <rect width="1280" height="760" rx="32" fill="#101217"/>
   <rect x="42" y="36" width="1196" height="54" rx="18" fill="#1A1D24"/>
   <circle cx="76" cy="63" r="7" fill="#FF5F57"/>
@@ -16,7 +16,7 @@
     <rect x="86" y="160" width="118" height="28" rx="14" fill="#26313D"/>
     <text x="104" y="180" fill="#F2F5F8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="13" font-weight="700">Overview</text>
     <text x="86" y="226" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="30" font-weight="800">5h 36% left</text>
-    <text x="86" y="253" fill="#8C96A8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Claude, Codex, and Gemini at a glance</text>
+    <text x="86" y="253" fill="#8C96A8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Claude, Codex, Antigravity, and DeepSeek at a glance</text>
     <rect x="86" y="286" width="164" height="92" rx="16" fill="#202630"/>
     <text x="106" y="318" fill="#9BA6BA" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="13">Today tokens</text>
     <text x="106" y="352" fill="#F5F7FB" font-family="SF Mono, Menlo, monospace" font-size="25" font-weight="800">42.8K</text>
@@ -28,7 +28,8 @@
     <rect x="108" y="468" width="302" height="12" rx="6" fill="#303846"/>
     <rect x="108" y="468" width="194" height="12" rx="6" fill="#8E7CFF"/>
     <text x="108" y="506" fill="#C8D0DE" font-family="SF Mono, Menlo, monospace" font-size="14">Claude  5h 36% · W 72%</text>
-    <text x="108" y="536" fill="#C8D0DE" font-family="SF Mono, Menlo, monospace" font-size="14">Codex   manual estimate</text>
+    <text x="108" y="536" fill="#C8D0DE" font-family="SF Mono, Menlo, monospace" font-size="14">Antigravity statusLine</text>
+    <text x="108" y="566" fill="#C8D0DE" font-family="SF Mono, Menlo, monospace" font-size="14">Codex   manual estimate</text>
   </g>
 
   <g filter="url(#shadow)">
@@ -36,13 +37,13 @@
     <rect x="542" y="160" width="132" height="28" rx="14" fill="#26313D"/>
     <text x="560" y="180" fill="#F2F5F8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="13" font-weight="700">Settings</text>
     <text x="542" y="225" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="28" font-weight="800">Privacy boundaries</text>
-    <text x="542" y="253" fill="#8C96A8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Local-first usage metadata with honest Codex labels.</text>
+    <text x="542" y="253" fill="#8C96A8" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Local-first metadata with Antigravity statusLine and honest Codex labels.</text>
 
     <rect x="542" y="292" width="304" height="254" rx="18" fill="#202630"/>
     <text x="566" y="327" fill="#56D6A6" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="16" font-weight="800">Reads</text>
     <text x="566" y="366" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Usage metadata</text>
     <text x="566" y="402" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Local session JSONL</text>
-    <text x="566" y="438" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Manual Codex hints</text>
+    <text x="566" y="438" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Antigravity statusLine JSON</text>
     <text x="566" y="474" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">TokenPilot Keychain items</text>
 
     <rect x="878" y="292" width="304" height="254" rx="18" fill="#202630"/>
@@ -53,7 +54,7 @@
     <text x="902" y="474" fill="#DCE3EF" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="15">Arbitrary Keychain items</text>
 
     <rect x="542" y="582" width="640" height="42" rx="21" fill="#252B35"/>
-    <text x="570" y="608" fill="#F4F7FB" font-family="SF Mono, Menlo, monospace" font-size="15" font-weight="700">Codex: limit hints / local activity / manual estimate</text>
+    <text x="570" y="608" fill="#F4F7FB" font-family="SF Mono, Menlo, monospace" font-size="15" font-weight="700">Antigravity: statusLine JSON · legacy Gemini fallback</text>
   </g>
 
   <defs>
