@@ -20,25 +20,45 @@ public struct MenuBarLowestRemainingSummary: Equatable, Sendable {
     }
 }
 
-public final class MenuBarStatusService: Sendable {
+public final class MenuBarStatusService: @unchecked Sendable {
+    private enum CandidateKind: Equatable, Sendable {
+        case percent
+        case money
+        case info
+    }
+
+    private struct Candidate: Sendable {
+        var snapshot: ProviderSnapshot
+        var kind: CandidateKind
+        var rank: Int
+        var usedPercent: Int?
+        var remainingPercent: Int?
+        var resetAt: Date?
+        var durationMinutes: Int?
+        var seriesID: String
+        var suffix: String
+        var authority: String
+        var stability: String
+        var freshness: String
+        var action: String
+    }
+
+    private struct SelectionMemory: Sendable {
+        var provider: Provider
+        var rank: Int
+        var usedPercent: Int?
+        var selectedAt: Date
+    }
+
+    private let memoryLock = NSLock()
+    private var memory: SelectionMemory?
+
     public init() {}
 
     public func selectedSnapshot(from snapshots: [ProviderSnapshot], settings: AppSettings) -> ProviderSnapshot? {
-        let enabled = snapshots.filter { settings.isProviderEnabled($0.provider) }
-        if let target = settings.menuBarDisplayTarget,
-           settings.isProviderEnabled(target) {
-            if let selected = enabled.first(where: { $0.provider == target }) {
-                return snapshotWithCodexManualMenuBarFallback(selected, settings: settings)
-            }
-            if target == .codex, let manual = codexManualMenuBarSnapshot(settings: settings) {
-                return manual
-            }
-        }
-        let selected = enabled.max { lhs, rhs in
-            riskScore(lhs) < riskScore(rhs)
-        }
-        return snapshotWithCodexManualMenuBarFallback(selected, settings: settings)
+        selectedCandidate(from: snapshots, settings: settings, now: Date())?.snapshot
     }
+
     public func presentationSnapshots(from snapshots: [ProviderSnapshot], settings: AppSettings) -> [ProviderSnapshot] {
         var displaySnapshots = snapshots
             .filter { settings.isProviderEnabled($0.provider) }
@@ -54,8 +74,8 @@ public final class MenuBarStatusService: Sendable {
     }
 
     public func displayWindow(for snapshot: ProviderSnapshot) -> LimitWindow? {
-        if let weekly = snapshot.weekly { return weekly }
         if let fiveHour = snapshot.fiveHour { return fiveHour }
+        if let weekly = snapshot.weekly { return weekly }
         if let dailyRequestsPercent = snapshot.dailyRequestsPercent {
             return LimitWindow(kind: .dailyRequests, usedPercent: dailyRequestsPercent, confidence: snapshot.confidence)
         }
@@ -68,44 +88,49 @@ public final class MenuBarStatusService: Sendable {
         modeLabel: String,
         now: Date = Date()
     ) -> String {
-        guard let snapshot = selectedSnapshot(from: snapshots, settings: settings) else {
+        let candidates = allCandidates(from: snapshots, settings: settings)
+        if let target = settings.menuBarDisplayTarget,
+           settings.isProviderEnabled(target),
+           !candidates.contains(where: { $0.snapshot.provider == target }) {
+            return target == .codex ? "\(target.shortName) --%" : "\(target.shortName) · \(modeLabel)"
+        }
+        guard let candidate = selectedCandidate(from: candidates, settings: settings, now: now) else {
             return "TP · \(modeLabel)"
         }
 
-        let language = settings.localization.language
-        if let balance = snapshot.balance {
-            return "\(snapshot.provider.shortName) \(DeepSeekBalanceFormatter.display(balance))" + confidenceSuffix(for: snapshot, language: language)
-        }
-        if let quotaTitle = quotaRemainingTitle(for: snapshot, language: language) {
-            return quotaTitle + confidenceSuffix(for: snapshot, language: language)
-        }
-
-        if let window = displayWindow(for: snapshot) {
-            let period = TokenPilotLocalizer.localized(window.kind.label, language: language)
-            let base: String
-            if let resetAt = window.resetAt, resetAt > now {
-                base = "\(TokenPilotFormatters.compactRemainingTime(until: resetAt, now: now)) · \(period)"
-            } else {
-                base = "— · \(period)"
+        switch candidate.kind {
+        case .percent:
+            let segments = percentRenderCandidates(for: candidate, in: candidates)
+                .prefix(2)
+                .map { percentSegment(for: $0) }
+            guard !segments.isEmpty else { return "\(candidate.snapshot.provider.shortName) · \(modeLabel)" }
+            return segments.joined(separator: " · ")
+        case .money:
+            let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+            if let balance = candidate.snapshot.balance {
+                return "\(candidate.snapshot.provider.shortName) \(DeepSeekBalanceFormatter.display(balance))\(suffix)"
             }
-            return base + confidenceSuffix(for: snapshot, language: language)
+            return "\(candidate.snapshot.provider.shortName) · \(modeLabel)"
+        case .info:
+            if candidate.snapshot.provider == .codex {
+                return "\(candidate.snapshot.provider.shortName) --%"
+            }
+            if candidate.snapshot.todayTokens > 0 {
+                let tokenUnit = TokenPilotLocalizer.localized("tok", language: settings.localization.language)
+                return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens))\(tokenUnit)"
+            }
+            if let used = candidate.snapshot.dailyRequestsUsed {
+                return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(used))req"
+            }
+            return "\(candidate.snapshot.provider.shortName) · \(modeLabel)"
         }
-
-        // When no rate limits are available, show provider abbreviation + today's tokens
-        let providerAbbr = snapshot.provider.shortName
-        if snapshot.todayTokens > 0 {
-            let tokenUnit = TokenPilotLocalizer.localized("tok", language: language)
-            return "\(providerAbbr) \(TokenPilotFormatters.compactNumber(snapshot.todayTokens))\(tokenUnit)" + confidenceSuffix(for: snapshot, language: language)
-        }
-        if snapshot.isStale {
-            return "\(providerAbbr) \(TokenPilotLocalizer.localized("STALE", language: language))"
-        }
-        return "\(providerAbbr) · \(modeLabel)"
     }
 
     public func statusLevel(snapshots: [ProviderSnapshot], settings: AppSettings) -> MenuBarStatusLevel {
-        guard let snapshot = selectedSnapshot(from: snapshots, settings: settings),
-              let percent = maxUsedPercent(for: snapshot) else {
+        guard let candidate = selectedCandidate(from: snapshots, settings: settings, now: Date()),
+              candidate.kind == .percent,
+              candidate.rank < 8,
+              let percent = candidate.usedPercent else {
             return .normal
         }
         if percent >= 85 { return .critical }
@@ -118,10 +143,11 @@ public final class MenuBarStatusService: Sendable {
     }
 
     public func lowestRemainingSummary(snapshots: [ProviderSnapshot], settings: AppSettings) -> MenuBarLowestRemainingSummary? {
-        presentationSnapshots(from: snapshots, settings: settings)
-            .compactMap { snapshot -> MenuBarLowestRemainingSummary? in
-                lowestRemainingPercent(for: snapshot).map {
-                    MenuBarLowestRemainingSummary(provider: snapshot.provider, remainingPercent: $0)
+        allCandidates(from: snapshots, settings: settings)
+            .filter { $0.kind == .percent && $0.rank < 8 }
+            .compactMap { candidate -> MenuBarLowestRemainingSummary? in
+                candidate.remainingPercent.map {
+                    MenuBarLowestRemainingSummary(provider: candidate.snapshot.provider, remainingPercent: $0)
                 }
             }
             .min { lhs, rhs in lhs.remainingPercent < rhs.remainingPercent }
@@ -134,24 +160,310 @@ public final class MenuBarStatusService: Sendable {
         now: Date = Date()
     ) -> String {
         let visualTitle = title(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now)
-        guard let snapshot = selectedSnapshot(from: snapshots, settings: settings) else {
+        guard let candidate = selectedCandidate(from: snapshots, settings: settings, now: now) else {
             return "TokenPilot, \(visualTitle)"
         }
 
-        var parts = ["TokenPilot", snapshot.provider.displayName, visualTitle]
-        if let percent = snapshot.primaryUsedPercent {
-            parts.append("\(percent)%")
+        var parts = ["TokenPilot", candidate.snapshot.provider.displayName, visualTitle]
+        if let remaining = candidate.remainingPercent {
+            parts.append("remaining \(remaining)%")
         }
+        if let resetAt = candidate.resetAt, resetAt > now {
+            parts.append("reset \(durationText(until: resetAt, now: now))")
+        }
+        parts.append(candidate.authority)
+        parts.append(candidate.stability)
+        parts.append(candidate.freshness)
+        parts.append(candidate.action)
         parts.append(modeLabel)
         return parts.joined(separator: ", ")
     }
 
-    private func confidenceSuffix(for snapshot: ProviderSnapshot, language: TokenPilotLanguage) -> String {
-        guard snapshot.provider == .codex,
-              snapshot.confidence == .manual || snapshot.dataSource == .manual || snapshot.dataSource == .estimated else {
-            return ""
+    private func selectedCandidate(from snapshots: [ProviderSnapshot], settings: AppSettings, now: Date) -> Candidate? {
+        selectedCandidate(from: allCandidates(from: snapshots, settings: settings), settings: settings, now: now)
+    }
+
+    private func selectedCandidate(from candidates: [Candidate], settings: AppSettings, now: Date) -> Candidate? {
+        guard !candidates.isEmpty else {
+            clearMemory()
+            return nil
         }
-        return " \(TokenPilotLocalizer.localized("est.", language: language))"
+
+        if let target = settings.menuBarDisplayTarget, settings.isProviderEnabled(target) {
+            let providerCandidates = candidates.filter { $0.snapshot.provider == target }
+            if let selected = representativeCandidate(from: providerCandidates) {
+                clearMemory()
+                return selected
+            }
+            clearMemory()
+            return automaticCandidate(from: candidates, now: now)
+        }
+
+        if settings.menuBarDisplayTarget != nil {
+            clearMemory()
+        }
+        return automaticCandidate(from: candidates, now: now)
+    }
+
+    private func automaticCandidate(from candidates: [Candidate], now: Date) -> Candidate? {
+        guard let winner = representativeCandidate(from: candidates) else {
+            clearMemory()
+            return nil
+        }
+
+        memoryLock.lock()
+        defer { memoryLock.unlock() }
+
+        guard let currentMemory = memory,
+              let current = representativeCandidate(from: candidates.filter({ $0.snapshot.provider == currentMemory.provider })) else {
+            memory = SelectionMemory(provider: winner.snapshot.provider, rank: winner.rank, usedPercent: winner.usedPercent, selectedAt: now)
+            return winner
+        }
+
+        if current.snapshot.provider == winner.snapshot.provider {
+            if current.rank != currentMemory.rank {
+                memory = SelectionMemory(provider: current.snapshot.provider, rank: current.rank, usedPercent: current.usedPercent, selectedAt: now)
+            }
+            return current
+        }
+
+        if winner.rank < current.rank {
+            memory = SelectionMemory(provider: winner.snapshot.provider, rank: winner.rank, usedPercent: winner.usedPercent, selectedAt: now)
+            return winner
+        }
+
+        if winner.rank > current.rank {
+            return current
+        }
+
+        let elapsed = now.timeIntervalSince(currentMemory.selectedAt)
+        if isPercentRank(winner.rank) {
+            let winnerUsed = winner.usedPercent ?? -1
+            let currentUsed = current.usedPercent ?? -1
+            if winnerUsed >= currentUsed + 2 || elapsed >= 60 {
+                memory = SelectionMemory(provider: winner.snapshot.provider, rank: winner.rank, usedPercent: winner.usedPercent, selectedAt: now)
+                return winner
+            }
+            return current
+        }
+
+        if elapsed >= 60 {
+            memory = SelectionMemory(provider: winner.snapshot.provider, rank: winner.rank, usedPercent: winner.usedPercent, selectedAt: now)
+            return winner
+        }
+        return current
+    }
+
+    private func clearMemory() {
+        memoryLock.lock()
+        memory = nil
+        memoryLock.unlock()
+    }
+
+    private func allCandidates(from snapshots: [ProviderSnapshot], settings: AppSettings) -> [Candidate] {
+        presentationSnapshots(from: snapshots, settings: settings)
+            .flatMap { candidates(for: $0) }
+    }
+
+    private func candidates(for snapshot: ProviderSnapshot) -> [Candidate] {
+        guard snapshot.dataSource != .mock else { return [] }
+        var candidates: [Candidate] = []
+
+        if let balance = snapshot.balance {
+            let staleOffset = snapshot.isStale ? 1 : 0
+            if snapshot.dataSource == .officialTelemetry {
+                candidates.append(Candidate(
+                    snapshot: snapshot,
+                    kind: .money,
+                    rank: 8 + staleOffset,
+                    usedPercent: nil,
+                    remainingPercent: nil,
+                    resetAt: nil,
+                    durationMinutes: nil,
+                    seriesID: "\(snapshot.provider.rawValue)/balance",
+                    suffix: snapshot.isStale ? "STALE" : "",
+                    authority: "provider-reported",
+                    stability: "supported",
+                    freshness: snapshot.isStale ? "stale" : "fresh",
+                    action: "reviewBalance"
+                ))
+            } else if snapshot.dataSource == .manual || snapshot.dataSource == .estimated || snapshot.confidence == .manual {
+                candidates.append(Candidate(
+                    snapshot: snapshot,
+                    kind: .money,
+                    rank: 10 + staleOffset,
+                    usedPercent: nil,
+                    remainingPercent: nil,
+                    resetAt: nil,
+                    durationMinutes: nil,
+                    seriesID: "\(snapshot.provider.rawValue)/balance/manual",
+                    suffix: snapshot.isStale ? "EST STALE" : "EST",
+                    authority: "user-entered",
+                    stability: "manual",
+                    freshness: snapshot.isStale ? "stale" : "fresh",
+                    action: "reviewBalance"
+                ))
+            }
+            _ = balance
+        }
+
+        appendPercentCandidate(snapshot: snapshot, window: snapshot.fiveHour, defaultDurationMinutes: 300, defaultWindowID: "five-hour", into: &candidates)
+        appendPercentCandidate(snapshot: snapshot, window: snapshot.weekly, defaultDurationMinutes: 10_080, defaultWindowID: "seven-day", into: &candidates)
+        appendBridgeContextCandidate(snapshot: snapshot, into: &candidates)
+
+        if candidates.isEmpty {
+            if snapshot.todayTokens > 0 || snapshot.dailyRequestsUsed != nil || snapshot.contextWindowUsedPercent != nil {
+                candidates.append(Candidate(
+                    snapshot: snapshot,
+                    kind: .info,
+                    rank: 12,
+                    usedPercent: nil,
+                    remainingPercent: nil,
+                    resetAt: nil,
+                    durationMinutes: nil,
+                    seriesID: "\(snapshot.provider.rawValue)/activity",
+                    suffix: "",
+                    authority: "local-derived",
+                    stability: "local",
+                    freshness: snapshot.isStale ? "stale" : "fresh",
+                    action: "openProviderDiagnostics"
+                ))
+            }
+        }
+
+        return candidates
+    }
+
+    private func appendPercentCandidate(snapshot: ProviderSnapshot, window: LimitWindow?, defaultDurationMinutes: Int, defaultWindowID: String, into candidates: inout [Candidate]) {
+        guard let window, let used = window.usedPercent else { return }
+        guard let classification = percentClassification(for: snapshot) else { return }
+        let remaining = min(max(100 - used, 0), 100)
+        candidates.append(Candidate(
+            snapshot: snapshot,
+            kind: classification.rank == 12 ? .info : .percent,
+            rank: classification.rank,
+            usedPercent: classification.rank == 12 ? nil : used,
+            remainingPercent: classification.rank == 12 ? nil : remaining,
+            resetAt: window.resetAt,
+            durationMinutes: window.durationMinutes ?? defaultDurationMinutes,
+            seriesID: "\(snapshot.provider.rawValue)/\(window.providerWindowID ?? defaultWindowID)",
+            suffix: classification.suffix,
+            authority: classification.authority,
+            stability: classification.stability,
+            freshness: snapshot.isStale ? "stale" : "fresh",
+            action: classification.action
+        ))
+    }
+
+    private func appendBridgeContextCandidate(snapshot: ProviderSnapshot, into candidates: inout [Candidate]) {
+        guard snapshot.provider == .gemini,
+              snapshot.dataSource == .officialStatusline,
+              let used = snapshot.contextWindowUsedPercent else {
+            return
+        }
+        let staleOffset = snapshot.isStale ? 4 : 0
+        candidates.append(Candidate(
+            snapshot: snapshot,
+            kind: .percent,
+            rank: 1 + staleOffset,
+            usedPercent: used,
+            remainingPercent: min(max(100 - used, 0), 100),
+            resetAt: nil,
+            durationMinutes: nil,
+            seriesID: "\(snapshot.provider.rawValue)/context",
+            suffix: snapshot.isStale ? "STALE" : "",
+            authority: "provider-reported",
+            stability: "bridge",
+            freshness: snapshot.isStale ? "stale" : "fresh",
+            action: "reviewSource"
+        ))
+    }
+
+    private func percentClassification(for snapshot: ProviderSnapshot) -> (rank: Int, suffix: String, authority: String, stability: String, action: String)? {
+        let staleOffset = snapshot.isStale ? 4 : 0
+        if snapshot.provider == .claude, snapshot.dataSource == .officialStatusline {
+            return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
+        }
+        if snapshot.provider == .codex, snapshot.dataSource == .webUsage, snapshot.isExperimental {
+            return (2 + staleOffset, snapshot.isStale ? "EXP STALE" : "EXP", "provider-reported", "experimental", snapshot.isStale ? "refreshProvider" : "reviewExperimentalConnector")
+        }
+        if snapshot.dataSource == .manual || snapshot.dataSource == .estimated || snapshot.confidence == .manual {
+            return (3 + staleOffset, snapshot.isStale ? "EST STALE" : "EST", "user-entered", "manual", "enterManualValue")
+        }
+        if snapshot.provider == .gemini, snapshot.dataSource == .officialStatusline {
+            return (1 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "bridge", "reviewSource")
+        }
+        if snapshot.dataSource == .localLog || snapshot.isCodexLocalLogOnly {
+            return (12, "", "local-derived", "local", "openProviderDiagnostics")
+        }
+        return nil
+    }
+
+    private func representativeCandidate(from candidates: [Candidate]) -> Candidate? {
+        let byProvider = Dictionary(grouping: candidates, by: { $0.snapshot.provider })
+            .compactMap { representativeForProvider($0.value) }
+        return byProvider.sorted(by: isBetterCandidate).first
+    }
+
+    private func representativeForProvider(_ candidates: [Candidate]) -> Candidate? {
+        candidates.sorted(by: isBetterCandidate).first
+    }
+
+    private func isBetterCandidate(_ lhs: Candidate, _ rhs: Candidate) -> Bool {
+        if lhs.rank != rhs.rank { return lhs.rank < rhs.rank }
+        if lhs.kind == .percent, rhs.kind == .percent {
+            if (lhs.usedPercent ?? -1) != (rhs.usedPercent ?? -1) {
+                return (lhs.usedPercent ?? -1) > (rhs.usedPercent ?? -1)
+            }
+            let lhsReset = lhs.resetAt ?? .distantFuture
+            let rhsReset = rhs.resetAt ?? .distantFuture
+            if lhsReset != rhsReset { return lhsReset < rhsReset }
+        }
+        if lhs.seriesID != rhs.seriesID { return lhs.seriesID < rhs.seriesID }
+        return lhs.snapshot.provider.rawValue < rhs.snapshot.provider.rawValue
+    }
+
+    private func percentRenderCandidates(for candidate: Candidate, in candidates: [Candidate]) -> [Candidate] {
+        candidates
+            .filter {
+                $0.snapshot.provider == candidate.snapshot.provider &&
+                    $0.kind == .percent &&
+                    $0.rank == candidate.rank &&
+                    $0.suffix == candidate.suffix &&
+                    $0.authority == candidate.authority &&
+                    $0.stability == candidate.stability &&
+                    $0.freshness == candidate.freshness
+            }
+            .sorted {
+                if ($0.durationMinutes ?? 0) != ($1.durationMinutes ?? 0) {
+                    return ($0.durationMinutes ?? 0) < ($1.durationMinutes ?? 0)
+                }
+                return isBetterCandidate($0, $1)
+            }
+    }
+
+    private func percentSegment(for candidate: Candidate) -> String {
+        let label = candidate.stability == "bridge" ? "BRIDGE" : durationLabel(minutes: candidate.durationMinutes)
+        let remaining = candidate.remainingPercent ?? 0
+        let suffix = candidate.suffix.isEmpty || candidate.suffix == label ? "" : " \(candidate.suffix)"
+        return "\(label) \(remaining)%\(suffix)"
+    }
+
+    private func durationLabel(minutes: Int?) -> String {
+        guard let minutes, minutes > 0 else { return "--" }
+        if minutes < 60 { return "\(minutes)m" }
+        if minutes < 1_440, minutes % 60 == 0 { return "\(minutes / 60)h" }
+        if minutes % 1_440 == 0 { return "\(minutes / 1_440)d" }
+        return "\(minutes)min"
+    }
+
+    private func durationText(until resetAt: Date, now: Date) -> String {
+        let minutes = max(Int(resetAt.timeIntervalSince(now) / 60), 0)
+        return durationLabel(minutes: minutes)
+    }
+
+    private func isPercentRank(_ rank: Int) -> Bool {
+        (0...7).contains(rank)
     }
 
     private func snapshotWithCodexManualMenuBarFallback(_ snapshot: ProviderSnapshot?, settings: AppSettings) -> ProviderSnapshot? {
@@ -196,78 +508,5 @@ public final class MenuBarStatusService: Sendable {
             statusMessage: "Manual menu bar estimate",
             model: plan.isEmpty || plan.lowercased() == "manual" ? nil : plan
         )
-    }
-
-    private func quotaRemainingTitle(for snapshot: ProviderSnapshot, language: TokenPilotLanguage) -> String? {
-        var segments: [String] = []
-        if let fiveHour = remainingSegment(for: snapshot.fiveHour, language: language) {
-            segments.append(fiveHour)
-        }
-        if let weekly = remainingSegment(for: snapshot.weekly, language: language) {
-            segments.append(weekly)
-        }
-        if segments.isEmpty,
-           let dailyRequestsPercent = snapshot.dailyRequestsPercent {
-            let daily = LimitWindow(kind: .dailyRequests, usedPercent: dailyRequestsPercent, confidence: snapshot.confidence)
-            if let segment = remainingSegment(for: daily, language: language) {
-                segments.append(segment)
-            }
-        }
-        guard !segments.isEmpty else { return nil }
-        return segments.joined(separator: " · ")
-    }
-
-    private func remainingSegment(for window: LimitWindow?, language: TokenPilotLanguage) -> String? {
-        guard let window else { return nil }
-        let noData = TokenPilotLocalizer.localized("No data", language: language)
-        if let remainingPercent = window.remainingPercent {
-            return "\(compactMenuLabel(for: window.kind)) \(remainingPercent)%"
-        }
-        return "\(compactMenuLabel(for: window.kind)) \(noData)"
-    }
-
-    private func compactMenuLabel(for kind: LimitWindowKind) -> String {
-        switch kind {
-        case .fiveHour:
-            return "5h"
-        case .weekly:
-            return "W"
-        case .dailyRequests:
-            return "D"
-        }
-    }
-
-    private func usefulResetText(for snapshot: ProviderSnapshot) -> String? {
-        guard let percent = snapshot.primaryUsedPercent, percent >= 80 else { return nil }
-        let resetAt = [snapshot.fiveHour?.resetAt, snapshot.weekly?.resetAt]
-            .compactMap { $0 }
-            .filter { $0.timeIntervalSinceNow > 0 }
-            .min()
-        guard let resetAt else { return nil }
-        return "R \(TokenPilotFormatters.remainingTime(until: resetAt))"
-    }
-
-    private func riskScore(_ snapshot: ProviderSnapshot) -> Int {
-        maxUsedPercent(for: snapshot) ?? (snapshot.todayTokens > 0 ? 1 : 0)
-    }
-
-    private func maxUsedPercent(for snapshot: ProviderSnapshot) -> Int? {
-        [
-            snapshot.fiveHour?.usedPercent,
-            snapshot.weekly?.usedPercent,
-            snapshot.dailyRequestsPercent
-        ]
-        .compactMap { $0 }
-        .max()
-    }
-
-    private func lowestRemainingPercent(for snapshot: ProviderSnapshot) -> Int? {
-        [
-            snapshot.fiveHour?.remainingPercent,
-            snapshot.weekly?.remainingPercent,
-            snapshot.dailyRequestsPercent.map { min(max(100 - $0, 0), 100) }
-        ]
-        .compactMap { $0 }
-        .min()
     }
 }

@@ -10,7 +10,9 @@
 		0684235C43C466EB6811D922 /* OverviewScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5235EF50DCE5805E889088CE /* OverviewScreen.swift */; };
 		0DEE98AFC80FF3884539AFF3 /* DefaultPathResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */; };
 		0F21C1B5A627D717908133F6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 1BFCE519B2DB43F132E85C4A /* PrivacyInfo.xcprivacy */; };
+		11EB729D3C14FFF9F484CC0A /* CapacityAssessmentService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00CC87718FDD5EA3C969871A /* CapacityAssessmentService.swift */; };
 		14B3591DE152D573B0F90726 /* LimitHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ED5A520C2ED990829B6A7B2 /* LimitHistoryStore.swift */; };
+		183A0CA98BE8D4DA446797D2 /* CapacityPresentationMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9645CFACAD9F32CFAF4615F8 /* CapacityPresentationMapper.swift */; };
 		1E1615C81D157F33CD427108 /* AggregationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE9E89C05ED618276E602B8 /* AggregationService.swift */; };
 		2D5FE76B4E9F4D386C5AA27B /* TokenPilotLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 591C809AA47194A76BA01DFB /* TokenPilotLocalization.swift */; };
 		347635B9C83B95748A9DF991 /* TokenPilotViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0922767665B5AD16E3641F13 /* TokenPilotViewModel.swift */; };
@@ -33,6 +35,7 @@
 		B4F80CEDD4D74D46FC25EFCE /* UsageExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B47DC935EDF476A6B808F96 /* UsageExportService.swift */; };
 		B873551CAAA7971482C629F4 /* TokenPilotDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F329D1DD3F3573BB11A01E7 /* TokenPilotDesign.swift */; };
 		B888E6BF5B0C8BD3C9D0E81C /* UsageHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABF2DF632C954FA5B8002C53 /* UsageHistoryStore.swift */; };
+		BBBB46093FB37F60B6BCD53F /* CapacityEvidenceStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41D5EA4EE7381EBC76C46AA1 /* CapacityEvidenceStore.swift */; };
 		C7F6CCC749916F2A7E8F3EAE /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 56515DD2D70C844F723A4A35 /* Localizable.xcstrings */; };
 		CAC646A8AF1384AB2D324AFE /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607F0C78661A6561C4E64E02 /* SettingsScreen.swift */; };
 		D4DA58A2377F9DF829574F97 /* TokenPilotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B39A9C5F1DD41AB3B6B169F /* TokenPilotModels.swift */; };
@@ -64,6 +67,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		00CC87718FDD5EA3C969871A /* CapacityAssessmentService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityAssessmentService.swift; sourceTree = "<group>"; };
 		05472E429144F9DCC9A7A7F1 /* ProviderSelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionService.swift; sourceTree = "<group>"; };
 		0922767665B5AD16E3641F13 /* TokenPilotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotViewModel.swift; sourceTree = "<group>"; };
 		0D9BF8AEB4219BBD6B6CFF6B /* HistoryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryScreen.swift; sourceTree = "<group>"; };
@@ -74,6 +78,7 @@
 		2D0989744766BAD094B2F91A /* ProviderSelectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionModels.swift; sourceTree = "<group>"; };
 		3855DCDF95929B71178DF5D3 /* DataSourceAdapters.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataSourceAdapters.swift; sourceTree = "<group>"; };
 		3F329D1DD3F3573BB11A01E7 /* TokenPilotDesign.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotDesign.swift; sourceTree = "<group>"; };
+		41D5EA4EE7381EBC76C46AA1 /* CapacityEvidenceStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityEvidenceStore.swift; sourceTree = "<group>"; };
 		5235EF50DCE5805E889088CE /* OverviewScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverviewScreen.swift; sourceTree = "<group>"; };
 		56515DD2D70C844F723A4A35 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		591C809AA47194A76BA01DFB /* TokenPilotLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotLocalization.swift; sourceTree = "<group>"; };
@@ -85,6 +90,7 @@
 		7AF85435D216D4CCE4759C5D /* TokenMonitorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenMonitorApp.swift; sourceTree = "<group>"; };
 		7B47DC935EDF476A6B808F96 /* UsageExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageExportService.swift; sourceTree = "<group>"; };
 		94D25BD06E7F642C64C3402F /* AppSettings+Providers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppSettings+Providers.swift"; sourceTree = "<group>"; };
+		9645CFACAD9F32CFAF4615F8 /* CapacityPresentationMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityPresentationMapper.swift; sourceTree = "<group>"; };
 		9B39A9C5F1DD41AB3B6B169F /* TokenPilotModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotModels.swift; sourceTree = "<group>"; };
 		9F485074C073DA1833A23027 /* SecurityScopedBookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecurityScopedBookmarks.swift; sourceTree = "<group>"; };
 		A08643DBAE00B01030C05D93 /* MenuBarStatusService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarStatusService.swift; sourceTree = "<group>"; };
@@ -210,6 +216,9 @@
 			isa = PBXGroup;
 			children = (
 				ACE9E89C05ED618276E602B8 /* AggregationService.swift */,
+				00CC87718FDD5EA3C969871A /* CapacityAssessmentService.swift */,
+				41D5EA4EE7381EBC76C46AA1 /* CapacityEvidenceStore.swift */,
+				9645CFACAD9F32CFAF4615F8 /* CapacityPresentationMapper.swift */,
 				AC7A087E3AFC24BF561B671B /* CodexStatusParser.swift */,
 				3855DCDF95929B71178DF5D3 /* DataSourceAdapters.swift */,
 				7A74A389CD470FD21491DE89 /* DataSourceConnectionService.swift */,
@@ -328,6 +337,9 @@
 			files = (
 				1E1615C81D157F33CD427108 /* AggregationService.swift in Sources */,
 				70AFD077F8AF06F7DC386797 /* AppSettings+Providers.swift in Sources */,
+				11EB729D3C14FFF9F484CC0A /* CapacityAssessmentService.swift in Sources */,
+				BBBB46093FB37F60B6BCD53F /* CapacityEvidenceStore.swift in Sources */,
+				183A0CA98BE8D4DA446797D2 /* CapacityPresentationMapper.swift in Sources */,
 				4B1738998CA4BFC1D592F863 /* CodexStatusParser.swift in Sources */,
 				55BE3DC64E9BCA41F31C1A18 /* DataSourceAdapters.swift in Sources */,
 				91E9190FFF31916478903D7D /* DataSourceConnectionService.swift in Sources */,

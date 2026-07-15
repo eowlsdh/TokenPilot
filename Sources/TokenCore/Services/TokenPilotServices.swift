@@ -11,6 +11,322 @@ public protocol ProviderAdapter: Sendable {
     var provider: Provider { get }
     func snapshot(settings: AppSettings) async -> ProviderSnapshot
 }
+public enum CapacityRefreshErrorCategory: String, Codable, Equatable, Sendable {
+    case disabled
+    case sourceUnavailable
+    case authenticationRequired
+    case processFailure
+    case timeout
+    case cancelled
+    case malformedResponse
+    case unsupportedSeries
+    case outputLimitExceeded
+}
+
+public struct CapacityRefreshError: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { [provider.rawValue, category.rawValue, code].joined(separator: ":") }
+    public let provider: Provider
+    public let category: CapacityRefreshErrorCategory
+    public let code: String
+    public let redactedMessage: String
+
+    public init(provider: Provider, category: CapacityRefreshErrorCategory, code: String, redactedMessage: String) {
+        self.provider = provider
+        self.category = category
+        self.code = code
+        self.redactedMessage = redactedMessage
+    }
+}
+
+public struct ProviderRefreshResult: Sendable {
+    public var snapshot: ProviderSnapshot
+    public var capacityObservations: [CapacityObservation]
+    public var typedErrors: [CapacityRefreshError]
+    public var observedAt: Date
+
+    public init(
+        snapshot: ProviderSnapshot,
+        capacityObservations: [CapacityObservation] = [],
+        typedErrors: [CapacityRefreshError] = [],
+        observedAt: Date
+    ) {
+        self.snapshot = snapshot
+        self.capacityObservations = capacityObservations
+        self.typedErrors = typedErrors
+        self.observedAt = observedAt
+    }
+}
+public enum TokenPilotPrivacyRedactor {
+    private static let replacements: [(pattern: String, template: String)] = [
+        (#"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"#, "[REDACTED]"),
+        (#"(?i)\b(?:authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|password)\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED]"),
+        (#"(?i)\b(?:prompt|response|completion|messages?|content)\s*[:=]\s*["']?[^"\n\r;]+"#, "[REDACTED]"),
+        (#"\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"#, "[REDACTED]"),
+        (#"(?i)\b(?:sk|pk|api|key|token)[-_][A-Za-z0-9]{16,}\b"#, "[REDACTED]"),
+        (#"\b[A-Za-z0-9_~+/=-]{48,}\b"#, "[REDACTED]"),
+        (#"(?i)(?:~|/(?:Users|home|private/var|private/tmp|var/folders|tmp|Volumes|opt/homebrew|usr/local|etc))/[^\s"',;)]+["']?"#, "[REDACTED_PATH]"),
+        (#"(?i)(?:^|[\s/])(?:auth\.json|credentials(?:\.json)?|\.env(?:\.[A-Za-z0-9_-]+)?|id_rsa|id_ed25519|token(?:s)?\.json|key(?:s)?\.json)(?=$|[\s"',;:)])"#, "[REDACTED_FILE]")
+    ]
+
+    public static func redact(_ text: String) -> String {
+        replacements.reduce(text) { current, replacement in
+            guard let regex = try? NSRegularExpression(pattern: replacement.pattern, options: []) else { return current }
+            let range = NSRange(current.startIndex..<current.endIndex, in: current)
+            return regex.stringByReplacingMatches(in: current, options: [], range: range, withTemplate: replacement.template)
+        }
+    }
+
+    public static func redactExportField(_ text: String?) -> String? {
+        guard let text else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let redacted = redact(trimmed).trimmingCharacters(in: .whitespacesAndNewlines)
+        return redacted.isEmpty ? nil : redacted
+    }
+}
+
+public protocol ProviderRefreshAdapter: Sendable {
+    var provider: Provider { get }
+    func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult
+}
+public extension ProviderRefreshAdapter where Self: ProviderAdapter {
+    func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        let snapshot = await snapshot(settings: settings)
+        let observedAt = snapshot.updatedAt
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: observedAt),
+            typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: provider),
+            observedAt: observedAt
+        )
+    }
+}
+
+public struct LegacyProviderRefreshAdapter: ProviderRefreshAdapter {
+    private let adapter: any ProviderAdapter
+
+    public var provider: Provider { adapter.provider }
+
+    public init(_ adapter: any ProviderAdapter) {
+        self.adapter = adapter
+    }
+
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        let snapshot = await adapter.snapshot(settings: settings)
+        let observedAt = snapshot.updatedAt
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: observedAt),
+            typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: provider),
+            observedAt: observedAt
+        )
+    }
+}
+
+public enum CapacityObservationFactory {
+    public static func observations(from snapshot: ProviderSnapshot, settings: AppSettings, observedAt: Date) -> [CapacityObservation] {
+        guard snapshot.dataSource != .mock else { return [] }
+        var observations: [CapacityObservation] = []
+
+        func appendPercent(
+            provider: Provider,
+            providerWindowID: String,
+            kind: CapacitySeriesKind,
+            durationMinutes: Int?,
+            window: LimitWindow?,
+            authority: CapacityAuthority,
+            stability: CapacityStability,
+            consent: CapacityConsent,
+            maximumAge: TimeInterval,
+            comparability: CapacityComparability,
+            parserRevision: String
+        ) {
+            guard let window,
+                  let used = window.usedPercent,
+                  let series = try? CapacitySeriesID(provider: provider, providerWindowID: providerWindowID, kind: kind, unit: .percent, durationMinutes: durationMinutes),
+                  let value = try? CapacityValue(usedPercent: used),
+                  let observation = try? CapacityObservation(
+                    seriesID: series,
+                    observedAt: observedAt,
+                    resetAt: window.resetAt,
+                    value: value,
+                    authority: authority,
+                    stability: stability,
+                    consent: consent,
+                    freshnessPolicy: CapacityFreshnessPolicy(maximumAge: maximumAge),
+                    comparability: comparability,
+                    parserRevision: parserRevision,
+                    now: observedAt
+                  ) else {
+                return
+            }
+            observations.append(observation)
+        }
+
+        func codexProviderWindowID(_ window: LimitWindow?, defaultID: String) -> String {
+            window?.providerWindowID ?? defaultID
+        }
+
+        func codexDurationMinutes(_ window: LimitWindow?, defaultMinutes: Int) -> Int {
+            window?.durationMinutes ?? defaultMinutes
+        }
+
+        switch snapshot.provider {
+        case .claude:
+            if snapshot.dataSource == .officialStatusline {
+                appendPercent(
+                    provider: .claude,
+                    providerWindowID: "five-hour",
+                    kind: .fixedReset,
+                    durationMinutes: nil,
+                    window: snapshot.fiveHour,
+                    authority: .providerReported,
+                    stability: .supported,
+                    consent: .notRequired,
+                    maximumAge: 15 * 60,
+                    comparability: .comparable,
+                    parserRevision: "claudeStatuslineV1"
+                )
+                appendPercent(
+                    provider: .claude,
+                    providerWindowID: "seven-day",
+                    kind: .fixedReset,
+                    durationMinutes: nil,
+                    window: snapshot.weekly,
+                    authority: .providerReported,
+                    stability: .supported,
+                    consent: .notRequired,
+                    maximumAge: 15 * 60,
+                    comparability: .comparable,
+                    parserRevision: "claudeStatuslineV1"
+                )
+            }
+        case .codex:
+            if snapshot.dataSource == .webUsage, settings.codexManual.webConnectorEnabled {
+                appendPercent(
+                    provider: .codex,
+                    providerWindowID: "primary",
+                    kind: .rolling,
+                    durationMinutes: codexDurationMinutes(snapshot.fiveHour, defaultMinutes: 300),
+                    window: snapshot.fiveHour,
+                    authority: .providerReported,
+                    stability: .experimentalTransport,
+                    consent: .granted,
+                    maximumAge: 15 * 60,
+                    comparability: .comparable,
+                    parserRevision: "codexAppServerV1"
+                )
+                appendPercent(
+                    provider: .codex,
+                    providerWindowID: "secondary",
+                    kind: .rolling,
+                    durationMinutes: codexDurationMinutes(snapshot.weekly, defaultMinutes: 10_080),
+                    window: snapshot.weekly,
+                    authority: .providerReported,
+                    stability: .experimentalTransport,
+                    consent: .granted,
+                    maximumAge: 15 * 60,
+                    comparability: .comparable,
+                    parserRevision: "codexAppServerV1"
+                )
+            } else if snapshot.dataSource == .manual || snapshot.dataSource == .estimated {
+                appendPercent(
+                    provider: .codex,
+                    providerWindowID: "primary",
+                    kind: .rolling,
+                    durationMinutes: codexDurationMinutes(snapshot.fiveHour, defaultMinutes: 300),
+                    window: snapshot.fiveHour,
+                    authority: .userEntered,
+                    stability: .manual,
+                    consent: .granted,
+                    maximumAge: 24 * 60 * 60,
+                    comparability: .incomparable,
+                    parserRevision: "codexManualV1"
+                )
+                appendPercent(
+                    provider: .codex,
+                    providerWindowID: "secondary",
+                    kind: .rolling,
+                    durationMinutes: codexDurationMinutes(snapshot.weekly, defaultMinutes: 10_080),
+                    window: snapshot.weekly,
+                    authority: .userEntered,
+                    stability: .manual,
+                    consent: .granted,
+                    maximumAge: 24 * 60 * 60,
+                    comparability: .incomparable,
+                    parserRevision: "codexManualV1"
+                )
+            }
+        case .gemini:
+            if snapshot.dataSource == .officialStatusline,
+               let used = snapshot.dailyRequestsUsed,
+               let series = try? CapacitySeriesID(provider: .gemini, providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, durationMinutes: 1_440),
+               let value = try? CapacityValue(count: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: nil,
+                value: value,
+                authority: .providerReported,
+                stability: .compatibilityBridge,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 15 * 60),
+                comparability: .incomparable,
+                parserRevision: "antigravityStatuslineV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .deepseek:
+            guard let balance = snapshot.balance else { break }
+            let authority: CapacityAuthority = snapshot.dataSource == .officialTelemetry ? .providerReported : .userEntered
+            let stability: CapacityStability = snapshot.dataSource == .officialTelemetry ? .supported : .manual
+            let comparability: CapacityComparability = snapshot.dataSource == .officialTelemetry ? .comparable : .incomparable
+            if let series = try? CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+               let value = try? CapacityValue(money: balance.toppedUpBalance, currency: balance.currency),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: authority,
+                stability: stability,
+                consent: snapshot.dataSource == .officialTelemetry ? .granted : .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: snapshot.dataSource == .officialTelemetry ? 60 * 60 : 24 * 60 * 60),
+                comparability: comparability,
+                parserRevision: snapshot.dataSource == .officialTelemetry ? "deepseekBalanceV1" : "deepseekManualBalanceV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        }
+
+        return observations
+    }
+
+    public static func errors(from snapshot: ProviderSnapshot, provider: Provider) -> [CapacityRefreshError] {
+        guard snapshot.confidence == .low,
+              snapshot.events.isEmpty,
+              snapshot.primaryUsedPercent == nil,
+              snapshot.dailyRequestsUsed == nil,
+              snapshot.balance == nil else {
+            return []
+        }
+        let message = snapshot.statusMessage ?? "Provider capacity unavailable"
+        return [
+            CapacityRefreshError(
+                provider: provider,
+                category: .sourceUnavailable,
+                code: "capacityUnavailable",
+                redactedMessage: redacted(message)
+            )
+        ]
+    }
+
+    public static func redacted(_ message: String) -> String {
+        TokenPilotPrivacyRedactor.redact(message)
+    }
+}
+
 
 public enum TokenPilotRefreshPolicy {
     public static func usageRefreshNeeded(from previous: AppSettings, to next: AppSettings) -> Bool {
@@ -186,16 +502,43 @@ public final class UsageStore: @unchecked Sendable {
     public struct Result: Sendable {
         public var snapshots: [ProviderSnapshot]
         public var hasConnectedData: Bool
+        public var capacityObservations: [CapacityObservation]
+        public var capacityErrors: [CapacityRefreshError]
+        public var observedAt: Date
+
+        public init(
+            snapshots: [ProviderSnapshot],
+            hasConnectedData: Bool,
+            capacityObservations: [CapacityObservation] = [],
+            capacityErrors: [CapacityRefreshError] = [],
+            observedAt: Date = Date()
+        ) {
+            self.snapshots = snapshots
+            self.hasConnectedData = hasConnectedData
+            self.capacityObservations = capacityObservations
+            self.capacityErrors = capacityErrors
+            self.observedAt = observedAt
+        }
     }
 
-    private let adapters: [any ProviderAdapter]
+    private let refreshAdapters: [any ProviderRefreshAdapter]
     private let mockDataService = MockDataService()
 
-    public init(adapters: [any ProviderAdapter]? = nil, pathResolver: DefaultPathResolver = DefaultPathResolver()) {
-        self.adapters = adapters ?? Self.defaultAdapters(pathResolver: pathResolver)
+    public init(
+        adapters: [any ProviderAdapter]? = nil,
+        refreshAdapters: [any ProviderRefreshAdapter]? = nil,
+        pathResolver: DefaultPathResolver = DefaultPathResolver()
+    ) {
+        if let refreshAdapters {
+            self.refreshAdapters = refreshAdapters
+        } else if let adapters {
+            self.refreshAdapters = adapters.map(LegacyProviderRefreshAdapter.init)
+        } else {
+            self.refreshAdapters = Self.defaultAdapters(pathResolver: pathResolver)
+        }
     }
 
-    private static func defaultAdapters(pathResolver: DefaultPathResolver) -> [any ProviderAdapter] {
+    private static func defaultAdapters(pathResolver: DefaultPathResolver) -> [any ProviderRefreshAdapter] {
         let claudeProjectRoots = pathResolver.resolveDefaultPaths(for: .claude)
             .filter { ["projects", "config_projects"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
@@ -215,24 +558,51 @@ public final class UsageStore: @unchecked Sendable {
     }
 
     public func refresh(settings: AppSettings) async -> Result {
+        let observedAt = Date()
         let enabledProviders = Set(settings.enabledProviders)
         var snapshots: [ProviderSnapshot] = []
-        for adapter in adapters where enabledProviders.contains(adapter.provider) {
-            let snapshot = await adapter.snapshot(settings: settings)
+        var capacityObservations: [CapacityObservation] = []
+        var capacityErrors: [CapacityRefreshError] = []
+
+        for adapter in refreshAdapters where enabledProviders.contains(adapter.provider) {
+            if Task.isCancelled {
+                capacityErrors.append(CapacityRefreshError(provider: adapter.provider, category: .cancelled, code: "refreshCancelled", redactedMessage: "Provider refresh cancelled."))
+                continue
+            }
+            let result = await adapter.refresh(settings: settings, now: observedAt)
+            var snapshot = result.snapshot
+            snapshot.updatedAt = result.observedAt
             snapshots.append(snapshot)
+            capacityObservations.append(contentsOf: result.capacityObservations)
+            capacityErrors.append(contentsOf: result.typedErrors)
+            if Task.isCancelled {
+                capacityErrors.append(CapacityRefreshError(provider: adapter.provider, category: .cancelled, code: "refreshCancelled", redactedMessage: "Provider refresh cancelled."))
+            }
         }
 
         let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil || $0.balance != nil }
         let ordered = snapshots.sorted { $0.provider.rawValue < $1.provider.rawValue }
 
         if settings.showMockDataWhenDisconnected && !hasConnectedData {
-            let mock = mockDataService.snapshots()
+            let mock = mockDataService.snapshots(referenceDate: observedAt)
                 .filter { enabledProviders.contains($0.provider) }
                 .sorted { $0.provider.rawValue < $1.provider.rawValue }
-            return Result(snapshots: mock, hasConnectedData: false)
+            return Result(
+                snapshots: mock,
+                hasConnectedData: false,
+                capacityObservations: [],
+                capacityErrors: capacityErrors,
+                observedAt: observedAt
+            )
         }
 
-        return Result(snapshots: ordered, hasConnectedData: hasConnectedData)
+        return Result(
+            snapshots: ordered,
+            hasConnectedData: hasConnectedData,
+            capacityObservations: capacityObservations,
+            capacityErrors: capacityErrors,
+            observedAt: observedAt
+        )
     }
 }
 
@@ -349,7 +719,9 @@ public final class NotificationRuleService: @unchecked Sendable {
     ) {
         guard settings.globalNotificationsEnabled,
               settings.deepseekEnabled,
-              let balance = snapshotsByProvider[.deepseek]?.balance,
+              let snapshot = snapshotsByProvider[.deepseek],
+              snapshot.dataSource == .officialTelemetry,
+              let balance = snapshot.balance,
               balance.toppedUpBalance <= settings.deepSeekBalance.lowBalanceThreshold else {
             return
         }
@@ -418,9 +790,9 @@ public final class NotificationRuleService: @unchecked Sendable {
         case .fifty:
             body = String(format: TokenPilotLocalizer.localized("alert.fifty.body", language: language), providerWindowText, resetText)
         case .eighty:
-            body = String(format: TokenPilotLocalizer.localized("alert.eighty.body", language: language), providerWindowText, usedPercent ?? 0, resetText, suggestedSwitch(excluding: provider, language: language))
+            body = String(format: TokenPilotLocalizer.localized("alert.eighty.body", language: language), providerWindowText, usedPercent ?? 0, resetText)
         case .hundred:
-            body = String(format: TokenPilotLocalizer.localized("alert.hundred.body", language: language), providerWindowText, resetText, suggestedSwitch(excluding: provider, language: language))
+            body = String(format: TokenPilotLocalizer.localized("alert.hundred.body", language: language), providerWindowText, resetText)
         }
         return AlertEvent(provider: provider, window: window, threshold: threshold, usedPercent: usedPercent, resetAt: resetAt, resetCycleId: cycleID, title: title, body: body)
     }
@@ -434,14 +806,6 @@ public final class NotificationRuleService: @unchecked Sendable {
         case .hundred: key = "alert.hundred.title"
         }
         return TokenPilotLocalizer.localized(key, language: language)
-    }
-
-    private func suggestedSwitch(excluding provider: Provider, language: TokenPilotLanguage) -> String {
-        let names = Provider.allCases.filter { $0 != provider }.map {
-            TokenPilotLocalizer.localized($0.displayName, language: language)
-        }
-        let separator = TokenPilotLocalizer.localized("alert.or", language: language)
-        return names.joined(separator: separator)
     }
 }
 

@@ -44,7 +44,7 @@
 
 ### Codex
 
-1. **Codex Limit Hints Connector**：只有用户明确开启时，才向本地 `codex app-server` 发送 JSON-RPC `initialize` + `account/rateLimits/read`。TokenPilot 不直接读取 Codex access token。
+1. **Codex Limit Hints Connector**：只有用户明确开启时，才按顺序向本地 `codex app-server` 发送不含 `jsonrpc` 字段的 JSONL `initialize`、`initialized`、`account/rateLimits/read`。TokenPilot 不直接读取 Codex access token。
 2. **Manual Limit Snapshot / `/status` parse**：根据用户输入推算 5h / weekly 值。
 3. **Local Activity Beta**：实验性读取 local session JSONL 中的 token_count 类 row。
 

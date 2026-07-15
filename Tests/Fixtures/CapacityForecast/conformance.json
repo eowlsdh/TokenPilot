@@ -1,0 +1,210 @@
+{
+  "schema": "capacity-forecast-conformance.v1",
+  "cases": [
+    {
+      "id": "rank-nearest-percentiles",
+      "resetAt": "2026-07-15T12:00:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:00:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T09:10:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T09:30:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T09:40:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:00:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:10:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:30:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:40:00Z", "usedPercent": 0 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 60 }
+      ],
+      "expected": {
+        "outcome": "uncertain",
+        "freshnessPass": true,
+        "currentUsed": 60,
+        "lowerSlopePerHour": 0,
+        "medianSlopePerHour": 0,
+        "upperSlopePerHour": 51.42857142857143,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "freshness-equality-15m-passes",
+      "resetAt": "2026-07-15T12:50:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T08:45:00Z", "usedPercent": 10 },
+        { "observedAt": "2026-07-15T08:55:00Z", "usedPercent": 11 },
+        { "observedAt": "2026-07-15T09:05:00Z", "usedPercent": 12 },
+        { "observedAt": "2026-07-15T09:15:00Z", "usedPercent": 13 },
+        { "observedAt": "2026-07-15T09:25:00Z", "usedPercent": 14 },
+        { "observedAt": "2026-07-15T09:35:00Z", "usedPercent": 15 },
+        { "observedAt": "2026-07-15T09:45:00Z", "usedPercent": 16 },
+        { "observedAt": "2026-07-15T09:55:00Z", "usedPercent": 17 },
+        { "observedAt": "2026-07-15T10:05:00Z", "usedPercent": 18 },
+        { "observedAt": "2026-07-15T10:15:00Z", "usedPercent": 19 },
+        { "observedAt": "2026-07-15T10:25:00Z", "usedPercent": 20 },
+        { "observedAt": "2026-07-15T10:35:00Z", "usedPercent": 21 }
+      ],
+      "expected": {
+        "outcome": "stable",
+        "freshnessPass": true,
+        "currentUsed": 21,
+        "lowerSlopePerHour": 6,
+        "medianSlopePerHour": 6,
+        "upperSlopePerHour": 6,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "zero-slope-stable",
+      "resetAt": "2026-07-15T12:00:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:00:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T09:10:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T09:30:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T09:40:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:00:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:10:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:30:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:40:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 40 }
+      ],
+      "expected": {
+        "outcome": "stable",
+        "freshnessPass": true,
+        "currentUsed": 40,
+        "lowerSlopePerHour": 0,
+        "medianSlopePerHour": 0,
+        "upperSlopePerHour": 0,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "current100-reset30m-gap30m-at-risk",
+      "resetAt": "2026-07-15T11:20:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T05:20:00Z", "usedPercent": 45 },
+        { "observedAt": "2026-07-15T05:50:00Z", "usedPercent": 50 },
+        { "observedAt": "2026-07-15T06:20:00Z", "usedPercent": 55 },
+        { "observedAt": "2026-07-15T06:50:00Z", "usedPercent": 60 },
+        { "observedAt": "2026-07-15T07:20:00Z", "usedPercent": 65 },
+        { "observedAt": "2026-07-15T07:50:00Z", "usedPercent": 70 },
+        { "observedAt": "2026-07-15T08:20:00Z", "usedPercent": 75 },
+        { "observedAt": "2026-07-15T08:50:00Z", "usedPercent": 80 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 85 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 90 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 95 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 100 }
+      ],
+      "expected": {
+        "outcome": "at-risk",
+        "freshnessPass": true,
+        "currentUsed": 100,
+        "lowerSlopePerHour": 10,
+        "medianSlopePerHour": 10,
+        "upperSlopePerHour": 10,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "two-point-unavailable-evidence",
+      "resetAt": "2026-07-15T12:00:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 10 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 20 }
+      ],
+      "expected": {
+        "outcome": "unavailableEvidence",
+        "freshnessPass": true,
+        "currentUsed": 20,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "future-reset-required-unavailable-window",
+      "resetAt": "2026-07-15T10:50:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:00:00Z", "usedPercent": 30 },
+        { "observedAt": "2026-07-15T09:10:00Z", "usedPercent": 31 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 32 },
+        { "observedAt": "2026-07-15T09:30:00Z", "usedPercent": 33 },
+        { "observedAt": "2026-07-15T09:40:00Z", "usedPercent": 34 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 35 },
+        { "observedAt": "2026-07-15T10:00:00Z", "usedPercent": 36 },
+        { "observedAt": "2026-07-15T10:10:00Z", "usedPercent": 37 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 38 },
+        { "observedAt": "2026-07-15T10:30:00Z", "usedPercent": 39 },
+        { "observedAt": "2026-07-15T10:40:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 41 }
+      ],
+      "expected": {
+        "outcome": "unavailableWindow",
+        "freshnessPass": false,
+        "causalExcludedFeatureCount": 0
+      }
+    },
+    {
+      "id": "causal-excludes-plus30s-feature",
+      "resetAt": "2026-07-15T12:00:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:00:00Z", "usedPercent": 29 },
+        { "observedAt": "2026-07-15T09:10:00Z", "usedPercent": 30 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 31 },
+        { "observedAt": "2026-07-15T09:30:00Z", "usedPercent": 32 },
+        { "observedAt": "2026-07-15T09:40:00Z", "usedPercent": 33 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 34 },
+        { "observedAt": "2026-07-15T10:00:00Z", "usedPercent": 35 },
+        { "observedAt": "2026-07-15T10:10:00Z", "usedPercent": 36 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 37 },
+        { "observedAt": "2026-07-15T10:30:00Z", "usedPercent": 38 },
+        { "observedAt": "2026-07-15T10:40:00Z", "usedPercent": 39 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:50:30Z", "usedPercent": 99 }
+      ],
+      "expected": {
+        "outcome": "stable",
+        "freshnessPass": true,
+        "currentUsed": 40,
+        "lowerSlopePerHour": 6,
+        "medianSlopePerHour": 6,
+        "upperSlopePerHour": 6,
+        "causalExcludedFeatureCount": 1
+      }
+    },
+    {
+      "id": "future-feature-over60s-rejected",
+      "resetAt": "2026-07-15T12:00:00Z",
+      "evaluationTime": "2026-07-15T10:50:00Z",
+      "features": [
+        { "observedAt": "2026-07-15T09:00:00Z", "usedPercent": 29 },
+        { "observedAt": "2026-07-15T09:10:00Z", "usedPercent": 30 },
+        { "observedAt": "2026-07-15T09:20:00Z", "usedPercent": 31 },
+        { "observedAt": "2026-07-15T09:30:00Z", "usedPercent": 32 },
+        { "observedAt": "2026-07-15T09:40:00Z", "usedPercent": 33 },
+        { "observedAt": "2026-07-15T09:50:00Z", "usedPercent": 34 },
+        { "observedAt": "2026-07-15T10:00:00Z", "usedPercent": 35 },
+        { "observedAt": "2026-07-15T10:10:00Z", "usedPercent": 36 },
+        { "observedAt": "2026-07-15T10:20:00Z", "usedPercent": 37 },
+        { "observedAt": "2026-07-15T10:30:00Z", "usedPercent": 38 },
+        { "observedAt": "2026-07-15T10:40:00Z", "usedPercent": 39 },
+        { "observedAt": "2026-07-15T10:50:00Z", "usedPercent": 40 },
+        { "observedAt": "2026-07-15T10:51:01Z", "usedPercent": 99 }
+      ],
+      "expected": {
+        "outcome": "unavailableEvidence",
+        "freshnessPass": false,
+        "causalExcludedFeatureCount": 1
+      }
+    }
+  ]
+}

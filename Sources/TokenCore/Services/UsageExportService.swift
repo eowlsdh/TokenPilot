@@ -35,12 +35,13 @@ public final class UsageExportService {
         snapshots: [ProviderSnapshot],
         dataMode: String,
         format: UsageExportFormat,
-        generatedAt: Date = Date()
+        generatedAt: Date = Date(),
+        capacityAssessments: [CapacityAssessment] = []
     ) throws -> Data {
         let exportUsage = sanitizedUsageForExport(usage)
         switch format {
         case .json:
-            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt)
+            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments)
         case .csv:
             return makeCSVData(usage: exportUsage)
         }
@@ -50,7 +51,8 @@ public final class UsageExportService {
         usage: AggregatedUsage,
         snapshots: [ProviderSnapshot],
         dataMode: String,
-        generatedAt: Date = Date()
+        generatedAt: Date = Date(),
+        capacityAssessments: [CapacityAssessment] = []
     ) throws -> Data {
         let exportUsage = sanitizedUsageForExport(usage)
         let payload = UsageExportPayload(
@@ -61,7 +63,8 @@ public final class UsageExportService {
             sevenDayBars: exportUsage.sevenDayBars,
             providerShare: exportUsage.providerShare,
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
-            events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:))
+            events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:)),
+            capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments)
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -150,7 +153,7 @@ public final class UsageExportService {
                 event.estimatedCostUSD.map(decimalString) ?? "",
                 "",
                 event.source,
-                event.model ?? ""
+                ""
             ])
         }
 
@@ -207,6 +210,78 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
     public var providerShare: [ProviderShare]
     public var snapshots: [SnapshotExport]
     public var events: [EventExport]
+    public var capacity: CapacityExportSection?
+}
+public struct CapacityExportSection: Codable, Equatable, Sendable {
+    public var schemaVersion: Int
+    public var observations: [CapacityObservationExport]
+
+    public init(schemaVersion: Int = 1, assessments: [CapacityAssessment]) {
+        self.schemaVersion = schemaVersion
+        self.observations = assessments
+            .sorted {
+                if $0.observation.observedAt != $1.observation.observedAt {
+                    return $0.observation.observedAt < $1.observation.observedAt
+                }
+                return $0.observation.seriesID.canonicalID < $1.observation.seriesID.canonicalID
+            }
+            .map(CapacityObservationExport.init(assessment:))
+    }
+}
+
+public struct CapacityObservationExport: Codable, Equatable, Sendable {
+    public var provider: Provider
+    public var seriesID: String
+    public var providerWindowID: String
+    public var kind: CapacitySeriesKind
+    public var unit: CapacityUnit
+    public var durationMinutes: Int?
+    public var observedAt: Date
+    public var resetAt: Date?
+    public var usedPercent: Int?
+    public var remainingPercent: Int?
+    public var moneyAmount: Decimal?
+    public var currency: String?
+    public var count: Int?
+    public var tokens: Int?
+    public var authority: CapacityAuthority
+    public var stability: CapacityStability
+    public var consent: CapacityConsent
+    public var freshness: CapacityFreshness
+    public var comparability: CapacityComparability
+    public var risk: CapacityRisk
+    public var alertEligibility: CapacityAlertEligibility
+    public var eligibilityReason: CapacityEligibilityReason
+    public var actionKey: CapacityActionKey
+    public var parserRevision: String
+
+    public init(assessment: CapacityAssessment) {
+        let observation = assessment.observation
+        self.provider = observation.seriesID.provider
+        self.seriesID = observation.seriesID.canonicalID
+        self.providerWindowID = observation.seriesID.providerWindowID
+        self.kind = observation.seriesID.kind
+        self.unit = observation.seriesID.unit
+        self.durationMinutes = observation.seriesID.durationMinutes
+        self.observedAt = observation.observedAt
+        self.resetAt = observation.resetAt
+        self.usedPercent = observation.value.usedPercent
+        self.remainingPercent = observation.value.usedPercent.map { min(max(100 - $0, 0), 100) }
+        self.moneyAmount = observation.value.moneyAmount
+        self.currency = observation.value.currency
+        self.count = observation.value.count
+        self.tokens = observation.value.tokens
+        self.authority = observation.authority
+        self.stability = observation.stability
+        self.consent = observation.consent
+        self.freshness = assessment.freshness
+        self.comparability = observation.comparability
+        self.risk = assessment.risk
+        self.alertEligibility = assessment.alertEligibility
+        self.eligibilityReason = assessment.eligibilityReason
+        self.actionKey = assessment.actionKey
+        self.parserRevision = observation.parserRevision
+    }
 }
 
 public struct SnapshotExport: Codable, Equatable, Sendable {
@@ -214,8 +289,6 @@ public struct SnapshotExport: Codable, Equatable, Sendable {
     public var updatedAt: Date
     public var confidence: DataConfidence
     public var isStale: Bool
-    public var statusMessage: String?
-    public var model: String?
     public var todayTokens: Int
     public var todayCostUSD: Decimal?
     public var fiveHourUsedPercent: Int?
@@ -231,8 +304,6 @@ public struct SnapshotExport: Codable, Equatable, Sendable {
         self.updatedAt = snapshot.updatedAt
         self.confidence = snapshot.confidence
         self.isStale = snapshot.isStale
-        self.statusMessage = snapshot.statusMessage
-        self.model = snapshot.model
         self.todayTokens = snapshot.isCodexLocalLogOnly ? 0 : snapshot.todayTokens
         self.todayCostUSD = snapshot.todayCostUSD
         self.fiveHourUsedPercent = snapshot.fiveHour?.usedPercent
@@ -247,7 +318,6 @@ public struct SnapshotExport: Codable, Equatable, Sendable {
 
 public struct EventExport: Codable, Equatable, Sendable {
     public var provider: Provider
-    public var model: String?
     public var timestamp: Date
     public var inputTokens: Int
     public var outputTokens: Int
@@ -262,7 +332,6 @@ public struct EventExport: Codable, Equatable, Sendable {
 
     public init(event: UsageEvent) {
         self.provider = event.provider
-        self.model = event.model
         self.timestamp = event.timestamp
         self.inputTokens = event.inputTokens
         self.outputTokens = event.outputTokens

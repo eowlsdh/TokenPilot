@@ -22,6 +22,10 @@ Codex values are intentionally conservative:
 - Codex Limit Hints Connector is opt-in and asks the local Codex CLI app-server for limit hints.
 - Manual Codex values are user-entered estimates.
 
+Capacity forecast backtest evidence is a nonshipping release gate. Observed cohort files are allowed only in ignored local evidence storage (`.gjc/evidence/forecast/local`) and must contain only the documented allowlist: hashed profile identifiers, pseudonymous cycle identifiers, Claude fixed-reset timestamps, used-percent observations, rate-limit booleans, source/stability/reset metadata, and next-cycle labels. Do not include credentials, browser cookies, OAuth tokens, raw prompts, raw responses, model text, status payloads, local source paths, webhook URLs, or provider auth files.
+
+Backtest reports may record fixture hashes, observed cohort content hashes, aggregate counts, confusion matrices, threshold metrics, and synthetic conformance results. They must not serialize observed raw payloads or profile names. Delete local observed cohort files and local backtest evidence after ADR signoff; after deletion, auditability is intentionally limited to retained aggregate hashes, sidecar hashes, and redacted review notes.
+
 ## Secret Scanning
 
 Run gitleaks with the repository configuration before public release or CI enforcement:
@@ -41,9 +45,9 @@ The checked-in `.gitleaks.toml` keeps the default gitleaks rules and allowlists 
 
 ## macOS Sandbox Posture
 
-The default local build uses `Resources/TokenPilot.entitlements`, which is intentionally empty today because TokenPilot still depends on local usage-file discovery and local CLI/process integration. Enabling App Sandbox on that path without a migration can break existing source detection.
+The Developer ID/local build uses `Resources/TokenPilot.entitlements`, which is intentionally empty today because TokenPilot still depends on local usage-file discovery and local CLI/process integration. This is an unsandboxed Developer ID posture, not an App Store readiness claim. Enabling App Sandbox on that path without a migration can break existing source detection.
 
-For public App Store-style distribution, start from `Resources/TokenPilot-AppStore.entitlements`: App Sandbox on, read-only user-selected file access, and outbound network client access for explicitly enabled integrations. Validate source selection, security-scoped bookmarks, notifications, and Codex connector behavior before switching `CODE_SIGN_ENTITLEMENTS` to that file.
+For any future sandboxed distribution, start from `Resources/TokenPilot-AppStore.entitlements`: App Sandbox on, read-only user-selected file access, and outbound network client access for explicitly enabled integrations. Validate source selection, security-scoped bookmarks, notifications, and Codex connector behavior before switching `CODE_SIGN_ENTITLEMENTS` to that file.
 
 ## Supported Versions
 

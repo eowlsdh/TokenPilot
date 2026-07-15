@@ -1,6 +1,73 @@
 import Foundation
 import os
 
+public protocol LimitHistoryLegacyWritePolicy: Sendable {
+    func legacyLimitHistoryWritesAllowed() -> Bool
+    func legacyLimitHistoryWriteStatus() -> CapacityPersistenceStatus
+}
+
+public extension LimitHistoryLegacyWritePolicy {
+    func legacyLimitHistoryWriteStatus() -> CapacityPersistenceStatus {
+        legacyLimitHistoryWritesAllowed()
+            ? .ready(source: .absentDefault, generation: nil)
+            : .ready(source: .primary, generation: nil)
+    }
+}
+
+public struct CapacityLegacyLimitHistoryWritePolicy: LimitHistoryLegacyWritePolicy, Sendable {
+    private let markerURL: URL
+    private let fileSystem: any CapacityEvidenceFileSystem
+
+    public init(directory: URL? = nil, fileName: String = "capacity-evidence-v2.json", fileSystem: any CapacityEvidenceFileSystem = LocalCapacityEvidenceFileSystem()) {
+        let directory = directory ?? CapacityEvidenceStore.defaultDirectory()
+        self.markerURL = directory.appendingPathComponent("\(fileName).legacy-migration-marker")
+        self.fileSystem = fileSystem
+    }
+
+    public func committedMigrationMarker() -> CapacityLegacyMigrationMarker? {
+        guard fileSystem.fileExists(at: markerURL),
+              let data = try? fileSystem.readData(at: markerURL) else {
+            return nil
+        }
+        return validCommittedMarker(from: data)
+    }
+
+    public func legacyLimitHistoryWriteStatus() -> CapacityPersistenceStatus {
+        guard fileSystem.fileExists(at: markerURL) else {
+            return .ready(source: .absentDefault, generation: nil)
+        }
+        guard let data = try? fileSystem.readData(at: markerURL),
+              let marker = validCommittedMarker(from: data) else {
+            return .recoveryRequired(writeBlocked: true, code: "legacyMigrationMarkerRecoveryRequired")
+        }
+        return .ready(source: .primary, generation: marker.committedGeneration)
+    }
+
+    public func legacyLimitHistoryWritesAllowed() -> Bool {
+        guard case let .ready(source, _) = legacyLimitHistoryWriteStatus() else { return false }
+        return source == .absentDefault
+    }
+
+    private func validCommittedMarker(from data: Data) -> CapacityLegacyMigrationMarker? {
+        guard let marker = try? JSONDecoder().decode(CapacityLegacyMigrationMarker.self, from: data),
+              marker.committedGeneration > 0,
+              !marker.sourceDigest.isEmpty else {
+            return nil
+        }
+        return marker
+    }
+}
+
+public struct LimitHistorySamplesResult: Equatable, Sendable {
+    public let samples: [ProviderLimitSample]
+    public let recoveryStatus: CapacityPersistenceStatus
+
+    public init(samples: [ProviderLimitSample], recoveryStatus: CapacityPersistenceStatus) {
+        self.samples = samples
+        self.recoveryStatus = recoveryStatus
+    }
+}
+
 public final class LimitHistoryStore: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock()
     private let defaults: UserDefaults
@@ -10,13 +77,15 @@ public final class LimitHistoryStore: @unchecked Sendable {
     private let bucketSeconds: TimeInterval
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let legacyWritePolicy: any LimitHistoryLegacyWritePolicy
 
     public init(
         defaults: UserDefaults = .standard,
         key: String = "tokenPilot.limitSamples.v1",
         maxAgeDays: Int = 45,
         maxSamples: Int = 2_000,
-        bucketSeconds: TimeInterval = 300
+        bucketSeconds: TimeInterval = 300,
+        legacyWritePolicy: any LimitHistoryLegacyWritePolicy = CapacityLegacyLimitHistoryWritePolicy()
     ) {
         self.defaults = defaults
         self.key = key
@@ -24,6 +93,7 @@ public final class LimitHistoryStore: @unchecked Sendable {
         self.maxSamples = max(maxSamples, 1)
         self.bucketSeconds = max(bucketSeconds, 60)
         encoder.outputFormatting = [.sortedKeys]
+        self.legacyWritePolicy = legacyWritePolicy
     }
 
     @discardableResult
@@ -32,31 +102,52 @@ public final class LimitHistoryStore: @unchecked Sendable {
         enabledProviders: Set<Provider>,
         referenceDate: Date = Date()
     ) -> [ProviderLimitSample] {
+        recordWithRecoveryStatus(snapshots: snapshots, enabledProviders: enabledProviders, referenceDate: referenceDate).samples
+    }
+
+    @discardableResult
+    public func recordWithRecoveryStatus(
+        snapshots: [ProviderSnapshot],
+        enabledProviders: Set<Provider>,
+        referenceDate: Date = Date()
+    ) -> LimitHistorySamplesResult {
         lock.withLock {
+            let policyStatus = legacyWritePolicy.legacyLimitHistoryWriteStatus()
+            let loaded = loadSamplesWithRecoveryStatusUnlocked()
+            guard legacyWritePolicy.legacyLimitHistoryWritesAllowed() else {
+                return LimitHistorySamplesResult(samples: loaded.samples, recoveryStatus: policyStatus)
+            }
+            guard !loaded.recoveryStatus.writeBlocked else {
+                return loaded
+            }
+
             let incoming = snapshots
                 .filter { enabledProviders.contains($0.provider) && $0.dataSource != .mock }
                 .flatMap { samples(from: $0, referenceDate: referenceDate) }
 
             guard !incoming.isEmpty else {
-                let retained = capped(pruned(loadSamplesUnlocked(), now: referenceDate).sorted { lhs, rhs in
+                let retained = capped(pruned(loaded.samples, now: referenceDate).sorted { lhs, rhs in
                     if lhs.timestamp == rhs.timestamp {
                         return sortRank(lhs.window) < sortRank(rhs.window)
                     }
                     return lhs.timestamp < rhs.timestamp
                 })
-                saveUnlocked(retained)
-                return retained
+                guard retained != loaded.samples else {
+                    return LimitHistorySamplesResult(samples: retained, recoveryStatus: loaded.recoveryStatus)
+                }
+                let status = saveUnlocked(retained)
+                return LimitHistorySamplesResult(samples: retained, recoveryStatus: status)
             }
 
-            let merged = deduplicated(loadSamplesUnlocked() + incoming)
+            let merged = deduplicated(loaded.samples + incoming)
             let retained = capped(pruned(merged, now: referenceDate).sorted { lhs, rhs in
                 if lhs.timestamp == rhs.timestamp {
                     return sortRank(lhs.window) < sortRank(rhs.window)
                 }
                 return lhs.timestamp < rhs.timestamp
             })
-            saveUnlocked(retained)
-            return retained
+            let status = saveUnlocked(retained)
+            return LimitHistorySamplesResult(samples: retained, recoveryStatus: status)
         }
     }
 
@@ -65,36 +156,72 @@ public final class LimitHistoryStore: @unchecked Sendable {
         enabledProviders: Set<Provider>,
         referenceDate: Date = Date()
     ) -> [ProviderLimitSample] {
+        samplesWithRecoveryStatus(period: period, enabledProviders: enabledProviders, referenceDate: referenceDate).samples
+    }
+
+    public func samplesWithRecoveryStatus(
+        period: HistoryPeriod,
+        enabledProviders: Set<Provider>,
+        referenceDate: Date = Date()
+    ) -> LimitHistorySamplesResult {
         lock.withLock {
-            filter(loadSamplesUnlocked(), period: period, enabledProviders: enabledProviders, referenceDate: referenceDate)
+            let loaded = loadSamplesWithRecoveryStatusUnlocked()
+            return LimitHistorySamplesResult(
+                samples: filter(loaded.samples, period: period, enabledProviders: enabledProviders, referenceDate: referenceDate),
+                recoveryStatus: loaded.recoveryStatus
+            )
         }
     }
 
     public func loadSamples() -> [ProviderLimitSample] {
+        loadSamplesWithRecoveryStatus().samples
+    }
+
+    public func loadSamplesWithRecoveryStatus() -> LimitHistorySamplesResult {
         lock.withLock {
-            loadSamplesUnlocked()
+            loadSamplesWithRecoveryStatusUnlocked()
+        }
+    }
+
+    @discardableResult
+    public func clearWithRecoveryStatus() -> CapacityPersistenceStatus {
+        lock.withLock {
+            let policyStatus = legacyWritePolicy.legacyLimitHistoryWriteStatus()
+            guard legacyWritePolicy.legacyLimitHistoryWritesAllowed() else { return policyStatus }
+            let loaded = loadSamplesWithRecoveryStatusUnlocked()
+            guard !loaded.recoveryStatus.writeBlocked else { return loaded.recoveryStatus }
+            defaults.removeObject(forKey: key)
+            return .ready(source: .empty, generation: nil)
         }
     }
 
     public func clear() {
-        lock.withLock {
-            defaults.removeObject(forKey: key)
-        }
+        _ = clearWithRecoveryStatus()
     }
 
     // MARK: - Internal (callers must hold lock)
 
     private func loadSamplesUnlocked() -> [ProviderLimitSample] {
-        guard let data = defaults.data(forKey: key),
-              let decoded = try? decoder.decode([ProviderLimitSample].self, from: data) else {
-            return []
-        }
-        return decoded
+        loadSamplesWithRecoveryStatusUnlocked().samples
     }
 
-    private func saveUnlocked(_ samples: [ProviderLimitSample]) {
-        guard let data = try? encoder.encode(samples) else { return }
+    private func loadSamplesWithRecoveryStatusUnlocked() -> LimitHistorySamplesResult {
+        guard let object = defaults.object(forKey: key) else {
+            return LimitHistorySamplesResult(samples: [], recoveryStatus: .ready(source: .absentDefault, generation: nil))
+        }
+        guard let data = object as? Data,
+              let decoded = try? decoder.decode([ProviderLimitSample].self, from: data) else {
+            return LimitHistorySamplesResult(samples: [], recoveryStatus: .recoveryRequired(writeBlocked: true, code: "legacyLimitHistoryRecoveryRequired"))
+        }
+        return LimitHistorySamplesResult(samples: decoded, recoveryStatus: .ready(source: .primary, generation: nil))
+    }
+
+    private func saveUnlocked(_ samples: [ProviderLimitSample]) -> CapacityPersistenceStatus {
+        guard let data = try? encoder.encode(samples) else {
+            return .recoveryRequired(writeBlocked: true, code: "legacyLimitHistoryCommitFailed")
+        }
         defaults.set(data, forKey: key)
+        return .ready(source: .primary, generation: nil)
     }
 
     // MARK: - Private helpers (pure computation, no I/O)

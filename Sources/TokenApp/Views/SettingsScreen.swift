@@ -24,24 +24,38 @@ struct SettingsScreen: View {
 
     private var dataSources: some View {
         VStack(spacing: 10) {
-            SettingsCard(title: model.t("1. Data Sources"), icon: "externaldrive") {
-                VStack(alignment: .leading, spacing: 14) {
-                    LazyVGrid(
-                        columns: [GridItem(.flexible()), GridItem(.flexible())],
-                        spacing: 8
-                    ) {
-                        providerToggle(.claude)
-                        providerToggle(.codex)
-                        providerToggle(.gemini)
-                        providerToggle(.deepseek)
+            SettingsCard(title: model.t("1. Source Health"), icon: "externaldrive.badge.checkmark") {
+                VStack(alignment: .leading, spacing: 12) {
+                    sourceHealthSummary
+
+                    HStack(spacing: 8) {
+                        Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
+                            .buttonStyle(.borderedProminent)
+                            .tint(TokenPilotDesign.calm)
+                        Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
+                            .buttonStyle(.bordered)
                     }
-                    Text(model.t("Toggle providers shown on Overview. Disabled providers are hidden and not refreshed."))
+
+                    Text(model.t("Auto-detect checks local default metadata and user-selected files only. Diagnostics hide raw paths, raw events, prompts, responses, and secrets."))
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
-                            .buttonStyle(.bordered)
-                        Text(model.t("Scans only local default paths and user-selected files."))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if model.capacityRuntimeRecoveryRequired {
+                        runtimeRecoveryBanner
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        LazyVGrid(
+                            columns: [GridItem(.flexible()), GridItem(.flexible())],
+                            spacing: 8
+                        ) {
+                            providerToggle(.claude)
+                            providerToggle(.codex)
+                            providerToggle(.gemini)
+                            providerToggle(.deepseek)
+                        }
+                        Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
                             .font(.caption2)
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                     }
@@ -64,22 +78,28 @@ struct SettingsScreen: View {
                             .pickerStyle(.menu)
                             .frame(maxWidth: 170)
                         }
-                        Text(model.t("Show selected provider in the menu bar. Disabled providers are skipped."))
+                        Text(model.t("Menu bar uses the core capacity assessment. Disabled providers are skipped."))
                             .font(.caption2)
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                         Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .lineLimit(1)
+                            .accessibilityLabel(model.menuBarAccessibilityLabel)
                     }
                 }
             }
 
             SettingsCard(title: model.t("Provider Diagnostics"), icon: "stethoscope") {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(model.t("Before diagnostics, TokenPilot checks local usage metadata and selected files only. It excludes prompts, responses, secrets, credentials, browser cookies, raw events, and raw paths from summaries and exports."))
+                    Text(model.t("Diagnostics summarize source health without showing raw local paths, raw events, prompts, responses, cookies, credentials, or tokens."))
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !model.capacityRefreshErrors.isEmpty {
+                        capacityRefreshNotes
+                    }
 
                     ForEach(model.providerDiagnostics) { diagnostic in
                         providerDiagnosticRow(diagnostic)
@@ -92,40 +112,33 @@ struct SettingsScreen: View {
             }
 
             ProviderSetupCard(provider: .claude, title: "Claude Code", status: model.sourceStatusText(.claude), statusColor: model.sourceStatusColor(.claude), detail: model.sourceDetailText(.claude)) {
-                Text(model.t("Status file path"))
+                Text(model.t("Claude status source"))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack {
-                    TextField(model.t("Claude status path"), text: $model.settings.claudeStatusFilePath)
-                        .textFieldStyle(.roundedBorder)
+                    sourceSelectionBadge(isSelected: !model.settings.claudeStatusFilePath.isEmpty)
+                    Spacer(minLength: 0)
                     Button(model.t("Choose…")) { model.chooseClaudeStatusFile() }
                 }
-                Text(model.t("defaultClaudePath"))
-                    .font(.system(size: 11, design: .monospaced))
+                Text(model.t("Raw local paths stay hidden. Choose again to replace the saved source bookmark."))
+                    .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
                     .buttonStyle(.bordered)
             }
 
             ProviderSetupCard(provider: .gemini, title: "Antigravity CLI", status: model.sourceStatusText(.gemini), statusColor: model.sourceStatusColor(.gemini), detail: model.sourceDetailText(.gemini)) {
-                Text(model.t("Statusline / telemetry source"))
+                Text(model.t("Antigravity telemetry source"))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack {
-                    TextField(model.t("defaultGeminiPath1"), text: $model.settings.geminiTelemetryLogPath)
-                        .textFieldStyle(.roundedBorder)
+                    sourceSelectionBadge(isSelected: !model.settings.geminiTelemetryLogPath.isEmpty)
+                    Spacer(minLength: 0)
                     Button(model.t("Choose…")) { model.chooseGeminiTelemetrySource() }
                 }
-                Text(model.t("You can select Antigravity statusline JSON, legacy Gemini telemetry.log, or a session folder."))
+                Text(model.t("Select statusline JSON, legacy telemetry, or a session folder. Raw local paths stay hidden after selection."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.t("Default suggestions:"))
-                    Text(model.t("defaultGeminiPath1"))
-                    Text(model.t("defaultGeminiPath2"))
-                }
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack {
                     ForEach([1000, 1500, 2000], id: \.self) { cap in
                         Button("\(cap)") { model.settings.geminiDailyRequestCap = cap }
@@ -137,8 +150,6 @@ struct SettingsScreen: View {
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
                     .buttonStyle(.bordered)
             }
-
-
 
             ProviderSetupCard(provider: .deepseek, title: "DeepSeek", status: model.sourceStatusText(.deepseek), statusColor: model.sourceStatusColor(.deepseek), detail: model.sourceDetailText(.deepseek)) {
                 HStack {
@@ -160,7 +171,7 @@ struct SettingsScreen: View {
                     Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
                         .buttonStyle(.borderedProminent)
                         .tint(TokenPilotDesign.calm)
-                    Button(model.t("Delete API Key")) { model.deleteDeepSeekAPIKey() }
+                    Button(model.t("Delete API Key"), role: .destructive) { model.deleteDeepSeekAPIKey() }
                         .buttonStyle(.bordered)
                         .disabled(!model.hasSavedDeepSeekAPIKey)
                     Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
@@ -194,28 +205,28 @@ struct SettingsScreen: View {
             }
 
             ProviderSetupCard(provider: .codex, title: "Codex", status: model.sourceStatusText(.codex), statusColor: model.sourceStatusColor(.codex), detail: model.sourceDetailText(.codex)) {
-                Text(model.t("Limit Hints Connector"))
+                Text(model.t("Experimental Codex limit hints"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(TokenPilotDesign.textSecondary)
-                Toggle(model.t("Use Codex Limit Hints Connector"), isOn: $model.settings.codexManual.webConnectorEnabled)
-                Text(model.t("Asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot does not read, store, display, or export Codex access tokens."))
+                Toggle(model.t("Use experimental Codex limit hints"), isOn: $model.settings.codexManual.webConnectorEnabled)
+                Text(model.t("Experimental connector asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot never reads, stores, displays, or exports Codex access tokens."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
-                Text(model.t("Codex app-server limit hints are unofficial and may break if the Codex CLI changes. Disable to fall back to local activity/manual values."))
+                Text(model.t("Codex limit hints are experimental and may break if the Codex CLI changes. They are not guaranteed official quota."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.warning)
                 Divider()
                     .opacity(0.35)
-                Text(model.t("Manual / personal calibration fallback"))
+                Text(model.t("Manual Codex limit snapshot"))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
-                Toggle(model.t("Use Codex Web Snapshot"), isOn: $model.settings.codexManual.webSnapshotEnabled)
-                Text(model.t("Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens."))
+                Toggle(model.t("Use Manual Limit Snapshot"), isOn: $model.settings.codexManual.webSnapshotEnabled)
+                Text(model.t("Enter manual values you observed. TokenPilot stores only numbers and notes, not cookies, login tokens, or raw account pages."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
-                Stepper(String(format: model.t("Web today tokens: %d"), model.settings.codexManual.webTodayTokens), value: $model.settings.codexManual.webTodayTokens, in: 0...100_000_000, step: 1_000)
+                Stepper(String(format: model.t("Manual today tokens: %d"), model.settings.codexManual.webTodayTokens), value: $model.settings.codexManual.webTodayTokens, in: 0...100_000_000, step: 1_000)
                 HStack {
-                    Button(model.t("Mark Web Snapshot Now")) { model.markCodexWebSnapshotNow() }
+                    Button(model.t("Mark Manual Snapshot Now")) { model.markCodexWebSnapshotNow() }
                     if let capturedAt = model.settings.codexManual.webSnapshotCapturedAt {
                         Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt))")
                             .font(.caption)
@@ -232,7 +243,7 @@ struct SettingsScreen: View {
                     .textFieldStyle(.roundedBorder)
                 TextField(model.t("Notes"), text: $model.settings.codexManual.notes)
                     .textFieldStyle(.roundedBorder)
-                Text(model.t("Pasted /status output"))
+                Text(model.t("Pasted /status output (cleared after parse)"))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 TextEditor(text: $model.settings.codexManual.pastedStatusOutput)
@@ -248,7 +259,7 @@ struct SettingsScreen: View {
                         .font(.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
-                Text(model.t("Parsed status is marked medium or low confidence unless clearly reliable."))
+                Text(model.t("Parsed status remains manual or estimated unless the source is provider-reported and fresh."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
@@ -260,15 +271,28 @@ struct SettingsScreen: View {
     private var notificationSettings: some View {
         SettingsCard(title: model.t("2. Notifications"), icon: "bell") {
             VStack(alignment: .leading, spacing: 12) {
+                notificationEffectiveSummary
+
                 Toggle(model.t("Global notifications"), isOn: $model.settings.globalNotificationsEnabled)
                 Toggle(model.t("macOS notifications"), isOn: $model.settings.macOSNotificationsEnabled)
+                    .disabled(!model.settings.globalNotificationsEnabled)
                 Toggle(model.t("Telegram notifications"), isOn: $model.settings.telegramNotificationsEnabled)
+                    .disabled(!model.settings.globalNotificationsEnabled)
                 Toggle(model.t("Discord notifications"), isOn: $model.settings.discordNotificationsEnabled)
+                    .disabled(!model.settings.globalNotificationsEnabled)
+
+                Text(model.t("Global OFF disables every channel. Channel OFF disables matching alert-rule delivery controls."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
                 HStack {
                     Button(model.t("Request Notification Permission")) { Task { await model.requestNotificationPermission() } }
+                        .disabled(!model.settings.globalNotificationsEnabled)
                     Button(model.t("Send Test Notification")) { Task { await model.sendTestNotification() } }
+                        .disabled(!hasEffectiveNotificationChannel)
                     Spacer()
-                    Text("\(model.t("Status")): \(model.settings.notificationPermissionStatus.localizedLabel(language: model.settings.localization.language))")
+                    Text("\(model.t("Permission")): \(model.settings.notificationPermissionStatus.localizedLabel(language: model.settings.localization.language))")
                         .font(.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
@@ -283,7 +307,13 @@ struct SettingsScreen: View {
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                     ForEach($model.settings.alertRules) { $rule in
-                        AlertRuleRow(rule: $rule)
+                        AlertRuleRow(
+                            rule: $rule,
+                            globalEnabled: model.settings.globalNotificationsEnabled,
+                            macOSChannelEnabled: model.settings.macOSNotificationsEnabled,
+                            telegramChannelEnabled: telegramRouteAvailable,
+                            discordChannelEnabled: discordRouteAvailable
+                        )
                     }
                 }
             }
@@ -304,6 +334,10 @@ struct SettingsScreen: View {
                         label: model.hasSavedTelegramToken ? model.t("Token saved") : model.t("No token"),
                         color: model.hasSavedTelegramToken ? TokenPilotDesign.calm : TokenPilotDesign.warning
                     )
+                    StatusBadge(
+                        label: telegramEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
+                        color: telegramEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+                    )
                 }
 
                 SecureField(model.hasSavedTelegramToken ? model.t("Saved token hidden") : model.t("Bot Token"), text: $model.telegramTokenInput)
@@ -320,6 +354,7 @@ struct SettingsScreen: View {
                 HStack(spacing: 8) {
                     Button(model.t("Find Chat ID")) { Task { await model.findTelegramChatID() } }
                     Button(model.t("Send Test Message")) { Task { await model.sendTelegramTest() } }
+                        .disabled(!telegramEffectiveNotificationsEnabled)
                     Spacer()
                     StatusBadge(
                         label: model.settings.telegram.chatID.isEmpty ? model.t("No chat ID") : model.t("Chat ID set"),
@@ -333,6 +368,10 @@ struct SettingsScreen: View {
                 }
                 .font(.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+                Text(model.t("Effective Telegram delivery requires Global notifications, Telegram notifications, Telegram alerts, a saved bot token, and a chat ID."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(model.t("Telegram OFF by default. Enable only after saving TokenPilot's own bot token."))
                     .font(.caption2)
@@ -358,6 +397,10 @@ struct SettingsScreen: View {
                         label: model.hasSavedDiscordWebhook ? model.t("Webhook saved") : model.t("No webhook"),
                         color: model.hasSavedDiscordWebhook ? TokenPilotDesign.calm : TokenPilotDesign.warning
                     )
+                    StatusBadge(
+                        label: discordEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
+                        color: discordEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+                    )
                 }
 
                 SecureField(model.hasSavedDiscordWebhook ? model.t("Saved webhook hidden") : model.t("Discord Webhook URL"), text: $model.discordWebhookInput)
@@ -368,6 +411,7 @@ struct SettingsScreen: View {
                     Button(model.t("Delete Webhook"), role: .destructive) { model.deleteDiscordWebhook() }
                         .disabled(!model.hasSavedDiscordWebhook)
                     Button(model.t("Send Test Message")) { Task { await model.sendDiscordTest() } }
+                        .disabled(!discordEffectiveNotificationsEnabled)
                     Spacer()
                 }
 
@@ -377,6 +421,10 @@ struct SettingsScreen: View {
                 }
                 .font(.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+                Text(model.t("Effective Discord delivery requires Global notifications, Discord notifications, Discord alerts, and a saved webhook."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
                 Text(model.t("Discord OFF by default. Paste only a Discord channel webhook created for TokenPilot."))
                     .font(.caption2)
@@ -415,11 +463,11 @@ struct SettingsScreen: View {
                     status: model.sourceStatusText(.claude),
                     statusColor: model.sourceStatusColor(.claude),
                     detail: model.sourceDetailText(.claude),
-                    explanation: model.t("TokenPilot reads the Claude statusline snapshot below."),
-                    primaryAction: model.t("Check Connection"),
-                    copyText: claudeStatuslineScript,
-                    onPrimary: { Task { await model.checkConnection(.claude) } },
-                    onCopy: { model.copyToClipboard(claudeStatuslineScript) }
+                    explanation: model.t("Scans only local default paths and user-selected files."),
+                    primaryAction: model.t("Choose…"),
+                    copyText: nil,
+                    onPrimary: { model.chooseClaudeStatusFile() },
+                    onCopy: nil
                 )
                 GuideCard(
                     title: model.t("Connect Antigravity CLI"),
@@ -481,12 +529,158 @@ struct SettingsScreen: View {
                 privacyLine(model.t("Sample preview is optional and off by default so release builds never look connected before setup."))
                 privacyLine(model.t("Reads local usage metadata and selected files only."))
                 privacyLine(model.t("Does not read browser cookies or other Keychain items."))
-                privacyLine(model.t("Codex Limit Hints Connector is opt-in and asks the local Codex CLI app-server for account/rateLimits/read; TokenPilot never reads, displays, or stores Codex access tokens."))
+                privacyLine(model.t("Codex experimental connector is opt-in, local-only, and never reads, displays, stores, or exports Codex access tokens."))
                 privacyLine(model.t("Telegram and Discord send only alert messages when enabled."))
             }
         }
     }
 
+    private var sourceHealthSummary: some View {
+        HStack(spacing: 6) {
+            StatusBadge(
+                label: "\(readyProviderCount)/\(Provider.allCases.count) \(model.t("sources ready"))",
+                color: readyProviderCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.warning
+            )
+            StatusBadge(
+                label: model.capacityRuntimeRecoveryRequired ? model.t("Recovery needed") : model.t("Runtime ready"),
+                color: model.capacityRuntimeRecoveryRequired ? TokenPilotDesign.warning : TokenPilotDesign.calm
+            )
+            StatusBadge(
+                label: "\(attentionProviderCount) \(model.t("needs attention"))",
+                color: attentionProviderCount == 0 ? TokenPilotDesign.textSecondary : TokenPilotDesign.warning
+            )
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(model.t("Source health"))
+    }
+
+    private var runtimeRecoveryBanner: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+                .foregroundStyle(TokenPilotDesign.warning)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.t("Capacity runtime recovery required"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                Text(model.t("Capacity alerts use safe defaults until local runtime state is readable again."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(9)
+        .background(TokenPilotDesign.warning.opacity(0.10))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var capacityRefreshNotes: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(model.t("Capacity refresh notes"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            ForEach(Array(model.capacityRefreshErrors.prefix(3))) { error in
+                Text("\(model.t(error.provider.displayName)): \(model.localizedStatus(error.redactedMessage))")
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(8)
+        .background(TokenPilotDesign.cardMuted.opacity(0.65))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var notificationEffectiveSummary: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: hasEffectiveNotificationChannel ? "bell.badge" : "bell.slash")
+                .foregroundStyle(hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.t("Effective notification delivery"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                Text(notificationEffectiveDetail)
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            StatusBadge(
+                label: hasEffectiveNotificationChannel ? model.t("Effective ON") : model.t("Effective OFF"),
+                color: hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+            )
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(model.t("Effective notification delivery"))
+        .accessibilityValue(notificationEffectiveDetail)
+    }
+
+    private var readyProviderCount: Int {
+        model.providerDiagnostics.filter { diagnostic in
+            diagnostic.status == .connected || diagnostic.status == .manual || diagnostic.status == .estimated
+        }.count
+    }
+
+    private var attentionProviderCount: Int {
+        model.providerDiagnostics.filter { diagnostic in
+            diagnostic.status != .connected && diagnostic.status != .disabled
+        }.count
+    }
+
+    private var macOSRouteAvailable: Bool {
+        model.settings.macOSNotificationsEnabled && model.settings.notificationPermissionStatus == .granted
+    }
+
+    private var telegramRouteAvailable: Bool {
+        model.settings.telegramNotificationsEnabled &&
+        model.settings.telegram.isEnabled &&
+        model.hasSavedTelegramToken &&
+        !model.settings.telegram.chatID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var discordRouteAvailable: Bool {
+        model.settings.discordNotificationsEnabled &&
+        model.settings.discord.isEnabled &&
+        model.hasSavedDiscordWebhook
+    }
+
+    private var telegramEffectiveNotificationsEnabled: Bool {
+        model.settings.globalNotificationsEnabled && telegramRouteAvailable
+    }
+
+    private var discordEffectiveNotificationsEnabled: Bool {
+        model.settings.globalNotificationsEnabled && discordRouteAvailable
+    }
+
+    private var hasEffectiveNotificationChannel: Bool {
+        model.settings.globalNotificationsEnabled &&
+        (macOSRouteAvailable || telegramRouteAvailable || discordRouteAvailable)
+    }
+
+    private var notificationEffectiveDetail: String {
+        guard model.settings.globalNotificationsEnabled else {
+            return model.t("Global notifications are off.")
+        }
+        let enabled = [
+            macOSRouteAvailable ? "macOS" : nil,
+            telegramRouteAvailable ? "Telegram" : nil,
+            discordRouteAvailable ? "Discord" : nil
+        ].compactMap { $0 }
+        guard !enabled.isEmpty else {
+            return model.t("No effective notification channels.")
+        }
+        return String(format: model.t("Effective channels: %@"), enabled.joined(separator: " · "))
+    }
+
+    private func sourceSelectionBadge(isSelected: Bool) -> some View {
+        StatusBadge(
+            label: isSelected ? model.t("Source selected") : model.t("Auto-detect only"),
+            color: isSelected ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+        )
+    }
     private var menuBarTargetBinding: Binding<Provider?> {
         Binding(
             get: { model.settings.menuBarDisplayTarget },
@@ -521,7 +715,6 @@ struct SettingsScreen: View {
             Text(model.diagnosticDetailText(diagnostic))
                 .font(.caption2)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(2)
         }
         .padding(9)
         .background(Color.white.opacity(0.025))
@@ -570,30 +763,6 @@ struct SettingsScreen: View {
         }
     }
 
-    private var claudeStatuslineScript: String {
-        """
-        #!/usr/bin/env bash
-        mkdir -p "$HOME/Library/Application Support/TokenPilot"
-        cat > "$HOME/Library/Application Support/TokenPilot/claude-statusline.json" <<'JSON'
-        {
-          "rate_limits": {
-            "five_hour": { "used_percentage": 0, "resets_at": null },
-            "seven_day": { "used_percentage": 0, "resets_at": null }
-          },
-          "context_window": {
-            "current_usage": {
-              "input_tokens": 0,
-              "output_tokens": 0,
-              "cache_creation_input_tokens": 0,
-              "cache_read_input_tokens": 0
-            }
-          },
-          "cost": { "total_cost_usd": 0 },
-          "model": { "display_name": "Claude Code" }
-        }
-        JSON
-        """
-    }
 
     private var geminiSettingsSnippet: String {
         """
@@ -731,24 +900,36 @@ struct SettingsScreen: View {
 struct AlertRuleRow: View {
     @Environment(\.tokenPilotLanguage) private var language
     @Binding var rule: AlertRule
+    let globalEnabled: Bool
+    let macOSChannelEnabled: Bool
+    let telegramChannelEnabled: Bool
+    let discordChannelEnabled: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("\(localized(rule.provider.displayName, language: language)) · \(rule.window.localizedLabel(language: language))")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+
             HStack(spacing: 4) {
-                AlertTogglePill(label: "macOS", isOn: $rule.macOSEnabled)
-                AlertTogglePill(label: "TG", isOn: $rule.telegramEnabled)
-                AlertTogglePill(label: "DC", isOn: $rule.discordEnabled)
+                AlertTogglePill(label: "macOS", isOn: $rule.macOSEnabled, isEnabled: globalEnabled && macOSChannelEnabled)
+                AlertTogglePill(label: "TG", isOn: $rule.telegramEnabled, isEnabled: globalEnabled && telegramChannelEnabled)
+                AlertTogglePill(label: "DC", isOn: $rule.discordEnabled, isEnabled: globalEnabled && discordChannelEnabled)
                 Spacer(minLength: 0)
             }
+
             HStack(spacing: 4) {
-                AlertTogglePill(label: localized("Reset", language: language), isOn: $rule.resetEnabled)
-                AlertTogglePill(label: "50%", isOn: $rule.fiftyEnabled)
-                AlertTogglePill(label: "80%", isOn: $rule.eightyEnabled)
-                AlertTogglePill(label: "100%", isOn: $rule.hundredEnabled)
+                AlertTogglePill(label: localized("Reset", language: language), isOn: $rule.resetEnabled, isEnabled: globalEnabled)
+                AlertTogglePill(label: "50%", isOn: $rule.fiftyEnabled, isEnabled: globalEnabled)
+                AlertTogglePill(label: "80%", isOn: $rule.eightyEnabled, isEnabled: globalEnabled)
+                AlertTogglePill(label: "100%", isOn: $rule.hundredEnabled, isEnabled: globalEnabled)
                 Spacer(minLength: 0)
+            }
+
+            if !globalEnabled {
+                Text(localized("Parent notifications are off.", language: language))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
             }
         }
         .padding(.horizontal, 10)
@@ -762,23 +943,27 @@ struct AlertTogglePill: View {
     @Environment(\.tokenPilotLanguage) private var language
     let label: String
     @Binding var isOn: Bool
+    var isEnabled = true
 
     var body: some View {
         Button {
+            guard isEnabled else { return }
             isOn.toggle()
         } label: {
             Text("\(label) \(isOn ? localized("ON", language: language) : localized("OFF", language: language))")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
-                .background(isOn ? TokenPilotDesign.calm.opacity(0.16) : TokenPilotDesign.cardMuted)
+                .background(isOn && isEnabled ? TokenPilotDesign.calm.opacity(0.16) : TokenPilotDesign.cardMuted)
                 .overlay(
-                    Capsule().stroke(isOn ? TokenPilotDesign.calm.opacity(0.22) : TokenPilotDesign.border, lineWidth: 1)
+                    Capsule().stroke(isOn && isEnabled ? TokenPilotDesign.calm.opacity(0.22) : TokenPilotDesign.border, lineWidth: 1)
                 )
-                .foregroundStyle(isOn ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
+                .foregroundStyle(isEnabled ? (isOn ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary) : TokenPilotDesign.textSecondary.opacity(0.55))
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .accessibilityHint(isEnabled ? "" : localized("Disabled by notification hierarchy.", language: language))
     }
 }
 

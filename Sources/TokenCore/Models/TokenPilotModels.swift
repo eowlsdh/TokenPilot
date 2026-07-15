@@ -261,6 +261,8 @@ public struct LimitWindow: Codable, Equatable, Identifiable, Sendable {
     public var resetAt: Date?
     public var label: String
     public var confidence: DataConfidence
+    public var providerWindowID: String?
+    public var durationMinutes: Int?
 
     public var remainingPercent: Int? {
         usedPercent.map { min(max(100 - $0, 0), 100) }
@@ -272,15 +274,57 @@ public struct LimitWindow: Codable, Equatable, Identifiable, Sendable {
         usedPercent: Int? = nil,
         resetAt: Date? = nil,
         label: String? = nil,
-        confidence: DataConfidence = .low
+        confidence: DataConfidence = .low,
+        providerWindowID: String? = nil,
+        durationMinutes: Int? = nil
     ) {
+        let normalizedProviderWindowID = Self.normalizedProviderWindowID(providerWindowID)
+        let normalizedDuration = durationMinutes.flatMap { $0 > 0 ? $0 : nil }
         self.kind = kind
-        self.id = kind.rawValue
-        self.name = name ?? kind.displayName
+        self.id = Self.makeID(kind: kind, providerWindowID: normalizedProviderWindowID, durationMinutes: normalizedDuration)
+        self.name = name ?? Self.displayName(kind: kind, durationMinutes: normalizedDuration)
         self.usedPercent = usedPercent.map { min(max($0, 0), 100) }
         self.resetAt = resetAt
-        self.label = label ?? kind.label
+        self.label = label ?? Self.label(kind: kind, durationMinutes: normalizedDuration)
         self.confidence = confidence
+        self.providerWindowID = normalizedProviderWindowID
+        self.durationMinutes = normalizedDuration
+    }
+
+    private static func makeID(kind: LimitWindowKind, providerWindowID: String?, durationMinutes: Int?) -> String {
+        [providerWindowID ?? kind.rawValue, durationMinutes.map(String.init)].compactMap { $0 }.joined(separator: "-")
+    }
+
+    private static func label(kind: LimitWindowKind, durationMinutes: Int?) -> String {
+        guard let durationMinutes else { return kind.label }
+        if durationMinutes < 60 { return "\(durationMinutes)m" }
+        if durationMinutes < 1_440, durationMinutes % 60 == 0 { return "\(durationMinutes / 60)h" }
+        if durationMinutes % 1_440 == 0 { return "\(durationMinutes / 1_440)d" }
+        return "\(durationMinutes)min"
+    }
+
+    private static func displayName(kind: LimitWindowKind, durationMinutes: Int?) -> String {
+        guard let durationMinutes else { return kind.displayName }
+        return "\(label(kind: kind, durationMinutes: durationMinutes)) rolling window"
+    }
+
+    private static func normalizedProviderWindowID(_ value: String?) -> String? {
+        guard let value else { return nil }
+        let normalizedCharacters = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased().unicodeScalars.map { scalar -> String in
+            switch scalar.value {
+            case 48...57, 97...122:
+                return String(scalar)
+            case 45, 46, 95:
+                return String(scalar)
+            default:
+                return "-"
+            }
+        }
+        let normalized = normalizedCharacters.joined()
+            .split(separator: "-", omittingEmptySubsequences: true)
+            .joined(separator: "-")
+        guard (1...64).contains(normalized.utf8.count) else { return nil }
+        return normalized
     }
 }
 
@@ -1152,5 +1196,981 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
         self.sevenDayBars = sevenDayBars
         self.providerShare = providerShare
         self.events = events
+    }
+}
+public enum CapacitySeriesKind: String, Codable, CaseIterable, Sendable {
+    case fixedReset
+    case rolling
+    case calendarCap
+    case balance
+    case context
+}
+
+public enum CapacityUnit: String, Codable, CaseIterable, Sendable {
+    case percent
+    case currency
+    case requestCount
+    case tokens
+}
+
+public enum CapacityContractError: Error, Equatable, Sendable {
+    case invalidSeriesID
+    case unsupportedSeries
+    case invalidValue
+    case invalidReset
+    case futureObservation
+    case expiredObservation
+    case invalidCondition
+    case invalidRule
+    case invalidDeliveryKey
+    case invalidDeliveryState
+}
+
+private enum CapacityValidation {
+    static func isValidWindowID(_ value: String) -> Bool {
+        guard (1...64).contains(value.utf8.count) else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            switch scalar.value {
+            case 48...57, 97...122:
+                return true
+            case 45, 46, 95:
+                return true
+            default:
+                return false
+            }
+        }
+    }
+
+    static func isValidCurrencyCode(_ value: String) -> Bool {
+        guard value.utf8.count == 3 else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            (65...90).contains(scalar.value)
+        }
+    }
+}
+
+public struct CapacitySeriesID: Codable, Equatable, Hashable, Sendable, CustomStringConvertible {
+    public let provider: Provider
+    public let providerWindowID: String
+    public let kind: CapacitySeriesKind
+    public let unit: CapacityUnit
+    public let durationMinutes: Int?
+
+    private enum DurationSemantics: Sendable {
+        case none
+        case optionalExact(Int)
+        case requiredPositive
+
+        func supports(_ durationMinutes: Int?) -> Bool {
+            switch self {
+            case .none:
+                return durationMinutes == nil
+            case .optionalExact(let exact):
+                return durationMinutes == nil || durationMinutes == exact
+            case .requiredPositive:
+                guard let durationMinutes else { return false }
+                return durationMinutes > 0
+            }
+        }
+    }
+
+    private struct SeriesSemantics: Sendable {
+        var providers: Set<Provider>
+        var providerWindowID: String
+        var kind: CapacitySeriesKind
+        var unit: CapacityUnit
+        var duration: DurationSemantics
+        var resetCapable: Bool
+
+        func matches(provider: Provider, providerWindowID: String, kind: CapacitySeriesKind, unit: CapacityUnit, durationMinutes: Int?) -> Bool {
+            providers.contains(provider) &&
+                self.providerWindowID == providerWindowID &&
+                self.kind == kind &&
+                self.unit == unit &&
+                duration.supports(durationMinutes)
+        }
+    }
+
+    private static let supportedSemantics: [SeriesSemantics] = [
+        SeriesSemantics(providers: [.claude], providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, duration: .optionalExact(300), resetCapable: true),
+        SeriesSemantics(providers: [.claude], providerWindowID: "seven-day", kind: .fixedReset, unit: .percent, duration: .optionalExact(10_080), resetCapable: true),
+        SeriesSemantics(providers: [.codex], providerWindowID: "rolling", kind: .rolling, unit: .percent, duration: .requiredPositive, resetCapable: true),
+        SeriesSemantics(providers: [.gemini], providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, duration: .optionalExact(1_440), resetCapable: true),
+        SeriesSemantics(providers: [.deepseek], providerWindowID: "balance", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: Set(Provider.allCases), providerWindowID: "context", kind: .context, unit: .tokens, duration: .none, resetCapable: false)
+    ]
+
+    public init(provider: Provider, providerWindowID: String, kind: CapacitySeriesKind, unit: CapacityUnit, durationMinutes: Int? = nil) throws {
+        guard CapacityValidation.isValidWindowID(providerWindowID),
+              durationMinutes == nil || durationMinutes! > 0 else {
+            throw CapacityContractError.invalidSeriesID
+        }
+        guard Self.semantics(provider: provider, providerWindowID: providerWindowID, kind: kind, unit: unit, durationMinutes: durationMinutes) != nil else {
+            throw CapacityContractError.unsupportedSeries
+        }
+        self.provider = provider
+        self.providerWindowID = providerWindowID
+        self.kind = kind
+        self.unit = unit
+        self.durationMinutes = durationMinutes
+    }
+
+    public var canonicalID: String {
+        [provider.rawValue, providerWindowID, kind.rawValue, unit.rawValue, durationMinutes.map(String.init)].compactMap { $0 }.joined(separator: "/")
+    }
+
+    public var description: String { canonicalID }
+
+    public var supportsReset: Bool {
+        Self.semantics(provider: provider, providerWindowID: providerWindowID, kind: kind, unit: unit, durationMinutes: durationMinutes)?.resetCapable ?? false
+    }
+
+    private static func semantics(provider: Provider, providerWindowID: String, kind: CapacitySeriesKind, unit: CapacityUnit, durationMinutes: Int?) -> SeriesSemantics? {
+        if provider == .codex,
+           ["primary", "secondary", "rolling"].contains(providerWindowID),
+           kind == .rolling,
+           unit == .percent,
+           durationMinutes.map({ $0 > 0 }) == true {
+            return SeriesSemantics(providers: [.codex], providerWindowID: providerWindowID, kind: kind, unit: unit, duration: .requiredPositive, resetCapable: true)
+        }
+        return supportedSemantics.first {
+            $0.matches(provider: provider, providerWindowID: providerWindowID, kind: kind, unit: unit, durationMinutes: durationMinutes)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case providerWindowID
+        case kind
+        case unit
+        case durationMinutes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            provider: try container.decode(Provider.self, forKey: .provider),
+            providerWindowID: try container.decode(String.self, forKey: .providerWindowID),
+            kind: try container.decode(CapacitySeriesKind.self, forKey: .kind),
+            unit: try container.decode(CapacityUnit.self, forKey: .unit),
+            durationMinutes: try container.decodeIfPresent(Int.self, forKey: .durationMinutes)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(providerWindowID, forKey: .providerWindowID)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(unit, forKey: .unit)
+        try container.encodeIfPresent(durationMinutes, forKey: .durationMinutes)
+    }
+}
+
+public struct CapacityValue: Codable, Equatable, Sendable {
+    private enum Storage: Equatable, Sendable {
+        case usedPercent(Int)
+        case money(Decimal, currency: String)
+        case count(Int)
+        case tokens(Int)
+    }
+
+    private let storage: Storage
+
+    public init(usedPercent: Int) throws {
+        guard (0...100).contains(usedPercent) else { throw CapacityContractError.invalidValue }
+        self.storage = .usedPercent(usedPercent)
+    }
+
+    public init(money: Decimal, currency: String) throws {
+        guard money >= 0, CapacityValidation.isValidCurrencyCode(currency) else {
+            throw CapacityContractError.invalidValue
+        }
+        self.storage = .money(money, currency: currency)
+    }
+
+    public init(count: Int) throws {
+        guard count >= 0 else { throw CapacityContractError.invalidValue }
+        self.storage = .count(count)
+    }
+
+    public init(tokens: Int) throws {
+        guard tokens >= 0 else { throw CapacityContractError.invalidValue }
+        self.storage = .tokens(tokens)
+    }
+
+    public var kind: CapacityUnit {
+        switch storage {
+        case .usedPercent: .percent
+        case .money: .currency
+        case .count: .requestCount
+        case .tokens: .tokens
+        }
+    }
+
+    public var usedPercent: Int? {
+        guard case let .usedPercent(value) = storage else { return nil }
+        return value
+    }
+
+    public var moneyAmount: Decimal? {
+        guard case let .money(amount, _) = storage else { return nil }
+        return amount
+    }
+
+    public var currency: String? {
+        guard case let .money(_, currency) = storage else { return nil }
+        return currency
+    }
+
+    public var count: Int? {
+        guard case let .count(value) = storage else { return nil }
+        return value
+    }
+
+    public var tokens: Int? {
+        guard case let .tokens(value) = storage else { return nil }
+        return value
+    }
+
+    public func validate() throws {
+        switch storage {
+        case let .usedPercent(value):
+            guard (0...100).contains(value) else { throw CapacityContractError.invalidValue }
+        case let .money(amount, currency):
+            guard amount >= 0, CapacityValidation.isValidCurrencyCode(currency) else { throw CapacityContractError.invalidValue }
+        case let .count(value), let .tokens(value):
+            guard value >= 0 else { throw CapacityContractError.invalidValue }
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case usedPercent
+        case money
+        case count
+        case tokens
+    }
+
+    private enum AssociatedValueKeys: String, CodingKey {
+        case value = "_0"
+        case currency
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw CapacityContractError.invalidValue
+        }
+
+        switch key {
+        case .usedPercent:
+            let value = try Self.decodeAssociatedInt(from: container, forKey: .usedPercent)
+            try self.init(usedPercent: value)
+        case .money:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .money)
+            try self.init(
+                money: try nested.decode(Decimal.self, forKey: .value),
+                currency: try nested.decode(String.self, forKey: .currency)
+            )
+        case .count:
+            let value = try Self.decodeAssociatedInt(from: container, forKey: .count)
+            try self.init(count: value)
+        case .tokens:
+            let value = try Self.decodeAssociatedInt(from: container, forKey: .tokens)
+            try self.init(tokens: value)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch storage {
+        case let .usedPercent(value):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .usedPercent)
+            try nested.encode(value, forKey: .value)
+        case let .money(amount, currency):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .money)
+            try nested.encode(amount, forKey: .value)
+            try nested.encode(currency, forKey: .currency)
+        case let .count(value):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .count)
+            try nested.encode(value, forKey: .value)
+        case let .tokens(value):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .tokens)
+            try nested.encode(value, forKey: .value)
+        }
+    }
+
+    private static func decodeAssociatedInt(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) throws -> Int {
+        if let direct = try? container.decode(Int.self, forKey: key) {
+            return direct
+        }
+        let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: key)
+        return try nested.decode(Int.self, forKey: .value)
+    }
+}
+
+public enum CapacityAuthority: String, Codable, CaseIterable, Sendable {
+    case providerReported
+    case localDerived
+    case userEntered
+    case synthetic
+    case unavailable
+}
+
+public enum CapacityStability: String, Codable, CaseIterable, Sendable {
+    case supported
+    case compatibilityBridge
+    case experimentalTransport
+    case manual
+    case unavailable
+}
+
+public enum CapacityConsent: String, Codable, CaseIterable, Sendable {
+    case notRequired
+    case granted
+    case denied
+    case unavailable
+}
+
+public enum CapacityComparability: String, Codable, CaseIterable, Sendable {
+    case comparable
+    case incomparable
+    case unavailable
+}
+
+public struct CapacityFreshnessPolicy: Codable, Equatable, Sendable {
+    public let maximumAge: TimeInterval
+
+    public init(maximumAge: TimeInterval) {
+        self.maximumAge = max(0, maximumAge)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case maximumAge
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let maximumAge = try container.decode(TimeInterval.self, forKey: .maximumAge)
+        guard maximumAge.isFinite, maximumAge >= 0 else { throw CapacityContractError.invalidValue }
+        self.maximumAge = maximumAge
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        guard maximumAge.isFinite, maximumAge >= 0 else { throw CapacityContractError.invalidValue }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(maximumAge, forKey: .maximumAge)
+    }
+}
+
+public struct CapacityObservation: Codable, Equatable, Sendable {
+    public let seriesID: CapacitySeriesID
+    public let observedAt: Date
+    public let resetAt: Date?
+    public let cycleID: String?
+    public let value: CapacityValue
+    public let authority: CapacityAuthority
+    public let stability: CapacityStability
+    public let consent: CapacityConsent
+    public let freshnessPolicy: CapacityFreshnessPolicy
+    public let comparability: CapacityComparability
+    public let parserRevision: String
+
+    public init(seriesID: CapacitySeriesID, observedAt: Date, resetAt: Date? = nil, value: CapacityValue, authority: CapacityAuthority, stability: CapacityStability, consent: CapacityConsent = .notRequired, freshnessPolicy: CapacityFreshnessPolicy, comparability: CapacityComparability, parserRevision: String, now: Date) throws {
+        try self.init(seriesID: seriesID, observedAt: observedAt, resetAt: resetAt, cycleID: nil, value: value, authority: authority, stability: stability, consent: consent, freshnessPolicy: freshnessPolicy, comparability: comparability, parserRevision: parserRevision)
+        try validateAdmission(now: now)
+    }
+
+    private init(seriesID: CapacitySeriesID, observedAt: Date, resetAt: Date?, cycleID decodedCycleID: String?, value: CapacityValue, authority: CapacityAuthority, stability: CapacityStability, consent: CapacityConsent, freshnessPolicy: CapacityFreshnessPolicy, comparability: CapacityComparability, parserRevision: String) throws {
+        try value.validate()
+        guard value.kind == seriesID.unit else { throw CapacityContractError.invalidValue }
+        guard resetAt == nil || seriesID.supportsReset else { throw CapacityContractError.invalidReset }
+
+        let derivedCycleID = Self.cycleID(seriesID: seriesID, resetAt: resetAt)
+        if let decodedCycleID {
+            guard !decodedCycleID.isEmpty, decodedCycleID == derivedCycleID else { throw CapacityContractError.invalidReset }
+        }
+        guard !parserRevision.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CapacityContractError.invalidValue
+        }
+
+        self.seriesID = seriesID
+        self.observedAt = observedAt
+        self.resetAt = resetAt
+        self.cycleID = derivedCycleID
+        self.value = value
+        self.authority = authority
+        self.stability = stability
+        self.consent = consent
+        self.freshnessPolicy = freshnessPolicy
+        self.comparability = comparability
+        self.parserRevision = parserRevision
+    }
+
+    public func validateAdmission(now: Date) throws {
+        guard observedAt <= now.addingTimeInterval(60) else { throw CapacityContractError.futureObservation }
+        guard observedAt >= now.addingTimeInterval(-45 * 24 * 60 * 60) else { throw CapacityContractError.expiredObservation }
+    }
+
+    private static func cycleID(seriesID: CapacitySeriesID, resetAt: Date?) -> String? {
+        resetAt.map { "\(seriesID.canonicalID)/\(Int($0.timeIntervalSince1970))" }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case seriesID
+        case observedAt
+        case resetAt
+        case cycleID
+        case value
+        case authority
+        case stability
+        case consent
+        case freshnessPolicy
+        case comparability
+        case parserRevision
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            seriesID: try container.decode(CapacitySeriesID.self, forKey: .seriesID),
+            observedAt: try container.decode(Date.self, forKey: .observedAt),
+            resetAt: try container.decodeIfPresent(Date.self, forKey: .resetAt),
+            cycleID: try container.decodeIfPresent(String.self, forKey: .cycleID),
+            value: try container.decode(CapacityValue.self, forKey: .value),
+            authority: try container.decode(CapacityAuthority.self, forKey: .authority),
+            stability: try container.decode(CapacityStability.self, forKey: .stability),
+            consent: try container.decodeIfPresent(CapacityConsent.self, forKey: .consent) ?? .notRequired,
+            freshnessPolicy: try container.decode(CapacityFreshnessPolicy.self, forKey: .freshnessPolicy),
+            comparability: try container.decode(CapacityComparability.self, forKey: .comparability),
+            parserRevision: try container.decode(String.self, forKey: .parserRevision)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try value.validate()
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(seriesID, forKey: .seriesID)
+        try container.encode(observedAt, forKey: .observedAt)
+        try container.encodeIfPresent(resetAt, forKey: .resetAt)
+        try container.encodeIfPresent(cycleID, forKey: .cycleID)
+        try container.encode(value, forKey: .value)
+        try container.encode(authority, forKey: .authority)
+        try container.encode(stability, forKey: .stability)
+        try container.encode(consent, forKey: .consent)
+        try container.encode(freshnessPolicy, forKey: .freshnessPolicy)
+        try container.encode(comparability, forKey: .comparability)
+        try container.encode(parserRevision, forKey: .parserRevision)
+    }
+}
+
+public enum CapacityFreshness: String, Codable, Equatable, Sendable {
+    case fresh
+    case stale
+    case unavailable
+}
+
+public enum CapacityEligibilityReason: String, Codable, Equatable, Sendable {
+    case eligible
+    case unsupportedSource
+    case manualSource
+    case staleEvidence
+    case activityOnly
+    case invalidEvidence
+    case pendingBalanceBinding
+}
+
+public enum CapacityRisk: String, Codable, Equatable, Sendable {
+    case normal
+    case warning
+    case critical
+    case informational
+    case stale
+    case unavailable
+}
+
+public enum CapacityAlertEligibility: String, Codable, Equatable, Sendable {
+    case percent
+    case balance
+    case ineligible
+}
+
+public enum CapacityForecastAvailability: String, Codable, Equatable, Sendable {
+    case unavailableUnsupportedSource
+    case unavailableEvidence
+    case unavailableSource
+    case unavailableUnit
+    case cohortOnly
+}
+
+public enum CapacityActionKey: String, Codable, Equatable, Sendable {
+    case waitForReset
+    case refreshProvider
+    case reviewSource
+    case reviewExperimentalConnector
+    case enterManualValue
+    case reviewBalance
+    case openProviderDiagnostics
+}
+
+public struct CapacityAssessment: Codable, Equatable, Sendable {
+    public let observation: CapacityObservation
+    public let freshness: CapacityFreshness
+    public let eligibilityReason: CapacityEligibilityReason
+    public let risk: CapacityRisk
+    public let alertEligibility: CapacityAlertEligibility
+    public let forecast: CapacityForecastAvailability
+    public let actionKey: CapacityActionKey
+    public let transitionKey: String
+    public init(observation: CapacityObservation, freshness: CapacityFreshness, eligibilityReason: CapacityEligibilityReason, risk: CapacityRisk, alertEligibility: CapacityAlertEligibility, forecast: CapacityForecastAvailability, actionKey: CapacityActionKey, transitionKey: String) {
+        self.observation = observation
+        self.freshness = freshness
+        self.eligibilityReason = eligibilityReason
+        self.risk = risk
+        self.alertEligibility = alertEligibility
+        self.forecast = forecast
+        self.actionKey = actionKey
+        self.transitionKey = transitionKey
+    }
+}
+
+public struct CapacityRuntimeControl: Codable, Equatable, Sendable {
+    public let schemaVersion: Int
+    public let assessmentEnabled: Bool
+    public init(schemaVersion: Int = 1, assessmentEnabled: Bool = true) {
+        self.schemaVersion = schemaVersion
+        self.assessmentEnabled = assessmentEnabled
+    }
+}
+
+public enum CapacityAlertPercentThreshold: String, Codable, CaseIterable, Sendable {
+    case reset
+    case fifty
+    case eighty
+    case hundred
+}
+
+public enum CapacityAlertConditionKind: String, Codable, CaseIterable, Sendable {
+    case percentThresholds
+    case balanceBelow
+    case pendingBalanceCurrencyBinding
+}
+
+public struct CapacityAlertCondition: Codable, Equatable, Sendable {
+    private enum Storage: Equatable, Sendable {
+        case percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool)
+        case balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool)
+        case pendingBalanceCurrencyBinding
+    }
+
+    private let storage: Storage
+
+    public var kind: CapacityAlertConditionKind {
+        switch storage {
+        case .percentThresholds: .percentThresholds
+        case .balanceBelow: .balanceBelow
+        case .pendingBalanceCurrencyBinding: .pendingBalanceCurrencyBinding
+        }
+    }
+
+    public var enabledPercentThresholds: Set<CapacityAlertPercentThreshold> {
+        guard case let .percentThresholds(reset, fifty, eighty, hundred) = storage else { return [] }
+        var thresholds: Set<CapacityAlertPercentThreshold> = []
+        if reset { thresholds.insert(.reset) }
+        if fifty { thresholds.insert(.fifty) }
+        if eighty { thresholds.insert(.eighty) }
+        if hundred { thresholds.insert(.hundred) }
+        return thresholds
+    }
+
+    public var balanceThreshold: Decimal? {
+        guard case let .balanceBelow(threshold, _, _) = storage else { return nil }
+        return threshold
+    }
+
+    public var balanceCurrency: String? {
+        guard case let .balanceBelow(_, currency, _) = storage else { return nil }
+        return currency
+    }
+
+    public var rearmAtOrAboveThreshold: Bool? {
+        guard case let .balanceBelow(_, _, rearmAtOrAboveThreshold) = storage else { return nil }
+        return rearmAtOrAboveThreshold
+    }
+
+    private init(storage: Storage) {
+        self.storage = storage
+    }
+
+    public static func percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool) -> CapacityAlertCondition {
+        CapacityAlertCondition(storage: .percentThresholds(reset: reset, fifty: fifty, eighty: eighty, hundred: hundred))
+    }
+
+    public static func balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool) throws -> CapacityAlertCondition {
+        guard threshold >= 0, CapacityValidation.isValidCurrencyCode(currency) else {
+            throw CapacityContractError.invalidCondition
+        }
+        return CapacityAlertCondition(storage: .balanceBelow(threshold: threshold, currency: currency, rearmAtOrAboveThreshold: rearmAtOrAboveThreshold))
+    }
+
+    public static var pendingBalanceCurrencyBinding: CapacityAlertCondition {
+        CapacityAlertCondition(storage: .pendingBalanceCurrencyBinding)
+    }
+
+    private static func decodeCanonicalDecimal(from container: KeyedDecodingContainer<AssociatedValueKeys>, forKey key: AssociatedValueKeys) throws -> Decimal {
+        if let string = try? container.decode(String.self, forKey: key),
+           let decimal = Decimal(string: string, locale: Locale(identifier: "en_US_POSIX")) {
+            return decimal
+        }
+        return try container.decode(Decimal.self, forKey: key)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case percentThresholds
+        case balanceBelow
+        case pendingBalanceCurrencyBinding
+    }
+
+    private enum AssociatedValueKeys: String, CodingKey {
+        case reset
+        case fifty
+        case eighty
+        case hundred
+        case threshold
+        case currency
+        case rearmAtOrAboveThreshold
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw CapacityContractError.invalidCondition
+        }
+
+        switch key {
+        case .percentThresholds:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
+            self = .percentThresholds(
+                reset: try nested.decodeIfPresent(Bool.self, forKey: .reset) ?? false,
+                fifty: try nested.decodeIfPresent(Bool.self, forKey: .fifty) ?? false,
+                eighty: try nested.decodeIfPresent(Bool.self, forKey: .eighty) ?? false,
+                hundred: try nested.decodeIfPresent(Bool.self, forKey: .hundred) ?? false
+            )
+        case .balanceBelow:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balanceBelow)
+            self = try .balanceBelow(
+                threshold: try Self.decodeCanonicalDecimal(from: nested, forKey: .threshold),
+                currency: try nested.decode(String.self, forKey: .currency),
+                rearmAtOrAboveThreshold: try nested.decodeIfPresent(Bool.self, forKey: .rearmAtOrAboveThreshold) ?? true
+            )
+        case .pendingBalanceCurrencyBinding:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .pendingBalanceCurrencyBinding)
+            guard nested.allKeys.isEmpty else { throw CapacityContractError.invalidCondition }
+            self = .pendingBalanceCurrencyBinding
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch storage {
+        case let .percentThresholds(reset, fifty, eighty, hundred):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
+            try nested.encode(reset, forKey: .reset)
+            try nested.encode(fifty, forKey: .fifty)
+            try nested.encode(eighty, forKey: .eighty)
+            try nested.encode(hundred, forKey: .hundred)
+        case let .balanceBelow(threshold, currency, rearmAtOrAboveThreshold):
+            guard threshold >= 0, CapacityValidation.isValidCurrencyCode(currency) else {
+                throw CapacityContractError.invalidCondition
+            }
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balanceBelow)
+            try nested.encode(CapacityCanonical.thresholdCanonical(threshold), forKey: .threshold)
+            try nested.encode(currency, forKey: .currency)
+            try nested.encode(rearmAtOrAboveThreshold, forKey: .rearmAtOrAboveThreshold)
+        case .pendingBalanceCurrencyBinding:
+            _ = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .pendingBalanceCurrencyBinding)
+        }
+    }
+}
+
+public struct CapacityAlertRouting: Codable, Equatable, Sendable {
+    public var macOS: Bool
+    public var telegram: Bool
+    public var discord: Bool
+    public init(macOS: Bool = true, telegram: Bool = false, discord: Bool = false) {
+        self.macOS = macOS; self.telegram = telegram; self.discord = discord
+    }
+}
+
+public enum CapacityAlertChannel: String, Codable, CaseIterable, Sendable { case macOS, telegram, discord }
+public enum CapacityAlertDeliveryStatus: String, Codable, Equatable, Sendable { case idle, pending, delivered, failed }
+
+public struct CapacityAlertDeliveryKey: Codable, Equatable, Hashable, Sendable, CustomStringConvertible {
+    public let ruleID: String
+    public let conditionRevision: Int
+    public let channel: CapacityAlertChannel
+
+    public var description: String {
+        "\(ruleID)/revision-\(conditionRevision)/\(channel.rawValue)"
+    }
+
+    public init(ruleID: String, conditionRevision: Int, channel: CapacityAlertChannel) throws {
+        guard ruleID == ruleID.trimmingCharacters(in: .whitespacesAndNewlines),
+              !ruleID.isEmpty,
+              conditionRevision > 0 else {
+            throw CapacityContractError.invalidDeliveryKey
+        }
+        self.ruleID = ruleID
+        self.conditionRevision = conditionRevision
+        self.channel = channel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case ruleID
+        case conditionRevision
+        case channel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            ruleID: try container.decode(String.self, forKey: .ruleID),
+            conditionRevision: try container.decode(Int.self, forKey: .conditionRevision),
+            channel: try container.decode(CapacityAlertChannel.self, forKey: .channel)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        guard conditionRevision > 0, !ruleID.isEmpty else { throw CapacityContractError.invalidDeliveryKey }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ruleID, forKey: .ruleID)
+        try container.encode(conditionRevision, forKey: .conditionRevision)
+        try container.encode(channel, forKey: .channel)
+    }
+}
+
+public enum CapacityAlertConditionState: Codable, Equatable, Sendable {
+    case percent(activeCycleID: String?, lastUsed: Int?, deliveredThresholds: Set<CapacityAlertPercentThreshold>)
+    case balance(lastKnownBelow: Bool?, crossingGeneration: Int, deliveredCrossingGeneration: Int?)
+
+    public var kind: CapacityAlertConditionKind {
+        switch self {
+        case .percent: .percentThresholds
+        case .balance: .balanceBelow
+        }
+    }
+
+    fileprivate func validate() throws {
+        switch self {
+        case let .percent(activeCycleID, lastUsed, _):
+            guard activeCycleID?.isEmpty != true else { throw CapacityContractError.invalidDeliveryState }
+            if let lastUsed {
+                guard (0...100).contains(lastUsed) else { throw CapacityContractError.invalidDeliveryState }
+            }
+        case let .balance(_, crossingGeneration, deliveredCrossingGeneration):
+            guard crossingGeneration >= 0 else { throw CapacityContractError.invalidDeliveryState }
+            if let deliveredCrossingGeneration {
+                guard deliveredCrossingGeneration >= 0,
+                      deliveredCrossingGeneration <= crossingGeneration else {
+                    throw CapacityContractError.invalidDeliveryState
+                }
+            }
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case percent
+        case balance
+    }
+
+    private enum AssociatedValueKeys: String, CodingKey {
+        case activeCycleID
+        case lastUsed
+        case deliveredThresholds
+        case lastKnownBelow
+        case crossingGeneration
+        case deliveredCrossingGeneration
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard container.allKeys.count == 1, let key = container.allKeys.first else {
+            throw CapacityContractError.invalidDeliveryState
+        }
+
+        switch key {
+        case .percent:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percent)
+            self = .percent(
+                activeCycleID: try nested.decodeIfPresent(String.self, forKey: .activeCycleID),
+                lastUsed: try nested.decodeIfPresent(Int.self, forKey: .lastUsed),
+                deliveredThresholds: try nested.decodeIfPresent(Set<CapacityAlertPercentThreshold>.self, forKey: .deliveredThresholds) ?? []
+            )
+        case .balance:
+            let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balance)
+            self = .balance(
+                lastKnownBelow: try nested.decodeIfPresent(Bool.self, forKey: .lastKnownBelow),
+                crossingGeneration: try nested.decode(Int.self, forKey: .crossingGeneration),
+                deliveredCrossingGeneration: try nested.decodeIfPresent(Int.self, forKey: .deliveredCrossingGeneration)
+            )
+        }
+        try validate()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try validate()
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case let .percent(activeCycleID, lastUsed, deliveredThresholds):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percent)
+            try nested.encodeIfPresent(activeCycleID, forKey: .activeCycleID)
+            try nested.encodeIfPresent(lastUsed, forKey: .lastUsed)
+            try nested.encode(deliveredThresholds.sorted { $0.rawValue < $1.rawValue }, forKey: .deliveredThresholds)
+        case let .balance(lastKnownBelow, crossingGeneration, deliveredCrossingGeneration):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balance)
+            try nested.encodeIfPresent(lastKnownBelow, forKey: .lastKnownBelow)
+            try nested.encode(crossingGeneration, forKey: .crossingGeneration)
+            try nested.encodeIfPresent(deliveredCrossingGeneration, forKey: .deliveredCrossingGeneration)
+        }
+    }
+}
+
+public struct CapacityAlertDeliveryState: Codable, Equatable, Sendable {
+    public var key: CapacityAlertDeliveryKey
+    public var status: CapacityAlertDeliveryStatus
+    public var lastAttemptAt: Date?
+    public var lastSuccessAt: Date?
+    public var conditionState: CapacityAlertConditionState
+
+    public init(key: CapacityAlertDeliveryKey, status: CapacityAlertDeliveryStatus = .idle, lastAttemptAt: Date? = nil, lastSuccessAt: Date? = nil, conditionState: CapacityAlertConditionState) throws {
+        try conditionState.validate()
+        self.key = key
+        self.status = status
+        self.lastAttemptAt = lastAttemptAt
+        self.lastSuccessAt = lastSuccessAt
+        self.conditionState = conditionState
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case key
+        case status
+        case lastAttemptAt
+        case lastSuccessAt
+        case conditionState
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            key: try container.decode(CapacityAlertDeliveryKey.self, forKey: .key),
+            status: try container.decodeIfPresent(CapacityAlertDeliveryStatus.self, forKey: .status) ?? .idle,
+            lastAttemptAt: try container.decodeIfPresent(Date.self, forKey: .lastAttemptAt),
+            lastSuccessAt: try container.decodeIfPresent(Date.self, forKey: .lastSuccessAt),
+            conditionState: try container.decode(CapacityAlertConditionState.self, forKey: .conditionState)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try conditionState.validate()
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(key, forKey: .key)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(lastAttemptAt, forKey: .lastAttemptAt)
+        try container.encodeIfPresent(lastSuccessAt, forKey: .lastSuccessAt)
+        try container.encode(conditionState, forKey: .conditionState)
+    }
+}
+
+public struct CapacityAlertRule: Codable, Equatable, Sendable, Identifiable {
+    public let provider: Provider
+    public let seriesID: CapacitySeriesID
+    public let authority: CapacityAuthority
+    public let stability: CapacityStability
+    public var enabled: Bool
+    public var routing: CapacityAlertRouting
+    public var conditionRevision: Int
+    public var condition: CapacityAlertCondition
+    public var id: String { [provider.rawValue, seriesID.canonicalID, condition.kind.rawValue, authority.rawValue, stability.rawValue].joined(separator: "/") }
+
+    public init(provider: Provider, seriesID: CapacitySeriesID, authority: CapacityAuthority, stability: CapacityStability, enabled: Bool, routing: CapacityAlertRouting, conditionRevision: Int = 1, condition: CapacityAlertCondition) throws {
+        guard conditionRevision > 0 else { throw CapacityContractError.invalidRule }
+        try Self.validate(provider: provider, seriesID: seriesID, authority: authority, stability: stability, condition: condition)
+
+        self.provider = provider
+        self.seriesID = seriesID
+        self.authority = authority
+        self.stability = stability
+        self.enabled = condition.kind == .pendingBalanceCurrencyBinding ? false : enabled
+        self.routing = routing
+        self.conditionRevision = conditionRevision
+        self.condition = condition
+    }
+
+    public var isPendingBalanceBinding: Bool {
+        condition.kind == .pendingBalanceCurrencyBinding
+    }
+
+    private static func validate(provider: Provider, seriesID: CapacitySeriesID, authority: CapacityAuthority, stability: CapacityStability, condition: CapacityAlertCondition) throws {
+        guard provider == seriesID.provider else { throw CapacityContractError.invalidRule }
+        guard authority == .providerReported, stability == .supported else { throw CapacityContractError.invalidRule }
+
+        switch condition.kind {
+        case .percentThresholds:
+            guard seriesID.unit == .percent else { throw CapacityContractError.invalidRule }
+            if condition.enabledPercentThresholds.contains(.reset) {
+                guard seriesID.supportsReset else { throw CapacityContractError.invalidRule }
+            }
+        case .balanceBelow, .pendingBalanceCurrencyBinding:
+            guard seriesID.kind == .balance, seriesID.unit == .currency else { throw CapacityContractError.invalidRule }
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case provider
+        case seriesID
+        case authority
+        case stability
+        case enabled
+        case routing
+        case conditionRevision
+        case condition
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            provider: try container.decode(Provider.self, forKey: .provider),
+            seriesID: try container.decode(CapacitySeriesID.self, forKey: .seriesID),
+            authority: try container.decode(CapacityAuthority.self, forKey: .authority),
+            stability: try container.decode(CapacityStability.self, forKey: .stability),
+            enabled: try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false,
+            routing: try container.decodeIfPresent(CapacityAlertRouting.self, forKey: .routing) ?? CapacityAlertRouting(),
+            conditionRevision: try container.decode(Int.self, forKey: .conditionRevision),
+            condition: try container.decode(CapacityAlertCondition.self, forKey: .condition)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        try Self.validate(provider: provider, seriesID: seriesID, authority: authority, stability: stability, condition: condition)
+        guard conditionRevision > 0 else { throw CapacityContractError.invalidRule }
+
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(provider, forKey: .provider)
+        try container.encode(seriesID, forKey: .seriesID)
+        try container.encode(authority, forKey: .authority)
+        try container.encode(stability, forKey: .stability)
+        try container.encode(condition.kind == .pendingBalanceCurrencyBinding ? false : enabled, forKey: .enabled)
+        try container.encode(routing, forKey: .routing)
+        try container.encode(conditionRevision, forKey: .conditionRevision)
+        try container.encode(condition, forKey: .condition)
+    }
+}
+
+public extension CapacityAlertDeliveryKey {
+    init(rule: CapacityAlertRule, channel: CapacityAlertChannel) {
+        self.ruleID = rule.id
+        self.conditionRevision = rule.conditionRevision
+        self.channel = channel
     }
 }

@@ -42,6 +42,10 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
     @Published var exportFormat: UsageExportFormat = .json
+    @Published var capacityAssessments: [CapacityAssessment] = []
+    @Published var capacityPresentations: [CapacityPresentation] = []
+    @Published var capacityRefreshErrors: [CapacityRefreshError] = []
+    @Published var capacityRuntimeRecoveryRequired = false
     @Published var bannerMessage: String?
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
@@ -75,6 +79,14 @@ final class TokenPilotViewModel: ObservableObject {
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
+    private let capacityEvidenceStore = CapacityEvidenceStore()
+    private let capacityRuntimeStore = CapacityRuntimeStore()
+    private let capacityAlertRuleStore = CapacityAlertRuleStore()
+    private let capacityAlertDeliveryStore = CapacityAlertDeliveryStore()
+    private let capacityAlertMigrationCoordinator = CapacityAlertLegacyMigrationCoordinator()
+    private let capacityAssessmentService = CapacityAssessmentService()
+    private let capacityPresentationMapper = CapacityPresentationMapper()
+    private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
     private let menuBarTickInterval: TimeInterval = 1
     private let dataRefreshInterval: TimeInterval = 5
     private let settingsSaveDebounceNanoseconds: UInt64 = 350_000_000
@@ -87,7 +99,7 @@ final class TokenPilotViewModel: ObservableObject {
     private var settingsRefreshTask: Task<Void, Never>?
 
     init() {
-        let loaded = settingsStore.load()
+        let loaded = ProcessInfo.processInfo.environment["TOKENPILOT_UI_TESTING"] == "1" ? AppSettings() : settingsStore.load()
         self.settings = loaded
         self.challengeTargetTokens = loaded.challengeTargetTokens
         self.hasSavedTelegramToken = false
@@ -102,6 +114,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func refreshStoredCredentialPresence() {
+        guard ProcessInfo.processInfo.environment["TOKENPILOT_UI_TESTING"] != "1" else { return }
         Task {
             hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
             hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
@@ -357,12 +370,56 @@ final class TokenPilotViewModel: ObservableObject {
         snapshots = result.snapshots
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData)
         rebuildUsageFromHistory(using: result.snapshots)
+        await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {
             scheduleSettingsDrivenRefresh()
         }
-        let events = notificationRuleService.evaluate(snapshots: result.snapshots, settings: settingsAtStart, language: settings.localization.language)
-        await deliver(events)
+    }
+    private func processCapacity(result: UsageStore.Result, settingsAtStart: AppSettings) async {
+        capacityRefreshErrors = result.capacityErrors
+
+        if !result.capacityObservations.isEmpty {
+            _ = await capacityEvidenceStore.record(result.capacityObservations)
+        }
+
+        let runtimeLoad = await capacityRuntimeStore.load()
+        capacityRuntimeRecoveryRequired = runtimeLoad.recoveryStatus.recoveryRequired
+
+        let presentationEnabled = runtimeLoad.control.assessmentEnabled && !runtimeLoad.recoveryStatus.recoveryRequired
+        let assessments = presentationEnabled
+            ? result.capacityObservations.map { capacityAssessmentService.assess($0, now: result.observedAt) }
+            : []
+        capacityAssessments = assessments
+        capacityPresentations = presentationEnabled ? assessments.map(capacityPresentationMapper.map) : []
+
+        let officialDeepSeekBalance = result.snapshots.first {
+            $0.provider == .deepseek && $0.dataSource == .officialTelemetry && !$0.isStale
+        }?.balance
+        _ = await capacityAlertMigrationCoordinator.migrate(settings: settingsAtStart, deepSeekBalance: officialDeepSeekBalance)
+
+        let rulesLoad = await capacityAlertRuleStore.load()
+        let deliveryLoad = await capacityAlertDeliveryStore.load()
+        let channels = CapacityAlertChannelSettings(
+            settings: settingsAtStart,
+            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
+        let transition = capacityAlertTransitionEngine.evaluate(
+            rules: rulesLoad.rules,
+            assessments: assessments,
+            previousStates: deliveryLoad.states,
+            channels: channels,
+            runtime: runtimeLoad.control,
+            rulesReadable: !runtimeLoad.recoveryStatus.recoveryRequired && rulesLoad.deliveryEnabled,
+            deliveryReadable: !runtimeLoad.recoveryStatus.recoveryRequired && deliveryLoad.deliveryEnabled,
+            now: result.observedAt
+        )
+
+        guard !transition.deliveryBlocked else { return }
+        let outcomes = await deliverCapacity(transition.attempts)
+        let updatedStates = capacityAlertTransitionEngine.applyingDeliveryOutcomes(outcomes, to: transition.states)
+        _ = await capacityAlertDeliveryStore.save(updatedStates)
     }
 
     private func rebuildUsageFromHistory(using currentSnapshots: [ProviderSnapshot]) {
@@ -414,16 +471,22 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sendTestNotification() async {
+        guard settings.globalNotificationsEnabled else {
+            bannerMessage = t("No notification channel is enabled or configured.")
+            return
+        }
+
         do {
             let hasStoredTelegramToken = hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasStoredDiscordWebhook = hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let hasTelegramChatID = !settings.telegram.chatID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             var sentChannelCount = 0
 
-            if settings.macOSNotificationsEnabled {
+            if settings.globalNotificationsEnabled && settings.macOSNotificationsEnabled {
                 try await localNotificationService.send(title: t("TokenPilot"), body: t("✅ TokenPilot test alert. macOS notifications are connected."))
                 sentChannelCount += 1
             }
-            if settings.globalNotificationsEnabled && settings.telegramNotificationsEnabled && settings.telegram.isEnabled && hasStoredTelegramToken {
+            if settings.globalNotificationsEnabled && settings.telegramNotificationsEnabled && settings.telegram.isEnabled && hasStoredTelegramToken && hasTelegramChatID {
                 try await sendTelegram(text: t("✅ TokenPilot test alert. Telegram notifications are connected."))
                 sentChannelCount += 1
             }
@@ -674,7 +737,8 @@ final class TokenPilotViewModel: ObservableObject {
                 usage: historyUsage,
                 snapshots: filteredSnapshots,
                 dataMode: dataSourceMode.displayLabel,
-                format: exportFormat
+                format: exportFormat,
+                capacityAssessments: capacityAssessments
             )
             let panel = NSSavePanel()
             panel.allowedContentTypes = [exportFormat == .json ? .json : .commaSeparatedText]
@@ -901,6 +965,82 @@ final class TokenPilotViewModel: ObservableObject {
         try await discordService.sendMessage(webhookURL: webhookURL, content: text)
     }
 
+    private func deliverCapacity(_ attempts: [CapacityAlertDeliveryAttempt]) async -> [CapacityAlertDeliveryOutcome] {
+        guard !attempts.isEmpty else { return [] }
+        var outcomes: [CapacityAlertDeliveryOutcome] = []
+        for attempt in attempts {
+            let message = capacityAlertMessage(for: attempt)
+            let succeeded: Bool
+            do {
+                switch attempt.key.channel {
+                case .macOS:
+                    try await localNotificationService.send(title: message.title, body: message.body)
+                case .telegram:
+                    try await sendTelegram(text: message.body)
+                case .discord:
+                    try await sendDiscord(text: message.body)
+                }
+                succeeded = true
+            } catch {
+                succeeded = false
+            }
+            outcomes.append(CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: succeeded, completedAt: Date()))
+        }
+        return outcomes
+    }
+
+    private func capacityAlertMessage(for attempt: CapacityAlertDeliveryAttempt) -> (title: String, body: String) {
+        let provider = t(attempt.provider.displayName)
+        let window = capacityWindowDisplayName(for: attempt.seriesID)
+
+        if let currency = attempt.balanceCurrency, let threshold = attempt.balanceThresholdCanonical {
+            return (
+                title: String(format: t("capacity.notification.title"), provider),
+                body: String(format: t("capacity.notification.balance.body"), provider, threshold, currency)
+            )
+        }
+
+        if attempt.threshold == .reset {
+            return (
+                title: String(format: t("capacity.notification.reset.title"), provider),
+                body: String(format: t("capacity.notification.reset.body"), provider, window)
+            )
+        }
+
+        let used = attempt.usedPercent.map(String.init) ?? "--"
+        return (
+            title: String(format: t("capacity.notification.title"), provider),
+            body: String(format: t("capacity.notification.percent.body"), provider, window, used)
+        )
+    }
+
+    private func capacityWindowDisplayName(for seriesID: CapacitySeriesID) -> String {
+        if let durationMinutes = seriesID.durationMinutes {
+            switch durationMinutes {
+            case 300: return t("5-hour window")
+            case 1_440: return t("Daily requests")
+            case 10_080: return t("Weekly window")
+            default: break
+            }
+        }
+
+        switch seriesID.providerWindowID {
+        case "five-hour":
+            return t("5-hour window")
+        case "seven-day":
+            return t("Weekly window")
+        case "daily-requests":
+            return t("Daily requests")
+        case "rolling", "primary", "secondary":
+            return t("Rolling window")
+        case "balance":
+            return t("Balance")
+        case "context":
+            return t("Context")
+        default:
+            return t("Limit")
+        }
+    }
     private func deliver(_ events: [AlertEvent]) async {
         guard !events.isEmpty else { return }
         let hasStoredTelegramToken = hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty

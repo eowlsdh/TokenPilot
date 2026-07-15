@@ -8,27 +8,56 @@ struct ProviderSetupCard<Content: View>: View {
     let statusColor: Color
     let detail: String
     @ViewBuilder var content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+
+    @State private var isExpanded = false
 
     var body: some View {
         GlassCard(padding: 12) {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 10) {
-                    ProviderSignatureMark(provider: provider, size: 30)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .font(.system(size: 13, weight: .semibold, design: .rounded))
-                            .foregroundStyle(TokenPilotDesign.textPrimary)
-                        Text(detail)
-                            .font(.system(size: 10, design: .monospaced))
+                Button {
+                    toggleExpanded()
+                } label: {
+                    HStack(alignment: .center, spacing: 10) {
+                        ProviderSignatureMark(provider: provider, size: 30)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(title)
+                                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                                .foregroundStyle(TokenPilotDesign.textPrimary)
+                            Text(detail)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        Spacer(minLength: 0)
+                        StatusBadge(label: status, color: statusColor)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     }
-                    Spacer(minLength: 0)
-                    StatusBadge(label: status, color: statusColor)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(title), \(status)")
+                .accessibilityValue(detail)
 
-                content
+                if isExpanded {
+                    content
+                        .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+    }
+
+    private func toggleExpanded() {
+        if reduceMotion {
+            isExpanded.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.toggle()
             }
         }
     }
@@ -116,7 +145,12 @@ struct ProviderSnapshotCard: View {
                 value: remainingPercentText(window.remainingPercent),
                 detail: limitDetail(window)
             )
-            ProgressLine(percent: window.remainingPercent, color: TokenPilotDesign.riskColor(window.usedPercent))
+            ProgressLine(
+                percent: window.remainingPercent,
+                color: TokenPilotDesign.riskColor(window.usedPercent),
+                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized(window.label, language: language)) \(localized("Remaining capacity", language: language))",
+                accessibilityValue: progressAccessibilityValue(window.remainingPercent)
+            )
         }
     }
 
@@ -130,7 +164,12 @@ struct ProviderSnapshotCard: View {
                 value: "\(TokenPilotFormatters.compactNumber(remaining)) / \(TokenPilotFormatters.compactNumber(limit))",
                 detail: String(format: localized("Remaining %d%%", language: language), remainingPercent)
             )
-            ProgressLine(percent: remainingPercent, color: TokenPilotDesign.riskColor(usedPercent))
+            ProgressLine(
+                percent: remainingPercent,
+                color: TokenPilotDesign.riskColor(usedPercent),
+                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized("Daily", language: language)) \(localized("Remaining capacity", language: language))",
+                accessibilityValue: progressAccessibilityValue(remainingPercent)
+            )
         }
     }
 
@@ -168,6 +207,11 @@ struct ProviderSnapshotCard: View {
         return "\(percent)%"
     }
 
+    private func progressAccessibilityValue(_ percent: Int?) -> String {
+        guard let percent else { return localized("Unavailable", language: language) }
+        return String(format: localized("Remaining %d%%", language: language), percent)
+    }
+
     private var shouldShowEstimatedLabel: Bool {
         snapshot.provider == .codex || snapshot.confidence == .manual
     }
@@ -202,8 +246,10 @@ struct ProviderSnapshotCard: View {
 struct ProviderSignatureMark: View {
     let provider: Provider
     var size: CGFloat = 28
+    var decorative: Bool = true
     @State private var isVisible = false
     @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -230,11 +276,20 @@ struct ProviderSignatureMark: View {
         .frame(width: size, height: size)
         .scaleEffect(isVisible ? 1 : 0.92)
         .onAppear {
+            reveal()
+        }
+        .accessibilityHidden(decorative)
+        .accessibilityLabel(TokenPilotLocalizer.localized(provider.displayName, language: language))
+    }
+
+    private func reveal() {
+        if reduceMotion {
+            isVisible = true
+        } else {
             withAnimation(.spring(response: 0.72, dampingFraction: 0.78).delay(provider.startupDelay)) {
                 isVisible = true
             }
         }
-        .accessibilityLabel(TokenPilotLocalizer.localized(provider.displayName, language: language))
     }
 
     @ViewBuilder
@@ -300,6 +355,7 @@ struct ProviderSignatureMark: View {
 
 struct TokenPilotBrandMark: View {
     @State private var isVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -319,8 +375,12 @@ struct TokenPilotBrandMark: View {
         }
         .frame(width: 24, height: 24)
         .onAppear {
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.74)) {
+            if reduceMotion {
                 isVisible = true
+            } else {
+                withAnimation(.spring(response: 0.7, dampingFraction: 0.74)) {
+                    isVisible = true
+                }
             }
         }
         .accessibilityHidden(true)
@@ -387,8 +447,13 @@ struct MetricRow: View {
 }
 
 struct ProgressLine: View {
+    @Environment(\.tokenPilotLanguage) private var language
+
     let percent: Int?
     let color: Color
+    var accessibilityLabel: String? = nil
+    var accessibilityValue: String? = nil
+    var isDecorative: Bool = false
 
     var body: some View {
         GeometryReader { geo in
@@ -401,12 +466,14 @@ struct ProgressLine: View {
             }
         }
         .frame(height: 4)
-        .accessibilityLabel(progressAssistiveText)
-        .accessibilityValue(progressAssistiveText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel ?? localized("Progress", language: language))
+        .accessibilityValue(accessibilityValue ?? progressAssistiveText)
+        .accessibilityHidden(isDecorative)
     }
 
     private var progressAssistiveText: String {
-        guard let percent else { return "--" }
+        guard let percent else { return localized("Unavailable", language: language) }
         return "\(percent)%"
     }
 
@@ -472,11 +539,42 @@ struct StatusBadge: View {
             )
             .foregroundStyle(color)
             .clipShape(Capsule())
+            .accessibilityLabel(label)
+    }
+}
+
+struct SemanticChip: View {
+    let label: String
+    var systemImage: String? = nil
+    var color: Color = TokenPilotDesign.trust
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 8, weight: .semibold))
+            }
+            Text(label)
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .foregroundStyle(color)
+        .background(TokenPilotDesign.neutralChip)
+        .overlay(
+            Capsule().stroke(color.opacity(0.22), lineWidth: 0.8)
+        )
+        .clipShape(Capsule())
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
     }
 }
 
 struct SevenDayBarChart: View {
     @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let bars: [DailyUsageBar]
 
     private let barTrackHeight: CGFloat = 72
@@ -583,7 +681,7 @@ struct SevenDayBarChart: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .animation(.spring(response: 0.5, dampingFraction: 0.8), value: orderedBars)
+        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: orderedBars)
     }
 
     private var summaryText: String {
@@ -595,11 +693,11 @@ struct SevenDayBarChart: View {
 
     private func barGradient(for bar: DailyUsageBar) -> LinearGradient {
         let ratio = ratio(for: bar)
-        let tint = TokenPilotDesign.calm.opacity(0.5 + 0.45 * ratio)
+        let tint = TokenPilotDesign.goal.opacity(0.42 + 0.34 * ratio)
         return LinearGradient(
             colors: [
                 tint,
-                TokenPilotDesign.riskColor(Int(ratio * 100)).opacity(0.85)
+                TokenPilotDesign.trust.opacity(0.72)
             ],
             startPoint: .top,
             endPoint: .bottom

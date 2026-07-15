@@ -35,6 +35,7 @@ private final class InMemoryKeychainBackend: KeychainBackend, @unchecked Sendabl
 private final class StubDeepSeekHTTPClient: DeepSeekBalanceHTTPClient, @unchecked Sendable {
     private let queue = DispatchQueue(label: "StubDeepSeekHTTPClient")
     private var responses: [(Data, Int)]
+    private var callCountValue = 0
 
     init(data: Data, statusCode: Int = 200) {
         self.responses = [(data, statusCode)]
@@ -45,7 +46,10 @@ private final class StubDeepSeekHTTPClient: DeepSeekBalanceHTTPClient, @unchecke
     }
 
     func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-        let responsePayload = queue.sync { responses.count > 1 ? responses.removeFirst() : responses[0] }
+        let responsePayload = queue.sync { () -> (Data, Int) in
+            callCountValue += 1
+            return responses.count > 1 ? responses.removeFirst() : responses[0]
+        }
         let response = HTTPURLResponse(
             url: request.url ?? URL(string: "https://api.deepseek.com/user/balance")!,
             statusCode: responsePayload.1,
@@ -53,6 +57,10 @@ private final class StubDeepSeekHTTPClient: DeepSeekBalanceHTTPClient, @unchecke
             headerFields: nil
         )!
         return (responsePayload.0, response)
+    }
+
+    func callCount() -> Int {
+        queue.sync { callCountValue }
     }
 }
 
@@ -192,6 +200,37 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(preview.snapshots.contains { $0.dataSource == .mock })
         XCTAssertTrue(preview.snapshots.contains { $0.todayTokens > 0 })
     }
+    func testUsageStoreCompositeRefreshInvokesCodexAndDeepSeekOnceWithCapacityObservations() async throws {
+        let codexResponse = """
+        {"id":2,"result":{"planType":"plus","rateLimits":{"primary":{"used_percent":42,"window_minutes":300,"resets_at":"2027-01-15T00:00:00Z"},"secondary":{"used_percent":18,"window_minutes":10080,"resets_at":1800000000}}}}
+        """.data(using: .utf8)!
+        let appServer = StubCodexAppServerRateLimitClient(data: codexResponse)
+        let codex = CodexWebUsageAdapter(appServerClient: appServer)
+
+        let deepSeekPayload = """
+        {"is_available":true,"balance_infos":[{"currency":"USD","total_balance":"12.34","granted_balance":"0","topped_up_balance":"12.34"}]}
+        """.data(using: .utf8)!
+        let deepSeekHTTP = StubDeepSeekHTTPClient(data: deepSeekPayload)
+        let keychain = KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+        try keychain.saveSecret("deepseek-test-key", account: "deepseek.apiKey")
+        let deepSeek = DeepSeekBalanceAdapter(httpClient: deepSeekHTTP, keychain: keychain)
+
+        var settings = AppSettings(showMockDataWhenDisconnected: false, monitoredProviders: MonitoredProviderSettings(enabledProviders: [.codex, .deepseek]))
+        settings.codexManual.webConnectorEnabled = true
+        settings.deepseekAPIKeyConfigured = true
+
+        let result = await UsageStore(refreshAdapters: [codex, deepSeek]).refresh(settings: settings)
+
+        XCTAssertEqual(await appServer.callCount(), 1)
+        XCTAssertEqual(deepSeekHTTP.callCount(), 1)
+        XCTAssertEqual(Set(result.snapshots.map(\.provider)), [.codex, .deepseek])
+        XCTAssertEqual(result.capacityErrors, [])
+        XCTAssertEqual(result.capacityObservations.filter { $0.seriesID.provider == .codex }.count, 2)
+        XCTAssertEqual(result.capacityObservations.filter { $0.seriesID.provider == .deepseek }.count, 1)
+        XCTAssertTrue(result.capacityObservations.allSatisfy { observation in
+            result.snapshots.contains { $0.provider == observation.seriesID.provider && $0.updatedAt == observation.observedAt }
+        })
+    }
 
     func testAggregationComputesRequiredMetrics() {
         let now = Date()
@@ -244,7 +283,9 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = ProviderSnapshot(
             provider: .codex,
             fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 21),
-            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34),
+            confidence: .manual,
+            dataSource: .manual
         )
 
         let summary = MenuBarStatusService().lowestRemainingSummary(snapshots: [snapshot], settings: AppSettings())
@@ -256,11 +297,15 @@ final class TokenPilotServicesTests: XCTestCase {
         let codex = ProviderSnapshot(
             provider: .codex,
             fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 21),
-            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34),
+            confidence: .manual,
+            dataSource: .manual
         )
         let claude = ProviderSnapshot(
             provider: .claude,
-            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 73)
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 73),
+            confidence: .high,
+            dataSource: .officialStatusline
         )
 
         let globalSummary = MenuBarStatusService().lowestRemainingSummary(snapshots: [codex, claude], settings: AppSettings())
@@ -273,11 +318,15 @@ final class TokenPilotServicesTests: XCTestCase {
         settings.claudeEnabled = false
         let disabledClaude = ProviderSnapshot(
             provider: .claude,
-            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 95)
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 95),
+            confidence: .high,
+            dataSource: .officialStatusline
         )
         let enabledCodex = ProviderSnapshot(
             provider: .codex,
-            weekly: LimitWindow(kind: .weekly, usedPercent: 34)
+            weekly: LimitWindow(kind: .weekly, usedPercent: 34),
+            confidence: .manual,
+            dataSource: .manual
         )
 
         let enabledSummary = MenuBarStatusService().lowestRemainingSummary(snapshots: [disabledClaude, enabledCodex], settings: settings)
@@ -833,6 +882,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.confidence, .high)
         XCTAssertEqual(snapshot.dataSource, .officialStatusline)
         XCTAssertEqual(snapshot.statusMessage, "Connected")
+        XCTAssertEqual(snapshot.contextWindowUsedPercent, 12)
         XCTAssertNil(snapshot.dailyRequestsUsed)
         XCTAssertNil(snapshot.dailyRequestsLimit)
         XCTAssertEqual(snapshot.todayTokens, 400)
@@ -879,6 +929,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.dataSource, .officialStatusline)
+        XCTAssertEqual(snapshot.contextWindowUsedPercent, 8)
         XCTAssertEqual(snapshot.todayTokens, 149_318)
         XCTAssertEqual(snapshot.model, "Gemini Next")
         XCTAssertEqual(snapshot.events.count, 1)
@@ -1732,6 +1783,10 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.confidence, .high)
         XCTAssertEqual(snapshot.fiveHour?.usedPercent, 42)
         XCTAssertEqual(snapshot.weekly?.usedPercent, 18)
+        XCTAssertEqual(snapshot.fiveHour?.providerWindowID, "primary")
+        XCTAssertEqual(snapshot.fiveHour?.durationMinutes, 300)
+        XCTAssertEqual(snapshot.weekly?.providerWindowID, "secondary")
+        XCTAssertEqual(snapshot.weekly?.durationMinutes, 10_080)
         XCTAssertEqual(snapshot.fiveHour?.resetAt, ISO8601DateFormatter().date(from: "2027-01-15T00:00:00Z"))
         XCTAssertEqual(snapshot.model, "plus")
         XCTAssertEqual(snapshot.todayTokens, 0)
@@ -1742,6 +1797,37 @@ final class TokenPilotServicesTests: XCTestCase {
         let requestURL = await httpClient.requestURL()
         XCTAssertEqual(appServerCalls, 1)
         XCTAssertNil(requestURL)
+    }
+
+    func testCodexAppServerPreservesDynamicRollingWindowsForEvidenceAndMenu() async throws {
+        let referenceNow = Date(timeIntervalSince1970: 1_779_000_000)
+        let response = """
+        {"id":2,"result":{"planType":"plus","rateLimits":{"primary":{"used_percent":60,"window_minutes":15,"resets_at":1800000000},"secondary":{"used_percent":25,"window_minutes":240,"resets_at":1800000600}}}}
+        """.data(using: .utf8)!
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = true
+        settings.menuBarDisplayTarget = .codex
+
+        let snapshot = await CodexWebUsageAdapter(
+            appServerClient: StubCodexAppServerRateLimitClient(data: response),
+            now: { referenceNow }
+        ).snapshot(settings: settings)
+        let observations = CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: referenceNow)
+        let title = MenuBarStatusService().title(snapshots: [snapshot], settings: settings, modeLabel: "LIVE", now: referenceNow)
+
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 60)
+        XCTAssertEqual(snapshot.fiveHour?.providerWindowID, "primary")
+        XCTAssertEqual(snapshot.fiveHour?.durationMinutes, 15)
+        XCTAssertEqual(snapshot.fiveHour?.label, "15m")
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 25)
+        XCTAssertEqual(snapshot.weekly?.providerWindowID, "secondary")
+        XCTAssertEqual(snapshot.weekly?.durationMinutes, 240)
+        XCTAssertEqual(snapshot.weekly?.label, "4h")
+        XCTAssertEqual(observations.map(\.seriesID.canonicalID), [
+            "codex/primary/rolling/percent/15",
+            "codex/secondary/rolling/percent/240"
+        ])
+        XCTAssertEqual(title, "15m 40% EXP · 4h 75% EXP")
     }
 
     func testCodexAppServerRateLimitsCanDeriveUsageFromUsedAndLimitFields() async throws {
@@ -1918,10 +2004,10 @@ final class TokenPilotServicesTests: XCTestCase {
             clientTitle: "TokenPilot Test",
             clientVersion: "1.2.3"
         )
-        XCTAssertEqual(lines.count, 2)
+        XCTAssertEqual(lines.count, 3)
 
         let initObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[0].utf8)) as? [String: Any])
-        XCTAssertEqual(initObject["jsonrpc"] as? String, "2.0")
+        XCTAssertNil(initObject["jsonrpc"])
         XCTAssertEqual(initObject["method"] as? String, "initialize")
         let params = try XCTUnwrap(initObject["params"] as? [String: Any])
         let capabilities = try XCTUnwrap(params["capabilities"] as? [String: Any])
@@ -1929,8 +2015,12 @@ final class TokenPilotServicesTests: XCTestCase {
         let clientInfo = try XCTUnwrap(params["clientInfo"] as? [String: Any])
         XCTAssertEqual(clientInfo["name"] as? String, "tokenpilot-test")
 
-        let readObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[1].utf8)) as? [String: Any])
-        XCTAssertEqual(readObject["jsonrpc"] as? String, "2.0")
+        let initializedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[1].utf8)) as? [String: Any])
+        XCTAssertNil(initializedObject["jsonrpc"])
+        XCTAssertEqual(initializedObject["method"] as? String, "initialized")
+
+        let readObject = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(lines[2].utf8)) as? [String: Any])
+        XCTAssertNil(readObject["jsonrpc"])
         XCTAssertEqual(readObject["method"] as? String, "account/rateLimits/read")
     }
 
@@ -1969,6 +2059,44 @@ final class TokenPilotServicesTests: XCTestCase {
         )
     }
 
+    func testCodexAppServerCancellationReturnsCancelledPromptly() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fakeCodex = directory.appendingPathComponent("fake-codex")
+        try """
+        #!/bin/sh
+        trap '' TERM
+        while true; do sleep 1; done
+        """.write(to: fakeCodex, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fakeCodex.path)
+
+        let client = CodexAppServerRateLimitProcessClient(
+            codexExecutablePath: fakeCodex.path,
+            timeoutSeconds: 5,
+            clientName: "tokenpilot-cancel-test"
+        )
+        let task = Task {
+            try await client.readRateLimits()
+        }
+
+        try await Task.sleep(nanoseconds: 100_000_000)
+        let cancelStart = Date()
+        task.cancel()
+
+        do {
+            _ = try await task.value
+            XCTFail("Expected app-server cancellation")
+        } catch CodexAppServerRateLimitError.cancelled {
+            // Expected.
+        } catch {
+            XCTFail("Expected cancelled, got \(error)")
+        }
+
+        XCTAssertLessThan(Date().timeIntervalSince(cancelStart), 1.0)
+    }
+
     func testCodexWebUsageAdapterHandlesAppServerAuthRequiredWithoutHttpFallback() async throws {
         let response = """
         {"error":{"code":-32600,"message":"codex account authentication required to read rate limits"},"id":2}
@@ -1996,7 +2124,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
     func testCodexWebUsageAdapterRedactsAppServerErrorDetails() async throws {
         let response = """
-        {"error":{"code":-32000,"message":"upstream failed with Bearer fixture-token"},"id":2}
+        {"error":{"code":-32000,"message":"upstream failed at /Users/alice/.codex/auth.json prompt: summarize credentials with Bearer fixture-token and api_key=sk-abcdefghijklmnopqrstuvwxyz123456"},"id":2}
         """.data(using: .utf8)!
         let appServer = StubCodexAppServerRateLimitClient(data: response)
         let httpClient = RecordingCodexWebUsageHTTPClient(data: Data(), failIfCalled: true)
@@ -2012,6 +2140,10 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.confidence, .low)
         XCTAssertTrue(snapshot.statusMessage?.contains("[REDACTED]") == true)
         XCTAssertFalse(snapshot.statusMessage?.contains("fixture-token") == true)
+        XCTAssertFalse(snapshot.statusMessage?.contains("/Users/alice") == true)
+        XCTAssertFalse(snapshot.statusMessage?.contains("auth.json") == true)
+        XCTAssertFalse(snapshot.statusMessage?.contains("summarize credentials") == true)
+        XCTAssertFalse(snapshot.statusMessage?.contains("sk-abcdefghijklmnopqrstuvwxyz123456") == true)
         let requestURL = await httpClient.requestURL()
         XCTAssertNil(requestURL)
     }
@@ -2816,6 +2948,69 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(payload.snapshots.first?.todayTokens, 0)
         XCTAssertEqual(payload.metrics.totalTokens, 0)
     }
+    func testCapacityExportIsVersionedAndExcludesStatusModelForecastAndRawPaths() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let assessment = try percentAssessment(used: 82, resetAt: now.addingTimeInterval(3_600), now: now)
+        let data = try UsageExportService().makeJSONData(
+            usage: AggregatedUsage(period: .today),
+            snapshots: [],
+            dataMode: "LIVE",
+            generatedAt: now,
+            capacityAssessments: [assessment]
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payload = try decoder.decode(UsageExportPayload.self, from: data)
+        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
+
+        XCTAssertEqual(payload.capacity?.schemaVersion, 1)
+        XCTAssertEqual(payload.capacity?.observations.first?.provider, .claude)
+        XCTAssertEqual(payload.capacity?.observations.first?.remainingPercent, 18)
+        XCTAssertFalse(raw.contains("forecast"))
+        XCTAssertFalse(raw.contains("statusMessage"))
+        XCTAssertFalse(raw.contains("model"))
+        XCTAssertFalse(raw.contains("/Users/"))
+        XCTAssertFalse(raw.contains("secret"))
+    }
+
+    func testUsageExportRedactsSnapshotAndEventDiagnosticFields() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let event = UsageEvent(
+            provider: .claude,
+            model: "/Users/alice/project prompt: disclose bearer token api_key=sk-abcdefghijklmnopqrstuvwxyz123456",
+            timestamp: now,
+            inputTokens: 10,
+            outputTokens: 5,
+            source: "claude-statusline",
+            dataSource: .officialStatusline
+        )
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            todayTokens: 15,
+            confidence: .high,
+            dataSource: .officialStatusline,
+            statusMessage: "Failed reading /Users/alice/.codex/auth.json response: secret prompt transcript",
+            model: "Bearer fixture-token-from-model",
+            events: [event]
+        )
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .today)
+
+        let data = try UsageExportService().makeJSONData(usage: usage, snapshots: [snapshot], dataMode: "LIVE", generatedAt: now)
+        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payload = try decoder.decode(UsageExportPayload.self, from: data)
+
+        XCTAssertEqual(payload.metrics.totalTokens, 15)
+        XCTAssertEqual(payload.events.first?.totalTokens, 15)
+        XCTAssertFalse(raw.contains("/Users/alice"))
+        XCTAssertFalse(raw.contains("auth.json"))
+        XCTAssertFalse(raw.contains("sk-abcdefghijklmnopqrstuvwxyz123456"))
+        XCTAssertFalse(raw.contains("fixture-token-from-model"))
+        XCTAssertFalse(raw.contains("secret prompt transcript"))
+        XCTAssertFalse(raw.contains("disclose bearer token"))
+    }
 
     func testAggregationPeriodsChangeWhenHistoryContainsOlderEvents() {
         let now = Date()
@@ -2960,7 +3155,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(stale.confidence, .medium)
     }
 
-    func testDeepSeekManualFallbackAndLowBalanceAlert() async {
+    func testDeepSeekManualFallbackDoesNotEmitLegacyLowBalanceAlert() async {
         var settings = AppSettings()
         settings.deepSeekBalance.manualFallbackEnabled = true
         settings.deepSeekBalance.manualBalanceText = "4.99"
@@ -2978,9 +3173,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let events = NotificationRuleService(store: AlertDeduplicationStore(defaults: UserDefaults(suiteName: "deepseek-alert-\(UUID().uuidString)")!))
             .evaluate(snapshots: [snapshot], settings: settings)
-        XCTAssertEqual(events.count, 1)
-        XCTAssertEqual(events.first?.provider, .deepseek)
-        XCTAssertTrue(events.first?.body.contains("$4.99") == true)
+        XCTAssertTrue(events.isEmpty)
     }
 
     func testDeepSeekLowBalanceAlertDedupesWithinCycleAndResetsNextCycle() {
@@ -2992,10 +3185,14 @@ final class TokenPilotServicesTests: XCTestCase {
         let tomorrow = today.addingTimeInterval(86_400)
         let todaySnapshot = ProviderSnapshot(
             provider: .deepseek,
+            confidence: .high,
+            dataSource: .officialTelemetry,
             balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(1), capturedAt: today)
         )
         let tomorrowSnapshot = ProviderSnapshot(
             provider: .deepseek,
+            confidence: .high,
+            dataSource: .officialTelemetry,
             balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(1), capturedAt: tomorrow)
         )
 
@@ -3145,15 +3342,15 @@ final class TokenPilotServicesTests: XCTestCase {
         settings.localization.language = .ko
         settings.menuBarDisplayTarget = .codex
         let snapshots = [
-            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 92), weekly: LimitWindow(kind: .weekly, usedPercent: 71), todayTokens: 12_000),
-            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 36), weekly: LimitWindow(kind: .weekly, usedPercent: 44), todayTokens: 4_800, confidence: .manual),
-            ProviderSnapshot(provider: .gemini, dailyRequestsUsed: 40, dailyRequestsLimit: 100, todayTokens: 9_500)
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 92), weekly: LimitWindow(kind: .weekly, usedPercent: 71), todayTokens: 12_000, confidence: .high, dataSource: .officialStatusline),
+            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 36), weekly: LimitWindow(kind: .weekly, usedPercent: 44), todayTokens: 4_800, confidence: .manual, dataSource: .manual),
+            ProviderSnapshot(provider: .gemini, dailyRequestsUsed: 40, dailyRequestsLimit: 100, todayTokens: 9_500, confidence: .medium, dataSource: .localLog)
         ]
 
         let service = MenuBarStatusService()
 
         XCTAssertEqual(service.selectedSnapshot(from: snapshots, settings: settings)?.provider, .codex)
-        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64% · W 56% 추정")
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE"), "5h 64% EST · 7d 56% EST")
     }
 
     func testMenuBarStatusServiceShowsSelectedDeepSeekBalance() {
@@ -3162,6 +3359,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = ProviderSnapshot(
             provider: .deepseek,
             confidence: .high,
+            dataSource: .officialTelemetry,
             balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "12.34")!)
         )
 
@@ -3170,18 +3368,79 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(title, "DS $12.34")
     }
 
+    func testMenuBarStatusServiceDoesNotPresentCodexLocalActivityAsQuota() {
+        var settings = AppSettings()
+        settings.menuBarDisplayTarget = .codex
+        let snapshot = ProviderSnapshot(
+            provider: .codex,
+            todayTokens: 12_400,
+            confidence: .medium,
+            dataSource: .localLog
+        )
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE"
+        )
+
+        XCTAssertEqual(title, "Co --%")
+        XCTAssertFalse(title.contains("tok"))
+        XCTAssertFalse(title.contains("12.4K"))
+    }
+
+    func testMenuBarStatusServiceKeepsExplicitCodexTargetWhenQuotaIsUnavailable() {
+        var settings = AppSettings()
+        settings.menuBarDisplayTarget = .codex
+        let deepSeek = ProviderSnapshot(
+            provider: .deepseek,
+            confidence: .high,
+            dataSource: .officialTelemetry,
+            balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "0.85")!)
+        )
+
+        let title = MenuBarStatusService().title(
+            snapshots: [deepSeek],
+            settings: settings,
+            modeLabel: "LIVE"
+        )
+
+        XCTAssertEqual(title, "Co --%")
+    }
+
     func testMenuBarStatusServiceShowsRemainingPercentagesForFiveHourAndWeekly() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         var settings = AppSettings()
         settings.localization.language = .ko
         let service = MenuBarStatusService()
         let snapshots = [
-            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 88), weekly: LimitWindow(kind: .weekly, usedPercent: 62, resetAt: now.addingTimeInterval(18_720)), todayTokens: 12_000)
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 88), weekly: LimitWindow(kind: .weekly, usedPercent: 62, resetAt: now.addingTimeInterval(18_720)), todayTokens: 12_000, confidence: .high, dataSource: .officialStatusline)
         ]
 
         let title = service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
-        XCTAssertEqual(title, "5h 12% · W 38%")
+        XCTAssertEqual(title, "5h 12% · 7d 38%")
         XCTAssertFalse(title.contains("12K"))
+    }
+    func testMenuBarStatusServiceUsesExplicitTargetAndSameRankHysteresis() {
+        var settings = AppSettings()
+        let service = MenuBarStatusService()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = [
+            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 50), confidence: .manual, dataSource: .manual),
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 49), confidence: .manual, dataSource: .manual)
+        ]
+
+        XCTAssertTrue(service.accessibilityLabel(snapshots: first, settings: settings, modeLabel: "LIVE", now: now).contains("Codex"))
+
+        let plusOne = [
+            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 50), confidence: .manual, dataSource: .manual),
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 51), confidence: .manual, dataSource: .manual)
+        ]
+        XCTAssertTrue(service.accessibilityLabel(snapshots: plusOne, settings: settings, modeLabel: "LIVE", now: now.addingTimeInterval(10)).contains("Codex"))
+        XCTAssertTrue(service.accessibilityLabel(snapshots: plusOne, settings: settings, modeLabel: "LIVE", now: now.addingTimeInterval(61)).contains("Claude Code"))
+
+        settings.menuBarDisplayTarget = .codex
+        XCTAssertTrue(service.accessibilityLabel(snapshots: plusOne, settings: settings, modeLabel: "LIVE", now: now.addingTimeInterval(62)).contains("Codex"))
     }
 
     func testMenuBarStatusServiceFallsBackToHighestRiskWhenSelectedProviderDisabled() {
@@ -3189,9 +3448,9 @@ final class TokenPilotServicesTests: XCTestCase {
         settings.menuBarDisplayTarget = .gemini
         XCTAssertTrue(settings.setProviderEnabled(.gemini, isEnabled: false))
         let snapshots = [
-            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82), todayTokens: 12_000),
-            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 36), todayTokens: 4_800),
-            ProviderSnapshot(provider: .gemini, dailyRequestsUsed: 98, dailyRequestsLimit: 100, todayTokens: 9_500)
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82), todayTokens: 12_000, confidence: .high, dataSource: .officialStatusline),
+            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 36), todayTokens: 4_800, confidence: .manual, dataSource: .manual),
+            ProviderSnapshot(provider: .gemini, dailyRequestsUsed: 98, dailyRequestsLimit: 100, todayTokens: 9_500, confidence: .medium, dataSource: .localLog)
         ]
 
         let service = MenuBarStatusService()
@@ -3293,6 +3552,638 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(todayResult.period, .today)
         XCTAssertEqual(last7Result.period, .last7Days)
         XCTAssertEqual(monthResult.period, .thisMonth)
+    }
+    func testCapacityEvidenceStoreAdmissionCardinalityAndWinnerSelection() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let directory = try capacityTempDirectory()
+        let store = CapacityEvidenceStore(directory: directory, clock: FixedCapacityClock(now: now))
+
+        let futureBoundary = try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(60), used: 10, authority: .providerReported, stability: .supported)
+        let futureRejected = try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(61), used: 11, authority: .providerReported, stability: .supported)
+        let oldestBoundary = try decodedPercentObservation(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-45 * 86_400), used: 12, authority: .providerReported, stability: .supported)
+        let expiredRejected = try decodedPercentObservation(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-45 * 86_400 - 1), used: 13, authority: .providerReported, stability: .supported)
+
+        let initial = await store.record([futureBoundary, futureRejected, oldestBoundary, expiredRejected])
+        XCTAssertEqual(initial.acceptedCount, 2)
+        XCTAssertEqual(initial.quarantinedCount, 2)
+        XCTAssertEqual(initial.snapshot?.quarantine.map(\.code).sorted(), ["expiredObservation", "futureObservation"])
+
+        let cardinalityDirectory = try capacityTempDirectory()
+        let cardinalityStore = CapacityEvidenceStore(directory: cardinalityDirectory, clock: FixedCapacityClock(now: now))
+        let codexObservations = try (1...9).map { duration in
+            try decodedPercentObservation(provider: .codex, providerWindowID: "rolling", kind: .rolling, durationMinutes: duration, observedAt: now.addingTimeInterval(TimeInterval(duration)), used: duration, authority: .providerReported, stability: .supported)
+        }
+        let cardinality = await cardinalityStore.record(codexObservations)
+        XCTAssertEqual(cardinality.acceptedCount, 8)
+        XCTAssertEqual(cardinality.quarantinedCount, 1)
+        XCTAssertEqual(Set(cardinality.snapshot?.records.map { $0.seriesID.canonicalID } ?? []).count, 8)
+        XCTAssertEqual(cardinality.snapshot?.quarantine.first?.code, "providerCardinalityExceeded")
+
+        let winnerDirectory = try capacityTempDirectory()
+        let winnerStore = CapacityEvidenceStore(directory: winnerDirectory, clock: FixedCapacityClock(now: now))
+        let sameBucket = now.addingTimeInterval(-120)
+        let lowerPriorityLater = try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: sameBucket.addingTimeInterval(20), used: 30, authority: .localDerived, stability: .compatibilityBridge)
+        let supportedEarlier = try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: sameBucket, used: 70, authority: .providerReported, stability: .supported)
+        let sameTimestampUser = try decodedPercentObservation(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, durationMinutes: nil, observedAt: sameBucket, used: 40, authority: .userEntered, stability: .manual)
+        let sameTimestampSupported = try decodedPercentObservation(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, durationMinutes: nil, observedAt: sameBucket, used: 80, authority: .providerReported, stability: .supported)
+
+        let winners = await winnerStore.record([supportedEarlier, lowerPriorityLater, sameTimestampUser, sameTimestampSupported])
+        let bySeries = (winners.snapshot?.records ?? []).reduce(into: [String: Int]()) { result, record in
+            result[record.seriesID.providerWindowID] = record.value.usedPercent
+        }
+        XCTAssertEqual(bySeries["five-hour"], 30, "Later observation must win before authority tie-breakers.")
+        XCTAssertEqual(bySeries["seven-day"], 80, "Supported provider-reported evidence must win equal-timestamp ties.")
+    }
+
+    func testCapacityEvidenceStoreCompactsRawAndDailyClosingsWithoutSyntheticDays() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let directory = try capacityTempDirectory()
+        let store = CapacityEvidenceStore(directory: directory, clock: FixedCapacityClock(now: now))
+        let observations = try [
+            decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-2 * 86_400), used: 20, authority: .providerReported, stability: .supported),
+            decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-8 * 86_400 + 60), used: 30, authority: .providerReported, stability: .supported),
+            decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-8 * 86_400 + 3_600), used: 35, authority: .providerReported, stability: .supported),
+            decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now.addingTimeInterval(-10 * 86_400 + 600), used: 40, authority: .providerReported, stability: .supported)
+        ]
+
+        let result = await store.record(observations)
+        let records = result.snapshot?.records ?? []
+        XCTAssertEqual(records.filter { $0.retention == .raw }.count, 1)
+        XCTAssertEqual(records.filter { $0.retention == .dailyClosing }.count, 2)
+        XCTAssertEqual(records.filter { $0.retention == .dailyClosing }.compactMap { $0.value.usedPercent }.sorted(), [35, 40])
+        XCTAssertLessThanOrEqual(Dictionary(grouping: records, by: { $0.seriesID.canonicalID }).values.map(\.count).max() ?? 0, CapacityEvidenceStore.maxRecordsPerSeries)
+    }
+
+    func testCapacityEvidenceStoreWritesCanonicalDecimalAndVerifiesChecksum() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let directory = try capacityTempDirectory()
+        let files = CapacityEvidenceFileSet(directory: directory)
+        let store = CapacityEvidenceStore(files: files, clock: FixedCapacityClock(now: now))
+        let balance = try decodedBalanceObservation(observedAt: now, amount: "1.2300", currency: "USD")
+
+        let result = await store.record([balance])
+        XCTAssertFalse(result.recoveryStatus.recoveryRequired)
+
+        let raw = try String(decoding: Data(contentsOf: files.primary), as: UTF8.self)
+        XCTAssertTrue(raw.contains(#""amount":"1.23""#))
+        XCTAssertFalse(raw.contains("1.2300"))
+        XCTAssertEqual(try CapacityAlertCondition.balanceBelow(threshold: Decimal(string: "5.5000")!, currency: "USD", rearmAtOrAboveThreshold: true).thresholdCanonical, "5.5")
+        XCTAssertEqual(CapacityCanonical.thresholdCanonical(Decimal(string: "0.00000100")!), "0.000001")
+
+        let loaded = await store.loadSnapshot()
+        XCTAssertEqual(loaded.records.first?.value.moneyAmount, Decimal(string: "1.23"))
+        XCTAssertFalse(loaded.recoveryStatus.recoveryRequired)
+    }
+
+    func testCapacityEvidenceRecoveryTableAndWriteBlockingPreservation() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let observation = try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: now, used: 42, authority: .providerReported, stability: .supported)
+        let seedDirectory = try capacityTempDirectory()
+        let seedFiles = CapacityEvidenceFileSet(directory: seedDirectory)
+        let seedStore = CapacityEvidenceStore(files: seedFiles, clock: FixedCapacityClock(now: now))
+        _ = await seedStore.record([observation])
+        let validPrimary = try Data(contentsOf: seedFiles.primary)
+        let validChecksum = try checksum(inEvidenceData: validPrimary)
+        let validGeneration = try generation(inEvidenceData: validPrimary)
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .primary) { files in
+            try validPrimary.write(to: files.primary)
+            try Data("not-json".utf8).write(to: files.txn)
+            try Data("orphan".utf8).write(to: files.temp)
+        } verify: { files in
+            XCTAssertFalse(FileManager.default.fileExists(atPath: files.temp.path))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: files.primary.path))
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .primary) { files in
+            try validPrimary.write(to: files.primary)
+            try validPrimary.write(to: files.temp)
+            try evidenceTxn(baseGeneration: 0, targetGeneration: validGeneration, checksum: validChecksum, phase: "prepared").write(to: files.txn)
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .primary) { files in
+            try validPrimary.write(to: files.primary)
+            try Data("corrupt-temp".utf8).write(to: files.temp)
+            try evidenceTxn(baseGeneration: 0, targetGeneration: validGeneration, checksum: validChecksum, phase: "prepared").write(to: files.txn)
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .temp) { files in
+            try validPrimary.write(to: files.temp)
+            try evidenceTxn(baseGeneration: 0, targetGeneration: validGeneration, checksum: validChecksum, phase: "prepared").write(to: files.txn)
+        } verify: { files in
+            XCTAssertTrue(FileManager.default.fileExists(atPath: files.primary.path))
+            XCTAssertFalse(FileManager.default.fileExists(atPath: files.temp.path))
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .backup) { files in
+            try validPrimary.write(to: files.backup)
+            try evidenceTxn(baseGeneration: 0, targetGeneration: validGeneration, checksum: validChecksum, phase: "prepared").write(to: files.txn)
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .backup) { files in
+            try Data("invalid-primary".utf8).write(to: files.primary)
+            try validPrimary.write(to: files.backup)
+            try validPrimary.write(to: files.temp)
+            try evidenceTxn(baseGeneration: 1, targetGeneration: validGeneration, checksum: validChecksum, phase: "prepared").write(to: files.txn)
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .primary) { files in
+            try validPrimary.write(to: files.primary)
+            try evidenceTxn(baseGeneration: 0, targetGeneration: validGeneration, checksum: validChecksum, phase: "primaryReplaced").write(to: files.txn)
+        }
+
+        try await assertEvidenceRecoveryCase(now: now, expectedSource: .backup) { files in
+            try Data("invalid-primary".utf8).write(to: files.primary)
+            try validPrimary.write(to: files.backup)
+        }
+
+        let blockedDirectory = try capacityTempDirectory()
+        let blockedFiles = CapacityEvidenceFileSet(directory: blockedDirectory)
+        try Data("invalid-primary".utf8).write(to: blockedFiles.primary)
+        try Data("invalid-backup".utf8).write(to: blockedFiles.backup)
+        try Data("forensic-temp".utf8).write(to: blockedFiles.temp)
+        try Data("forensic-txn".utf8).write(to: blockedFiles.txn)
+        let before = try [blockedFiles.primary, blockedFiles.backup, blockedFiles.temp, blockedFiles.txn].map { try Data(contentsOf: $0) }
+        let blockedStore = CapacityEvidenceStore(files: blockedFiles, clock: FixedCapacityClock(now: now))
+        let blocked = await blockedStore.record([observation])
+        let after = try [blockedFiles.primary, blockedFiles.backup, blockedFiles.temp, blockedFiles.txn].map { try Data(contentsOf: $0) }
+        XCTAssertTrue(blocked.recoveryStatus.writeBlocked)
+        XCTAssertEqual(before, after)
+    }
+
+    func testCapacityRuntimeRulesAndDeliveryStoresFailClosedOnCorruption() async throws {
+        let directory = try capacityTempDirectory()
+        let runtime = CapacityRuntimeStore(directory: directory)
+        let absentRuntime = await runtime.load()
+        XCTAssertTrue(absentRuntime.deliveryEnabled)
+        _ = await runtime.save(CapacityRuntimeControl(assessmentEnabled: false))
+        XCTAssertFalse((await runtime.load()).control.assessmentEnabled)
+
+        let runtimeFile = directory.appendingPathComponent("capacity-runtime-v1.json")
+        try Data("corrupt".utf8).write(to: runtimeFile)
+        let corruptRuntime = await CapacityRuntimeStore(directory: directory).load()
+        XCTAssertFalse(corruptRuntime.deliveryEnabled)
+        XCTAssertTrue(corruptRuntime.recoveryStatus.writeBlocked)
+
+        let rulesDirectory = try capacityTempDirectory()
+        let rules = CapacityAlertRuleStore(directory: rulesDirectory)
+        let percentRule = try capacityPercentRule()
+        _ = await rules.save([percentRule])
+        XCTAssertEqual((await rules.load()).rules.map(\.id), [percentRule.id])
+        try Data("corrupt".utf8).write(to: rulesDirectory.appendingPathComponent("capacity-alert-rules-v1.json"))
+        XCTAssertFalse((await CapacityAlertRuleStore(directory: rulesDirectory).load()).deliveryEnabled)
+
+        let deliveryDirectory = try capacityTempDirectory()
+        let delivery = CapacityAlertDeliveryStore(directory: deliveryDirectory)
+        let key = CapacityAlertDeliveryKey(rule: percentRule, channel: .macOS)
+        let state = try CapacityAlertDeliveryState(key: key, conditionState: .percent(activeCycleID: "cycle", lastUsed: 40, deliveredThresholds: []))
+        _ = await delivery.save([key: state])
+        XCTAssertEqual((await delivery.load()).states[key], state)
+        try Data("corrupt".utf8).write(to: deliveryDirectory.appendingPathComponent("capacity-alert-delivery-v1.json"))
+        XCTAssertFalse((await CapacityAlertDeliveryStore(directory: deliveryDirectory).load()).deliveryEnabled)
+    }
+
+    func testCapacityEvidenceStoreRawRetentionUsesExactUTCDayWindow() async throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let todayStart = try XCTUnwrap(calendar.date(from: DateComponents(calendar: calendar, timeZone: calendar.timeZone, year: 2027, month: 1, day: 8)))
+        let now = todayStart.addingTimeInterval(86_400 - 30)
+        let rawLowerBound = try XCTUnwrap(calendar.date(byAdding: .day, value: -6, to: todayStart))
+        let rawUpperBound = try XCTUnwrap(calendar.date(byAdding: .day, value: 1, to: todayStart))
+        let directory = try capacityTempDirectory()
+        let store = CapacityEvidenceStore(directory: directory, clock: FixedCapacityClock(now: now))
+
+        var observations: [CapacityObservation] = []
+        for offset in stride(from: 0, to: 7 * 86_400, by: 300) {
+            observations.append(try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: rawLowerBound.addingTimeInterval(TimeInterval(offset)), used: (offset / 300) % 101, authority: .providerReported, stability: .supported))
+        }
+        observations.append(try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: rawLowerBound.addingTimeInterval(-1), used: 77, authority: .providerReported, stability: .supported))
+        observations.append(try decodedPercentObservation(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, durationMinutes: nil, observedAt: rawUpperBound, used: 88, authority: .providerReported, stability: .supported))
+
+        let result = await store.record(observations)
+        let records = result.snapshot?.records ?? []
+        let raw = records.filter { $0.retention == .raw }
+
+        XCTAssertEqual(raw.count, 2_016)
+        XCTAssertTrue(raw.contains { $0.observedAt == rawLowerBound })
+        XCTAssertFalse(raw.contains { $0.observedAt == rawUpperBound })
+        XCTAssertLessThanOrEqual(records.count, CapacityEvidenceStore.maxRecordsPerSeries)
+    }
+
+    func testCapacityLegacyMigrationPersistsMarkerNoOpsAndFailsClosedOnCorruptEvidenceBytes() async throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let directory = try capacityTempDirectory()
+        let files = CapacityEvidenceFileSet(directory: directory)
+        let store = CapacityEvidenceStore(files: files, clock: FixedCapacityClock(now: now))
+        let sample = ProviderLimitSample(provider: .claude, timestamp: now, window: .fiveHour, usedPercent: 40, remainingPercent: 60, confidence: .high, source: UsageDataSource.officialStatusline.label)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let legacyData = try encoder.encode([sample])
+
+        let first = await store.migrateLegacyLimitSamples(from: legacyData)
+        XCTAssertEqual(first.acceptedCount, 1)
+        let firstGeneration = try generation(inEvidenceData: Data(contentsOf: files.primary))
+        let marker = try JSONDecoder().decode(CapacityLegacyMigrationMarker.self, from: Data(contentsOf: files.legacyMigrationMarker))
+        XCTAssertEqual(marker.sourceDigest, CapacityLegacyEvidenceConverter.sourceDigest(for: legacyData))
+        XCTAssertEqual(marker.committedGeneration, firstGeneration)
+
+        let second = await store.migrateLegacyLimitSamples(from: legacyData)
+        XCTAssertEqual(second.acceptedCount, 0)
+        XCTAssertEqual(try generation(inEvidenceData: Data(contentsOf: files.primary)), firstGeneration)
+
+        let blockedDirectory = try capacityTempDirectory()
+        let blockedFiles = CapacityEvidenceFileSet(directory: blockedDirectory)
+        try Data("invalid-primary".utf8).write(to: blockedFiles.primary)
+        try Data("invalid-backup".utf8).write(to: blockedFiles.backup)
+        try Data("forensic-temp".utf8).write(to: blockedFiles.temp)
+        try Data("forensic-txn".utf8).write(to: blockedFiles.txn)
+        let before = try [blockedFiles.primary, blockedFiles.backup, blockedFiles.temp, blockedFiles.txn].map { try Data(contentsOf: $0) }
+
+        let blocked = await CapacityEvidenceStore(files: blockedFiles, clock: FixedCapacityClock(now: now)).migrateLegacyLimitSamples(from: legacyData)
+        let after = try [blockedFiles.primary, blockedFiles.backup, blockedFiles.temp, blockedFiles.txn].map { try Data(contentsOf: $0) }
+
+        XCTAssertTrue(blocked.recoveryStatus.writeBlocked)
+        XCTAssertEqual(before, after)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: blockedFiles.legacyMigrationMarker.path))
+    }
+
+    func testLimitHistoryStoreFreezesLegacyWritesAfterCommittedMigrationMarker() throws {
+        let suite = "TokenPilotLimitHistoryFrozenTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "limit-frozen-test"
+        let directory = try capacityTempDirectory()
+        let files = CapacityEvidenceFileSet(directory: directory)
+        let seed = [ProviderLimitSample(provider: .claude, timestamp: Date(timeIntervalSince1970: 100), window: .fiveHour, usedPercent: 20, remainingPercent: 80, source: "seed")]
+        let seedData = try JSONEncoder().encode(seed)
+        defaults.set(seedData, forKey: key)
+        let marker = CapacityLegacyMigrationMarker(sourceDigest: "abc123", committedGeneration: 1)
+        try JSONEncoder().encode(marker).write(to: files.legacyMigrationMarker)
+
+        let store = LimitHistoryStore(defaults: defaults, key: key, legacyWritePolicy: CapacityLegacyLimitHistoryWritePolicy(directory: directory))
+        let snapshot = ProviderSnapshot(provider: .claude, updatedAt: Date(timeIntervalSince1970: 200), fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 90), confidence: .high, dataSource: .officialStatusline)
+        let recorded = store.record(snapshots: [snapshot], enabledProviders: [.claude], referenceDate: Date(timeIntervalSince1970: 200))
+
+        XCTAssertEqual(recorded, seed)
+        XCTAssertEqual(defaults.data(forKey: key), seedData)
+    }
+
+    func testLimitHistoryStoreBlocksCorruptLegacyBytesBeforeMarker() throws {
+        let suite = "TokenPilotLimitHistoryCorruptTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = "limit-corrupt-test"
+        let corrupt = Data("not-provider-limit-samples".utf8)
+        defaults.set(corrupt, forKey: key)
+        let directory = try capacityTempDirectory()
+        let store = LimitHistoryStore(defaults: defaults, key: key, legacyWritePolicy: CapacityLegacyLimitHistoryWritePolicy(directory: directory))
+        let snapshot = ProviderSnapshot(provider: .claude, updatedAt: Date(timeIntervalSince1970: 200), fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 90), confidence: .high, dataSource: .officialStatusline)
+
+        let recorded = store.recordWithRecoveryStatus(snapshots: [snapshot], enabledProviders: [.claude], referenceDate: Date(timeIntervalSince1970: 200))
+        let clearStatus = store.clearWithRecoveryStatus()
+
+        XCTAssertTrue(recorded.recoveryStatus.writeBlocked)
+        XCTAssertEqual(recorded.recoveryStatus, .recoveryRequired(writeBlocked: true, code: "legacyLimitHistoryRecoveryRequired"))
+        XCTAssertEqual(clearStatus, recorded.recoveryStatus)
+        XCTAssertEqual(recorded.samples, [])
+        XCTAssertEqual(defaults.data(forKey: key), corrupt)
+    }
+
+    func testCapacityTransactionalStoresSerializeCrossInstanceCommits() async throws {
+        let directory = try capacityTempDirectory()
+        let first = CapacityAlertRuleStore(directory: directory)
+        let second = CapacityAlertRuleStore(directory: directory)
+        let firstRule = try capacityPercentRule(conditionRevision: 1)
+        let secondRule = try capacityPercentRule(conditionRevision: 2)
+
+        async let firstSave = first.save([firstRule])
+        async let secondSave = second.save([secondRule])
+        let (firstResult, secondResult) = await (firstSave, secondSave)
+        let loaded = await CapacityAlertRuleStore(directory: directory).load()
+
+        XCTAssertFalse(firstResult.recoveryStatus.writeBlocked)
+        XCTAssertFalse(secondResult.recoveryStatus.writeBlocked)
+        XCTAssertFalse(loaded.recoveryStatus.writeBlocked)
+        XCTAssertEqual(loaded.rules.count, 1)
+        XCTAssertTrue(loaded.rules.first.map { [1, 2].contains($0.conditionRevision) } ?? false)
+    }
+
+    func testCapacityAlertTransitionEnginePercentSeedingCrossingRevisionChannelAndRetry() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let engine = CapacityAlertTransitionEngine()
+        let rule = try capacityPercentRule(conditionRevision: 1, routing: .init(macOS: true, telegram: true, discord: false))
+        let channels = CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true, telegramEnabled: true, discordEnabled: true, telegramCredentialPresent: true, discordCredentialPresent: true)
+
+        let seeded = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 40, resetAt: now.addingTimeInterval(3_600), now: now)], previousStates: [:], channels: channels, now: now)
+        XCTAssertTrue(seeded.attempts.isEmpty)
+        XCTAssertEqual(seeded.states.count, 2)
+
+        let crossed = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 80, resetAt: now.addingTimeInterval(3_600), now: now.addingTimeInterval(60))], previousStates: seeded.states, channels: channels, now: now.addingTimeInterval(60))
+        XCTAssertEqual(crossed.attempts.compactMap(\.threshold), [.eighty, .eighty])
+        XCTAssertEqual(Set(crossed.attempts.map(\.key.channel)), [.macOS, .telegram])
+
+        let mac = crossed.attempts.first { $0.key.channel == .macOS }!
+        let telegram = crossed.attempts.first { $0.key.channel == .telegram }!
+        let afterOutcomes = engine.applyingDeliveryOutcomes([
+            CapacityAlertDeliveryOutcome(attempt: mac, succeeded: true, completedAt: now.addingTimeInterval(61)),
+            CapacityAlertDeliveryOutcome(attempt: telegram, succeeded: false, completedAt: now.addingTimeInterval(61))
+        ], to: crossed.states)
+
+        let tooSoon = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 82, resetAt: now.addingTimeInterval(3_600), now: now.addingTimeInterval(120))], previousStates: afterOutcomes, channels: channels, now: now.addingTimeInterval(120))
+        XCTAssertTrue(tooSoon.attempts.isEmpty)
+
+        let retry = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 82, resetAt: now.addingTimeInterval(3_600), now: now.addingTimeInterval(362))], previousStates: afterOutcomes, channels: channels, now: now.addingTimeInterval(362))
+        XCTAssertEqual(retry.attempts.map(\.key.channel), [.telegram])
+        XCTAssertEqual(retry.attempts.first?.threshold, .eighty)
+
+        let revisionRule = try capacityPercentRule(conditionRevision: 2, routing: rule.routing)
+        let revisionSeed = engine.evaluate(rules: [revisionRule], assessments: [try percentAssessment(used: 90, resetAt: now.addingTimeInterval(3_600), now: now.addingTimeInterval(420))], previousStates: afterOutcomes, channels: channels, now: now.addingTimeInterval(420))
+        XCTAssertTrue(revisionSeed.attempts.isEmpty)
+        XCTAssertTrue(revisionSeed.states.keys.contains { $0.conditionRevision == 2 })
+
+        let sameCycleDrop = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 20, resetAt: now.addingTimeInterval(3_600), now: now.addingTimeInterval(480))], previousStates: afterOutcomes, channels: channels, now: now.addingTimeInterval(480))
+        XCTAssertTrue(sameCycleDrop.attempts.isEmpty)
+
+        let newCycle = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 10, resetAt: now.addingTimeInterval(8_000), now: now.addingTimeInterval(500))], previousStates: afterOutcomes, channels: channels, now: now.addingTimeInterval(500))
+        XCTAssertEqual(Set(newCycle.attempts.compactMap(\.threshold)), [.reset])
+    }
+
+    func testCapacityAlertTransitionEngineBalanceStrictRearmCurrencyPendingAndRetry() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let engine = CapacityAlertTransitionEngine()
+        let rule = try capacityBalanceRule(threshold: Decimal(5), currency: "USD", routing: .init(macOS: true, telegram: true, discord: false))
+        let channels = CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true, telegramEnabled: true, telegramCredentialPresent: true)
+
+        let firstBelow = engine.evaluate(rules: [rule], assessments: [try balanceAssessment(amount: "4.00", currency: "USD", now: now)], previousStates: [:], channels: channels, now: now)
+        XCTAssertTrue(firstBelow.attempts.isEmpty)
+
+        let equalThreshold = engine.evaluate(rules: [rule], assessments: [try balanceAssessment(amount: "5.00", currency: "USD", now: now.addingTimeInterval(60))], previousStates: firstBelow.states, channels: channels, now: now.addingTimeInterval(60))
+        XCTAssertTrue(equalThreshold.attempts.isEmpty)
+
+        let crossing = engine.evaluate(rules: [rule], assessments: [try balanceAssessment(amount: "4.99", currency: "USD", now: now.addingTimeInterval(120))], previousStates: equalThreshold.states, channels: channels, now: now.addingTimeInterval(120))
+        XCTAssertEqual(Set(crossing.attempts.map(\.key.channel)), [.macOS, .telegram])
+        XCTAssertTrue(crossing.attempts.allSatisfy { $0.id.contains("/USD/5/1/") })
+
+        let failed = engine.applyingDeliveryOutcomes(crossing.attempts.map { CapacityAlertDeliveryOutcome(attempt: $0, succeeded: false, completedAt: now.addingTimeInterval(121)) }, to: crossing.states)
+        let currencyMismatch = engine.evaluate(rules: [rule], assessments: [try balanceAssessment(amount: "4.00", currency: "EUR", now: now.addingTimeInterval(180))], previousStates: failed, channels: channels, now: now.addingTimeInterval(180))
+        XCTAssertTrue(currencyMismatch.attempts.isEmpty)
+        XCTAssertEqual(currencyMismatch.states, failed)
+
+        let retry = engine.evaluate(rules: [rule], assessments: [try balanceAssessment(amount: "4.00", currency: "USD", now: now.addingTimeInterval(422))], previousStates: failed, channels: channels, now: now.addingTimeInterval(422))
+        XCTAssertEqual(retry.attempts.count, 2)
+
+        let pending = try CapacityAlertRule(provider: .deepseek, seriesID: try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency), authority: .providerReported, stability: .supported, enabled: true, routing: .init(macOS: true), condition: .pendingBalanceCurrencyBinding)
+        let pendingResult = engine.evaluate(rules: [pending], assessments: [try balanceAssessment(amount: "1.00", currency: "USD", now: now)], previousStates: [:], channels: channels, now: now)
+        XCTAssertTrue(pendingResult.attempts.isEmpty)
+        XCTAssertTrue(pendingResult.states.isEmpty)
+    }
+
+    func testCapacityLegacyConversionIsIdempotentAndQuarantinesInvalidMappings() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let valid = ProviderLimitSample(provider: .claude, timestamp: now, window: .fiveHour, usedPercent: 40, remainingPercent: 60, confidence: .high, source: UsageDataSource.officialStatusline.label)
+        let invalidPair = ProviderLimitSample(provider: .claude, timestamp: now, window: .weekly, usedPercent: 40, remainingPercent: 61, source: UsageDataSource.officialStatusline.label)
+        let unsupported = ProviderLimitSample(provider: .codex, timestamp: now, window: .weekly, usedPercent: 40, remainingPercent: 60, source: UsageDataSource.localLog.label)
+
+        let converted = CapacityLegacyEvidenceConverter.convert(samples: [valid, invalidPair, unsupported], now: now)
+        XCTAssertEqual(converted.observations.count, 1)
+        XCTAssertEqual(converted.observations.first?.parserRevision, "legacyV1")
+        XCTAssertEqual(converted.observations.first?.authority, .providerReported)
+        XCTAssertEqual(converted.quarantine.map(\.code).sorted(), ["invalidLegacyMapping", "invalidUsedRemainingPair"])
+        XCTAssertFalse(converted.quarantine.map(\.recordDigest).joined().contains(valid.source))
+
+        let legacyBytes = try JSONEncoder().encode([valid])
+        let marker = CapacityLegacyEvidenceConverter.marker(for: legacyBytes, committedGeneration: 7)
+        XCTAssertFalse(CapacityLegacyEvidenceConverter.shouldMigrate(data: legacyBytes, existingMarker: marker))
+        XCTAssertTrue(CapacityLegacyEvidenceConverter.shouldMigrate(data: Data("changed".utf8), existingMarker: marker))
+
+        var settings = AppSettings()
+        settings.alertRules = [AlertRule(provider: .claude, window: .fiveHour, fiftyEnabled: true, macOSEnabled: true, telegramEnabled: true)]
+        let migration = try CapacityAlertLegacyMigrator.migrate(settings: settings, deepSeekBalance: nil)
+        let repeatMigration = try CapacityAlertLegacyMigrator.migrate(settings: settings, deepSeekBalance: nil, existingMarker: migration.marker)
+        XCTAssertTrue(migration.didMigrate)
+        XCTAssertFalse(repeatMigration.didMigrate)
+        XCTAssertTrue(migration.rules.contains { $0.provider == .deepseek && $0.isPendingBalanceBinding && !$0.enabled })
+        XCTAssertTrue(migration.rules.contains { $0.provider == .claude && $0.condition.enabledPercentThresholds.contains(.fifty) })
+    }
+
+    func testCapacityAlertMigrationCoordinatorRetriesMarkerFailureWithoutDuplicateRulesOrDelivery() async throws {
+        let directory = try capacityTempDirectory()
+        let fileSystem = FailOnceCapacityFileSystem(failWriteOnceForLastPathComponent: "capacity-alert-migration-v1.json.temp")
+        var settings = AppSettings()
+        settings.alertRules = [AlertRule(provider: .claude, window: .fiveHour, fiftyEnabled: true, macOSEnabled: true)]
+        let planned = try CapacityAlertLegacyMigrator.migrate(settings: settings, deepSeekBalance: nil)
+        let migratedRuleIDs = Set(planned.marker.migratedRuleIDs)
+        let migratedRule = try XCTUnwrap(planned.rules.first { $0.provider == .claude })
+        let key = CapacityAlertDeliveryKey(rule: migratedRule, channel: .macOS)
+        let delivered = try CapacityAlertDeliveryState(
+            key: key,
+            status: .delivered,
+            lastAttemptAt: Date(timeIntervalSince1970: 1_800_000_000),
+            lastSuccessAt: Date(timeIntervalSince1970: 1_800_000_000),
+            conditionState: .percent(activeCycleID: "cycle", lastUsed: 50, deliveredThresholds: [.fifty])
+        )
+        let coordinator = CapacityAlertLegacyMigrationCoordinator(directory: directory, fileSystem: fileSystem)
+
+        let first = await coordinator.migrate(settings: settings, deepSeekBalance: nil, initialDeliveryStates: [key: delivered])
+        let rulesAfterFirst = await CapacityAlertRuleStore(directory: directory, fileSystem: fileSystem).load()
+        let deliveryAfterFirst = await CapacityAlertDeliveryStore(directory: directory, fileSystem: fileSystem).load()
+
+        XCTAssertTrue(first.recoveryStatus.writeBlocked)
+        XCTAssertEqual(Set(rulesAfterFirst.rules.map(\.id)), migratedRuleIDs)
+        XCTAssertEqual(deliveryAfterFirst.states[key], delivered)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("capacity-alert-migration-v1.json").path))
+
+        let second = await coordinator.migrate(settings: settings, deepSeekBalance: nil, initialDeliveryStates: [key: delivered])
+        let rulesAfterRetry = await CapacityAlertRuleStore(directory: directory, fileSystem: fileSystem).load()
+        let deliveryAfterRetry = await CapacityAlertDeliveryStore(directory: directory, fileSystem: fileSystem).load()
+        let committedMarker = try JSONDecoder().decode(CapacityAlertMigrationMarker.self, from: Data(contentsOf: directory.appendingPathComponent("capacity-alert-migration-v1.json")))
+
+        XCTAssertFalse(second.recoveryStatus.writeBlocked)
+        XCTAssertTrue(second.didMigrate)
+        XCTAssertEqual(rulesAfterRetry.rules.count, rulesAfterFirst.rules.count)
+        XCTAssertEqual(Set(rulesAfterRetry.rules.map(\.id)), migratedRuleIDs)
+        XCTAssertEqual(deliveryAfterRetry.states[key], delivered)
+        XCTAssertEqual(committedMarker.sourceSettingsDigest, planned.marker.sourceSettingsDigest)
+        XCTAssertEqual(committedMarker.migratedRuleIDs, planned.marker.migratedRuleIDs)
+
+        let third = await coordinator.migrate(settings: settings, deepSeekBalance: nil, initialDeliveryStates: [key: delivered])
+        let rulesAfterNoOp = await CapacityAlertRuleStore(directory: directory, fileSystem: fileSystem).load()
+        XCTAssertFalse(third.didMigrate)
+        XCTAssertEqual(rulesAfterNoOp.rules.count, rulesAfterRetry.rules.count)
+    }
+
+    func testCapacityAlertMigrationCoordinatorFailsClosedOnCorruptMarkerWithoutDependentWrites() async throws {
+        let directory = try capacityTempDirectory()
+        try Data("corrupt-marker".utf8).write(to: directory.appendingPathComponent("capacity-alert-migration-v1.json"))
+        var settings = AppSettings()
+        settings.alertRules = [AlertRule(provider: .claude, window: .fiveHour, fiftyEnabled: true)]
+        let result = await CapacityAlertLegacyMigrationCoordinator(directory: directory).migrate(settings: settings, deepSeekBalance: nil)
+
+        XCTAssertTrue(result.recoveryStatus.writeBlocked)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("capacity-alert-rules-v1.json").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.appendingPathComponent("capacity-alert-delivery-v1.json").path))
+    }
+
+    private func capacityTempDirectory() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotCapacityTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: directory)
+        }
+        return directory
+    }
+
+    private func decodedPercentObservation(provider: Provider, providerWindowID: String, kind: CapacitySeriesKind, durationMinutes: Int?, observedAt: Date, used: Int, authority: CapacityAuthority, stability: CapacityStability) throws -> CapacityObservation {
+        let duration = durationMinutes.map { #","durationMinutes":\#($0)"# } ?? ""
+        let json = """
+        {
+          "seriesID":{"provider":"\(provider.rawValue)","providerWindowID":"\(providerWindowID)","kind":"\(kind.rawValue)","unit":"percent"\(duration)},
+          "observedAt":\(observedAt.timeIntervalSinceReferenceDate),
+          "value":{"usedPercent":{"_0":\(used)}},
+          "authority":"\(authority.rawValue)",
+          "stability":"\(stability.rawValue)",
+          "consent":"notRequired",
+          "freshnessPolicy":{"maximumAge":\(45 * 86_400)},
+          "comparability":"comparable",
+          "parserRevision":"test"
+        }
+        """
+        return try JSONDecoder().decode(CapacityObservation.self, from: Data(json.utf8))
+    }
+
+    private func decodedBalanceObservation(observedAt: Date, amount: String, currency: String) throws -> CapacityObservation {
+        let series = try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency)
+        return try CapacityObservation(
+            seriesID: series,
+            observedAt: observedAt,
+            value: try CapacityValue(money: Decimal(string: amount)!, currency: currency),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: observedAt
+        )
+    }
+
+    private func percentAssessment(used: Int, resetAt: Date, now: Date) throws -> CapacityAssessment {
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let observation = try CapacityObservation(seriesID: series, observedAt: now, resetAt: resetAt, value: try CapacityValue(usedPercent: used), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now)
+        return CapacityAssessmentService().assess(observation, now: now)
+    }
+
+    private func balanceAssessment(amount: String, currency: String, now: Date) throws -> CapacityAssessment {
+        let series = try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency)
+        let observation = try CapacityObservation(seriesID: series, observedAt: now, value: try CapacityValue(money: Decimal(string: amount)!, currency: currency), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now)
+        return CapacityAssessmentService().assess(observation, now: now)
+    }
+
+    private func capacityPercentRule(conditionRevision: Int = 1, routing: CapacityAlertRouting = .init(macOS: true, telegram: false, discord: false)) throws -> CapacityAlertRule {
+        try CapacityAlertRule(
+            provider: .claude,
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: routing,
+            conditionRevision: conditionRevision,
+            condition: .percentThresholds(reset: true, fifty: false, eighty: true, hundred: true)
+        )
+    }
+
+    private func capacityBalanceRule(threshold: Decimal, currency: String, routing: CapacityAlertRouting) throws -> CapacityAlertRule {
+        try CapacityAlertRule(
+            provider: .deepseek,
+            seriesID: try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: routing,
+            condition: try .balanceBelow(threshold: threshold, currency: currency, rearmAtOrAboveThreshold: true)
+        )
+    }
+
+    private func checksum(inEvidenceData data: Data) throws -> String {
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return try XCTUnwrap(object?["checksum"] as? String)
+    }
+
+    private func generation(inEvidenceData data: Data) throws -> Int {
+        let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        return try XCTUnwrap(object?["generation"] as? Int)
+    }
+
+    private func evidenceTxn(baseGeneration: Int, targetGeneration: Int, checksum: String, phase: String) -> Data {
+        Data(#"{"baseGeneration":\#(baseGeneration),"phase":"\#(phase)","targetChecksum":"\#(checksum)","targetGeneration":\#(targetGeneration)}"#.utf8)
+    }
+
+    private func assertEvidenceRecoveryCase(now: Date, expectedSource: CapacityPersistenceSource, setup: (CapacityEvidenceFileSet) throws -> Void, verify: (CapacityEvidenceFileSet) throws -> Void = { _ in }) async throws {
+        let directory = try capacityTempDirectory()
+        let files = CapacityEvidenceFileSet(directory: directory)
+        try setup(files)
+        let store = CapacityEvidenceStore(files: files, clock: FixedCapacityClock(now: now))
+        let snapshot = await store.loadSnapshot()
+        XCTAssertEqual(snapshot.recoveryStatus, .ready(source: expectedSource, generation: snapshot.generation))
+        try verify(files)
+    }
+}
+
+private struct FixedCapacityClock: CapacityEvidenceClock {
+    let now: Date
+}
+
+private final class FailOnceCapacityFileSystem: CapacityEvidenceFileSystem, @unchecked Sendable {
+    private let base = LocalCapacityEvidenceFileSystem()
+    private let lock = NSLock()
+    private var failingNames: Set<String>
+
+    init(failWriteOnceForLastPathComponent: String) {
+        self.failingNames = [failWriteOnceForLastPathComponent]
+    }
+
+    func fileExists(at url: URL) -> Bool {
+        base.fileExists(at: url)
+    }
+
+    func readData(at url: URL) throws -> Data {
+        try base.readData(at: url)
+    }
+
+    func writeDataExclusively(_ data: Data, to url: URL) throws {
+        if shouldFail(url) {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        try base.writeDataExclusively(data, to: url)
+    }
+
+    func replaceItem(at target: URL, withItemAt source: URL) throws {
+        try base.replaceItem(at: target, withItemAt: source)
+    }
+
+    func copyItem(at source: URL, to target: URL) throws {
+        try base.copyItem(at: source, to: target)
+    }
+
+    func removeItemIfExists(at url: URL) throws {
+        try base.removeItemIfExists(at: url)
+    }
+
+    func createDirectory(at url: URL) throws {
+        try base.createDirectory(at: url)
+    }
+
+    func synchronizeFile(at url: URL) throws {
+        try base.synchronizeFile(at: url)
+    }
+
+    func synchronizeDirectory(at url: URL) throws {
+        try base.synchronizeDirectory(at: url)
+    }
+
+    private func shouldFail(_ url: URL) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return failingNames.remove(url.lastPathComponent) != nil
     }
 }
 

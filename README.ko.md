@@ -83,7 +83,7 @@ open TokenPilot.xcodeproj
 지원 방식 우선순위:
 
 1. **Codex Limit Hints Connector**
-   사용자가 명시적으로 켠 경우 로컬 `codex app-server`에 JSON-RPC `initialize` + `account/rateLimits/read`를 요청합니다. TokenPilot은 Codex access token을 직접 읽거나 저장하지 않습니다.
+   사용자가 명시적으로 켠 경우 로컬 `codex app-server`에 `jsonrpc` 필드 없는 JSONL `initialize`, `initialized`, `account/rateLimits/read` 순서로 요청합니다. TokenPilot은 Codex access token을 직접 읽거나 저장하지 않습니다.
 2. **Manual Limit Snapshot / `/status` parse**
    사용자가 직접 본 5h/weekly 값을 입력하거나 붙여넣은 `/status`에서 추정합니다.
 3. **Local Activity Beta**
@@ -135,7 +135,7 @@ TokenPilot이 읽지 않는 것:
 TokenPilot이 외부로 보내는 것:
 
 - 기본값: 없음
-- Codex Limit Hints Connector ON: 로컬 `codex app-server`에 `account/rateLimits/read` JSON-RPC 요청
+- Codex Limit Hints Connector ON: 로컬 `codex app-server`에 JSONL app-server RPC `account/rateLimits/read` 요청
 - DeepSeek balance ON + API key 저장: `https://api.deepseek.com/user/balance`에 Bearer 요청
 - Telegram/Discord ON + credential 저장: threshold/reset alert 또는 test message
 

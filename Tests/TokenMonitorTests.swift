@@ -94,7 +94,9 @@ final class TokenMonitorTests: XCTestCase {
         let snapshot = ProviderSnapshot(
             provider: .claude,
             fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
-            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720))
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            confidence: .high,
+            dataSource: .officialStatusline
         )
         var settings = AppSettings()
         settings.localization.language = .ko
@@ -106,7 +108,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18% · W 53%")
+        XCTAssertEqual(title, "5h 18% · 7d 53%")
     }
 
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
@@ -114,7 +116,9 @@ final class TokenMonitorTests: XCTestCase {
         let snapshot = ProviderSnapshot(
             provider: .claude,
             fiveHour: LimitWindow(kind: .fiveHour, usedPercent: nil, resetAt: now.addingTimeInterval(7_200)),
-            weekly: LimitWindow(kind: .weekly, usedPercent: nil, resetAt: now.addingTimeInterval(18_720))
+            weekly: LimitWindow(kind: .weekly, usedPercent: nil, resetAt: now.addingTimeInterval(18_720)),
+            confidence: .high,
+            dataSource: .officialStatusline
         )
         var settings = AppSettings()
         settings.localization.language = .ko
@@ -126,7 +130,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 데이터 없음 · W 데이터 없음")
+        XCTAssertEqual(title, "TP · LIVE")
     }
 
     func testMenuBarTitleShowsOnlyValidWeeklyWhenFiveHourUnavailable() {
@@ -150,7 +154,29 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "W 68%")
+        XCTAssertEqual(title, "7d 68% EXP")
+    }
+
+    func testMenuBarTitleShowsAntigravityBridgeContextRemainingPercent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .gemini,
+            updatedAt: now,
+            confidence: .high,
+            dataSource: .officialStatusline,
+            contextWindowUsedPercent: 32
+        )
+        var settings = AppSettings()
+        settings.menuBarDisplayTarget = .gemini
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "BRIDGE 68%")
     }
 
     func testMenuBarTitleDoesNotShowHealthyQuotaWhenCodexLimitWindowsUnavailable() {
@@ -172,7 +198,7 @@ final class TokenMonitorTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_000_000)
         )
 
-        XCTAssertEqual(title, "Co · LIVE")
+        XCTAssertEqual(title, "TP · LIVE")
         XCTAssertFalse(title.contains("100%"))
         XCTAssertFalse(title.contains("0%"))
     }
@@ -199,7 +225,7 @@ final class TokenMonitorTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_000_000)
         )
 
-        XCTAssertEqual(title, "5h 26% · W 80% 추정")
+        XCTAssertEqual(title, "5h 26% EST · 7d 80% EST")
     }
 
     func testMenuBarTitleLocalizesTokenUnitFallback() {
@@ -219,9 +245,9 @@ final class TokenMonitorTests: XCTestCase {
     func testMenuBarStatusDotOnlyAppearsForWarningOrCriticalRisk() {
         var settings = AppSettings()
         let service = MenuBarStatusService()
-        let normal = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 52))
-        let warning = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 70))
-        let critical = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 85))
+        let normal = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 52), confidence: .high, dataSource: .officialStatusline)
+        let warning = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 70), confidence: .high, dataSource: .officialStatusline)
+        let critical = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 85), confidence: .high, dataSource: .officialStatusline)
 
         XCTAssertEqual(service.statusLevel(snapshots: [normal], settings: settings), .normal)
         XCTAssertEqual(service.statusLevel(snapshots: [warning], settings: settings), .warning)
@@ -378,7 +404,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("Provider Diagnostics"))
         XCTAssertTrue(source.contains("model.providerDiagnostics"))
         XCTAssertTrue(source.contains("Check all providers"))
-        XCTAssertTrue(source.contains("Before diagnostics, TokenPilot checks local usage metadata"))
+        XCTAssertTrue(source.contains("Diagnostics summarize source health without showing raw local paths"))
         XCTAssertTrue(source.contains("ProviderConnectionDiagnostic"))
         XCTAssertTrue(source.contains("diagnosticNextActionText"))
         XCTAssertTrue(source.contains("updateDeepSeekDataSourceForCredentialState()"))
@@ -399,11 +425,13 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("@Published var limitHistorySamples"))
         XCTAssertTrue(source.contains("HistoryLimitSignalCard(samples: model.limitHistorySamples"))
         XCTAssertTrue(source.contains("HistoryEmptyState("))
-        XCTAssertTrue(source.contains("No token event history yet"))
+        XCTAssertTrue(source.contains("No usage events recorded"))
         XCTAssertTrue(source.contains("@State private var isExpanded = false"))
-        XCTAssertTrue(source.contains("if isExpanded {"))
-        XCTAssertTrue(source.contains("Show latest limit signals"))
-        XCTAssertTrue(source.contains("Hide latest limit signals"))
+        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
+        XCTAssertTrue(source.contains("if reduceMotion {"))
+        XCTAssertTrue(source.contains("Recorded capacity signal history"))
+        XCTAssertTrue(source.contains("Show recorded capacity signal history"))
+        XCTAssertTrue(source.contains("Hide recorded capacity signal history"))
     }
 
     func testMenuBarLabelUsesSingleLineCompactTitleInsteadOfClippedBadgeStack() throws {
@@ -821,6 +849,12 @@ final class TokenMonitorTests: XCTestCase {
             .map { try String(contentsOf: $0) }.joined(separator: "\n")
     }
 
+    private static func tokenCoreModelsSource() throws -> String {
+        let tokenCoreModelsFile = try projectRootURL()
+            .appendingPathComponent("Sources/TokenCore/Models/TokenPilotModels.swift")
+        return try String(contentsOf: tokenCoreModelsFile)
+    }
+
     private static func tokenCoreServicesSource() throws -> String {
         let tokenCoreServicesDir = try projectRootURL()
             .appendingPathComponent("Sources/TokenCore/Services")
@@ -834,6 +868,390 @@ final class TokenMonitorTests: XCTestCase {
         }
         return try allFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { try String(contentsOf: $0) }.joined(separator: "\n")
+    }
+    func testCapacitySeriesCanonicalIdentityAndValidation() throws {
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300)
+        XCTAssertEqual(series.canonicalID, "claude/five-hour/fixedReset/percent/300")
+        XCTAssertTrue(series.supportsReset)
+
+        XCTAssertNoThrow(try CapacitySeriesID(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, unit: .percent, durationMinutes: 10_080))
+        XCTAssertNoThrow(try CapacitySeriesID(provider: .codex, providerWindowID: "rolling", kind: .rolling, unit: .percent, durationMinutes: 240))
+        XCTAssertEqual(try CapacitySeriesID(provider: .codex, providerWindowID: "primary", kind: .rolling, unit: .percent, durationMinutes: 15).canonicalID, "codex/primary/rolling/percent/15")
+        XCTAssertNoThrow(try CapacitySeriesID(provider: .gemini, providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount))
+        XCTAssertNoThrow(try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency))
+        XCTAssertNoThrow(try CapacitySeriesID(provider: .claude, providerWindowID: "context", kind: .context, unit: .tokens))
+
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "Five Hour", kind: .fixedReset, unit: .percent))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "unknown", kind: .fixedReset, unit: .percent))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .codex, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .balance, unit: .currency))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "context", kind: .fixedReset, unit: .tokens))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .gemini, providerWindowID: "daily-requests", kind: .balance, unit: .currency))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 0))
+        XCTAssertThrowsError(try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 301))
+    }
+
+    func testCapacityCodableBoundariesRejectInvalidValuesAndSeries() throws {
+        let decoder = JSONDecoder()
+
+        XCTAssertThrowsError(try decoder.decode(CapacitySeriesID.self, from: data("""
+        {"provider":"claude","providerWindowID":"Five Hour","kind":"fixedReset","unit":"percent","durationMinutes":0}
+        """)))
+        XCTAssertThrowsError(try decoder.decode(CapacitySeriesID.self, from: data("""
+        {"provider":"claude","providerWindowID":"five-hour","kind":"balance","unit":"currency"}
+        """)))
+        let decodedPercent = try decoder.decode(CapacityValue.self, from: data(#"{"usedPercent":{"_0":50}}"#))
+        XCTAssertEqual(decodedPercent.kind, .percent)
+        XCTAssertEqual(decodedPercent.usedPercent, 50)
+        let decodedMoney = try decoder.decode(CapacityValue.self, from: data(#"{"money":{"_0":1,"currency":"USD"}}"#))
+        XCTAssertEqual(decodedMoney.kind, .currency)
+        XCTAssertEqual(decodedMoney.moneyAmount, Decimal(1))
+        XCTAssertEqual(decodedMoney.currency, "USD")
+        XCTAssertEqual(try decoder.decode(CapacityValue.self, from: JSONEncoder().encode(decodedPercent)), decodedPercent)
+
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"usedPercent":{"_0":101}}"#)))
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"money":{"_0":-1,"currency":"USD"}}"#)))
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"money":{"_0":1,"currency":"usd"}}"#)))
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"count":{"_0":-1}}"#)))
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"tokens":{"_0":-1}}"#)))
+        XCTAssertThrowsError(try decoder.decode(CapacityValue.self, from: data(#"{"usedPercent":{"_0":50},"count":{"_0":1}}"#)))
+    }
+
+    func testCapacityValueAndObservationBoundaries() throws {
+        let source = try Self.tokenCoreModelsSource()
+        XCTAssertTrue(source.contains("public struct CapacityValue"))
+        XCTAssertFalse(source.contains("public enum CapacityValue"))
+        XCTAssertTrue(source.contains("private let storage: Storage"))
+
+        let zero = try CapacityValue(usedPercent: 0)
+        let full = try CapacityValue(usedPercent: 100)
+        XCTAssertEqual(zero.kind, .percent)
+        XCTAssertEqual(zero.usedPercent, 0)
+        XCTAssertEqual(full.usedPercent, 100)
+        XCTAssertThrowsError(try CapacityValue(usedPercent: 101))
+
+        let balance = try CapacityValue(money: 0, currency: "USD")
+        XCTAssertEqual(balance.kind, .currency)
+        XCTAssertEqual(balance.moneyAmount, Decimal(0))
+        XCTAssertEqual(balance.currency, "USD")
+        XCTAssertThrowsError(try CapacityValue(money: -1, currency: "USD"))
+        XCTAssertThrowsError(try CapacityValue(money: 1, currency: "usd"))
+
+        let count = try CapacityValue(count: 0)
+        let tokens = try CapacityValue(tokens: 1)
+        XCTAssertEqual(count.kind, .requestCount)
+        XCTAssertEqual(count.count, 0)
+        XCTAssertEqual(tokens.kind, .tokens)
+        XCTAssertEqual(tokens.tokens, 1)
+        XCTAssertThrowsError(try CapacityValue(count: -1))
+        XCTAssertThrowsError(try CapacityValue(tokens: -1))
+
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let contextSeries = try CapacitySeriesID(provider: .codex, providerWindowID: "context", kind: .context, unit: .tokens)
+        let value = try CapacityValue(usedPercent: 70)
+
+        XCTAssertNoThrow(try CapacityObservation(seriesID: series, observedAt: now.addingTimeInterval(60), value: value, authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now))
+        XCTAssertThrowsError(try CapacityObservation(seriesID: series, observedAt: now.addingTimeInterval(61), value: value, authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now))
+        XCTAssertNoThrow(try CapacityObservation(seriesID: series, observedAt: now.addingTimeInterval(-45 * 86_400), value: value, authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now))
+        XCTAssertThrowsError(try CapacityObservation(seriesID: series, observedAt: now.addingTimeInterval(-45 * 86_400 - 1), value: value, authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now))
+        XCTAssertThrowsError(try CapacityObservation(seriesID: contextSeries, observedAt: now, resetAt: now.addingTimeInterval(3_600), value: try CapacityValue(tokens: 1), authority: .localDerived, stability: .manual, freshnessPolicy: .init(maximumAge: 900), comparability: .incomparable, parserRevision: "test", now: now))
+        XCTAssertThrowsError(try CapacityObservation(seriesID: series, observedAt: now, value: try CapacityValue(count: 1), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now))
+    }
+
+    func testCapacityObservationDecodeIsStructuralAndAdmissionUsesInjectedNow() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let future = now.addingTimeInterval(61)
+        let decoded = try JSONDecoder().decode(CapacityObservation.self, from: data(observationJSON(
+            provider: "claude",
+            providerWindowID: "five-hour",
+            kind: "fixedReset",
+            unit: "percent",
+            observedAt: future,
+            valueJSON: #"{"usedPercent":{"_0":70}}"#,
+            authority: "providerReported",
+            stability: "supported",
+            consent: "notRequired",
+            maximumAge: 900,
+            comparability: "comparable",
+            parserRevision: "test"
+        )))
+        XCTAssertThrowsError(try decoded.validateAdmission(now: now))
+
+        let stale = now.addingTimeInterval(-45 * 86_400 - 1)
+        let structurallyDecodedStale = try JSONDecoder().decode(CapacityObservation.self, from: data(observationJSON(
+            provider: "claude",
+            providerWindowID: "five-hour",
+            kind: "fixedReset",
+            unit: "percent",
+            observedAt: stale,
+            valueJSON: #"{"usedPercent":{"_0":70}}"#,
+            authority: "providerReported",
+            stability: "supported",
+            consent: "notRequired",
+            maximumAge: 900,
+            comparability: "comparable",
+            parserRevision: "test"
+        )))
+        XCTAssertThrowsError(try structurallyDecodedStale.validateAdmission(now: now))
+
+        XCTAssertThrowsError(try JSONDecoder().decode(CapacityObservation.self, from: data(observationJSON(
+            provider: "deepseek",
+            providerWindowID: "balance",
+            kind: "balance",
+            unit: "currency",
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            valueJSON: #"{"money":{"_0":1,"currency":"USD"}}"#,
+            authority: "providerReported",
+            stability: "supported",
+            consent: "notRequired",
+            maximumAge: 3_600,
+            comparability: "comparable",
+            parserRevision: "test"
+        ))))
+    }
+
+    func testCapacityAssessmentTruthTableAndFreshnessBoundary() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        func observation(_ used: Int, authority: CapacityAuthority = .providerReported, stability: CapacityStability = .supported, consent: CapacityConsent = .notRequired, age: TimeInterval = 900) throws -> CapacityObservation {
+            try CapacityObservation(seriesID: series, observedAt: now.addingTimeInterval(-age), resetAt: now.addingTimeInterval(3_600), value: try CapacityValue(usedPercent: used), authority: authority, stability: stability, consent: consent, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now)
+        }
+        let service = CapacityAssessmentService()
+        XCTAssertEqual(service.assess(try observation(69), now: now).risk, .normal)
+        XCTAssertEqual(service.assess(try observation(70), now: now).risk, .warning)
+        XCTAssertEqual(service.assess(try observation(85), now: now).risk, .critical)
+        XCTAssertEqual(service.assess(try observation(80, stability: .compatibilityBridge), now: now).alertEligibility, .ineligible)
+        XCTAssertEqual(service.assess(try observation(80, stability: .experimentalTransport), now: now).forecast, .cohortOnly)
+        XCTAssertEqual(service.assess(try observation(80, authority: .userEntered), now: now).risk, .informational)
+        XCTAssertEqual(service.assess(try observation(80, consent: .unavailable), now: now).alertEligibility, .ineligible)
+        XCTAssertEqual(service.assess(try observation(80, age: 901), now: now).freshness, .stale)
+    }
+
+    func testCapacityRuleEligibilityRequiresExactIdentityAndConditionCompatibility() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let percentSeries = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let percentObservation = try CapacityObservation(seriesID: percentSeries, observedAt: now, resetAt: now.addingTimeInterval(1_000), value: try CapacityValue(usedPercent: 80), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now)
+        let percentAssessment = CapacityAssessmentService().assess(percentObservation, now: now)
+        let percentRule = try CapacityAlertRule(provider: .claude, seriesID: percentSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: .percentThresholds(reset: true, fifty: false, eighty: true, hundred: true))
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: percentRule, assessment: percentAssessment), .percent)
+
+        let balanceSeries = try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency)
+        let balanceRule = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: try .balanceBelow(threshold: 5, currency: "USD", rearmAtOrAboveThreshold: true))
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: balanceRule, assessment: percentAssessment), .ineligible)
+
+        let balanceObservation = try CapacityObservation(seriesID: balanceSeries, observedAt: now, value: try CapacityValue(money: 4, currency: "USD"), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 3_600), comparability: .comparable, parserRevision: "test", now: now)
+        let balanceAssessment = CapacityAssessmentService().assess(balanceObservation, now: now)
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: balanceRule, assessment: balanceAssessment), .balance)
+
+        let highThresholdMiss = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: try .balanceBelow(threshold: 3, currency: "USD", rearmAtOrAboveThreshold: true))
+        let currencyMismatch = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: try .balanceBelow(threshold: 5, currency: "EUR", rearmAtOrAboveThreshold: true))
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: highThresholdMiss, assessment: balanceAssessment), .ineligible)
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: currencyMismatch, assessment: balanceAssessment), .ineligible)
+    }
+
+    func testCapacityAlertRuleConditionAndIdentityValidation() throws {
+        let percentSeries = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let balanceSeries = try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency)
+
+        XCTAssertThrowsError(try CapacityAlertCondition.balanceBelow(threshold: -5, currency: "USD", rearmAtOrAboveThreshold: true))
+        XCTAssertThrowsError(try CapacityAlertCondition.balanceBelow(threshold: 5, currency: "usd", rearmAtOrAboveThreshold: true))
+        XCTAssertThrowsError(try JSONDecoder().decode(CapacityAlertCondition.self, from: data(#"{"balanceBelow":{"threshold":-5,"currency":"USD","rearmAtOrAboveThreshold":true}}"#)))
+        XCTAssertThrowsError(try CapacityAlertRule(provider: .codex, seriesID: percentSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: .percentThresholds(reset: true, fifty: true, eighty: true, hundred: true)))
+        XCTAssertThrowsError(try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: .percentThresholds(reset: true, fifty: true, eighty: true, hundred: true)))
+        XCTAssertThrowsError(try CapacityAlertRule(provider: .claude, seriesID: percentSeries, authority: .userEntered, stability: .supported, enabled: true, routing: .init(), condition: .percentThresholds(reset: true, fifty: true, eighty: true, hundred: true)))
+        XCTAssertThrowsError(try CapacityAlertRule(provider: .claude, seriesID: percentSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), conditionRevision: 0, condition: .percentThresholds(reset: true, fifty: true, eighty: true, hundred: true)))
+
+        let balanceRule = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: try .balanceBelow(threshold: 5, currency: "USD", rearmAtOrAboveThreshold: true))
+        let pendingRule = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: .pendingBalanceCurrencyBinding)
+        XCTAssertNotEqual(balanceRule.id, pendingRule.id)
+        XCTAssertTrue(balanceRule.id.contains("balanceBelow"))
+        XCTAssertTrue(pendingRule.id.contains("pendingBalanceCurrencyBinding"))
+        XCTAssertFalse(pendingRule.enabled)
+
+        let encodedPending = try JSONEncoder().encode(pendingRule)
+        let decodedPending = try JSONDecoder().decode(CapacityAlertRule.self, from: encodedPending)
+        XCTAssertFalse(decodedPending.enabled)
+    }
+
+    func testCapacityDeliveryKeyAndStateAreTypedAndValidated() throws {
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let rule = try CapacityAlertRule(provider: .claude, seriesID: series, authority: .providerReported, stability: .supported, enabled: true, routing: .init(macOS: true, telegram: true), conditionRevision: 2, condition: .percentThresholds(reset: true, fifty: false, eighty: true, hundred: true))
+        let macKey = CapacityAlertDeliveryKey(rule: rule, channel: .macOS)
+        let telegramKey = CapacityAlertDeliveryKey(rule: rule, channel: .telegram)
+
+        XCTAssertNotEqual(macKey, telegramKey)
+        XCTAssertEqual(macKey.ruleID, rule.id)
+        XCTAssertEqual(macKey.conditionRevision, 2)
+        XCTAssertEqual(macKey.channel, .macOS)
+
+        let state = try CapacityAlertDeliveryState(key: macKey, status: .pending, conditionState: .percent(activeCycleID: "cycle-1", lastUsed: 80, deliveredThresholds: [.eighty]))
+        let roundTrip = try JSONDecoder().decode(CapacityAlertDeliveryState.self, from: JSONEncoder().encode(state))
+        XCTAssertEqual(roundTrip, state)
+
+        XCTAssertThrowsError(try CapacityAlertDeliveryKey(ruleID: "", conditionRevision: 1, channel: .macOS))
+        XCTAssertThrowsError(try CapacityAlertDeliveryKey(ruleID: rule.id, conditionRevision: 0, channel: .macOS))
+        XCTAssertThrowsError(try CapacityAlertDeliveryState(key: macKey, conditionState: .percent(activeCycleID: "", lastUsed: 80, deliveredThresholds: [])))
+        XCTAssertThrowsError(try CapacityAlertDeliveryState(key: macKey, conditionState: .percent(activeCycleID: nil, lastUsed: 101, deliveredThresholds: [])))
+        XCTAssertThrowsError(try CapacityAlertDeliveryState(key: macKey, conditionState: .balance(lastKnownBelow: nil, crossingGeneration: -1, deliveredCrossingGeneration: nil)))
+        XCTAssertThrowsError(try JSONDecoder().decode(CapacityAlertDeliveryKey.self, from: data(#"{"ruleID":"","conditionRevision":1,"channel":"macOS"}"#)))
+        XCTAssertThrowsError(try JSONDecoder().decode(CapacityAlertConditionState.self, from: data(#"{"percent":{"lastUsed":50,"deliveredThresholds":["bogus"]}}"#)))
+    }
+
+    func testCapacityTransitionRuleAndPresentationSemantics() throws {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let observation = try CapacityObservation(seriesID: series, observedAt: now, resetAt: now.addingTimeInterval(1_000), value: try CapacityValue(usedPercent: 80), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 900), comparability: .comparable, parserRevision: "test", now: now)
+        let assessment = CapacityAssessmentService().assess(observation, now: now)
+        let presentation = CapacityPresentationMapper().map(assessment)
+        XCTAssertEqual(presentation.titleKey, "capacity.remaining.percent")
+        XCTAssertEqual(presentation.data["remainingPercent"], "20")
+        XCTAssertFalse(assessment.transitionKey.contains("test"))
+
+        let pending = try CapacityAlertRule(provider: .deepseek, seriesID: try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency), authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: .pendingBalanceCurrencyBinding)
+        XCTAssertEqual(CapacityAssessmentService().eligibility(for: pending, assessment: assessment), .ineligible)
+    }
+
+    func testAlertFallbackCopyUsesNeutralWaitRefreshGuidance() {
+        let eighty = String(format: TokenPilotLocalizer.localized("alert.eighty.body", language: .en), "Claude Code · 5h", 80, "1h")
+        let hundred = String(format: TokenPilotLocalizer.localized("alert.hundred.body", language: .en), "Claude Code · 5h", "1h")
+        for body in [eighty, hundred] {
+            XCTAssertFalse(body.localizedCaseInsensitiveContains("switch"))
+            XCTAssertFalse(body.contains("Codex"))
+            XCTAssertFalse(body.contains("Gemini"))
+            XCTAssertTrue(body.localizedCaseInsensitiveContains("wait"))
+            XCTAssertTrue(body.localizedCaseInsensitiveContains("refresh"))
+        }
+    }
+
+    func testCapacityAlertChannelSettingsRequireParentProviderAndDestinations() {
+        var settings = AppSettings()
+        let routing = CapacityAlertRouting(macOS: true, telegram: true, discord: true)
+
+        settings.globalNotificationsEnabled = false
+        var channels = CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true)
+        XCTAssertFalse(channels.isEnabled(.macOS, routing: routing))
+        XCTAssertFalse(channels.isEnabled(.telegram, routing: routing))
+        XCTAssertFalse(channels.isEnabled(.discord, routing: routing))
+
+        settings.globalNotificationsEnabled = true
+        settings.macOSNotificationsEnabled = false
+        channels = CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true)
+        XCTAssertFalse(channels.isEnabled(.macOS, routing: routing))
+
+        settings.macOSNotificationsEnabled = true
+        XCTAssertTrue(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true).isEnabled(.macOS, routing: routing))
+
+        settings.telegramNotificationsEnabled = true
+        settings.telegram.isEnabled = true
+        settings.telegram.chatID = ""
+        channels = CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true)
+        XCTAssertFalse(channels.isEnabled(.telegram, routing: routing))
+
+        settings.telegram.chatID = "12345"
+        XCTAssertTrue(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true).isEnabled(.telegram, routing: routing))
+
+        settings.telegram.isEnabled = false
+        XCTAssertFalse(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true).isEnabled(.telegram, routing: routing))
+
+        settings.discordNotificationsEnabled = true
+        settings.discord.isEnabled = true
+        XCTAssertFalse(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: false).isEnabled(.discord, routing: routing))
+        XCTAssertTrue(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true).isEnabled(.discord, routing: routing))
+
+        settings.discord.isEnabled = false
+        XCTAssertFalse(CapacityAlertChannelSettings(settings: settings, telegramCredentialPresent: true, discordCredentialPresent: true).isEnabled(.discord, routing: routing))
+    }
+
+    func testG004NotificationAccessibilityAndAlertCopyGuardsStayInPlace() throws {
+        let source = try Self.tokenMonitorAppSource()
+
+        let sendTestBody = try XCTUnwrap(source.swiftFunctionBody(named: "sendTestNotification"))
+        XCTAssertTrue(sendTestBody.contains("guard settings.globalNotificationsEnabled"))
+        XCTAssertTrue(sendTestBody.contains("settings.globalNotificationsEnabled && settings.macOSNotificationsEnabled"))
+
+        let capacityMessageBody = try XCTUnwrap(source.swiftFunctionBody(named: "capacityAlertMessage"))
+        XCTAssertTrue(capacityMessageBody.contains("capacity.notification.percent.body"))
+        XCTAssertFalse(capacityMessageBody.contains("providerWindowID"))
+
+        XCTAssertTrue(source.contains("Button(model.t(\"Delete API Key\"), role: .destructive)"))
+        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(snapshot.provider.displayName, language: language)) \\(localized(window.label, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
+    }
+
+    func testG004LocalizationKeysHaveRuntimeAndCatalogParity() throws {
+        let keys = [
+            "Cancel",
+            "Remaining capacity",
+            "Runtime recovery required",
+            "DeepSeek API Key",
+            "Source unavailable",
+            "capacity.notification.percent.body",
+            "5-hour window"
+        ]
+
+        for key in keys {
+            XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .ko), key)
+            XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .ja), key)
+            XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .zhHans), key)
+        }
+
+        let catalogURL = try Self.projectRootURL()
+            .appendingPathComponent("Sources/TokenApp/Resources/Localizable.xcstrings")
+        let catalogData = try Data(contentsOf: catalogURL)
+        let catalog = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let strings = try XCTUnwrap(catalog["strings"] as? [String: Any])
+
+        for key in keys {
+            let entry = try XCTUnwrap(strings[key] as? [String: Any], "Missing catalog key \(key)")
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
+            for locale in ["en", "ko", "ja", "zh-Hans"] {
+                let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing \(locale) for \(key)")
+                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing stringUnit for \(key) \(locale)")
+                let value = try XCTUnwrap(stringUnit["value"] as? String, "Missing value for \(key) \(locale)")
+                XCTAssertFalse(value.isEmpty, "Empty value for \(key) \(locale)")
+            }
+        }
+    }
+
+    private func data(_ string: String) -> Data {
+        Data(string.utf8)
+    }
+
+    private func observationJSON(
+        provider: String,
+        providerWindowID: String,
+        kind: String,
+        unit: String,
+        observedAt: Date,
+        resetAt: Date? = nil,
+        valueJSON: String,
+        authority: String,
+        stability: String,
+        consent: String,
+        maximumAge: TimeInterval,
+        comparability: String,
+        parserRevision: String
+    ) -> String {
+        let reset = resetAt.map { #","resetAt":\#(jsonDate($0))"# } ?? ""
+        return """
+        {
+          "seriesID":{"provider":"\(provider)","providerWindowID":"\(providerWindowID)","kind":"\(kind)","unit":"\(unit)"},
+          "observedAt":\(jsonDate(observedAt))\(reset),
+          "value":\(valueJSON),
+          "authority":"\(authority)",
+          "stability":"\(stability)",
+          "consent":"\(consent)",
+          "freshnessPolicy":{"maximumAge":\(maximumAge)},
+          "comparability":"\(comparability)",
+          "parserRevision":"\(parserRevision)"
+        }
+        """
+    }
+
+    private func jsonDate(_ date: Date) -> String {
+        String(date.timeIntervalSinceReferenceDate)
     }
 }
 

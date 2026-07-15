@@ -54,11 +54,18 @@ public protocol CodexAppServerRateLimitClient: Sendable {
 
 public enum CodexAppServerRateLimitError: Error, Sendable {
     case launchFailed
+    case executableNotTrusted
     case timeout
     case noResponse
+    case malformedResponse
+    case outputLimitExceeded
+    case cancelled
 }
 
 public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClient, Sendable {
+    private static let maxStreamBytes = 1_024 * 1_024
+    private static let maxLineBytes = 256 * 1_024
+
     private let codexExecutablePath: String
     private let environment: [String: String]
     private let timeoutSeconds: TimeInterval
@@ -86,16 +93,32 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
     }
 
     public func readRateLimits() async throws -> Data {
-        try await Task.detached(priority: .utility) {
-            try Self.runAppServerAndReadRateLimits(
-                codexExecutablePath: codexExecutablePath,
-                environment: environment,
-                timeoutSeconds: timeoutSeconds,
-                clientName: clientName,
-                clientTitle: clientTitle,
-                clientVersion: clientVersion
-            )
-        }.value
+        try Task.checkCancellation()
+        let terminationBox = ProcessTerminationBox()
+        return try await withTaskCancellationHandler {
+            let task = Task.detached(priority: .utility) {
+                try Self.runAppServerAndReadRateLimits(
+                    codexExecutablePath: codexExecutablePath,
+                    environment: environment,
+                    timeoutSeconds: timeoutSeconds,
+                    clientName: clientName,
+                    clientTitle: clientTitle,
+                    clientVersion: clientVersion,
+                    terminationBox: terminationBox
+                )
+            }
+            do {
+                let data = try await task.value
+                try Task.checkCancellation()
+                return data
+            } catch is CancellationError {
+                terminationBox.cancel()
+                _ = await task.result
+                throw CodexAppServerRateLimitError.cancelled
+            }
+        } onCancel: {
+            terminationBox.cancel()
+        }
     }
 
     internal static func makeRequestLinesForTesting(clientName: String, clientTitle: String, clientVersion: String) -> [String] {
@@ -104,7 +127,6 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
 
     private static func makeRequestLines(clientName: String, clientTitle: String, clientVersion: String) -> [String] {
         let initialize: [String: Any] = [
-            "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": [
@@ -118,12 +140,16 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
                 ]
             ]
         ]
-        let read: [String: Any] = [
-            "jsonrpc": "2.0",
-            "id": 2,
-            "method": "account/rateLimits/read"
+        let initialized: [String: Any] = [
+            "method": "initialized",
+            "params": [:]
         ]
-        return [initialize, read].compactMap { object in
+        let read: [String: Any] = [
+            "id": 2,
+            "method": "account/rateLimits/read",
+            "params": [:]
+        ]
+        return [initialize, initialized, read].compactMap { object in
             guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
                   let str = String(data: data, encoding: .utf8) else {
                 return nil
@@ -138,18 +164,14 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
         timeoutSeconds: TimeInterval,
         clientName: String,
         clientTitle: String,
-        clientVersion: String
+        clientVersion: String,
+        terminationBox: ProcessTerminationBox
     ) throws -> Data {
         let process = Process()
-        let command = codexExecutablePath.trimmingCharacters(in: .whitespacesAndNewlines)
-        if command.contains("/") {
-            process.executableURL = URL(fileURLWithPath: (command as NSString).expandingTildeInPath)
-            process.arguments = ["app-server"]
-        } else {
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-            process.arguments = [command.isEmpty ? "codex" : command, "app-server"]
-        }
-        process.environment = environment
+        let executableURL = try resolveExecutable(command: codexExecutablePath, environment: environment)
+        process.executableURL = executableURL
+        process.arguments = ["app-server"]
+        process.environment = allowedEnvironment(environment)
 
         let stdinPipe = Pipe()
         let stdoutPipe = Pipe()
@@ -158,16 +180,19 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        let collector = ResponseCollector()
+        let collector = ResponseCollector(maxStreamBytes: maxStreamBytes, maxLineBytes: maxLineBytes)
+        terminationBox.setCollector(collector)
+        terminationBox.setProcess(process)
 
         stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return }
-            collector.append(data)
+            collector.appendStdout(data)
         }
-        // Drain stderr so a noisy CLI cannot block while the JSON-RPC response is pending.
         stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-            _ = handle.availableData
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            collector.appendStderr(data)
         }
 
         do {
@@ -175,6 +200,7 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
         } catch {
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil
+            terminationBox.clear()
             throw CodexAppServerRateLimitError.launchFailed
         }
 
@@ -182,23 +208,96 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
             stdoutPipe.fileHandleForReading.readabilityHandler = nil
             stderrPipe.fileHandleForReading.readabilityHandler = nil
             try? stdinPipe.fileHandleForWriting.close()
-            terminateProcessIfNeeded(process)
+            terminationBox.terminate()
+            terminationBox.clear()
         }
 
-        let request = makeRequestLines(clientName: clientName, clientTitle: clientTitle, clientVersion: clientVersion)
-            .map { $0 + "\n" }
-            .joined()
-        if let data = request.data(using: .utf8) {
-            stdinPipe.fileHandleForWriting.write(data)
-        }
+        let requestLines = makeRequestLines(clientName: clientName, clientTitle: clientTitle, clientVersion: clientVersion)
+        guard requestLines.count == 3 else { throw CodexAppServerRateLimitError.malformedResponse }
+        let deadline = DispatchTime.now() + .milliseconds(Int(timeoutSeconds * 1_000))
 
-        let timeout = DispatchTime.now() + .milliseconds(Int(timeoutSeconds * 1_000))
-        guard collector.wait(timeout: timeout) else {
+        try terminationBox.checkCancellation()
+        try writeJSONLine(requestLines[0], to: stdinPipe.fileHandleForWriting)
+        guard try collector.waitForResponse(id: 1, deadline: deadline) != nil else {
             throw CodexAppServerRateLimitError.timeout
         }
 
-        guard let finalResponse = collector.responseData() else { throw CodexAppServerRateLimitError.noResponse }
+        try terminationBox.checkCancellation()
+        try writeJSONLine(requestLines[1], to: stdinPipe.fileHandleForWriting)
+        try writeJSONLine(requestLines[2], to: stdinPipe.fileHandleForWriting)
+        try terminationBox.checkCancellation()
+        guard let finalResponse = try collector.waitForResponse(id: 2, deadline: deadline) else {
+            throw CodexAppServerRateLimitError.timeout
+        }
         return finalResponse
+    }
+
+    private static func writeJSONLine(_ line: String, to handle: FileHandle) throws {
+        guard let data = (line + "\n").data(using: .utf8) else {
+            throw CodexAppServerRateLimitError.malformedResponse
+        }
+        handle.write(data)
+    }
+
+    private static func resolveExecutable(command: String, environment: [String: String]) throws -> URL {
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        let commandName = trimmed.isEmpty ? "codex" : trimmed
+        let manager = FileManager.default
+
+        func trustedURL(_ rawPath: String) -> URL? {
+            let expanded = (rawPath as NSString).expandingTildeInPath
+            guard expanded.hasPrefix("/") else { return nil }
+            let url = URL(fileURLWithPath: expanded).resolvingSymlinksInPath().standardizedFileURL
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: url.path, isDirectory: &isDirectory),
+                  !isDirectory.boolValue,
+                  manager.isExecutableFile(atPath: url.path) else {
+                return nil
+            }
+            return url
+        }
+
+        if commandName.contains("/") {
+            guard let url = trustedURL(commandName) else {
+                throw CodexAppServerRateLimitError.executableNotTrusted
+            }
+            return url
+        }
+        var fallbackDirectories = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        if let home = environment["HOME"], home.hasPrefix("/") {
+            fallbackDirectories.insert(
+                URL(fileURLWithPath: home, isDirectory: true)
+                    .appendingPathComponent(".local/bin", isDirectory: true)
+                    .path,
+                at: 0
+            )
+        }
+        for directory in fallbackDirectories {
+            if let url = trustedURL(
+                URL(fileURLWithPath: directory, isDirectory: true)
+                    .appendingPathComponent(commandName)
+                    .path
+            ) {
+                return url
+            }
+        }
+
+        let path = environment["PATH"] ?? ProcessInfo.processInfo.environment["PATH"] ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+        for directory in path.split(separator: ":").map(String.init) {
+            guard directory.hasPrefix("/") else { continue }
+            if let url = trustedURL(URL(fileURLWithPath: directory, isDirectory: true).appendingPathComponent(commandName).path) {
+                return url
+            }
+        }
+        throw CodexAppServerRateLimitError.executableNotTrusted
+    }
+
+    private static func allowedEnvironment(_ environment: [String: String]) -> [String: String] {
+        ["HOME", "PATH", "LANG", "LC_CTYPE"].reduce(into: [:]) { result, key in
+            if let value = environment[key] {
+                result[key] = value
+            }
+        }
     }
 
     private static func terminateProcessIfNeeded(_ process: Process, graceSeconds: TimeInterval = 0.25) {
@@ -225,46 +324,197 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
         #endif
     }
 
+    private final class ProcessTerminationBox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var collector: ResponseCollector?
+        private var cancellationRequested = false
+        private var terminationStarted = false
+
+        func setCollector(_ collector: ResponseCollector) {
+            lock.lock()
+            self.collector = collector
+            let shouldCancel = cancellationRequested
+            lock.unlock()
+            if shouldCancel {
+                collector.cancel()
+            }
+        }
+
+        func setProcess(_ process: Process) {
+            lock.lock()
+            self.process = process
+            lock.unlock()
+        }
+
+        func checkCancellation() throws {
+            lock.lock()
+            let cancelled = cancellationRequested
+            lock.unlock()
+            if cancelled {
+                throw CodexAppServerRateLimitError.cancelled
+            }
+        }
+
+        func cancel() {
+            let current: Process?
+            let currentCollector: ResponseCollector?
+            lock.lock()
+            cancellationRequested = true
+            currentCollector = collector
+            if !terminationStarted, let process, process.isRunning {
+                terminationStarted = true
+                current = process
+            } else {
+                current = nil
+            }
+            lock.unlock()
+
+            currentCollector?.cancel()
+            if let current {
+                CodexAppServerRateLimitProcessClient.terminateProcessIfNeeded(current)
+            }
+        }
+
+        func terminate() {
+            let current: Process?
+            lock.lock()
+            if terminationStarted {
+                current = nil
+            } else {
+                terminationStarted = true
+                current = process
+            }
+            lock.unlock()
+            if let current {
+                CodexAppServerRateLimitProcessClient.terminateProcessIfNeeded(current)
+            }
+        }
+
+        func clear() {
+            lock.lock()
+            process = nil
+            collector = nil
+            lock.unlock()
+        }
+    }
+
     private final class ResponseCollector: @unchecked Sendable {
         private let lock = NSLock()
         private let semaphore = DispatchSemaphore(value: 0)
+        private let maxStreamBytes: Int
+        private let maxLineBytes: Int
+        private var stdoutBytes = 0
+        private var stderrBytes = 0
         private var buffer = Data()
-        private var response: Data?
+        private var responses: [Int: Data] = [:]
+        private var failure: CodexAppServerRateLimitError?
 
-        func append(_ data: Data) {
+        init(maxStreamBytes: Int, maxLineBytes: Int) {
+            self.maxStreamBytes = maxStreamBytes
+            self.maxLineBytes = maxLineBytes
+        }
+
+        func appendStdout(_ data: Data) {
             lock.lock()
             defer { lock.unlock() }
+            guard failure == nil else { return }
+            stdoutBytes += data.count
+            guard stdoutBytes <= maxStreamBytes else {
+                failLocked(.outputLimitExceeded)
+                return
+            }
             buffer.append(data)
+            guard buffer.count <= maxLineBytes else {
+                failLocked(.outputLimitExceeded)
+                return
+            }
             let newline = Data([0x0A])
             while let range = buffer.firstRange(of: newline) {
                 let line = Data(buffer[..<range.lowerBound])
                 buffer.removeSubrange(..<range.upperBound)
-                if CodexAppServerRateLimitProcessClient.isTargetRateLimitResponse(line) {
-                    response = line
+                if line.count > maxLineBytes {
+                    failLocked(.outputLimitExceeded)
+                    return
+                }
+                if let id = CodexAppServerRateLimitProcessClient.responseID(line) {
+                    responses[id] = line
                     semaphore.signal()
-                    break
+                } else if CodexAppServerRateLimitProcessClient.isNotification(line) {
+                    continue
+                } else if CodexAppServerRateLimitProcessClient.looksLikeJSON(line) {
+                    failLocked(.malformedResponse)
+                    return
                 }
             }
         }
 
-        func wait(timeout: DispatchTime) -> Bool {
-            semaphore.wait(timeout: timeout) == .success
-        }
-
-        func responseData() -> Data? {
+        func appendStderr(_ data: Data) {
             lock.lock()
             defer { lock.unlock() }
-            return response
+            guard failure == nil else { return }
+            stderrBytes += data.count
+            if stderrBytes > maxStreamBytes {
+                failLocked(.outputLimitExceeded)
+            }
+        }
+
+        func waitForResponse(id: Int, deadline: DispatchTime) throws -> Data? {
+            while true {
+                lock.lock()
+                if let failure {
+                    lock.unlock()
+                    throw failure
+                }
+                if let response = responses[id] {
+                    lock.unlock()
+                    return response
+                }
+                lock.unlock()
+                if semaphore.wait(timeout: deadline) != .success {
+                    lock.lock()
+                    let failure = self.failure
+                    lock.unlock()
+                    if let failure { throw failure }
+                    return nil
+                }
+            }
+        }
+
+        func cancel() {
+            lock.lock()
+            defer { lock.unlock() }
+            failLocked(.cancelled)
+        }
+
+        private func failLocked(_ error: CodexAppServerRateLimitError) {
+            guard failure == nil else { return }
+            failure = error
+            semaphore.signal()
         }
     }
 
-    private static func isTargetRateLimitResponse(_ data: Data) -> Bool {
-        let trimmed = Data(String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines).utf8 ?? "".utf8)
-        guard !trimmed.isEmpty,
-              let object = try? JSONSerialization.jsonObject(with: trimmed) as? [String: Any],
-              let id = intValue(object["id"]),
-              id == 2 else { return false }
-        return true
+    private static func responseID(_ data: Data) -> Int? {
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty,
+              let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any] else { return nil }
+        return intValue(object["id"])
+    }
+
+    private static func isNotification(_ data: Data) -> Bool {
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !text.isEmpty,
+              let object = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+              object["id"] == nil,
+              let method = object["method"] as? String else {
+            return false
+        }
+        return !method.isEmpty
+    }
+
+    private static func looksLikeJSON(_ data: Data) -> Bool {
+        let text = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.hasPrefix("{") || text.hasPrefix("[")
     }
 }
 
@@ -550,6 +800,11 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     private let overrideLogURL: URL?
     private let fallbackLogURLs: [URL]
     private let staleThreshold: TimeInterval
+    private struct AntigravityCapacityPercent {
+        var usedPercent: Int
+        var timestamp: Date
+    }
+
 
     public init(logURL: URL? = nil, logURLs: [URL] = [], staleThreshold: TimeInterval = 300) {
         self.overrideLogURL = logURL
@@ -600,29 +855,48 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         }
         defer { scopedAccess?.stop() }
 
-        func readEvents(from urls: [URL]) -> ([UsageEvent], Error?) {
+        func readEvents(from urls: [URL]) -> ([UsageEvent], Error?, AntigravityCapacityPercent?) {
             let files = urls.flatMap { geminiInputFiles(from: $0) }
             var collectedEvents: [UsageEvent] = []
             var collectedReadError: Error?
+            var latestCapacity: AntigravityCapacityPercent?
             for file in files {
                 do {
                     let content = try tokenPilotBoundedTextContents(of: file)
                     collectedEvents.append(contentsOf: parseEvents(from: content, fileURL: file))
+                    if let capacity = parseAntigravityCapacityPercent(from: content, fileURL: file),
+                       latestCapacity == nil || capacity.timestamp > latestCapacity!.timestamp {
+                        latestCapacity = capacity
+                    }
                 } catch {
                     collectedReadError = error
                 }
             }
-            return (deduplicatedGeminiEvents(collectedEvents), collectedReadError)
+            return (deduplicatedGeminiEvents(collectedEvents), collectedReadError, latestCapacity)
         }
 
-        var (events, readError) = readEvents(from: inputURLs)
+        var (events, readError, bridgeCapacity) = readEvents(from: inputURLs)
         events = preferAntigravityStatuslineEvents(events)
         if events.isEmpty, readError == nil, !usesFallbackImmediately, !fallbackInputURLs.isEmpty {
             let fallbackResult = readEvents(from: fallbackInputURLs)
             events = preferAntigravityStatuslineEvents(fallbackResult.0)
             readError = fallbackResult.1
+            bridgeCapacity = fallbackResult.2 ?? bridgeCapacity
         }
 
+        if events.isEmpty, let bridgeCapacity {
+            let isStale = Date().timeIntervalSince(bridgeCapacity.timestamp) > staleThreshold
+            return ProviderSnapshot(
+                provider: .gemini,
+                updatedAt: bridgeCapacity.timestamp,
+                confidence: isStale ? .medium : .high,
+                dataSource: .officialStatusline,
+                isStale: isStale,
+                statusMessage: isStale ? "STALE · older than 5 minutes" : "Connected",
+                contextWindowUsedPercent: bridgeCapacity.usedPercent,
+                events: []
+            )
+        }
         guard !events.isEmpty else {
             let message = readError == nil ? "No Antigravity or Gemini token events yet" : "Antigravity/Gemini data could not be read"
             return ProviderSnapshot(provider: .gemini, confidence: .low, dataSource: .unknown, isStale: readError != nil, statusMessage: message)
@@ -656,6 +930,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             isStale: isStale,
             statusMessage: isStale ? "STALE · older than 5 minutes" : "Connected",
             model: model,
+            contextWindowUsedPercent: dataSource == .officialStatusline ? bridgeCapacity?.usedPercent : nil,
             events: retainedEvents
         )
     }
@@ -755,6 +1030,79 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             return lineEvents.count > documentEvents.count ? lineEvents : documentEvents
         }
         return lineEvents
+    }
+
+    private func parseAntigravityCapacityPercent(from content: String, fileURL: URL) -> AntigravityCapacityPercent? {
+        let fallbackTimestamp = fileModificationDate(fileURL) ?? Date()
+        let documentSamples = parseJSONDocuments(from: content)
+            .flatMap { parseAntigravityCapacityPercentValue($0, fallbackTimestamp: fallbackTimestamp) }
+        let lineSamples = content.components(separatedBy: .newlines).flatMap { line -> [AntigravityCapacityPercent] in
+            guard let json = jsonObject(fromLine: line) else { return [] }
+            return parseAntigravityCapacityPercentDictionary(json, fallbackTimestamp: fallbackTimestamp)
+        }
+        return (documentSamples + lineSamples).max { $0.timestamp < $1.timestamp }
+    }
+
+    private func parseAntigravityCapacityPercentValue(_ value: Any, fallbackTimestamp: Date) -> [AntigravityCapacityPercent] {
+        if let dictionary = value as? [String: Any] {
+            return parseAntigravityCapacityPercentDictionary(dictionary, fallbackTimestamp: fallbackTimestamp)
+        }
+        if let array = value as? [Any] {
+            return array.flatMap { parseAntigravityCapacityPercentValue($0, fallbackTimestamp: fallbackTimestamp) }
+        }
+        return []
+    }
+
+    private func parseAntigravityCapacityPercentDictionary(_ json: [String: Any], fallbackTimestamp: Date) -> [AntigravityCapacityPercent] {
+        let effectiveFallback = timestampValue(from: json, candidates: [json]) ?? fallbackTimestamp
+        var samples: [AntigravityCapacityPercent] = []
+        if let sample = makeAntigravityCapacityPercent(from: json, fallbackTimestamp: effectiveFallback) {
+            samples.append(sample)
+        }
+        if let messages = json["messages"] as? [Any] {
+            samples.append(contentsOf: messages.flatMap { parseAntigravityCapacityPercentValue($0, fallbackTimestamp: effectiveFallback) })
+        }
+        return samples
+    }
+
+    private func makeAntigravityCapacityPercent(from json: [String: Any], fallbackTimestamp: Date) -> AntigravityCapacityPercent? {
+        let product = stringValue(json["product"])?.lowercased()
+        guard product == "antigravity-cli" || product == "antigravity",
+              let contextWindow = dictionary(json["context_window"]) else {
+            return nil
+        }
+
+        let usedPercent = geminiPercentValue(contextWindow["used_percentage"] ?? contextWindow["used_percent"] ?? contextWindow["usage_percent"])
+        let remainingPercent = geminiPercentValue(contextWindow["remaining_percentage"] ?? contextWindow["remaining_percent"])
+        var used = usedPercent ?? remainingPercent.map { min(max(100 - $0, 0), 100) }
+        if used == nil,
+           let size = intValue(contextWindow["context_window_size"] ?? contextWindow["contextWindowSize"]),
+           size > 0 {
+            let input = intValue(contextWindow["total_input_tokens"] ?? contextWindow["totalInputTokens"]) ?? 0
+            let output = intValue(contextWindow["total_output_tokens"] ?? contextWindow["totalOutputTokens"]) ?? 0
+            used = min(max(Int((Double(input + output) / Double(size) * 100).rounded()), 0), 100)
+        }
+        guard let used else { return nil }
+        let timestamp = timestampValue(from: json, candidates: [contextWindow, json]) ?? fallbackTimestamp
+        return AntigravityCapacityPercent(usedPercent: used, timestamp: timestamp)
+    }
+
+    private func geminiPercentValue(_ value: Any?) -> Int? {
+        let raw: Double?
+        if let number = value as? NSNumber {
+            raw = number.doubleValue
+        } else if let double = value as? Double {
+            raw = double
+        } else if let int = value as? Int {
+            raw = Double(int)
+        } else if let string = value as? String {
+            raw = Double(string.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "%", with: ""))
+        } else {
+            raw = nil
+        }
+        guard let raw else { return nil }
+        let percent = raw > 0 && raw <= 1 ? raw * 100 : raw
+        return min(max(Int(percent.rounded()), 0), 100)
     }
 
     private func parseJSONDocuments(from content: String) -> [Any] {
@@ -1114,6 +1462,89 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
 
         return await directHTTPSnapshot()
     }
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        guard settings.codexEnabled else {
+            let snapshot = ProviderSnapshot(provider: .codex, updatedAt: now, confidence: .low, statusMessage: "Disabled")
+            return ProviderRefreshResult(
+                snapshot: snapshot,
+                typedErrors: [CapacityRefreshError(provider: .codex, category: .disabled, code: "providerDisabled", redactedMessage: "Codex is disabled.")],
+                observedAt: now
+            )
+        }
+        guard settings.codexManual.webConnectorEnabled else {
+            let snapshot = ProviderSnapshot(provider: .codex, updatedAt: now, confidence: .low, dataSource: .unknown, statusMessage: "Codex limit hints connector off")
+            return ProviderRefreshResult(
+                snapshot: snapshot,
+                typedErrors: [],
+                observedAt: now
+            )
+        }
+
+        if let appServerClient {
+            do {
+                let data = try await appServerClient.readRateLimits()
+                var snapshot = codexAppServerSnapshot(from: data)
+                snapshot.updatedAt = now
+                let observations = CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now)
+                return ProviderRefreshResult(
+                    snapshot: snapshot,
+                    capacityObservations: observations,
+                    typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: .codex),
+                    observedAt: now
+                )
+            } catch {
+                let snapshot = ProviderSnapshot(provider: .codex, updatedAt: now, confidence: .low, dataSource: .webUsage, isExperimental: true, statusMessage: "Codex app-server limit hints unavailable")
+                return ProviderRefreshResult(
+                    snapshot: snapshot,
+                    typedErrors: [codexRefreshError(from: error)],
+                    observedAt: now
+                )
+            }
+        }
+
+        var snapshot = await snapshot(settings: settings)
+        snapshot.updatedAt = now
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now),
+            typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: .codex),
+            observedAt: now
+        )
+    }
+
+    private func codexRefreshError(from error: Error) -> CapacityRefreshError {
+        let category: CapacityRefreshErrorCategory
+        let code: String
+        if let codexError = error as? CodexAppServerRateLimitError {
+            switch codexError {
+            case .executableNotTrusted:
+                category = .processFailure
+                code = "codexExecutableUnavailable"
+            case .timeout:
+                category = .timeout
+                code = "codexAppServerTimeout"
+            case .malformedResponse:
+                category = .malformedResponse
+                code = "codexAppServerMalformed"
+            case .outputLimitExceeded:
+                category = .outputLimitExceeded
+                code = "codexAppServerOutputLimit"
+            case .cancelled:
+                category = .cancelled
+                code = "codexAppServerCancelled"
+            case .launchFailed:
+                category = .processFailure
+                code = "codexAppServerLaunchFailed"
+            case .noResponse:
+                category = .malformedResponse
+                code = "codexAppServerNoResponse"
+            }
+        } else {
+            category = .processFailure
+            code = "codexAppServerUnavailable"
+        }
+        return CapacityRefreshError(provider: .codex, category: category, code: code, redactedMessage: "Codex app-server limit hints unavailable.")
+    }
 
     private func directHTTPSnapshot() async -> ProviderSnapshot {
         codexWebErrorSnapshot("Codex app-server limit hints unavailable · direct HTTP disabled")
@@ -1163,6 +1594,15 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         var dictionary: [String: Any]
     }
 
+    private func firstCodexAppServerWindow(in dictionary: [String: Any], keys: [String]) -> (key: String, dictionary: [String: Any])? {
+        for key in keys {
+            if let value = dictionary[key] as? [String: Any] {
+                return (key, value)
+            }
+        }
+        return nil
+    }
+
     private func codexAppServerRateLimitWindows(from object: [String: Any]) -> (fiveHour: LimitWindow?, weekly: LimitWindow?) {
         let containers = [
             dictionary(object["rateLimits"]),
@@ -1184,20 +1624,30 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         ].compactMap { $0 }
 
         for container in containers {
-            let fiveHourDictionary = firstDictionary(in: container, keys: [
+            let fiveHourEntry = firstCodexAppServerWindow(in: container, keys: [
                 "primary", "primary_window", "primaryWindow",
                 "five_hour", "fiveHour", "fivehour", "5h",
                 "short", "session", "session_window", "sessionWindow",
                 "hourly", "hour_5", "fiveHourWindow"
             ])
-            let weeklyDictionary = firstDictionary(in: container, keys: [
+            let weeklyEntry = firstCodexAppServerWindow(in: container, keys: [
                 "secondary", "secondary_window", "secondaryWindow",
                 "weekly", "week", "seven_day", "sevenDay", "7d",
                 "long", "week_window", "weekWindow",
                 "daily", "daily_window", "dailyWindow"
             ])
-            let fiveHour = codexWebWindow(from: fiveHourDictionary, kind: .fiveHour, confidence: .high)
-            let weekly = codexWebWindow(from: weeklyDictionary, kind: .weekly, confidence: .high)
+            let fiveHour = codexWebWindow(
+                from: fiveHourEntry?.dictionary,
+                kind: .fiveHour,
+                confidence: .high,
+                providerWindowID: codexProviderWindowID(from: fiveHourEntry?.dictionary, fallback: fiveHourEntry?.key)
+            )
+            let weekly = codexWebWindow(
+                from: weeklyEntry?.dictionary,
+                kind: .weekly,
+                confidence: .high,
+                providerWindowID: codexProviderWindowID(from: weeklyEntry?.dictionary, fallback: weeklyEntry?.key)
+            )
             if fiveHour != nil || weekly != nil {
                 return (fiveHour, weekly)
             }
@@ -1209,25 +1659,39 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         }
 
         var fiveHour = bestCodexAppServerWindow(from: entries, kind: .fiveHour)
-            .flatMap { codexWebWindow(from: $0.dictionary, kind: .fiveHour, confidence: .high) }
+            .flatMap { entry in
+                codexWebWindow(
+                    from: entry.dictionary,
+                    kind: .fiveHour,
+                    confidence: .high,
+                    providerWindowID: codexProviderWindowID(from: entry.dictionary, fallback: entry.path)
+                )
+            }
         var weekly = bestCodexAppServerWindow(from: entries, kind: .weekly)
-            .flatMap { codexWebWindow(from: $0.dictionary, kind: .weekly, confidence: .high) }
+            .flatMap { entry in
+                codexWebWindow(
+                    from: entry.dictionary,
+                    kind: .weekly,
+                    confidence: .high,
+                    providerWindowID: codexProviderWindowID(from: entry.dictionary, fallback: entry.path)
+                )
+            }
 
         let entriesWithMinutes = entries.compactMap { entry -> (Int, CodexAppServerWindowEntry)? in
-            guard let minutes = intValue(entry.dictionary["window_minutes"] ?? entry.dictionary["windowMinutes"] ?? entry.dictionary["limit_window_minutes"]) else { return nil }
+            guard let minutes = codexWindowMinutes(from: entry.dictionary) else { return nil }
             return (minutes, entry)
         }.sorted { $0.0 < $1.0 }
         if fiveHour == nil, let entry = entriesWithMinutes.first(where: { $0.0 <= 6 * 60 })?.1 {
-            fiveHour = codexWebWindow(from: entry.dictionary, kind: .fiveHour, confidence: .high)
+            fiveHour = codexWebWindow(from: entry.dictionary, kind: .fiveHour, confidence: .high, providerWindowID: codexProviderWindowID(from: entry.dictionary, fallback: entry.path))
         }
         if weekly == nil, let entry = entriesWithMinutes.last(where: { $0.0 >= 24 * 60 })?.1 {
-            weekly = codexWebWindow(from: entry.dictionary, kind: .weekly, confidence: .high)
+            weekly = codexWebWindow(from: entry.dictionary, kind: .weekly, confidence: .high, providerWindowID: codexProviderWindowID(from: entry.dictionary, fallback: entry.path))
         }
         if fiveHour == nil, entries.count == 1 {
-            fiveHour = codexWebWindow(from: entries[0].dictionary, kind: .fiveHour, confidence: .high)
+            fiveHour = codexWebWindow(from: entries[0].dictionary, kind: .fiveHour, confidence: .high, providerWindowID: codexProviderWindowID(from: entries[0].dictionary, fallback: entries[0].path))
         }
         if weekly == nil, entries.count >= 2 {
-            weekly = codexWebWindow(from: entries[entries.count - 1].dictionary, kind: .weekly, confidence: .high)
+            weekly = codexWebWindow(from: entries[entries.count - 1].dictionary, kind: .weekly, confidence: .high, providerWindowID: codexProviderWindowID(from: entries[entries.count - 1].dictionary, fallback: entries[entries.count - 1].path))
         }
         return (fiveHour, weekly)
     }
@@ -1238,7 +1702,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             let hasWindowFields = !keys.intersection([
                 "used_percent", "used_percentage", "usedpercent", "used",
                 "remaining_percent", "remaining_percentage", "remainingpercent", "remaining",
-                "window_minutes", "windowminutes", "limit_window_minutes",
+                "window_minutes", "windowminutes", "limit_window_minutes", "windowdurationmins", "window_duration_mins", "duration_minutes",
                 "resets_at", "reset_at", "resetat", "reset_after_seconds",
                 "used_requests", "usedrequests", "max_requests", "maxrequests",
                 "used_tokens", "usedtokens", "max_tokens", "maxtokens",
@@ -1263,7 +1727,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
         entries
             .map { entry -> (score: Int, entry: CodexAppServerWindowEntry) in
                 let path = entry.path.lowercased()
-                let minutes = intValue(entry.dictionary["window_minutes"] ?? entry.dictionary["windowMinutes"] ?? entry.dictionary["limit_window_minutes"])
+                let minutes = codexWindowMinutes(from: entry.dictionary)
                 var score = 0
                 switch kind {
                 case .fiveHour:
@@ -1280,6 +1744,29 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             .filter { $0.score > 0 }
             .max { $0.score < $1.score }?
             .entry
+    }
+
+    private func codexWindowMinutes(from dictionary: [String: Any]) -> Int? {
+        intValue(
+            dictionary["window_minutes"] ??
+                dictionary["windowMinutes"] ??
+                dictionary["limit_window_minutes"] ??
+                dictionary["windowDurationMins"] ??
+                dictionary["window_duration_mins"] ??
+                dictionary["duration_minutes"]
+        )
+    }
+
+    private func codexProviderWindowID(from dictionary: [String: Any]?, fallback: String?) -> String? {
+        let idKeys = ["provider_window_id", "providerWindowID", "window_id", "windowId", "limit_id", "limitId", "id", "name", "key"]
+        if let dictionary {
+            for key in idKeys {
+                if let value = stringValue(dictionary[key])?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty {
+                    return value
+                }
+            }
+        }
+        return fallback?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func firstString(in dictionary: [String: Any], keys: [String]) -> String? {
@@ -1313,22 +1800,10 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
     }
 
     private func redactedCodexStatusDetail(_ message: String) -> String {
-        var redacted = message
-        let patterns = [
-            #"(?i)Bearer\s+[A-Za-z0-9._~+/=-]+"#,
-            #"(?i)(access[_-]?token|refresh[_-]?token|api[_-]?key|secret|password)\s*[:=]\s*[^\s,;]+"#,
-            #"[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}"#,
-            #"[A-Za-z0-9_~+/=-]{48,}"#
-        ]
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { continue }
-            let range = NSRange(redacted.startIndex..<redacted.endIndex, in: redacted)
-            redacted = regex.stringByReplacingMatches(in: redacted, options: [], range: range, withTemplate: "[REDACTED]")
-        }
-        return redacted
+        TokenPilotPrivacyRedactor.redact(message)
     }
 
-    private func codexWebWindow(from value: Any?, kind: LimitWindowKind, confidence: DataConfidence) -> LimitWindow? {
+    private func codexWebWindow(from value: Any?, kind: LimitWindowKind, confidence: DataConfidence, providerWindowID: String? = nil) -> LimitWindow? {
         guard let payload = dictionary(value) else { return nil }
 
         let usedPercentKeys: [String] = [
@@ -1390,12 +1865,13 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             used = usedFromRemainingRawCounts
         }
 
+        let durationMinutes = codexWindowMinutes(from: payload)
         let resetAt = codexWebResetAt(from: payload)
         if let resetAt, resetAt <= now() {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
-        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: confidence)
+        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: confidence, providerWindowID: providerWindowID, durationMinutes: durationMinutes)
     }
 
     private func firstCodexWebValue(in dictionary: [String: Any], keys: [String]) -> Any? {
@@ -1512,7 +1988,7 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             confidence: .low,
             dataSource: .webUsage,
             isExperimental: true,
-            statusMessage: message
+            statusMessage: TokenPilotPrivacyRedactor.redact(message)
         )
     }
 }
@@ -1630,6 +2106,30 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             statusMessage: "EXPERIMENTAL · local Codex log · not web quota",
             model: model,
             events: events
+        )
+    }
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        guard settings.codexEnabled else {
+            let snapshot = ProviderSnapshot(provider: .codex, updatedAt: now, confidence: .low, statusMessage: "Disabled")
+            return ProviderRefreshResult(
+                snapshot: snapshot,
+                typedErrors: [CapacityRefreshError(provider: .codex, category: .disabled, code: "providerDisabled", redactedMessage: "Codex is disabled.")],
+                observedAt: now
+            )
+        }
+
+        if settings.codexManual.webConnectorEnabled,
+           let refreshAdapter = webUsageAdapter as? any ProviderRefreshAdapter {
+            return await refreshAdapter.refresh(settings: settings, now: now)
+        }
+
+        let snapshot = await snapshot(settings: settings)
+        let observedAt = snapshot.updatedAt
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: observedAt),
+            typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: .codex),
+            observedAt: observedAt
         )
     }
 
@@ -1854,7 +2354,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     private func codexLimitWindow(from dictionary: [String: Any]?, fallbackKind: LimitWindowKind, now: Date = Date()) -> LimitWindow? {
         guard let payload = dictionary else { return nil }
 
-        let windowMinutesKeys: [String] = ["window_minutes", "windowMinutes", "limit_window_minutes"]
+        let windowMinutesKeys: [String] = ["window_minutes", "windowMinutes", "limit_window_minutes", "windowDurationMins", "window_duration_mins", "duration_minutes"]
         let usedPercentKeys: [String] = [
             "used_percent", "used_percentage", "usedPercent", "usedpercent",
             "percent", "usage_percent", "usagePercent",
@@ -1887,8 +2387,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             "max_input_tokens", "maxInputTokens"
         ]
 
+        let durationMinutes = intValue(firstCodexSessionValue(in: payload, keys: windowMinutesKeys))
         let kind: LimitWindowKind
-        if let minutes = intValue(firstCodexSessionValue(in: payload, keys: windowMinutesKeys)) {
+        if let minutes = durationMinutes {
             kind = minutes >= 7 * 24 * 60 ? .weekly : .fiveHour
         } else {
             kind = fallbackKind
@@ -1915,7 +2416,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
-        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium)
+        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium, providerWindowID: nil, durationMinutes: durationMinutes)
     }
 
     private func firstCodexSessionValue(in dictionary: [String: Any], keys: [String]) -> Any? {
@@ -2176,6 +2677,101 @@ public final class DeepSeekBalanceAdapter: ProviderAdapter, @unchecked Sendable 
 
         return ProviderSnapshot(provider: .deepseek, confidence: .manual, dataSource: .manual, statusMessage: "API key required")
     }
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        guard settings.deepseekEnabled else {
+            let snapshot = ProviderSnapshot(provider: .deepseek, updatedAt: now, confidence: .low, statusMessage: "Disabled")
+            return ProviderRefreshResult(
+                snapshot: snapshot,
+                typedErrors: [CapacityRefreshError(provider: .deepseek, category: .disabled, code: "providerDisabled", redactedMessage: "DeepSeek is disabled.")],
+                observedAt: now
+            )
+        }
+
+        if let apiKey = try? keychain.readSecret(account: "deepseek.apiKey"), !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                var request = URLRequest(url: endpoint)
+                request.httpMethod = "GET"
+                request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
+                let (data, response) = try await httpClient.data(for: request)
+                guard (200..<300).contains(response.statusCode) else {
+                    throw DeepSeekBalanceError.httpStatus(response.statusCode)
+                }
+                let balance = try parser.parse(data, capturedAt: now)
+                lastSuccessfulBalance = balance
+                let snapshot = snapshot(balance: balance, confidence: .high, dataSource: .officialTelemetry, isStale: false, message: "DeepSeek balance")
+                return ProviderRefreshResult(
+                    snapshot: snapshot,
+                    capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now),
+                    observedAt: now
+                )
+            } catch {
+                if let lastSuccessfulBalance {
+                    let snapshot = snapshot(balance: lastSuccessfulBalance, confidence: .medium, dataSource: .officialTelemetry, isStale: true, message: "DeepSeek balance stale · last successful value")
+                    return ProviderRefreshResult(
+                        snapshot: snapshot,
+                        typedErrors: [deepSeekRefreshError(from: error)],
+                        observedAt: snapshot.updatedAt
+                    )
+                }
+                if let manual = manualBalance(settings: settings) {
+                    let snapshot = snapshot(balance: manual, confidence: .manual, dataSource: .manual, isStale: true, message: "DeepSeek manual fallback")
+                    return ProviderRefreshResult(
+                        snapshot: snapshot,
+                        capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: snapshot.updatedAt),
+                        typedErrors: [deepSeekRefreshError(from: error)],
+                        observedAt: snapshot.updatedAt
+                    )
+                }
+                let snapshot = ProviderSnapshot(provider: .deepseek, updatedAt: now, confidence: .low, dataSource: .officialTelemetry, statusMessage: "DeepSeek balance unavailable")
+                return ProviderRefreshResult(
+                    snapshot: snapshot,
+                    typedErrors: [deepSeekRefreshError(from: error)],
+                    observedAt: now
+                )
+            }
+        }
+
+        if let manual = manualBalance(settings: settings) {
+            let snapshot = snapshot(balance: manual, confidence: .manual, dataSource: .manual, isStale: false, message: "DeepSeek manual fallback")
+            return ProviderRefreshResult(
+                snapshot: snapshot,
+                capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: snapshot.updatedAt),
+                observedAt: snapshot.updatedAt
+            )
+        }
+
+        let snapshot = ProviderSnapshot(provider: .deepseek, updatedAt: now, confidence: .manual, dataSource: .manual, statusMessage: "API key required")
+        return ProviderRefreshResult(snapshot: snapshot, observedAt: now)
+    }
+
+    private func deepSeekRefreshError(from error: Error) -> CapacityRefreshError {
+        let category: CapacityRefreshErrorCategory
+        let code: String
+        if let balanceError = error as? DeepSeekBalanceError {
+            switch balanceError {
+            case .invalidHTTPResponse:
+                category = .malformedResponse
+                code = "deepseekInvalidHTTPResponse"
+            case .httpStatus:
+                category = .sourceUnavailable
+                code = "deepseekHTTPStatus"
+            case .invalidPayload:
+                category = .malformedResponse
+                code = "deepseekInvalidPayload"
+            case .unavailable:
+                category = .sourceUnavailable
+                code = "deepseekUnavailable"
+            }
+        } else if error is CancellationError {
+            category = .cancelled
+            code = "deepseekCancelled"
+        } else {
+            category = .sourceUnavailable
+            code = "deepseekUnavailable"
+        }
+        return CapacityRefreshError(provider: .deepseek, category: category, code: code, redactedMessage: "DeepSeek balance unavailable.")
+    }
 
     private func manualBalance(settings: AppSettings) -> ProviderBalance? {
         guard settings.deepSeekBalance.manualFallbackEnabled,
@@ -2304,6 +2900,12 @@ public final class CodexManualAdapter: ProviderAdapter, Sendable {
     }
 }
 
+extension ClaudeStatuslineAdapter: ProviderRefreshAdapter {}
+extension GeminiTelemetryAdapter: ProviderRefreshAdapter {}
+extension CodexWebUsageAdapter: ProviderRefreshAdapter {}
+extension CodexLocalSessionAdapter: ProviderRefreshAdapter {}
+extension DeepSeekBalanceAdapter: ProviderRefreshAdapter {}
+extension CodexManualAdapter: ProviderRefreshAdapter {}
 // MARK: - Private helpers
 
 private func fileModificationDate(_ url: URL) -> Date? {

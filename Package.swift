@@ -8,6 +8,7 @@ let package = Package(
     ],
     products: [
         .executable(name: "TokenMonitor", targets: ["TokenApp"]),
+        .executable(name: "CapacityForecastBacktest", targets: ["CapacityForecastBacktest"]),
         .library(name: "TokenCore", targets: ["TokenCore"])
     ],
     targets: [
@@ -24,11 +25,16 @@ let package = Package(
             exclude: ["AGENTS.md"],
             resources: [.process("Resources")]
         ),
+        .executableTarget(
+            name: "CapacityForecastBacktest",
+            dependencies: ["TokenCore"],
+            path: "Tools/CapacityForecastBacktest"
+        ),
         .testTarget(
             name: "TokenTests",
             dependencies: ["TokenCore"],
             path: "Tests",
-            exclude: ["AGENTS.md"]
+            exclude: ["AGENTS.md", "Fixtures"]
         )
     ]
 )

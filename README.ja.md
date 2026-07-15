@@ -44,7 +44,7 @@
 
 ### Codex
 
-1. **Codex Limit Hints Connector**: ユーザーが明示的に ON にした場合のみ local `codex app-server` に JSON-RPC `initialize` + `account/rateLimits/read` を送ります。Codex access token は直接読みません。
+1. **Codex Limit Hints Connector**: ユーザーが明示的に ON にした場合のみ、local `codex app-server` へ `jsonrpc` フィールドなしの JSONL `initialize`、`initialized`、`account/rateLimits/read` の順で送信します。Codex access token は直接読みません。
 2. **Manual Limit Snapshot / `/status` parse**: ユーザー入力値から 5h / weekly を推定します。
 3. **Local Activity Beta**: local session JSONL の token_count 系 row を実験的に読みます。
 
