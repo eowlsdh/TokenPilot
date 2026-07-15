@@ -613,9 +613,15 @@ struct ProviderOverviewList: View {
             }
         }
 
-        snapshots.map(\.provider).forEach(append)
-        items.map(\.provider).forEach(append)
-        errors.map(\.provider).forEach(append)
+        for provider in snapshots.map(\.provider) {
+            append(provider)
+        }
+        for provider in items.map(\.provider) {
+            append(provider)
+        }
+        for provider in errors.map(\.provider) {
+            append(provider)
+        }
         return ordered
     }
 
