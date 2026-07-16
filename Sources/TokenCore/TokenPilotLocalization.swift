@@ -34,6 +34,10 @@ public enum TokenPilotLocalizer {
     }
 
     private static let supplementalFallback: [String: [TokenPilotLanguage: String]] = [
+        "Choose a local source or run Auto-detect.": [.en: "Choose a local source or run Auto-detect.", .ko: "로컬 소스를 선택하거나 자동 감지를 실행하세요.", .ja: "ローカルソースを選択するか、自動検出を実行してください。", .zhHans: "请选择本地数据源或运行自动检测。"],
+        "Paste /status or enter manual estimates.": [.en: "Paste /status or enter manual estimates.", .ko: "/status를 붙여넣거나 수동 추정값을 입력하세요.", .ja: "/status を貼り付けるか、手動の推定値を入力してください。", .zhHans: "请粘贴 /status 或输入手动估算值。"],
+        "Save a provider API key in TokenPilot Keychain.": [.en: "Save a provider API key in TokenPilot Keychain.", .ko: "제공자 API 키를 TokenPilot Keychain에 저장하세요.", .ja: "プロバイダの API キーを TokenPilot Keychain に保存してください。", .zhHans: "请将提供方 API 密钥保存到 TokenPilot Keychain。"],
+        "Manual mode": [.en: "Manual mode", .ko: "수동 모드", .ja: "手動モード", .zhHans: "手动模式"],
         "API key required": [.en: "API key required", .ko: "API 키 필요", .ja: "APIキーが必要", .zhHans: "需要 API 密钥"],
         "API key saved": [.en: "API key saved", .ko: "API 키 저장됨", .ja: "APIキー保存済み", .zhHans: "API 密钥已保存"],
         "API key saved in Keychain": [.en: "API key saved in Keychain", .ko: "API 키가 Keychain에 저장됨", .ja: "APIキーはKeychainに保存済み", .zhHans: "API 密钥已保存到 Keychain"],

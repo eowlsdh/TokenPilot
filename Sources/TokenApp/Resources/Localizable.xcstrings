@@ -10696,6 +10696,118 @@
           }
         }
       }
+    },
+    "Choose a local source or run Auto-detect.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a local source or run Auto-detect."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 소스를 선택하거나 자동 감지를 실행하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルソースを選択するか、自動検出を実行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请选择本地数据源或运行自动检测。"
+          }
+        }
+      }
+    },
+    "Paste /status or enter manual estimates.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paste /status or enter manual estimates."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/status를 붙여넣거나 수동 추정값을 입력하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/status を貼り付けるか、手動の推定値を入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请粘贴 /status 或输入手动估算值。"
+          }
+        }
+      }
+    },
+    "Save a provider API key in TokenPilot Keychain.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save a provider API key in TokenPilot Keychain."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자 API 키를 TokenPilot Keychain에 저장하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダの API キーを TokenPilot Keychain に保存してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请将提供方 API 密钥保存到 TokenPilot Keychain。"
+          }
+        }
+      }
+    },
+    "Manual mode": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual mode"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수동 모드"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動モード"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动模式"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
