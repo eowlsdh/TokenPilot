@@ -17,8 +17,8 @@
 | 画面 | 役割 |
 |---|---|
 | **Menu bar** | `5h 18% · W 53% · DS $12.34` のように残りクォータと選択した DeepSeek 残高を1行で表示します。 |
-| **Overview** | 現在の残りクォータ、provider rows、DeepSeek topped-up balance、今日のトークン、アラート状態を表示します。重複する 7-day chart と provider share は Overview から除外しています。 |
-| **History** | Today / Last 7 days / This month、最新 limit signals、折りたたみ式の最近の制限、7-day chart、provider share、JSON/CSV export を提供します。 |
+| **Overview** | 現在の残りクォータ、provider rows、DeepSeek topped-up balance、今日のトークン、アラート状態を表示します。 |
+| **History** | 保存済みの使用イベント、最新 limit signals、折りたたみ式の最近の制限、JSON/CSV export を提供します。 |
 | **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
 
 ---
@@ -68,7 +68,6 @@
 
 ```bash
 swift test
-# Executed 187 tests, with 0 failures
 
 make bundle
 open build/TokenPilot.app

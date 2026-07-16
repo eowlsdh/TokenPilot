@@ -21,8 +21,8 @@
 | 화면 | 역할 |
 |---|---|
 | **메뉴바** | `5h 18% · W 53%`처럼 5시간/주간 **남은 한도**를 한 줄로 표시합니다. |
-| **개요** | 현재 남은 한도, provider별 남은 한도, 오늘 토큰, 일일 챌린지, 알림 상태만 보여줍니다. 중복되는 7일 사용량 차트와 provider share는 제거했습니다. |
-| **기록** | Today / Last 7 days / This month 집계, 최신 한도 신호, 7일 chart, provider share, JSON/CSV export를 제공합니다. |
+| **개요** | 현재 남은 한도, provider별 수용량 상태, DeepSeek topped-up balance, 오늘 토큰, 알림 상태를 보여주는 capacity-first 화면입니다. |
+| **기록** | 저장된 이벤트와 최신 한도 증거 타임라인을 보여주며, 로컬 활동 집계는 quota가 아닌 export-only JSON/CSV 데이터로만 제공합니다. |
 | **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |
 
 ---
@@ -34,7 +34,7 @@
 - **Claude / Codex / Antigravity(레거시 Gemini fallback) / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
-- **History / Export**: 기록 탭에서 7일 chart와 provider share를 유지하고 JSON/CSV export를 제공합니다.
+- **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
 - **4개 언어**: English, 한국어, 日本語, 简体中文.
@@ -93,7 +93,7 @@ open TokenPilot.xcodeproj
 
 - Limit Hints Connector는 Codex CLI app-server의 experimental API에 의존하므로 Codex CLI 변경 시 깨질 수 있습니다.
 - connector는 기본 OFF입니다.
-- local JSONL은 official quota가 아니므로 `EXPERIMENTAL`, `Local log`, `not web quota`, `est.` 맥락으로만 표시합니다.
+- local JSONL은 official quota가 아니므로 `EXPERIMENTAL`, `Local log`, `not web quota`, `est.` 맥락으로만 표시하며 export에서도 provider quota로 포함하지 않습니다.
 
 ### Antigravity CLI / 레거시 Gemini fallback
 
@@ -162,10 +162,9 @@ TokenPilot/
 
 ```bash
 swift test
-# Executed 187 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
-# Build complete — zero warnings
+# warnings-as-errors strict build
 
 make verify
 # build + tests + release bundle smoke
@@ -182,17 +181,24 @@ open build/TokenPilot.app
 
 ## 현재 검증 상태
 
-최근 로컬 검증 기준:
+이 문서는 특정 머신의 오래된 통과 결과를 고정 기록하지 않습니다. 릴리스 검증은 현재 checkout에서 다시 실행한 명령, 실행자/날짜, 주요 환경, 산출물 hash, 실패/차단 사유를 함께 남길 때만 유효합니다.
 
-```text
-swift test                                  PASS — 187 tests
-swift build -Xswiftc -warnings-as-errors   PASS
-make bundle / make verify                  PASS
+현재 문서 변경에서 새로 첨부한 증거:
+- 빌드/테스트/번들/verify 실행 결과: 없음. 아래 명령은 재현 절차이며 최신 통과 기록이 아닙니다.
+- 앱 bundle/zip 상태: 새로 확인하지 않음. 릴리스 전 `docs/verification/developer-id-capacity-release.md`의 evidence table에 현재 결과를 기록해야 합니다.
+
+재현 명령:
+
+```bash
+swift test
+swift build -Xswiftc -warnings-as-errors
+make bundle
+make verify
 ```
 
 수동/환경 의존 QA:
 
-- 실제 메뉴바 숫자, Overview provider row, Settings privacy 문구는 앱 실행 상태에서 확인합니다.
+- 실제 메뉴바 숫자, Overview provider row, Settings privacy 문구는 현재 빌드 앱 실행 상태에서 redacted evidence로 확인합니다.
 - 실제 Telegram/Discord 발송, 실제 Codex Limit Hints Connector 동작은 사용자 credential/명시 승인 없이는 수행하지 않습니다.
 
 ---

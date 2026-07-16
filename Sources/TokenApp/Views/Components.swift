@@ -155,20 +155,18 @@ struct ProviderSnapshotCard: View {
     }
 
     private func requestMetric(used: Int, limit: Int) -> some View {
-        let usedPercent = snapshot.dailyRequestsPercent ?? 0
-        let remaining = max(limit - used, 0)
-        let remainingPercent = min(max(100 - usedPercent, 0), 100)
+        let usedPercent = snapshot.dailyRequestsPercent
         return VStack(alignment: .leading, spacing: 5) {
             MetricRow(
                 label: localized("Daily", language: language),
-                value: "\(TokenPilotFormatters.compactNumber(remaining)) / \(TokenPilotFormatters.compactNumber(limit))",
-                detail: String(format: localized("Remaining %d%%", language: language), remainingPercent)
+                value: "\(TokenPilotFormatters.compactNumber(used)) / \(TokenPilotFormatters.compactNumber(limit))",
+                detail: usedPercent.map { "\(localized("Used", language: language)) \($0)%" }
             )
             ProgressLine(
-                percent: remainingPercent,
+                percent: usedPercent,
                 color: TokenPilotDesign.riskColor(usedPercent),
-                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized("Daily", language: language)) \(localized("Remaining capacity", language: language))",
-                accessibilityValue: progressAccessibilityValue(remainingPercent)
+                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized("Daily", language: language)) \(localized("Used", language: language))",
+                accessibilityValue: usedPercent.map { "\(localized("Used", language: language)) \($0)%" }
             )
         }
     }
@@ -572,212 +570,6 @@ struct SemanticChip: View {
     }
 }
 
-struct SevenDayBarChart: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let bars: [DailyUsageBar]
-
-    private let barTrackHeight: CGFloat = 72
-
-    private var orderedBars: [DailyUsageBar] {
-        bars
-    }
-
-    private var highest: Int {
-        max(1, orderedBars.map(\.tokens).max() ?? 1)
-    }
-
-    private var totalTokens: Int {
-        orderedBars.reduce(0) { $0 + $1.tokens }
-    }
-
-    private var averageTokens: Int {
-        guard !orderedBars.isEmpty else { return 0 }
-        return totalTokens / orderedBars.count
-    }
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(localized("7-day usage", language: language), systemImage: "chart.bar.xaxis")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Spacer(minLength: 6)
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(TokenPilotFormatters.compactNumber(totalTokens))
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        Text(localized("Total", language: language))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                    }
-                    VStack(alignment: .trailing, spacing: 1) {
-                        Text(TokenPilotFormatters.compactNumber(averageTokens))
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                        Text(localized("Avg/day", language: language))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                    }
-                }
-
-                ZStack {
-                    VStack(spacing: 0) {
-                        ForEach([75, 50, 25, 0], id: \.self) { tick in
-                            Divider()
-                                .overlay(TokenPilotDesign.border.opacity(0.32))
-                            if tick < 75 {
-                                Spacer(minLength: 0)
-                            }
-                        }
-                    }
-
-                    HStack(alignment: .bottom, spacing: 8) {
-                        ForEach(orderedBars) { bar in
-                            VStack(spacing: 6) {
-                                if bar.tokens > 0 {
-                                    Text(TokenPilotFormatters.compactNumber(bar.tokens))
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                } else {
-                                    Color.clear
-                                        .frame(height: 10)
-                                }
-
-                                VStack {
-                                    Capsule()
-                                        .fill(TokenPilotDesign.glassTint)
-                                        .frame(height: barTrackHeight)
-                                        .overlay(
-                                            Capsule()
-                                                .fill(barGradient(for: bar))
-                                                .frame(height: barHeight(for: bar), alignment: .bottom)
-                                                .frame(maxHeight: barTrackHeight, alignment: .bottom)
-                                                .frame(maxWidth: .infinity, alignment: .bottom),
-                                            alignment: .bottom
-                                        )
-                                }
-                                .frame(height: barTrackHeight)
-
-                                Text(bar.dayLabel)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
-                        }
-                    }
-                }
-
-                HStack {
-                    Text(summaryText)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                    Spacer()
-                    Text("\(localized("Peak", language: language)) \(TokenPilotFormatters.compactNumber(highest))")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .animation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.8), value: orderedBars)
-    }
-
-    private var summaryText: String {
-        if totalTokens == 0 {
-            return localized("No usage", language: language)
-        }
-        return String(format: localized("Latest 7 days", language: language))
-    }
-
-    private func barGradient(for bar: DailyUsageBar) -> LinearGradient {
-        let ratio = ratio(for: bar)
-        let tint = TokenPilotDesign.goal.opacity(0.42 + 0.34 * ratio)
-        return LinearGradient(
-            colors: [
-                tint,
-                TokenPilotDesign.trust.opacity(0.72)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private func barHeight(for bar: DailyUsageBar) -> CGFloat {
-        max(5, barTrackHeight * ratio(for: bar))
-    }
-
-    private func ratio(for bar: DailyUsageBar) -> CGFloat {
-        CGFloat(Double(bar.tokens) / Double(highest))
-    }
-}
-
-struct ProviderShareRow: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    let shares: [ProviderShare]
-
-    private var sortedShares: [ProviderShare] {
-        shares.sorted { $0.percent > $1.percent }
-    }
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack {
-                    Label(localized("Provider share", language: language), systemImage: "circle.grid.cross")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Spacer()
-                    Text(localized("total", language: language))
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
-
-                ForEach(sortedShares) { share in
-                    VStack(alignment: .leading, spacing: 5) {
-                        HStack(spacing: 7) {
-                            HStack(spacing: 3) {
-                                ProviderSignatureMark(provider: share.provider, size: 12)
-                                Text(localized(share.provider.displayName, language: language))
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(1)
-                            }
-                            Spacer()
-                            HStack(spacing: 3) {
-                                Text("\(share.percent)%")
-                                    .font(.system(size: 11, design: .monospaced).weight(.bold))
-                                Text("•")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                                Text(TokenPilotFormatters.compactNumber(share.tokens))
-                                    .font(.system(size: 10, design: .monospaced).weight(.semibold))
-                                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                            }
-                        }
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                Capsule()
-                                    .fill(Color.white.opacity(0.06))
-                                Capsule()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [TokenPilotDesign.accent(for: share.provider).opacity(0.26), TokenPilotDesign.accent(for: share.provider)],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: max(6, geo.size.width * CGFloat(Double(share.percent) / 100.0)))
-                            }
-                            .frame(height: 7)
-                        }
-                        .frame(height: 7)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
 
 struct GlassCard<Content: View>: View {
     var padding: CGFloat = TokenPilotDesign.cardPadding

@@ -36,9 +36,6 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var historyUsage = AggregatedUsage(period: .today)
     @Published var isRefreshing = false
     @Published var dataSourceMode: DataSourceMode = .disconnected
-    /// Daily token challenge target for the ChallengeCard gamification UI.
-    /// Reads from AppSettings (persisted across restarts).
-    @Published var challengeTargetTokens: Int = 10_000
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
     @Published var exportFormat: UsageExportFormat = .json
@@ -46,6 +43,13 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var capacityPresentations: [CapacityPresentation] = []
     @Published var capacityRefreshErrors: [CapacityRefreshError] = []
     @Published var capacityRuntimeRecoveryRequired = false
+    @Published private var capacityAlertRuntimeControl = CapacityRuntimeControl()
+    @Published private var capacityAlertRuntimeRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil)
+    @Published private var capacityAlertRules: [CapacityAlertRule] = []
+    @Published private var capacityAlertRulesRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil)
+    @Published private var capacityAlertDeliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] = [:]
+    @Published private var capacityAlertDeliveryRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil)
+    @Published private var capacityAlertMigrationRecoveryStatus: CapacityPersistenceStatus?
     @Published var bannerMessage: String?
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
@@ -60,9 +64,6 @@ final class TokenPilotViewModel: ObservableObject {
             if TokenPilotRefreshPolicy.usageRefreshNeeded(from: oldValue, to: settings) {
                 scheduleSettingsDrivenRefresh()
             }
-            if settings.challengeTargetTokens != oldValue.challengeTargetTokens {
-                challengeTargetTokens = settings.challengeTargetTokens
-            }
         }
     }
 
@@ -74,7 +75,6 @@ final class TokenPilotViewModel: ObservableObject {
     private let menuBarStatusService = MenuBarStatusService()
     private let connectionService = DataSourceConnectionService()
     private let exportService = UsageExportService()
-    private let notificationRuleService = NotificationRuleService()
     private let localNotificationService = LocalNotificationService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
@@ -87,6 +87,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let capacityAssessmentService = CapacityAssessmentService()
     private let capacityPresentationMapper = CapacityPresentationMapper()
     private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
+    private let capacityAlertVisibilityBuilder = CapacityAlertVisibilityBuilder()
     private let menuBarTickInterval: TimeInterval = 1
     private let dataRefreshInterval: TimeInterval = 5
     private let settingsSaveDebounceNanoseconds: UInt64 = 350_000_000
@@ -97,14 +98,36 @@ final class TokenPilotViewModel: ObservableObject {
     private var lastRefreshFinishedAt: Date?
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRefreshTask: Task<Void, Never>?
+#if DEBUG
+    private let debugFixtureMode: Bool
+#endif
 
-    init() {
-        let loaded = ProcessInfo.processInfo.environment["TOKENPILOT_UI_TESTING"] == "1" ? AppSettings() : settingsStore.load()
-        self.settings = loaded
-        self.challengeTargetTokens = loaded.challengeTargetTokens
+
+#if DEBUG
+    init(debugFixture: TokenPilotDebugFixture? = TokenPilotDebugFixture.resolve()) {
+        self.debugFixtureMode = debugFixture != nil
+        self.settings = debugFixture?.settings ?? settingsStore.load()
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
         self.hasSavedDeepSeekAPIKey = false
+
+        if let debugFixture {
+            applyDebugFixture(debugFixture)
+        } else {
+            startProductionRuntime()
+        }
+    }
+#else
+    init() {
+        self.settings = settingsStore.load()
+        self.hasSavedTelegramToken = false
+        self.hasSavedDiscordWebhook = false
+        self.hasSavedDeepSeekAPIKey = false
+        startProductionRuntime()
+    }
+#endif
+
+    private func startProductionRuntime() {
         startAutoRefresh()
         Task {
             await updatePermissionStatus()
@@ -113,8 +136,54 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+#if DEBUG
+    private func applyDebugFixture(_ fixture: TokenPilotDebugFixture) {
+        selectedScreen = fixture.selectedScreen
+        selectedHistoryPeriod = .last7Days
+        menuBarNow = fixture.referenceDate
+        snapshots = fixture.snapshots
+        historySnapshots = fixture.historySnapshots
+        limitHistorySamples = fixture.limitHistorySamples
+        overviewUsage = aggregationService.aggregate(snapshots: fixture.historySnapshots, period: .today)
+        historyUsage = aggregationService.aggregate(snapshots: fixture.historySnapshots, period: selectedHistoryPeriod)
+        isRefreshing = false
+        dataSourceMode = fixture.dataSourceMode
+        dataSources = fixture.dataSources
+        connectionStatus = Dictionary(uniqueKeysWithValues: fixture.dataSources.values.map { ($0.provider, sourceStatusText($0)) })
+        capacityAssessments = fixture.capacityAssessments
+        capacityPresentations = fixture.capacityPresentations
+        capacityRefreshErrors = fixture.capacityRefreshErrors
+        capacityRuntimeRecoveryRequired = fixture.capacityRuntimeRecoveryRequired
+        capacityAlertRuntimeControl = fixture.capacityAlertRuntimeControl
+        capacityAlertRuntimeRecoveryStatus = fixture.capacityAlertRuntimeRecoveryStatus
+        capacityAlertRules = fixture.capacityAlertRules
+        capacityAlertRulesRecoveryStatus = fixture.capacityAlertRulesRecoveryStatus
+        capacityAlertDeliveryStates = fixture.capacityAlertDeliveryStates
+        capacityAlertDeliveryRecoveryStatus = fixture.capacityAlertDeliveryRecoveryStatus
+        capacityAlertMigrationRecoveryStatus = fixture.capacityAlertMigrationRecoveryStatus
+        bannerMessage = fixture.bannerMessage
+        telegramTokenInput = ""
+        discordWebhookInput = ""
+        deepSeekAPIKeyInput = ""
+        hasSavedTelegramToken = fixture.hasSavedTelegramToken
+        hasSavedDiscordWebhook = fixture.hasSavedDiscordWebhook
+        hasSavedDeepSeekAPIKey = fixture.hasSavedDeepSeekAPIKey
+        refreshInProgress = false
+        refreshQueued = false
+        lastRefreshFinishedAt = fixture.referenceDate
+        stopAutoRefresh()
+    }
+    private func blockDebugFixtureExternalAction() -> Bool {
+        guard debugFixtureMode else { return false }
+        bannerMessage = "DEBUG fixture mode disables external provider, file, keychain, and notification actions."
+        return true
+    }
+#endif
+
     func refreshStoredCredentialPresence() {
-        guard ProcessInfo.processInfo.environment["TOKENPILOT_UI_TESTING"] != "1" else { return }
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
         Task {
             hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
             hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
@@ -211,19 +280,219 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    var capacityAlertSummary: CapacityAlertVisibilitySummary {
+        capacityAlertVisibilityBuilder.make(
+            runtime: capacityAlertRuntimeControl,
+            runtimeStatus: capacityAlertRuntimeRecoveryStatus,
+            rules: capacityAlertRules,
+            rulesStatus: capacityAlertRulesRecoveryStatus,
+            deliveryStates: capacityAlertDeliveryStates,
+            deliveryStatus: capacityAlertDeliveryRecoveryStatus,
+            migrationStatus: capacityAlertMigrationRecoveryStatus,
+            channels: currentCapacityAlertChannels
+        )
+    }
+
+    var capacityAlertRows: [CapacityAlertVisibilityRow] {
+        capacityAlertSummary.rows
+    }
+
     var alertStatusText: String {
+        let summary = capacityAlertSummary
+        var parts = [capacityAlertChannelPreferenceSummary()]
+
+        if summary.recoveryRequired {
+            let codes = summary.recoveryCodes.joined(separator: "/")
+            parts.append(codes.isEmpty ? t("Recovery needed") : String(format: t("capacity.alert.recovery.codes.format"), t("Recovery needed"), codes))
+        } else {
+            switch summary.status {
+            case .deliverable:
+                parts.append(String(format: t("capacity.alert.rule.count.status"), summary.deliverableRuleCount, t("Alerts"), t("ON")))
+            case .pendingBalanceBinding:
+                parts.append(t("Pending balance"))
+            case .unsupportedSource:
+                parts.append(t("Unsupported source"))
+            case .disabled:
+                parts.append(t("Disabled"))
+            case .noEffectiveChannel:
+                parts.append(t("No effective notification channels."))
+            case .recoveryRequired:
+                parts.append(t("Recovery needed"))
+            case .noRules:
+                parts.append(t("No trusted capacity"))
+            }
+        }
+
+        if summary.pendingDeliveryCount > 0 {
+            parts.append(String(format: t("capacity.alert.delivery.pending.count"), summary.pendingDeliveryCount))
+        }
+        if summary.failedDeliveryCount > 0 {
+            parts.append(String(format: t("capacity.alert.delivery.failed.count"), summary.failedDeliveryCount))
+        }
+        return String(format: t("capacity.alert.status.format"), t("Alerts"), parts.joined(separator: t("capacity.alert.segment.separator")))
+    }
+
+    private var currentCapacityAlertChannels: CapacityAlertChannelSettings {
+        CapacityAlertChannelSettings(
+            settings: settings,
+            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        )
+    }
+
+    private func capacityAlertChannelPreferenceSummary() -> String {
         let on = t("ON")
         let off = t("OFF")
-        let mac = settings.macOSNotificationsEnabled ? "macOS \(on)" : "macOS \(off)"
-        let tg = settings.telegramNotificationsEnabled && settings.telegram.isEnabled ? "Telegram \(on)" : "Telegram \(off)"
-        let discord = settings.discordNotificationsEnabled && settings.discord.isEnabled ? "Discord \(on)" : "Discord \(off)"
-        let enabled = [
-            settings.alertRules.contains { $0.resetEnabled } ? t("Reset") : nil,
-            settings.alertRules.contains { $0.fiftyEnabled } ? "50" : nil,
-            settings.alertRules.contains { $0.eightyEnabled } ? "80" : nil,
-            settings.alertRules.contains { $0.hundredEnabled } ? "100" : nil
-        ].compactMap { $0 }.joined(separator: "/")
-        return "\(t("Alerts")): \(mac) · \(tg) · \(discord) · \(enabled.isEmpty ? off : enabled)"
+        let global = settings.globalNotificationsEnabled ? on : off
+        let mac = settings.macOSNotificationsEnabled ? on : off
+        let telegram = settings.telegramNotificationsEnabled && settings.telegram.isEnabled ? on : off
+        let discord = settings.discordNotificationsEnabled && settings.discord.isEnabled ? on : off
+        return String(format: t("capacity.alert.channel.preference.format"), t("Global"), global, t("macOS"), mac, t("Telegram"), telegram, t("Discord"), discord)
+    }
+
+    private func capacityAlertJoinedText(_ leading: String, _ trailing: String) -> String {
+        String(format: t("capacity.alert.segment.format"), leading, trailing)
+    }
+
+    func capacityAlertRowTitle(_ row: CapacityAlertVisibilityRow) -> String {
+        if let provider = row.provider {
+            return t(provider.displayName)
+        }
+        switch row.kind {
+        case .recoveryRequired:
+            return t("Recovery needed")
+        case .empty:
+            return t("No trusted capacity")
+        case .capacityRule, .pendingBalanceBinding, .unsupportedNotice:
+            return t("Alerts")
+        }
+    }
+
+    func capacityAlertRowSubtitle(_ row: CapacityAlertVisibilityRow) -> String {
+        switch row.kind {
+        case .capacityRule, .pendingBalanceBinding:
+            let window = row.seriesID.map { capacityWindowDisplayName(for: $0) } ?? t("Limit")
+            let condition = capacityAlertConditionText(row)
+            return condition.isEmpty ? window : capacityAlertJoinedText(window, condition)
+        case .unsupportedNotice:
+            return t("Unsupported source")
+        case .recoveryRequired:
+            return row.recoveryWriteBlocked ? capacityAlertJoinedText(t("Recovery needed"), t("write-blocked")) : t("Recovery needed")
+        case .empty:
+            return t("No trusted capacity")
+        }
+    }
+
+    func capacityAlertRowDetail(_ row: CapacityAlertVisibilityRow) -> String {
+        switch row.kind {
+        case .capacityRule:
+            if row.status == .noEffectiveChannel {
+                return t("No effective notification channels.")
+            }
+            return capacityAlertConditionText(row)
+        case .pendingBalanceBinding:
+            return t("Save a DeepSeek API key to enable official balance checks.")
+        case .unsupportedNotice:
+            if row.provider == .codex {
+                return t("Codex limit hints are experimental and may break if the Codex CLI changes. They are not guaranteed official quota.")
+            }
+            if row.provider == .gemini {
+                return t("Unsupported source")
+            }
+            return t("Unsupported source")
+        case .recoveryRequired:
+            let code = row.recoveryCode.map { " \($0)" } ?? ""
+            return "\(t("Capacity alerts use safe defaults until local runtime state is readable again."))\(code)"
+        case .empty:
+            return t("No trusted capacity")
+        }
+    }
+
+    func capacityAlertRowStatusText(_ row: CapacityAlertVisibilityRow) -> String {
+        switch row.status {
+        case .deliverable:
+            return t("Effective ON")
+        case .disabled:
+            return t("Disabled")
+        case .noEffectiveChannel:
+            return t("Effective OFF")
+        case .pendingBalanceBinding:
+            return t("Pending balance")
+        case .unsupportedSource:
+            return t("Unsupported source")
+        case .recoveryRequired:
+            return t("Recovery needed")
+        case .noRules:
+            return t("No trusted capacity")
+        }
+    }
+
+    func capacityAlertRowStatusColor(_ row: CapacityAlertVisibilityRow) -> Color {
+        switch row.status {
+        case .deliverable:
+            return TokenPilotDesign.calm
+        case .disabled, .noRules:
+            return TokenPilotDesign.textSecondary
+        case .pendingBalanceBinding, .unsupportedSource, .noEffectiveChannel, .recoveryRequired:
+            return TokenPilotDesign.warning
+        }
+    }
+
+    func capacityAlertChannelPillText(_ channel: CapacityAlertVisibilityChannel) -> String {
+        let label: String
+        switch channel.channel {
+        case .macOS:
+            label = t("macOS")
+        case .telegram:
+            label = t("TG")
+        case .discord:
+            label = t("DC")
+        }
+        let state = channel.effective ? t("ON") : t("OFF")
+        guard let deliveryStatus = channel.deliveryStatus else {
+            return String(format: t("capacity.alert.channel.state.format"), label, state)
+        }
+        return String(format: t("capacity.alert.pill.status.format"), label, state, capacityAlertDeliveryStatusText(deliveryStatus))
+    }
+
+    private func capacityAlertDeliveryStatusText(_ status: CapacityAlertDeliveryStatus) -> String {
+        switch status {
+        case .idle:
+            return t("Idle")
+        case .pending:
+            return t("Pending")
+        case .delivered:
+            return t("Delivered")
+        case .failed:
+            return t("Failed")
+        }
+    }
+
+    func capacityAlertChannelPillColor(_ channel: CapacityAlertVisibilityChannel) -> Color {
+        guard channel.routed else { return TokenPilotDesign.textSecondary.opacity(0.55) }
+        if channel.deliveryStatus == .failed { return TokenPilotDesign.warning }
+        return channel.effective ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+    }
+
+    private func capacityAlertConditionText(_ row: CapacityAlertVisibilityRow) -> String {
+        switch row.conditionKind {
+        case .percentThresholds:
+            return row.percentThresholds.map { threshold in
+                switch threshold {
+                case .reset: return t("Reset")
+                case .fifty: return "50%"
+                case .eighty: return "80%"
+                case .hundred: return "100%"
+                }
+            }.joined(separator: "/")
+        case .balanceBelow:
+            guard let threshold = row.balanceThresholdCanonical, let currency = row.balanceCurrency else { return "" }
+            return "< \(threshold) \(currency)"
+        case .pendingBalanceCurrencyBinding:
+            return t("Pending balance")
+        case nil:
+            return ""
+        }
     }
 
     func t(_ key: String) -> String {
@@ -271,12 +540,6 @@ final class TokenPilotViewModel: ObservableObject {
         settings.menuBarDisplayTarget = provider
     }
 
-    func updateChallengeTarget(_ target: Int) {
-        let clamped = min(max(target, 1_000), 100_000)
-        var next = settings
-        next.challengeTargetTokens = clamped
-        settings = next
-    }
 
     func menuBarDisplayTargetLabel(for provider: Provider?) -> String {
         guard let provider else { return t("Highest risk") }
@@ -284,6 +547,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func startAutoRefresh() {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
         guard timer == nil else { return }
         menuBarNow = Date()
         let timer = Timer(timeInterval: menuBarTickInterval, repeats: true) { [weak self] _ in
@@ -302,6 +568,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func refreshAfterPopoverOpen() async {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
         // MenuBarExtra can rebuild content during Settings ↔ Overview navigation.
         // Keep this lifecycle hook lightweight; app-level timer/init/manual actions own provider refreshes.
         menuBarNow = Date()
@@ -320,6 +589,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func persistSettingsDebounced(_ settingsToSave: AppSettings) {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
         settingsSaveTask?.cancel()
         settingsSaveTask = Task { [settingsStore, settingsSaveDebounceNanoseconds] in
             try? await Task.sleep(nanoseconds: settingsSaveDebounceNanoseconds)
@@ -331,6 +603,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func scheduleSettingsDrivenRefresh() {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
         settingsRefreshTask?.cancel()
         settingsRefreshTask = Task { [weak self, settingsRefreshDebounceNanoseconds] in
             try? await Task.sleep(nanoseconds: settingsRefreshDebounceNanoseconds)
@@ -340,6 +615,12 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func refresh(reason: RefreshReason = .manual) async {
+#if DEBUG
+        guard !debugFixtureMode else {
+            isRefreshing = false
+            return
+        }
+#endif
         if reason == .manual {
             menuBarNow = Date()
         }
@@ -385,6 +666,8 @@ final class TokenPilotViewModel: ObservableObject {
 
         let runtimeLoad = await capacityRuntimeStore.load()
         capacityRuntimeRecoveryRequired = runtimeLoad.recoveryStatus.recoveryRequired
+        capacityAlertRuntimeControl = runtimeLoad.control
+        capacityAlertRuntimeRecoveryStatus = runtimeLoad.recoveryStatus
 
         let presentationEnabled = runtimeLoad.control.assessmentEnabled && !runtimeLoad.recoveryStatus.recoveryRequired
         let assessments = presentationEnabled
@@ -396,10 +679,15 @@ final class TokenPilotViewModel: ObservableObject {
         let officialDeepSeekBalance = result.snapshots.first {
             $0.provider == .deepseek && $0.dataSource == .officialTelemetry && !$0.isStale
         }?.balance
-        _ = await capacityAlertMigrationCoordinator.migrate(settings: settingsAtStart, deepSeekBalance: officialDeepSeekBalance)
+        let migration = await capacityAlertMigrationCoordinator.migrate(settings: settingsAtStart, deepSeekBalance: officialDeepSeekBalance)
+        capacityAlertMigrationRecoveryStatus = migration.recoveryStatus.recoveryRequired ? migration.recoveryStatus : nil
 
         let rulesLoad = await capacityAlertRuleStore.load()
         let deliveryLoad = await capacityAlertDeliveryStore.load()
+        capacityAlertRules = rulesLoad.rules
+        capacityAlertRulesRecoveryStatus = rulesLoad.recoveryStatus
+        capacityAlertDeliveryStates = deliveryLoad.states
+        capacityAlertDeliveryRecoveryStatus = deliveryLoad.recoveryStatus
         let channels = CapacityAlertChannelSettings(
             settings: settingsAtStart,
             telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
@@ -419,7 +707,9 @@ final class TokenPilotViewModel: ObservableObject {
         guard !transition.deliveryBlocked else { return }
         let outcomes = await deliverCapacity(transition.attempts)
         let updatedStates = capacityAlertTransitionEngine.applyingDeliveryOutcomes(outcomes, to: transition.states)
-        _ = await capacityAlertDeliveryStore.save(updatedStates)
+        let deliverySave = await capacityAlertDeliveryStore.save(updatedStates)
+        capacityAlertDeliveryStates = updatedStates
+        capacityAlertDeliveryRecoveryStatus = deliverySave.recoveryStatus
     }
 
     private func rebuildUsageFromHistory(using currentSnapshots: [ProviderSnapshot]) {
@@ -453,15 +743,27 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func rebuildHistoryUsage(for period: HistoryPeriod) {
+#if DEBUG
+        guard !debugFixtureMode else {
+            historyUsage = aggregationService.aggregate(snapshots: historySnapshots, period: period)
+            return
+        }
+#endif
         historyUsage = aggregationService.aggregate(snapshots: historySnapshots, period: period)
         limitHistorySamples = limitHistoryStore.samples(period: period, enabledProviders: Set(settings.enabledProviders))
     }
 
     func updatePermissionStatus() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         settings.notificationPermissionStatus = await localNotificationService.permissionStatus()
     }
 
     func requestNotificationPermission() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         settings.notificationPermissionStatus = await localNotificationService.requestPermission()
         if settings.notificationPermissionStatus == .denied {
             bannerMessage = t("Permission denied. Enable notifications in macOS Settings > Notifications.")
@@ -471,6 +773,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sendTestNotification() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         guard settings.globalNotificationsEnabled else {
             bannerMessage = t("No notification channel is enabled or configured.")
             return
@@ -545,6 +850,9 @@ final class TokenPilotViewModel: ObservableObject {
         canChooseDirectories: Bool,
         apply: (URL, Data?) -> Void
     ) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let panel = NSOpenPanel()
         panel.canChooseDirectories = canChooseDirectories
         panel.canChooseFiles = true
@@ -565,6 +873,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func checkConnection(_ provider: Provider) async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let source = await connectionService.check(settings: settings, provider: provider)
         dataSources[provider] = source
         connectionStatus[provider] = sourceStatusText(source)
@@ -572,6 +883,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func checkAllConnections() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let initialSources = await connectionService.checkAll(settings: settings)
         let adoption = connectionService.applyingPreferredDetectedSources(settings: settings, sources: initialSources)
         if adoption.settings != settings {
@@ -732,6 +1046,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func exportHistory() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             let data = try exportService.export(
                 usage: historyUsage,
@@ -804,6 +1121,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func saveDeepSeekAPIKey() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let key = deepSeekAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
             bannerMessage = t("Enter a DeepSeek API key first.")
@@ -822,6 +1142,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func deleteDeepSeekAPIKey() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             try keychain.deleteSecret(account: Self.deepSeekAPIKeyAccount)
             deepSeekAPIKeyInput = ""
@@ -835,6 +1158,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func saveTelegramToken() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let token = telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
             bannerMessage = t("Enter a bot token first.")
@@ -852,6 +1178,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func deleteTelegramToken() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             try keychain.deleteSecret(account: Self.telegramTokenAccount)
             telegramTokenInput = ""
@@ -866,6 +1195,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sendTelegramTest() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             try await sendTelegram(text: t("✅ TokenPilot test alert. Telegram notifications are connected."))
             settings.telegram.connectionStatus = "Connected"
@@ -878,6 +1210,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func findTelegramChatID() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             let token = try telegramTokenForUse()
             let chatID = try await telegramService.findChatID(token: token)
@@ -906,6 +1241,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func saveDiscordWebhook() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         let webhookURL = discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !webhookURL.isEmpty else {
             bannerMessage = t("Enter a Discord webhook URL first.")
@@ -925,6 +1263,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func deleteDiscordWebhook() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             try keychain.deleteSecret(account: Self.discordWebhookAccount)
             discordWebhookInput = ""
@@ -939,6 +1280,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sendDiscordTest() async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         do {
             try await sendDiscord(text: t("✅ TokenPilot test alert. Discord notifications are connected."))
             settings.discord.connectionStatus = "Connected"
@@ -969,6 +1313,10 @@ final class TokenPilotViewModel: ObservableObject {
         guard !attempts.isEmpty else { return [] }
         var outcomes: [CapacityAlertDeliveryOutcome] = []
         for attempt in attempts {
+            guard attempt.provider != .codex, attempt.provider != .gemini else {
+                outcomes.append(CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: false, completedAt: Date()))
+                continue
+            }
             let message = capacityAlertMessage(for: attempt)
             let succeeded: Bool
             do {
@@ -1041,24 +1389,691 @@ final class TokenPilotViewModel: ObservableObject {
             return t("Limit")
         }
     }
-    private func deliver(_ events: [AlertEvent]) async {
-        guard !events.isEmpty else { return }
-        let hasStoredTelegramToken = hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasStoredDiscordWebhook = hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        guard settings.globalNotificationsEnabled else {
-            return
-        }
-        for event in events {
-            guard let rule = settings.alertRules.first(where: { $0.provider == event.provider && $0.window == event.window }) else { continue }
-            if settings.macOSNotificationsEnabled && rule.macOSEnabled {
-                try? await localNotificationService.send(title: event.title, body: event.body)
-            }
-            if settings.telegramNotificationsEnabled && settings.telegram.isEnabled && rule.telegramEnabled && hasStoredTelegramToken {
-                try? await sendTelegram(text: event.body)
-            }
-            if settings.discordNotificationsEnabled && settings.discord.isEnabled && rule.discordEnabled && hasStoredDiscordWebhook {
-                try? await sendDiscord(text: event.body)
-            }
+}
+
+// MARK: - DEBUG deterministic fixtures
+#if DEBUG
+enum TokenPilotDebugScenario: String, CaseIterable {
+    case empty
+    case claudeOfficialFresh
+    case claudeOfficialStale
+    case codexLocalOnly
+    case codexConnectorExperimental
+    case codexManual
+    case deepseekOfficialBalance
+    case deepseekManualBalance
+    case antigravityBridge
+    case runtimeRecoveryRequired
+    case alertsUnsupportedCodexLegacy
+    case alertsPendingDeepSeekCurrency
+}
+
+struct TokenPilotDebugFixture {
+    static let privacyContract = "DEBUG fixture uses fixed dates. No network. No real provider accounts. No credentials. No local paths. No secrets."
+    private static let fixedReferenceDate = Date(timeIntervalSince1970: 1_700_000_000)
+
+    let scenario: TokenPilotDebugScenario
+    let referenceDate: Date
+    let selectedScreen: TokenPilotViewModel.Screen
+    let settings: AppSettings
+    let snapshots: [ProviderSnapshot]
+    let historySnapshots: [ProviderSnapshot]
+    let limitHistorySamples: [ProviderLimitSample]
+    let dataSourceMode: TokenPilotViewModel.DataSourceMode
+    let dataSources: [Provider: ProviderDataSource]
+    let capacityAssessments: [CapacityAssessment]
+    let capacityPresentations: [CapacityPresentation]
+    let capacityRefreshErrors: [CapacityRefreshError]
+    let capacityRuntimeRecoveryRequired: Bool
+    let capacityAlertRuntimeControl: CapacityRuntimeControl
+    let capacityAlertRuntimeRecoveryStatus: CapacityPersistenceStatus
+    let capacityAlertRules: [CapacityAlertRule]
+    let capacityAlertRulesRecoveryStatus: CapacityPersistenceStatus
+    let capacityAlertDeliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState]
+    let capacityAlertDeliveryRecoveryStatus: CapacityPersistenceStatus
+    let capacityAlertMigrationRecoveryStatus: CapacityPersistenceStatus?
+    let bannerMessage: String?
+    let hasSavedTelegramToken: Bool
+    let hasSavedDiscordWebhook: Bool
+    let hasSavedDeepSeekAPIKey: Bool
+
+    static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> TokenPilotDebugFixture? {
+        guard environment["TOKENPILOT_UI_TESTING"] == "1" else { return nil }
+        let rawScenario = environment["TOKENPILOT_DEBUG_SCENARIO"] ?? TokenPilotDebugScenario.empty.rawValue
+        guard let scenario = TokenPilotDebugScenario(rawValue: rawScenario) else { return nil }
+        return make(scenario)
+    }
+
+    private static func make(_ scenario: TokenPilotDebugScenario) -> TokenPilotDebugFixture {
+        switch scenario {
+        case .empty:
+            return fixture(scenario: scenario, settings: baseSettings(), dataSourceMode: .disconnected)
+
+        case .claudeOfficialFresh:
+            let events = [
+                usageEvent(1, provider: .claude, model: "claude-sonnet", minutesBeforeNow: 42, input: 1_200, output: 840, cacheRead: 220, cost: "0.82", dataSource: .officialStatusline),
+                usageEvent(2, provider: .claude, model: "claude-opus", minutesBeforeNow: 18, input: 980, output: 520, cacheRead: 160, cost: "0.60", dataSource: .officialStatusline)
+            ]
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .claude,
+                    updatedAt: fixedReferenceDate,
+                    fiveHour: limitWindow(.fiveHour, used: 58, resetAfter: 3_420, confidence: .high, providerWindowID: "five-hour", durationMinutes: 300),
+                    weekly: limitWindow(.weekly, used: 24, resetAfter: 172_800, confidence: .high, providerWindowID: "seven-day", durationMinutes: 10_080),
+                    todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+                    todayCostUSD: decimal("1.42"),
+                    confidence: .high,
+                    dataSource: .officialStatusline,
+                    events: events
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .claude),
+                snapshots: snapshots,
+                observations: [
+                    percentObservation(seriesID: claudeFiveHourSeries(), used: 58, resetAfter: 3_420, authority: .providerReported, stability: .supported, comparability: .comparable),
+                    percentObservation(seriesID: claudeWeeklySeries(), used: 24, resetAfter: 172_800, authority: .providerReported, stability: .supported, comparability: .comparable)
+                ],
+                capacityAlertRules: [
+                    percentAlertRule(provider: .claude, seriesID: claudeFiveHourSeries())
+                ]
+            )
+
+        case .claudeOfficialStale:
+            let events = [
+                usageEvent(3, provider: .claude, model: "claude-sonnet", minutesBeforeNow: 520, input: 1_480, output: 640, cacheRead: 0, cost: "0.94", dataSource: .officialStatusline)
+            ]
+            let staleAt = fixedReferenceDate.addingTimeInterval(-7_200)
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .claude,
+                    updatedAt: staleAt,
+                    fiveHour: limitWindow(.fiveHour, used: 82, resetAfter: 1_800, confidence: .high, providerWindowID: "five-hour", durationMinutes: 300),
+                    weekly: limitWindow(.weekly, used: 61, resetAfter: 86_400, confidence: .high, providerWindowID: "seven-day", durationMinutes: 10_080),
+                    todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+                    todayCostUSD: decimal("0.94"),
+                    confidence: .high,
+                    dataSource: .officialStatusline,
+                    isStale: true,
+                    statusMessage: "Official statusline stale",
+                    events: events
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .claude),
+                snapshots: snapshots,
+                observations: [
+                    percentObservation(seriesID: claudeFiveHourSeries(), used: 82, observedOffset: -7_200, resetAfter: 1_800, authority: .providerReported, stability: .supported, comparability: .comparable, freshnessSeconds: 3_600),
+                    percentObservation(seriesID: claudeWeeklySeries(), used: 61, observedOffset: -7_200, resetAfter: 86_400, authority: .providerReported, stability: .supported, comparability: .comparable, freshnessSeconds: 3_600)
+                ],
+                capacityAlertRules: [
+                    percentAlertRule(provider: .claude, seriesID: claudeFiveHourSeries())
+                ],
+                dataSourceMode: .stale
+            )
+
+        case .codexLocalOnly:
+            let events = [
+                usageEvent(4, provider: .codex, model: "gpt-5-codex", minutesBeforeNow: 16, input: 2_800, output: 1_300, cacheRead: 420, dataSource: .localLog, isExperimental: true)
+            ]
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .codex,
+                    updatedAt: fixedReferenceDate,
+                    todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+                    confidence: .low,
+                    dataSource: .localLog,
+                    isExperimental: true,
+                    statusMessage: "Local log activity only; not web quota",
+                    events: events
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .codex),
+                snapshots: snapshots
+            )
+
+        case .codexConnectorExperimental:
+            let codexManual = CodexManualSettings(webConnectorEnabled: true, webTodayTokens: 4_100, webSnapshotCapturedAt: fixedReferenceDate)
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .codex,
+                    updatedAt: fixedReferenceDate,
+                    fiveHour: limitWindow(.fiveHour, used: 64, resetAfter: 5_400, confidence: .medium, providerWindowID: "primary", durationMinutes: 300),
+                    weekly: limitWindow(.weekly, used: 33, resetAfter: 259_200, confidence: .medium, providerWindowID: "secondary", durationMinutes: 10_080),
+                    todayTokens: 4_100,
+                    confidence: .medium,
+                    dataSource: .webUsage,
+                    isExperimental: true,
+                    statusMessage: "UNOFFICIAL · Codex app-server limit hints"
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .codex, codexManual: codexManual),
+                snapshots: snapshots,
+                observations: [
+                    percentObservation(seriesID: codexPrimarySeries(), used: 64, resetAfter: 5_400, authority: .providerReported, stability: .experimentalTransport, comparability: .comparable),
+                    percentObservation(seriesID: codexSecondarySeries(), used: 33, resetAfter: 259_200, authority: .providerReported, stability: .experimentalTransport, comparability: .comparable)
+                ]
+            )
+
+        case .codexManual:
+            let codexManual = CodexManualSettings(
+                planLabel: "Manual fixture",
+                fiveHourUsagePercentage: 72,
+                weeklyUsagePercentage: 18,
+                resetTimeText: "fixed",
+                confidence: .manual,
+                webSnapshotEnabled: true,
+                webTodayTokens: 2_500,
+                webSnapshotCapturedAt: fixedReferenceDate
+            )
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .codex,
+                    updatedAt: fixedReferenceDate,
+                    fiveHour: limitWindow(.fiveHour, used: 72, resetAfter: 2_400, confidence: .manual, providerWindowID: "manual-five-hour", durationMinutes: 300),
+                    weekly: limitWindow(.weekly, used: 18, resetAfter: 345_600, confidence: .manual, providerWindowID: "manual-weekly", durationMinutes: 10_080),
+                    todayTokens: 2_500,
+                    confidence: .manual,
+                    dataSource: .manual,
+                    statusMessage: "Manual estimate"
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .codex, codexManual: codexManual),
+                snapshots: snapshots,
+                observations: [
+                    percentObservation(seriesID: codexPrimarySeries(), used: 72, resetAfter: 2_400, authority: .userEntered, stability: .manual, comparability: .incomparable),
+                    percentObservation(seriesID: codexSecondarySeries(), used: 18, resetAfter: 345_600, authority: .userEntered, stability: .manual, comparability: .incomparable)
+                ]
+            )
+
+        case .deepseekOfficialBalance:
+            let balance = ProviderBalance(currency: "USD", totalBalance: decimal("18.00"), grantedBalance: decimal("5.66"), toppedUpBalance: decimal("12.34"), capturedAt: fixedReferenceDate)
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .deepseek,
+                    updatedAt: fixedReferenceDate,
+                    confidence: .high,
+                    dataSource: .officialTelemetry,
+                    statusMessage: "Official balance endpoint",
+                    balance: balance
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .deepseek, deepSeekAPIKeyConfigured: true),
+                snapshots: snapshots,
+                observations: [
+                    moneyObservation(amount: "12.34", currency: "USD", authority: .providerReported, stability: .supported, comparability: .comparable)
+                ],
+                capacityAlertRules: [
+                    balanceAlertRule(threshold: "5.00", currency: "USD")
+                ],
+                hasSavedDeepSeekAPIKey: true
+            )
+
+        case .deepseekManualBalance:
+            let balance = ProviderBalance(currency: "USD", toppedUpBalance: decimal("8.75"), capturedAt: fixedReferenceDate)
+            let balanceSettings = DeepSeekBalanceSettings(manualFallbackEnabled: true, manualBalanceText: "8.75", manualCurrency: "USD", manualCapturedAt: fixedReferenceDate, lowBalanceThreshold: decimal("5.00"))
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .deepseek,
+                    updatedAt: fixedReferenceDate,
+                    confidence: .manual,
+                    dataSource: .manual,
+                    statusMessage: "Manual balance estimate",
+                    balance: balance
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .deepseek, deepSeekBalance: balanceSettings),
+                snapshots: snapshots,
+                observations: [
+                    moneyObservation(amount: "8.75", currency: "USD", authority: .userEntered, stability: .manual, comparability: .incomparable)
+                ]
+            )
+
+        case .antigravityBridge:
+            let events = [
+                usageEvent(5, provider: .gemini, model: "antigravity", minutesBeforeNow: 9, input: 900, output: 600, cacheRead: 120, dataSource: .officialStatusline)
+            ]
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .gemini,
+                    updatedAt: fixedReferenceDate,
+                    dailyRequestsUsed: 210,
+                    dailyRequestsLimit: 1_000,
+                    todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+                    confidence: .high,
+                    dataSource: .officialStatusline,
+                    statusMessage: "Antigravity statusline bridge",
+                    model: "antigravity",
+                    contextWindowUsedPercent: 32,
+                    events: events
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .gemini),
+                snapshots: snapshots,
+                observations: [
+                    countObservation(count: 210, authority: .providerReported, stability: .compatibilityBridge, comparability: .incomparable),
+                    tokensObservation(tokens: 32_000, authority: .providerReported, stability: .compatibilityBridge, comparability: .incomparable)
+                ]
+            )
+
+        case .runtimeRecoveryRequired:
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(),
+                capacityRefreshErrors: [
+                    CapacityRefreshError(provider: .claude, category: .sourceUnavailable, code: "debugRuntimeRecoveryRequired", redactedMessage: "Capacity runtime recovery required; safe defaults are active.")
+                ],
+                capacityRuntimeRecoveryRequired: true,
+                capacityAlertRuntimeControl: CapacityRuntimeControl(assessmentEnabled: false),
+                capacityAlertRuntimeRecoveryStatus: .recoveryRequired(writeBlocked: true, code: "runtimeRecoveryRequired"),
+                dataSourceMode: .disconnected
+            )
+
+        case .alertsUnsupportedCodexLegacy:
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .codex,
+                    updatedAt: fixedReferenceDate,
+                    todayTokens: 1_200,
+                    confidence: .low,
+                    dataSource: .localLog,
+                    isExperimental: true,
+                    statusMessage: "Legacy Codex local evidence is not alert-deliverable"
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .codex),
+                snapshots: snapshots,
+                capacityRefreshErrors: [
+                    CapacityRefreshError(provider: .codex, category: .unsupportedSeries, code: "debugUnsupportedCodexLegacy", redactedMessage: "Codex legacy capacity alerts are unsupported for delivery.")
+                ],
+                capacityAlertRules: [
+                    percentAlertRule(provider: .codex, seriesID: codexPrimarySeries())
+                ]
+            )
+
+        case .alertsPendingDeepSeekCurrency:
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .deepseek),
+                capacityAlertRules: [
+                    pendingDeepSeekBalanceRule()
+                ],
+                dataSourceMode: .disconnected
+            )
         }
     }
+
+    private static func fixture(
+        scenario: TokenPilotDebugScenario,
+        settings: AppSettings,
+        snapshots: [ProviderSnapshot] = [],
+        historySnapshots: [ProviderSnapshot]? = nil,
+        observations: [CapacityObservation] = [],
+        limitHistorySamples explicitLimitHistorySamples: [ProviderLimitSample]? = nil,
+        capacityRefreshErrors: [CapacityRefreshError] = [],
+        capacityRuntimeRecoveryRequired: Bool = false,
+        capacityAlertRuntimeControl: CapacityRuntimeControl = CapacityRuntimeControl(),
+        capacityAlertRuntimeRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil),
+        capacityAlertRules: [CapacityAlertRule] = [],
+        capacityAlertRulesRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil),
+        capacityAlertDeliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] = [:],
+        capacityAlertDeliveryRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil),
+        capacityAlertMigrationRecoveryStatus: CapacityPersistenceStatus? = nil,
+        dataSourceMode explicitDataSourceMode: TokenPilotViewModel.DataSourceMode? = nil,
+        selectedScreen: TokenPilotViewModel.Screen = .overview,
+        bannerMessage: String? = nil,
+        hasSavedTelegramToken: Bool = false,
+        hasSavedDiscordWebhook: Bool = false,
+        hasSavedDeepSeekAPIKey: Bool = false
+    ) -> TokenPilotDebugFixture {
+        let historySnapshots = historySnapshots ?? snapshots
+        let assessmentService = CapacityAssessmentService()
+        let presentationMapper = CapacityPresentationMapper()
+        let assessments = observations.map { assessmentService.assess($0, now: fixedReferenceDate) }
+        let presentations = assessments.map { presentationMapper.map($0) }
+        let dataSourceMode = explicitDataSourceMode ?? inferredDataSourceMode(from: snapshots)
+        let limitHistorySamples = explicitLimitHistorySamples ?? makeLimitHistorySamples(from: snapshots)
+
+        return TokenPilotDebugFixture(
+            scenario: scenario,
+            referenceDate: fixedReferenceDate,
+            selectedScreen: selectedScreen,
+            settings: settings,
+            snapshots: snapshots,
+            historySnapshots: historySnapshots,
+            limitHistorySamples: limitHistorySamples,
+            dataSourceMode: dataSourceMode,
+            dataSources: makeDataSources(settings: settings, snapshots: snapshots, scenario: scenario),
+            capacityAssessments: assessments,
+            capacityPresentations: presentations,
+            capacityRefreshErrors: capacityRefreshErrors,
+            capacityRuntimeRecoveryRequired: capacityRuntimeRecoveryRequired,
+            capacityAlertRuntimeControl: capacityAlertRuntimeControl,
+            capacityAlertRuntimeRecoveryStatus: capacityAlertRuntimeRecoveryStatus,
+            capacityAlertRules: capacityAlertRules,
+            capacityAlertRulesRecoveryStatus: capacityAlertRulesRecoveryStatus,
+            capacityAlertDeliveryStates: capacityAlertDeliveryStates,
+            capacityAlertDeliveryRecoveryStatus: capacityAlertDeliveryRecoveryStatus,
+            capacityAlertMigrationRecoveryStatus: capacityAlertMigrationRecoveryStatus,
+            bannerMessage: bannerMessage,
+            hasSavedTelegramToken: hasSavedTelegramToken,
+            hasSavedDiscordWebhook: hasSavedDiscordWebhook,
+            hasSavedDeepSeekAPIKey: hasSavedDeepSeekAPIKey
+        )
+    }
+
+    private static func baseSettings(
+        menuBarTarget: Provider? = nil,
+        codexManual: CodexManualSettings = CodexManualSettings(),
+        deepSeekBalance: DeepSeekBalanceSettings = DeepSeekBalanceSettings(),
+        deepSeekAPIKeyConfigured: Bool = false
+    ) -> AppSettings {
+        AppSettings(
+            deepseekAPIKeyConfigured: deepSeekAPIKeyConfigured,
+            claudeStatusFilePath: "",
+            geminiTelemetryLogPath: "",
+            codexManual: codexManual,
+            globalNotificationsEnabled: true,
+            macOSNotificationsEnabled: true,
+            telegramNotificationsEnabled: false,
+            discordNotificationsEnabled: false,
+            notificationPermissionStatus: .notRequested,
+            telegram: TelegramSettings(),
+            discord: DiscordSettings(),
+            localization: LocalizationSettings(language: .en),
+            alertRules: [],
+            deepSeekBalance: deepSeekBalance,
+            showMockDataWhenDisconnected: false,
+            menuBarDisplayTarget: menuBarTarget
+        )
+    }
+
+    private static func usageEvent(
+        _ fixtureID: Int,
+        provider: Provider,
+        model: String?,
+        minutesBeforeNow: Int,
+        input: Int,
+        output: Int,
+        cacheRead: Int,
+        cost: String? = nil,
+        dataSource: UsageDataSource,
+        isEstimated: Bool = false,
+        isExperimental: Bool = false
+    ) -> UsageEvent {
+        UsageEvent(
+            id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", fixtureID))!,
+            provider: provider,
+            model: model,
+            timestamp: fixedReferenceDate.addingTimeInterval(TimeInterval(-minutesBeforeNow * 60)),
+            inputTokens: input,
+            outputTokens: output,
+            cacheReadTokens: cacheRead,
+            requestCount: 1,
+            estimatedCostUSD: cost.map { decimal($0) },
+            source: "debug-fixture",
+            dataSource: dataSource,
+            isEstimated: isEstimated,
+            isExperimental: isExperimental
+        )
+    }
+
+    private static func limitWindow(
+        _ kind: LimitWindowKind,
+        used: Int,
+        resetAfter: TimeInterval?,
+        confidence: DataConfidence,
+        providerWindowID: String,
+        durationMinutes: Int
+    ) -> LimitWindow {
+        LimitWindow(
+            kind: kind,
+            usedPercent: used,
+            resetAt: resetAfter.map { fixedReferenceDate.addingTimeInterval($0) },
+            confidence: confidence,
+            providerWindowID: providerWindowID,
+            durationMinutes: durationMinutes
+        )
+    }
+
+    private static func percentObservation(
+        seriesID: CapacitySeriesID,
+        used: Int,
+        observedOffset: TimeInterval = 0,
+        resetAfter: TimeInterval?,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability,
+        freshnessSeconds: TimeInterval = 7_200
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: seriesID,
+            observedAt: fixedReferenceDate.addingTimeInterval(observedOffset),
+            resetAt: resetAfter.map { fixedReferenceDate.addingTimeInterval($0) },
+            value: try! CapacityValue(usedPercent: used),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: freshnessSeconds),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
+    private static func moneyObservation(
+        amount: String,
+        currency: String,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: deepSeekBalanceSeries(),
+            observedAt: fixedReferenceDate,
+            value: try! CapacityValue(money: decimal(amount), currency: currency),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 7_200),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
+    private static func countObservation(
+        count: Int,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: geminiDailyRequestSeries(),
+            observedAt: fixedReferenceDate,
+            resetAt: fixedReferenceDate.addingTimeInterval(43_200),
+            value: try! CapacityValue(count: count),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 7_200),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
+    private static func tokensObservation(
+        tokens: Int,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: geminiContextSeries(),
+            observedAt: fixedReferenceDate,
+            value: try! CapacityValue(tokens: tokens),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 7_200),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
+    private static func makeLimitHistorySamples(from snapshots: [ProviderSnapshot]) -> [ProviderLimitSample] {
+        snapshots.flatMap { snapshot -> [ProviderLimitSample] in
+            var samples: [ProviderLimitSample] = []
+            if let fiveHour = snapshot.fiveHour, let used = fiveHour.usedPercent, let remaining = fiveHour.remainingPercent {
+                samples.append(ProviderLimitSample(provider: snapshot.provider, timestamp: fixedReferenceDate.addingTimeInterval(-900), window: .fiveHour, usedPercent: used, remainingPercent: remaining, confidence: fiveHour.confidence, source: "debug-fixture", totalTokens: snapshot.todayTokens))
+            }
+            if let weekly = snapshot.weekly, let used = weekly.usedPercent, let remaining = weekly.remainingPercent {
+                samples.append(ProviderLimitSample(provider: snapshot.provider, timestamp: fixedReferenceDate.addingTimeInterval(-1_800), window: .weekly, usedPercent: used, remainingPercent: remaining, confidence: weekly.confidence, source: "debug-fixture", totalTokens: snapshot.todayTokens))
+            }
+            if let dailyPercent = snapshot.dailyRequestsPercent {
+                samples.append(ProviderLimitSample(provider: snapshot.provider, timestamp: fixedReferenceDate.addingTimeInterval(-1_200), window: .dailyRequests, usedPercent: dailyPercent, remainingPercent: 100 - dailyPercent, confidence: snapshot.confidence, source: "debug-fixture", totalTokens: snapshot.todayTokens))
+            }
+            return samples
+        }
+    }
+
+    private static func makeDataSources(settings: AppSettings, snapshots: [ProviderSnapshot], scenario: TokenPilotDebugScenario) -> [Provider: ProviderDataSource] {
+        Dictionary(uniqueKeysWithValues: Provider.allCases.map { provider in
+            let snapshot = snapshots.first { $0.provider == provider }
+            let status: ProviderDataSourceStatus
+            let confidence: DataConfidence
+            let mode: ProviderMode
+
+            if let snapshot {
+                confidence = snapshot.confidence
+                mode = snapshot.dataSource == .manual ? .custom : .auto
+                if snapshot.isStale {
+                    status = .stale
+                } else if snapshot.dataSource == .manual || snapshot.confidence == .manual {
+                    status = .manual
+                } else {
+                    status = .connected
+                }
+            } else if !settings.isProviderEnabled(provider) {
+                status = .disabled
+                confidence = .low
+                mode = .disabled
+            } else if provider == .deepseek && settings.deepseekAPIKeyConfigured {
+                status = .connected
+                confidence = .medium
+                mode = .auto
+            } else if provider == .deepseek {
+                status = .manual
+                confidence = .manual
+                mode = .custom
+            } else {
+                status = .notFound
+                confidence = .low
+                mode = .auto
+            }
+
+            return (
+                provider,
+                ProviderDataSource(
+                    provider: provider,
+                    isEnabled: settings.isProviderEnabled(provider),
+                    mode: mode,
+                    detectedPaths: [],
+                    customPath: nil,
+                    lastScanAt: fixedReferenceDate,
+                    status: status,
+                    confidence: confidence,
+                    statusMessage: "DEBUG fixture \(scenario.rawValue)"
+                )
+            )
+        })
+    }
+
+    private static func inferredDataSourceMode(from snapshots: [ProviderSnapshot]) -> TokenPilotViewModel.DataSourceMode {
+        guard !snapshots.isEmpty else { return .disconnected }
+        return snapshots.contains { $0.isStale } ? .stale : .live
+    }
+
+    private static func percentAlertRule(provider: Provider, seriesID: CapacitySeriesID) -> CapacityAlertRule {
+        try! CapacityAlertRule(
+            provider: provider,
+            seriesID: seriesID,
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: CapacityAlertRouting(macOS: true),
+            condition: .percentThresholds(reset: true, fifty: false, eighty: true, hundred: true)
+        )
+    }
+
+    private static func balanceAlertRule(threshold: String, currency: String) -> CapacityAlertRule {
+        try! CapacityAlertRule(
+            provider: .deepseek,
+            seriesID: deepSeekBalanceSeries(),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: CapacityAlertRouting(macOS: true),
+            condition: try! CapacityAlertCondition.balanceBelow(threshold: decimal(threshold), currency: currency, rearmAtOrAboveThreshold: true)
+        )
+    }
+
+    private static func pendingDeepSeekBalanceRule() -> CapacityAlertRule {
+        try! CapacityAlertRule(
+            provider: .deepseek,
+            seriesID: deepSeekBalanceSeries(),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: false,
+            routing: CapacityAlertRouting(macOS: true),
+            condition: .pendingBalanceCurrencyBinding
+        )
+    }
+
+    private static func claudeFiveHourSeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300)
+    }
+
+    private static func claudeWeeklySeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, unit: .percent, durationMinutes: 10_080)
+    }
+
+    private static func codexPrimarySeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .codex, providerWindowID: "primary", kind: .rolling, unit: .percent, durationMinutes: 300)
+    }
+
+    private static func codexSecondarySeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .codex, providerWindowID: "secondary", kind: .rolling, unit: .percent, durationMinutes: 10_080)
+    }
+
+    private static func deepSeekBalanceSeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency)
+    }
+
+    private static func geminiDailyRequestSeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .gemini, providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, durationMinutes: 1_440)
+    }
+
+    private static func geminiContextSeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .gemini, providerWindowID: "context", kind: .context, unit: .tokens)
+    }
+
+    private static func decimal(_ value: String) -> Decimal {
+        Decimal(string: value, locale: Locale(identifier: "en_US_POSIX"))!
+    }
 }
+#endif

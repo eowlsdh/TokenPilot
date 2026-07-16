@@ -59,6 +59,31 @@ For each row, record tester/date/pass-fail, redacted evidence, and artifact SHA-
 | Gatekeeper assessment | `spctl --assess --type execute --verbose=4 build/TokenPilot.app` | Assessment accepts the signed artifact. |
 | Staple validation | `xcrun stapler validate build/TokenPilot.app` | Stapled/notarized artifact validates when notarization is part of the approved release run. |
 
+## Live fixture QA matrix
+
+Use the actual executable product `TokenMonitor` for SwiftPM fixture runs, not stale screenshots or source-only previews. Run every approved scenario from the current checkout/build:
+
+| Scenario | SwiftPM command | Required evidence focus |
+|---|---|---|
+| `empty` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=empty swift run TokenMonitor` | Empty-state hierarchy, setup action, no mock/live claims. |
+| `claudeOfficialFresh` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=claudeOfficialFresh swift run TokenMonitor` | Fresh official Claude capacity, remaining percentage, reset context. |
+| `claudeOfficialStale` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=claudeOfficialStale swift run TokenMonitor` | Stale source labeling and suppressed alert eligibility. |
+| `codexLocalOnly` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=codexLocalOnly swift run TokenMonitor` | Local activity is not web quota and has no deliverable alert. |
+| `codexConnectorExperimental` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=codexConnectorExperimental swift run TokenMonitor` | Experimental transport badge and `100 - used` remaining percentage. |
+| `codexManual` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=codexManual swift run TokenMonitor` | Manual estimate labeling and alert ineligibility. |
+| `deepseekOfficialBalance` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=deepseekOfficialBalance swift run TokenMonitor` | Official balance, bound currency, and eligible low-balance rule. |
+| `deepseekManualBalance` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=deepseekManualBalance swift run TokenMonitor` | Manual balance remains non-official and alert-ineligible. |
+| `antigravityBridge` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=antigravityBridge swift run TokenMonitor` | Compatibility bridge wording and unsupported alert state. |
+| `runtimeRecoveryRequired` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=runtimeRecoveryRequired swift run TokenMonitor` | Recovery guidance, write blocking, and fail-closed delivery. |
+| `alertsUnsupportedCodexLegacy` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=alertsUnsupportedCodexLegacy swift run TokenMonitor` | Legacy Codex rules render read-only unsupported and never deliver. |
+| `alertsPendingDeepSeekCurrency` | `TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=alertsPendingDeepSeekCurrency swift run TokenMonitor` | DeepSeek alert remains pending until official currency binding. |
+
+The approved scenario matrix is the twelve rows above. Update this matrix and its documentation guard tests in the same change whenever the DEBUG fixture scenario set changes.
+
+Xcode `TokenPilot` app target alternative: open `TokenPilot.xcodeproj`, select the `TokenPilot` scheme/app target, add `TOKENPILOT_UI_TESTING=1` and `TOKENPILOT_DEBUG_SCENARIO=<scenario>` under **Edit Scheme → Run → Arguments → Environment Variables**, then run the app target once for each approved scenario. Record whether evidence came from `swift run TokenMonitor` or the Xcode `TokenPilot` app target.
+
+For each scenario and launch path, attach a current-build popover screenshot and popover transcript. The screenshot must exercise the 420×620 popover size and record any clipping/truncation instead of cropping it away. The transcript must cover keyboard navigation and VoiceOver order. Locale review must cover KO/EN/JA/zh-Hans overflow. Accessibility review must cover Reduced Motion and High Contrast. If Screen Recording, Accessibility, notification, network, Keychain, or other macOS permission state prevents the check, record the row as `blocked` with the permission and missing evidence; permission-blocked results must be recorded as blocked—not pass.
+
 ## Developer ID posture
 
 The Developer ID/local artifact uses the intentionally empty `Resources/TokenPilot.entitlements` posture so local usage-file discovery and local CLI/process integration continue to work. This is unsandboxed. Do not describe the artifact as sandboxed or App Store-ready. A future sandboxed distribution must switch deliberately to `Resources/TokenPilot-AppStore.entitlements` and re-verify source selection, security-scoped bookmarks, notifications, and Codex connector behavior.

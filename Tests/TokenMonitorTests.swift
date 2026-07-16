@@ -198,7 +198,7 @@ final class TokenMonitorTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_000_000)
         )
 
-        XCTAssertEqual(title, "TP · LIVE")
+        XCTAssertEqual(title, "Co --%")
         XCTAssertFalse(title.contains("100%"))
         XCTAssertFalse(title.contains("0%"))
     }
@@ -455,22 +455,83 @@ final class TokenMonitorTests: XCTestCase {
             "Remaining badges belong inside the popover, not in the menu bar label."
         )
     }
+    func testDebugScenarioFixturesInjectProductionViewModelOnlyInDebugAndStayPrivacySafe() throws {
+        let rootURL = try Self.projectRootURL()
+        let appSource = try String(contentsOf: rootURL.appendingPathComponent("Sources/TokenApp/TokenMonitorApp.swift"))
+        let viewModelSource = try String(contentsOf: rootURL.appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
 
-    func testOverviewOmitsSevenDayAndProviderShareCards() throws {
+        XCTAssertTrue(appSource.contains("TokenPilotRootView(model: model)"))
+        XCTAssertTrue(appSource.contains("productionMenuBarLabel(model: model)"))
+        XCTAssertTrue(appSource.contains("TokenPilotViewModel(debugFixture: TokenPilotDebugFixture.resolve())"))
+        XCTAssertFalse(appSource.contains("TokenPilotDebugFixtureView"))
+        XCTAssertFalse(appSource.contains("debugFixtureLabel"))
+        XCTAssertFalse(appSource.contains("launchState"))
+
+        XCTAssertTrue(viewModelSource.contains("#if DEBUG\n    init(debugFixture: TokenPilotDebugFixture? = TokenPilotDebugFixture.resolve())"))
+        XCTAssertTrue(viewModelSource.contains("#else\n    init() {\n        self.settings = settingsStore.load()"))
+        XCTAssertTrue(viewModelSource.contains("refreshStoredCredentialPresence()"))
+        XCTAssertTrue(viewModelSource.contains("guard !debugFixtureMode else { return }"))
+        XCTAssertTrue(viewModelSource.contains("blockDebugFixtureExternalAction()"))
+        XCTAssertFalse(viewModelSource.contains("ProcessInfo.processInfo.environment[\"TOKENPILOT_UI_TESTING\"] == \"1\" ? AppSettings() : settingsStore.load()"))
+        XCTAssertFalse(viewModelSource.contains("guard ProcessInfo.processInfo.environment[\"TOKENPILOT_UI_TESTING\"] != \"1\" else { return }"))
+
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+        XCTAssertTrue(fixtureSource.contains("#if DEBUG"))
+        XCTAssertTrue(fixtureSource.contains("TOKENPILOT_UI_TESTING"))
+        XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_SCENARIO"))
+        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_700_000_000)"))
+        XCTAssertTrue(fixtureSource.contains("privacyContract"))
+        XCTAssertTrue(fixtureSource.contains("No network. No real provider accounts. No credentials. No local paths. No secrets."))
+        XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_UI_TESTING"))
+        XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_DEBUG_SCENARIO"))
+
+        let approvedScenarios = [
+            "empty",
+            "claudeOfficialFresh",
+            "claudeOfficialStale",
+            "codexLocalOnly",
+            "codexConnectorExperimental",
+            "codexManual",
+            "deepseekOfficialBalance",
+            "deepseekManualBalance",
+            "antigravityBridge",
+            "runtimeRecoveryRequired",
+            "alertsUnsupportedCodexLegacy",
+            "alertsPendingDeepSeekCurrency"
+        ]
+        for scenario in approvedScenarios {
+            XCTAssertTrue(fixtureSource.contains("case \(scenario)"), "Missing DEBUG fixture scenario: \(scenario)")
+        }
+
+        XCTAssertTrue(viewModelSource.contains("snapshots = fixture.snapshots"))
+        XCTAssertTrue(viewModelSource.contains("capacityAssessments = fixture.capacityAssessments"))
+        XCTAssertTrue(viewModelSource.contains("capacityPresentations = fixture.capacityPresentations"))
+        XCTAssertTrue(viewModelSource.contains("capacityAlertRules = fixture.capacityAlertRules"))
+        XCTAssertTrue(viewModelSource.contains("dataSources = fixture.dataSources"))
+
+        for forbidden in ["/Users/", "~/", "Bearer ", "auth.json", "\".env\"", "id_rsa", "id_ed25519", "https://", "http://", "sk-", "pk-"] {
+            XCTAssertFalse(fixtureSource.contains(forbidden), "DEBUG fixtures must not contain private paths, credential filenames, URLs, or secret-looking values: \(forbidden)")
+        }
+    }
+
+
+    func testOverviewOmitsChallengeAndPromotionalUsageAnalyticsCards() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertFalse(source.contains("SevenDayBarChart(bars: model.overviewUsage.sevenDayBars)"))
-        XCTAssertFalse(source.contains("ProviderShareRow(shares: model.overviewUsage.providerShare)"))
-        XCTAssertTrue(source.contains("SevenDayBarChart(bars: model.historyUsage.sevenDayBars)"))
-        XCTAssertTrue(source.contains("ProviderShareRow(shares: model.historyUsage.providerShare)"))
+        XCTAssertFalse(source.contains("ChallengeCard("))
+        XCTAssertFalse(source.contains("struct ChallengeCard"))
+        XCTAssertFalse(source.contains("overviewUsage.sevenDayBars"))
+        XCTAssertFalse(source.contains("overviewUsage.providerShare"))
     }
 
     func testLimitCardsPreferRemainingPercentCopy() throws {
         let source = try Self.tokenMonitorAppSource()
 
         XCTAssertTrue(source.contains("remainingPercentText"))
-        XCTAssertTrue(source.contains("localized(\"Lowest remaining\""))
-        XCTAssertTrue(source.contains("ProgressLine(percent: remainingPercent"))
+        XCTAssertTrue(source.contains("value: remainingPercentText(window.remainingPercent)"))
+        XCTAssertTrue(source.contains("percent: window.remainingPercent"))
         XCTAssertTrue(source.contains("return \"\\(remainingPercent)%\""))
         XCTAssertFalse(source.contains("return TokenPilotFormatters.remainingTime(until: resetAt)"))
         XCTAssertTrue(source.contains("remainingPercentText(window.remainingPercent)"))
@@ -545,7 +606,6 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(readme.contains("Settings → Provider Diagnostics"))
         XCTAssertTrue(readme.contains("docs/assets/readme-screenshot.png"))
         XCTAssertTrue(readme.contains("Release copy must stay evidence-bound"))
-        XCTAssertTrue(readme.contains("# Executed 187 tests, with 0 failures"))
         XCTAssertTrue(readme.contains("Antigravity CLI setup"))
         XCTAssertTrue(readme.contains("antigravity-statusline.json"))
         XCTAssertTrue(readme.contains("do not claim notarization"))
@@ -556,9 +616,19 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(readme.contains("README.zh-CN.md"))
     }
 
-    func testLocalizedReadmesDocumentDeepSeekAndScreenshot() throws {
+    func testReadmesDocumentDeepSeekScreenshotAndOmitRemovedSurfaces() throws {
         let rootURL = try Self.projectRootURL()
-        let readmePaths = ["README.ko.md", "README.ja.md", "README.zh-CN.md"]
+        let readmePaths = ["README.md", "README.ko.md", "README.ja.md", "README.zh-CN.md"]
+
+        let removedSurfaceMarkers = [
+            "daily challenge",
+            "일일 챌린지",
+            "7-day",
+            "7일 chart",
+            "provider share",
+            "Last 7 days",
+            "# Executed "
+        ]
 
         for path in readmePaths {
             let readme = try String(contentsOf: rootURL.appendingPathComponent(path))
@@ -566,6 +636,84 @@ final class TokenMonitorTests: XCTestCase {
             XCTAssertTrue(readme.contains("DeepSeek"), "\(path) should document DeepSeek.")
             XCTAssertTrue(readme.contains("topped_up_balance"), "\(path) should name the official DeepSeek balance field.")
             XCTAssertTrue(readme.contains("/user/balance"), "\(path) should document the DeepSeek balance endpoint.")
+            for marker in removedSurfaceMarkers {
+                XCTAssertFalse(readme.localizedCaseInsensitiveContains(marker), "\(path) should not advertise stale removed surface: \(marker)")
+            }
+        }
+    }
+
+    func testReleaseDocsAvoidBrittleTestCountsAndStalePassClaims() throws {
+        let rootURL = try Self.projectRootURL()
+        let documentationPaths = [
+            "README.md",
+            "README.ko.md",
+            "docs/verification/developer-id-capacity-release.md"
+        ]
+
+        for path in documentationPaths {
+            let document = try String(contentsOf: rootURL.appendingPathComponent(path))
+            XCTAssertNil(
+                document.range(of: #"Tests-[0-9]+"#, options: .regularExpression),
+                "\(path) should not publish a brittle tests-count badge."
+            )
+            XCTAssertNil(
+                document.range(of: #"[0-9]+\s+passing"#, options: [.regularExpression, .caseInsensitive]),
+                "\(path) should not publish a stale passing-count claim."
+            )
+            XCTAssertNil(
+                document.range(of: #"\bPASS\b"#, options: .regularExpression),
+                "\(path) should record current evidence instead of permanent PASS claims."
+            )
+            XCTAssertFalse(document.contains("# Executed 187 tests"), "\(path) should not preserve stale test-run output.")
+            XCTAssertFalse(document.contains("swift test                                  PASS"), "\(path) should not preserve stale swift test PASS output.")
+            XCTAssertFalse(document.contains("make bundle / make verify                  PASS"), "\(path) should not preserve stale bundle/verify PASS output.")
+        }
+
+        let koreanReadme = try String(contentsOf: rootURL.appendingPathComponent("README.ko.md"))
+        XCTAssertTrue(koreanReadme.contains("이 문서는 특정 머신의 오래된 통과 결과를 고정 기록하지 않습니다."))
+        XCTAssertTrue(koreanReadme.contains("아래 명령은 재현 절차이며 최신 통과 기록이 아닙니다."))
+    }
+
+    func testDeveloperIdReleaseDocRequiresExecutableFixtureQAPackage() throws {
+        let releaseDoc = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("docs/verification/developer-id-capacity-release.md"))
+        let scenarios = [
+            "empty",
+            "claudeOfficialFresh",
+            "claudeOfficialStale",
+            "codexLocalOnly",
+            "codexConnectorExperimental",
+            "codexManual",
+            "deepseekOfficialBalance",
+            "deepseekManualBalance",
+            "antigravityBridge",
+            "runtimeRecoveryRequired",
+            "alertsUnsupportedCodexLegacy",
+            "alertsPendingDeepSeekCurrency"
+        ]
+
+        XCTAssertTrue(releaseDoc.contains("actual executable product `TokenMonitor`"))
+        for scenario in scenarios {
+            XCTAssertTrue(
+                releaseDoc.contains("TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=\(scenario) swift run TokenMonitor"),
+                "Release QA docs should include the executable fixture command for \(scenario)."
+            )
+        }
+
+        let requiredMarkers = [
+            "Xcode `TokenPilot` app target alternative",
+            "current-build popover screenshot",
+            "popover transcript",
+            "420×620",
+            "keyboard navigation",
+            "VoiceOver order",
+            "KO/EN/JA/zh-Hans overflow",
+            "Reduced Motion",
+            "High Contrast",
+            "permission-blocked results must be recorded as blocked—not pass"
+        ]
+
+        for marker in requiredMarkers {
+            XCTAssertTrue(releaseDoc.contains(marker), "Missing release QA requirement: \(marker)")
         }
     }
 
@@ -1175,23 +1323,70 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(capacityMessageBody.contains("capacity.notification.percent.body"))
         XCTAssertFalse(capacityMessageBody.contains("providerWindowID"))
 
+        XCTAssertTrue(source.contains("capacity.alert.delivery.pending.count"))
+        XCTAssertTrue(source.contains("capacity.alert.delivery.failed.count"))
+        XCTAssertTrue(source.contains("capacity.alert.status.format"))
+        XCTAssertTrue(source.contains("capacity.alert.channel.preference.format"))
+        XCTAssertTrue(source.contains("capacity.alert.segment.format"))
+        XCTAssertTrue(source.contains("t(\"Global\")"))
+        XCTAssertTrue(source.contains("t(\"macOS\")"))
+        XCTAssertTrue(source.contains("t(\"Telegram\")"))
+        XCTAssertTrue(source.contains("t(\"Discord\")"))
+        XCTAssertFalse(source.contains("\\(summary.pendingDeliveryCount) pending"))
+        XCTAssertFalse(source.contains("return \"Global \\(global)"))
+        XCTAssertFalse(source.contains("· write-blocked"))
+        XCTAssertFalse(source.contains("deliveryStatus.rawValue"))
         XCTAssertTrue(source.contains("Button(model.t(\"Delete API Key\"), role: .destructive)"))
         XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
         XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(snapshot.provider.displayName, language: language)) \\(localized(window.label, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
     }
 
     func testG004LocalizationKeysHaveRuntimeAndCatalogParity() throws {
-        let keys = [
+        let translatedKeys = [
             "Cancel",
+            "Alerts",
             "Remaining capacity",
             "Runtime recovery required",
+            "Capacity runtime recovery required",
             "DeepSeek API Key",
             "Source unavailable",
+            "Unsupported source",
+            "Pending",
+            "Pending balance",
+            "Delivered",
+            "Failed",
+            "Global",
+            "Idle",
+            "No trusted capacity",
+            "No trusted capacity presentation",
+            "Open Provider Diagnostics",
+            "write-blocked",
+            "capacity.alert.channel.preference.format",
+            "capacity.alert.channel.state.format",
+            "capacity.alert.delivery.failed.count",
+            "capacity.alert.delivery.pending.count",
+            "capacity.alert.pill.status.format",
+            "capacity.alert.recovery.codes.format",
+            "capacity.alert.rule.count.status",
+            "capacity.alert.segment.format",
+            "capacity.alert.segment.separator",
+            "capacity.alert.status.format",
             "capacity.notification.percent.body",
+            "capacity.notification.reset.body",
             "5-hour window"
         ]
 
-        for key in keys {
+        let properNameKeys = [
+            "macOS",
+            "Telegram",
+            "Discord",
+            "TG",
+            "DC"
+        ]
+
+        let keys = translatedKeys + properNameKeys
+
+        for key in translatedKeys {
             XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .ko), key)
             XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .ja), key)
             XCTAssertNotEqual(TokenPilotLocalizer.localized(key, language: .zhHans), key)
@@ -1212,6 +1407,21 @@ final class TokenMonitorTests: XCTestCase {
                 let value = try XCTUnwrap(stringUnit["value"] as? String, "Missing value for \(key) \(locale)")
                 XCTAssertFalse(value.isEmpty, "Empty value for \(key) \(locale)")
             }
+        }
+
+        let retiredActiveKeys = [
+            "Daily challenge",
+            "Daily challenge target",
+            "Change daily challenge target",
+            "Daily challenge progress",
+            "7-day usage",
+            "Provider share"
+        ]
+        for key in retiredActiveKeys {
+            XCTAssertNil(strings[key], "Retired UI key should not remain in the catalog: \(key)")
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ko), key)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ja), key)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .zhHans), key)
         }
     }
 

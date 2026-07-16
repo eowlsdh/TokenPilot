@@ -221,7 +221,8 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let result = await UsageStore(refreshAdapters: [codex, deepSeek]).refresh(settings: settings)
 
-        XCTAssertEqual(await appServer.callCount(), 1)
+        let appServerCallCount = await appServer.callCount()
+        XCTAssertEqual(appServerCallCount, 1)
         XCTAssertEqual(deepSeekHTTP.callCount(), 1)
         XCTAssertEqual(Set(result.snapshots.map(\.provider)), [.codex, .deepseek])
         XCTAssertEqual(result.capacityErrors, [])
@@ -2932,21 +2933,79 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageExportSanitizesExperimentalCodexLocalLogSnapshotTokens() throws {
+        let now = Date()
+        let codexLocal = UsageEvent(
+            provider: .codex,
+            timestamp: now,
+            inputTokens: 9_999,
+            outputTokens: 0,
+            source: "codex-session-jsonl",
+            dataSource: .localLog,
+            isEstimated: true,
+            isExperimental: true
+        )
         let snapshot = ProviderSnapshot(
             provider: .codex,
             todayTokens: 9_999,
             dataSource: .localLog,
             isExperimental: true,
-            statusMessage: "EXPERIMENTAL · local Codex log · not web quota"
+            statusMessage: "EXPERIMENTAL · local Codex log · not web quota",
+            events: [codexLocal]
         )
         let usage = AggregationService().aggregate(snapshots: [snapshot], period: .today)
         let data = try UsageExportService().makeJSONData(usage: usage, snapshots: [snapshot], dataMode: "LIVE")
+        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         let payload = try decoder.decode(UsageExportPayload.self, from: data)
 
+        XCTAssertEqual(payload.schemaVersion, 2)
+        XCTAssertEqual(payload.localActivity.scope, LocalActivityExport.defaultScope)
+        XCTAssertTrue(payload.localActivity.quotaComparableOnly)
+        XCTAssertEqual(payload.sevenDayBars, payload.localActivity.sevenDayBars)
+        XCTAssertEqual(payload.providerShare, payload.localActivity.providerShare)
         XCTAssertEqual(payload.snapshots.first?.todayTokens, 0)
         XCTAssertEqual(payload.metrics.totalTokens, 0)
+        XCTAssertTrue(payload.events.isEmpty)
+        XCTAssertFalse(raw.contains("codex-session-jsonl"))
+        XCTAssertFalse(raw.contains("9999"))
+    }
+
+    func testUsageExportCSVMarksV2LocalActivityAndExcludesExperimentalCodexLocalLogEvents() throws {
+        let now = Date()
+        let included = UsageEvent(
+            provider: .claude,
+            timestamp: now,
+            inputTokens: 10,
+            outputTokens: 5,
+            source: "claude-statusline",
+            dataSource: .officialStatusline
+        )
+        let excluded = UsageEvent(
+            provider: .codex,
+            timestamp: now,
+            inputTokens: 9_999,
+            outputTokens: 0,
+            source: "codex-session-jsonl",
+            dataSource: .localLog,
+            isEstimated: true,
+            isExperimental: true
+        )
+        let snapshots = [
+            ProviderSnapshot(provider: .claude, events: [included]),
+            ProviderSnapshot(provider: .codex, todayTokens: 9_999, dataSource: .localLog, isExperimental: true, events: [excluded])
+        ]
+        let usage = AggregationService().aggregate(snapshots: snapshots, period: .today)
+
+        let csv = UsageExportService().makeCSVString(usage: usage)
+        let rows = csv.split(separator: "\n").map(String.init)
+
+        XCTAssertTrue(rows.contains { $0.hasPrefix("metadata,today,,schema_version,") && $0.contains(",2,,,,local_activity_contract,") })
+        XCTAssertTrue(rows.filter { $0.hasPrefix("provider_share,") }.allSatisfy { $0.contains(",local_activity_not_provider_quota,") })
+        XCTAssertTrue(rows.filter { $0.hasPrefix("daily_bar,") }.allSatisfy { $0.contains(",local_activity_not_provider_quota,") })
+        XCTAssertTrue(csv.contains("claude-statusline"))
+        XCTAssertFalse(csv.contains("codex-session-jsonl"))
+        XCTAssertFalse(csv.contains("9999"))
     }
     func testCapacityExportIsVersionedAndExcludesStatusModelForecastAndRawPaths() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -2974,7 +3033,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageExportRedactsSnapshotAndEventDiagnosticFields() throws {
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = Date()
         let event = UsageEvent(
             provider: .claude,
             model: "/Users/alice/project prompt: disclose bearer token api_key=sk-abcdefghijklmnopqrstuvwxyz123456",
@@ -3002,6 +3061,11 @@ final class TokenPilotServicesTests: XCTestCase {
         decoder.dateDecodingStrategy = .iso8601
         let payload = try decoder.decode(UsageExportPayload.self, from: data)
 
+        XCTAssertEqual(payload.schemaVersion, 2)
+        XCTAssertEqual(payload.localActivity.scope, LocalActivityExport.defaultScope)
+        XCTAssertTrue(payload.localActivity.quotaComparableOnly)
+        XCTAssertEqual(payload.sevenDayBars, payload.localActivity.sevenDayBars)
+        XCTAssertEqual(payload.providerShare, payload.localActivity.providerShare)
         XCTAssertEqual(payload.metrics.totalTokens, 15)
         XCTAssertEqual(payload.events.first?.totalTokens, 15)
         XCTAssertFalse(raw.contains("/Users/alice"))
@@ -3566,7 +3630,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let initial = await store.record([futureBoundary, futureRejected, oldestBoundary, expiredRejected])
         XCTAssertEqual(initial.acceptedCount, 2)
         XCTAssertEqual(initial.quarantinedCount, 2)
-        XCTAssertEqual(initial.snapshot?.quarantine.map(\.code).sorted(), ["expiredObservation", "futureObservation"])
+        XCTAssertEqual(initial.snapshot?.quarantine.map(\.code).sorted(), ["futureObservation"])
 
         let cardinalityDirectory = try capacityTempDirectory()
         let cardinalityStore = CapacityEvidenceStore(directory: cardinalityDirectory, clock: FixedCapacityClock(now: now))
@@ -3717,7 +3781,8 @@ final class TokenPilotServicesTests: XCTestCase {
         let absentRuntime = await runtime.load()
         XCTAssertTrue(absentRuntime.deliveryEnabled)
         _ = await runtime.save(CapacityRuntimeControl(assessmentEnabled: false))
-        XCTAssertFalse((await runtime.load()).control.assessmentEnabled)
+        let savedRuntime = await runtime.load()
+        XCTAssertFalse(savedRuntime.control.assessmentEnabled)
 
         let runtimeFile = directory.appendingPathComponent("capacity-runtime-v1.json")
         try Data("corrupt".utf8).write(to: runtimeFile)
@@ -3729,18 +3794,22 @@ final class TokenPilotServicesTests: XCTestCase {
         let rules = CapacityAlertRuleStore(directory: rulesDirectory)
         let percentRule = try capacityPercentRule()
         _ = await rules.save([percentRule])
-        XCTAssertEqual((await rules.load()).rules.map(\.id), [percentRule.id])
+        let savedRules = await rules.load()
+        XCTAssertEqual(savedRules.rules.map(\.id), [percentRule.id])
         try Data("corrupt".utf8).write(to: rulesDirectory.appendingPathComponent("capacity-alert-rules-v1.json"))
-        XCTAssertFalse((await CapacityAlertRuleStore(directory: rulesDirectory).load()).deliveryEnabled)
+        let corruptRules = await CapacityAlertRuleStore(directory: rulesDirectory).load()
+        XCTAssertFalse(corruptRules.deliveryEnabled)
 
         let deliveryDirectory = try capacityTempDirectory()
         let delivery = CapacityAlertDeliveryStore(directory: deliveryDirectory)
         let key = CapacityAlertDeliveryKey(rule: percentRule, channel: .macOS)
         let state = try CapacityAlertDeliveryState(key: key, conditionState: .percent(activeCycleID: "cycle", lastUsed: 40, deliveredThresholds: []))
         _ = await delivery.save([key: state])
-        XCTAssertEqual((await delivery.load()).states[key], state)
+        let savedDelivery = await delivery.load()
+        XCTAssertEqual(savedDelivery.states[key], state)
         try Data("corrupt".utf8).write(to: deliveryDirectory.appendingPathComponent("capacity-alert-delivery-v1.json"))
-        XCTAssertFalse((await CapacityAlertDeliveryStore(directory: deliveryDirectory).load()).deliveryEnabled)
+        let corruptDelivery = await CapacityAlertDeliveryStore(directory: deliveryDirectory).load()
+        XCTAssertFalse(corruptDelivery.deliveryEnabled)
     }
 
     func testCapacityEvidenceStoreRawRetentionUsesExactUTCDayWindow() async throws {
@@ -3964,6 +4033,161 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(repeatMigration.didMigrate)
         XCTAssertTrue(migration.rules.contains { $0.provider == .deepseek && $0.isPendingBalanceBinding && !$0.enabled })
         XCTAssertTrue(migration.rules.contains { $0.provider == .claude && $0.condition.enabledPercentThresholds.contains(.fifty) })
+    }
+
+    func testCapacityAlertMigrationIgnoresUnsupportedLegacyProvidersAndIsIdempotent() throws {
+        var settings = AppSettings()
+        settings.alertRules = [
+            AlertRule(provider: .claude, window: .fiveHour, fiftyEnabled: true, macOSEnabled: true, telegramEnabled: true),
+            AlertRule(provider: .codex, window: .fiveHour, fiftyEnabled: true, macOSEnabled: true, telegramEnabled: true, discordEnabled: true),
+            AlertRule(provider: .gemini, window: .dailyRequests, fiftyEnabled: true, macOSEnabled: true)
+        ]
+
+        let migration = try CapacityAlertLegacyMigrator.migrate(settings: settings, deepSeekBalance: nil)
+        let repeatMigration = try CapacityAlertLegacyMigrator.migrate(settings: settings, deepSeekBalance: nil, existingMarker: migration.marker)
+
+        XCTAssertTrue(migration.didMigrate)
+        XCTAssertFalse(repeatMigration.didMigrate)
+        XCTAssertFalse(migration.rules.contains { $0.provider == .codex || $0.provider == .gemini })
+        XCTAssertTrue(migration.rules.contains { $0.provider == .deepseek && $0.isPendingBalanceBinding && !$0.enabled })
+        let claudeRule = try XCTUnwrap(migration.rules.first { $0.provider == .claude })
+        XCTAssertTrue(claudeRule.routing.macOS)
+        XCTAssertTrue(claudeRule.routing.telegram)
+        XCTAssertFalse(claudeRule.routing.discord)
+        XCTAssertTrue(claudeRule.condition.enabledPercentThresholds.contains(.fifty))
+    }
+
+    func testCapacityAlertMigrationBindsDeepSeekOnlyAfterOfficialCurrencyAndRemovesPendingRule() async throws {
+        let directory = try capacityTempDirectory()
+        var settings = AppSettings()
+        settings.alertRules = []
+        settings.deepSeekBalance.lowBalanceThreshold = 7
+        settings.telegramNotificationsEnabled = true
+
+        let coordinator = CapacityAlertLegacyMigrationCoordinator(directory: directory)
+        let pending = await coordinator.migrate(settings: settings, deepSeekBalance: nil)
+        XCTAssertTrue(pending.didMigrate)
+        XCTAssertTrue(pending.rules.contains { $0.provider == .deepseek && $0.isPendingBalanceBinding && !$0.enabled })
+
+        let officialBalance = ProviderBalance(currency: "usd", toppedUpBalance: 10)
+        let bound = await coordinator.migrate(settings: settings, deepSeekBalance: officialBalance)
+        let loaded = await CapacityAlertRuleStore(directory: directory).load()
+
+        XCTAssertTrue(bound.didMigrate)
+        XCTAssertFalse(loaded.rules.contains { $0.provider == .deepseek && $0.isPendingBalanceBinding })
+        let balanceRule = try XCTUnwrap(loaded.rules.first { $0.provider == .deepseek && $0.condition.kind == .balanceBelow })
+        XCTAssertTrue(balanceRule.enabled)
+        XCTAssertEqual(balanceRule.condition.balanceCurrency, "USD")
+        XCTAssertEqual(balanceRule.condition.thresholdCanonical, "7")
+        XCTAssertTrue(balanceRule.routing.macOS)
+        XCTAssertTrue(balanceRule.routing.telegram)
+        XCTAssertFalse(balanceRule.routing.discord)
+
+        let repeatMigration = await coordinator.migrate(settings: settings, deepSeekBalance: officialBalance)
+        let loadedAfterRepeat = await CapacityAlertRuleStore(directory: directory).load()
+        XCTAssertFalse(repeatMigration.didMigrate)
+        XCTAssertEqual(loadedAfterRepeat.rules, loaded.rules)
+    }
+
+    func testCapacityAlertVisibilityMarksCodexAndGeminiUnsupportedAndEngineSkipsCodexRule() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let codexSeries = try CapacitySeriesID(provider: .codex, providerWindowID: "primary", kind: .rolling, unit: .percent, durationMinutes: 300)
+        let codexRule = try CapacityAlertRule(
+            provider: .codex,
+            seriesID: codexSeries,
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: .init(macOS: true, telegram: true, discord: true),
+            condition: .percentThresholds(reset: true, fifty: true, eighty: true, hundred: true)
+        )
+        let codexObservation = try CapacityObservation(
+            seriesID: codexSeries,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 90),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let codexAssessment = CapacityAssessmentService().assess(codexObservation, now: now)
+        let transition = CapacityAlertTransitionEngine().evaluate(
+            rules: [codexRule],
+            assessments: [codexAssessment],
+            previousStates: [:],
+            channels: CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true, telegramEnabled: true, discordEnabled: true, telegramCredentialPresent: true, discordCredentialPresent: true),
+            now: now
+        )
+
+        XCTAssertTrue(transition.attempts.isEmpty)
+        XCTAssertTrue(transition.states.isEmpty)
+
+        let summary = CapacityAlertVisibilityBuilder().make(
+            runtime: CapacityRuntimeControl(),
+            runtimeStatus: .ready(source: .primary, generation: nil),
+            rules: [codexRule],
+            rulesStatus: .ready(source: .primary, generation: nil),
+            deliveryStates: [:],
+            deliveryStatus: .ready(source: .primary, generation: nil),
+            channels: CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true),
+            includeUnsupportedNotices: true
+        )
+        let unsupportedRows = summary.rows.filter { $0.kind == .unsupportedNotice }
+        XCTAssertEqual(Set(unsupportedRows.compactMap(\.provider)), [.codex, .gemini])
+        XCTAssertTrue(unsupportedRows.allSatisfy { $0.readOnly && !$0.deliverable && $0.status == .unsupportedSource })
+        XCTAssertFalse(summary.rows.contains { $0.provider == .codex && $0.deliverable })
+    }
+
+    func testCapacityAlertVisibilitySummaryUsesCapacityRulesDeliveryAndChannelPreferences() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let rule = try capacityPercentRule(routing: .init(macOS: true, telegram: true, discord: false))
+        let macKey = CapacityAlertDeliveryKey(rule: rule, channel: .macOS)
+        let delivered = try CapacityAlertDeliveryState(
+            key: macKey,
+            status: .delivered,
+            lastAttemptAt: now,
+            lastSuccessAt: now,
+            conditionState: .percent(activeCycleID: "cycle", lastUsed: 80, deliveredThresholds: [.eighty])
+        )
+
+        let summary = CapacityAlertVisibilityBuilder().make(
+            runtime: CapacityRuntimeControl(),
+            runtimeStatus: .ready(source: .primary, generation: nil),
+            rules: [rule],
+            rulesStatus: .ready(source: .primary, generation: nil),
+            deliveryStates: [macKey: delivered],
+            deliveryStatus: .ready(source: .primary, generation: nil),
+            channels: CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true, telegramEnabled: true, discordEnabled: true, telegramCredentialPresent: false, discordCredentialPresent: true),
+            includeUnsupportedNotices: false
+        )
+
+        XCTAssertEqual(summary.status, .deliverable)
+        XCTAssertEqual(summary.deliverableRuleCount, 1)
+        XCTAssertEqual(summary.effectiveChannelCount, 1)
+        let row = try XCTUnwrap(summary.rows.first { $0.kind == .capacityRule })
+        XCTAssertEqual(row.percentThresholds, [.reset, .eighty, .hundred])
+        XCTAssertFalse(row.percentThresholds.contains(.fifty))
+        XCTAssertEqual(row.channels.first { $0.channel == .macOS }?.deliveryStatus, .delivered)
+        XCTAssertEqual(row.channels.first { $0.channel == .macOS }?.effective, true)
+        XCTAssertEqual(row.channels.first { $0.channel == .telegram }?.effective, false)
+        XCTAssertEqual(row.channels.first { $0.channel == .discord }?.routed, false)
+
+        let recovery = CapacityAlertVisibilityBuilder().make(
+            runtime: CapacityRuntimeControl(),
+            runtimeStatus: .recoveryRequired(writeBlocked: true, code: "runtimeRecoveryRequired"),
+            rules: [rule],
+            rulesStatus: .ready(source: .primary, generation: nil),
+            deliveryStates: [:],
+            deliveryStatus: .ready(source: .primary, generation: nil),
+            channels: CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true),
+            includeUnsupportedNotices: false
+        )
+        XCTAssertEqual(recovery.status, .recoveryRequired)
+        XCTAssertEqual(recovery.recoveryCodes, ["runtimeRecoveryRequired"])
+        XCTAssertTrue(recovery.recoveryWriteBlocked)
     }
 
     func testCapacityAlertMigrationCoordinatorRetriesMarkerFailureWithoutDuplicateRulesOrDelivery() async throws {

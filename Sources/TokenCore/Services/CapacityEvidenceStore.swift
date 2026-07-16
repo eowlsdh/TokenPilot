@@ -1615,13 +1615,13 @@ public actor CapacityAlertLegacyMigrationCoordinator {
             return blockedMigrationResult(status: deliveryLoad.recoveryStatus)
         }
 
-        let mergedRules = mergeRules(existing: rulesLoad.rules, migrated: migration.rules)
+        let mergedRules = mergeRules(existing: rulesLoad.rules, migrated: migration.rules, previousMarker: markerLoad.marker, nextMarker: migration.marker)
         let rulesSave = await rulesStore.save(mergedRules)
         guard !rulesSave.recoveryStatus.writeBlocked else {
             return CapacityAlertMigrationCommitResult(didMigrate: false, marker: nil, rules: mergedRules, deliveryStates: deliveryLoad.states, recoveryStatus: rulesSave.recoveryStatus)
         }
 
-        let mergedStates = mergeDeliveryStates(existing: deliveryLoad.states, initial: initialDeliveryStates, migratedRuleIDs: Set(migration.marker.migratedRuleIDs))
+        let mergedStates = mergeDeliveryStates(existing: deliveryLoad.states, initial: initialDeliveryStates, previousMarker: markerLoad.marker, nextMarker: migration.marker)
         let deliverySave = await deliveryStore.save(mergedStates)
         guard !deliverySave.recoveryStatus.writeBlocked else {
             return CapacityAlertMigrationCommitResult(didMigrate: false, marker: nil, rules: mergedRules, deliveryStates: mergedStates, recoveryStatus: deliverySave.recoveryStatus)
@@ -1635,17 +1635,30 @@ public actor CapacityAlertLegacyMigrationCoordinator {
         return CapacityAlertMigrationCommitResult(didMigrate: true, marker: migration.marker, rules: mergedRules, deliveryStates: mergedStates, recoveryStatus: markerSave.recoveryStatus)
     }
 
-    private func mergeRules(existing: [CapacityAlertRule], migrated: [CapacityAlertRule]) -> [CapacityAlertRule] {
+    private func mergeRules(existing: [CapacityAlertRule], migrated: [CapacityAlertRule], previousMarker: CapacityAlertMigrationMarker?, nextMarker: CapacityAlertMigrationMarker) -> [CapacityAlertRule] {
+        let previousRuleIDs = Set(previousMarker?.migratedRuleIDs ?? [])
+        let nextRuleIDs = Set(nextMarker.migratedRuleIDs)
         var byID = Dictionary(uniqueKeysWithValues: existing.map { ($0.id, $0) })
-        for rule in migrated where byID[rule.id] == nil {
+
+        for removedID in previousRuleIDs.subtracting(nextRuleIDs) {
+            byID.removeValue(forKey: removedID)
+        }
+        for rule in migrated {
             byID[rule.id] = rule
         }
         return byID.values.sorted { $0.id < $1.id }
     }
 
-    private func mergeDeliveryStates(existing: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState], initial: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState], migratedRuleIDs: Set<String>) -> [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] {
+    private func mergeDeliveryStates(existing: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState], initial: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState], previousMarker: CapacityAlertMigrationMarker?, nextMarker: CapacityAlertMigrationMarker) -> [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] {
+        let previousRuleIDs = Set(previousMarker?.migratedRuleIDs ?? [])
+        let nextRuleIDs = Set(nextMarker.migratedRuleIDs)
+        let removedRuleIDs = previousRuleIDs.subtracting(nextRuleIDs)
         var merged = existing
-        for (key, state) in initial where migratedRuleIDs.contains(key.ruleID) && merged[key] == nil {
+
+        for key in Array(merged.keys) where removedRuleIDs.contains(key.ruleID) {
+            merged.removeValue(forKey: key)
+        }
+        for (key, state) in initial where nextRuleIDs.contains(key.ruleID) && merged[key] == nil {
             merged[key] = state
         }
         return merged
@@ -1725,6 +1738,332 @@ public struct CapacityAlertChannelSettings: Equatable, Sendable {
                 discordCredentialPresent &&
                 discordWebhookPresent
         }
+    }
+}
+public enum CapacityAlertVisibilityStatus: String, Codable, Equatable, Sendable {
+    case deliverable
+    case disabled
+    case noEffectiveChannel
+    case pendingBalanceBinding
+    case unsupportedSource
+    case recoveryRequired
+    case noRules
+}
+
+public enum CapacityAlertVisibilityRowKind: String, Codable, Equatable, Sendable {
+    case capacityRule
+    case pendingBalanceBinding
+    case unsupportedNotice
+    case recoveryRequired
+    case empty
+}
+
+public struct CapacityAlertVisibilityChannel: Equatable, Identifiable, Sendable {
+    public let channel: CapacityAlertChannel
+    public let routed: Bool
+    public let effective: Bool
+    public let deliveryStatus: CapacityAlertDeliveryStatus?
+
+    public var id: String { channel.rawValue }
+
+    public init(channel: CapacityAlertChannel, routed: Bool, effective: Bool, deliveryStatus: CapacityAlertDeliveryStatus?) {
+        self.channel = channel
+        self.routed = routed
+        self.effective = effective
+        self.deliveryStatus = deliveryStatus
+    }
+}
+
+public struct CapacityAlertVisibilityRow: Equatable, Identifiable, Sendable {
+    public let id: String
+    public let kind: CapacityAlertVisibilityRowKind
+    public let provider: Provider?
+    public let seriesID: CapacitySeriesID?
+    public let conditionKind: CapacityAlertConditionKind?
+    public let percentThresholds: [CapacityAlertPercentThreshold]
+    public let balanceThresholdCanonical: String?
+    public let balanceCurrency: String?
+    public let enabled: Bool
+    public let deliverable: Bool
+    public let readOnly: Bool
+    public let status: CapacityAlertVisibilityStatus
+    public let recoveryCode: String?
+    public let recoveryWriteBlocked: Bool
+    public let channels: [CapacityAlertVisibilityChannel]
+
+    public var conditionSummary: String {
+        switch conditionKind {
+        case .percentThresholds:
+            return percentThresholds.map(Self.percentThresholdLabel).joined(separator: "/")
+        case .balanceBelow:
+            guard let balanceThresholdCanonical, let balanceCurrency else { return "" }
+            return "< \(balanceThresholdCanonical) \(balanceCurrency)"
+        case .pendingBalanceCurrencyBinding:
+            return "Pending balance"
+        case nil:
+            return ""
+        }
+    }
+
+    public init(
+        id: String,
+        kind: CapacityAlertVisibilityRowKind,
+        provider: Provider? = nil,
+        seriesID: CapacitySeriesID? = nil,
+        conditionKind: CapacityAlertConditionKind? = nil,
+        percentThresholds: [CapacityAlertPercentThreshold] = [],
+        balanceThresholdCanonical: String? = nil,
+        balanceCurrency: String? = nil,
+        enabled: Bool = false,
+        deliverable: Bool = false,
+        readOnly: Bool = false,
+        status: CapacityAlertVisibilityStatus,
+        recoveryCode: String? = nil,
+        recoveryWriteBlocked: Bool = false,
+        channels: [CapacityAlertVisibilityChannel] = []
+    ) {
+        self.id = id
+        self.kind = kind
+        self.provider = provider
+        self.seriesID = seriesID
+        self.conditionKind = conditionKind
+        self.percentThresholds = percentThresholds
+        self.balanceThresholdCanonical = balanceThresholdCanonical
+        self.balanceCurrency = balanceCurrency
+        self.enabled = enabled
+        self.deliverable = deliverable
+        self.readOnly = readOnly
+        self.status = status
+        self.recoveryCode = recoveryCode
+        self.recoveryWriteBlocked = recoveryWriteBlocked
+        self.channels = channels
+    }
+
+    private static func percentThresholdLabel(_ threshold: CapacityAlertPercentThreshold) -> String {
+        switch threshold {
+        case .reset: return "Reset"
+        case .fifty: return "50%"
+        case .eighty: return "80%"
+        case .hundred: return "100%"
+        }
+    }
+}
+
+public struct CapacityAlertVisibilitySummary: Equatable, Sendable {
+    public let status: CapacityAlertVisibilityStatus
+    public let rows: [CapacityAlertVisibilityRow]
+    public let deliverableRuleCount: Int
+    public let pendingRuleCount: Int
+    public let unsupportedNoticeCount: Int
+    public let recoveryCodes: [String]
+    public let recoveryWriteBlocked: Bool
+    public let effectiveChannelCount: Int
+    public let pendingDeliveryCount: Int
+    public let failedDeliveryCount: Int
+
+    public var recoveryRequired: Bool { status == .recoveryRequired }
+
+    public init(
+        status: CapacityAlertVisibilityStatus,
+        rows: [CapacityAlertVisibilityRow],
+        deliverableRuleCount: Int,
+        pendingRuleCount: Int,
+        unsupportedNoticeCount: Int,
+        recoveryCodes: [String],
+        recoveryWriteBlocked: Bool,
+        effectiveChannelCount: Int,
+        pendingDeliveryCount: Int,
+        failedDeliveryCount: Int
+    ) {
+        self.status = status
+        self.rows = rows
+        self.deliverableRuleCount = deliverableRuleCount
+        self.pendingRuleCount = pendingRuleCount
+        self.unsupportedNoticeCount = unsupportedNoticeCount
+        self.recoveryCodes = recoveryCodes
+        self.recoveryWriteBlocked = recoveryWriteBlocked
+        self.effectiveChannelCount = effectiveChannelCount
+        self.pendingDeliveryCount = pendingDeliveryCount
+        self.failedDeliveryCount = failedDeliveryCount
+    }
+}
+
+public struct CapacityAlertVisibilityBuilder: Sendable {
+    public init() {}
+
+    public func make(
+        runtime: CapacityRuntimeControl,
+        runtimeStatus: CapacityPersistenceStatus,
+        rules: [CapacityAlertRule],
+        rulesStatus: CapacityPersistenceStatus,
+        deliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState],
+        deliveryStatus: CapacityPersistenceStatus,
+        migrationStatus: CapacityPersistenceStatus? = nil,
+        channels: CapacityAlertChannelSettings,
+        includeUnsupportedNotices: Bool = true
+    ) -> CapacityAlertVisibilitySummary {
+        var rows: [CapacityAlertVisibilityRow] = []
+        var recoveryCodes: [String] = []
+        var recoveryWriteBlocked = false
+
+        for (store, status) in recoveryStatuses(runtimeStatus: runtimeStatus, rulesStatus: rulesStatus, deliveryStatus: deliveryStatus, migrationStatus: migrationStatus) {
+            guard case let .recoveryRequired(writeBlocked, code) = status else { continue }
+            recoveryCodes.append(code)
+            recoveryWriteBlocked = recoveryWriteBlocked || writeBlocked
+            rows.append(CapacityAlertVisibilityRow(
+                id: "recovery/\(store)/\(code)",
+                kind: .recoveryRequired,
+                readOnly: true,
+                status: .recoveryRequired,
+                recoveryCode: code,
+                recoveryWriteBlocked: writeBlocked
+            ))
+        }
+
+        var unsupportedProviders: [Provider] = []
+        let deliveryReadable = !runtimeStatus.recoveryRequired && !rulesStatus.recoveryRequired && !deliveryStatus.recoveryRequired && runtime.assessmentEnabled
+
+        for rule in rules.sorted(by: { $0.id < $1.id }) {
+            if rule.provider == .codex || rule.provider == .gemini {
+                appendUnsupported(rule.provider, to: &unsupportedProviders)
+                continue
+            }
+
+            let rowChannels = CapacityAlertChannel.allCases.map { channel in
+                let key = CapacityAlertDeliveryKey(rule: rule, channel: channel)
+                return CapacityAlertVisibilityChannel(
+                    channel: channel,
+                    routed: routed(channel, by: rule.routing),
+                    effective: deliveryReadable && channels.isEnabled(channel, routing: rule.routing),
+                    deliveryStatus: deliveryStates[key]?.status
+                )
+            }
+            let hasEffectiveChannel = rowChannels.contains { $0.effective }
+            let status: CapacityAlertVisibilityStatus
+            let readOnly: Bool
+            let deliverable: Bool
+
+            if rule.isPendingBalanceBinding {
+                status = .pendingBalanceBinding
+                readOnly = true
+                deliverable = false
+            } else if !runtime.assessmentEnabled || !rule.enabled {
+                status = .disabled
+                readOnly = false
+                deliverable = false
+            } else if !deliveryReadable || !hasEffectiveChannel {
+                status = .noEffectiveChannel
+                readOnly = false
+                deliverable = false
+            } else {
+                status = .deliverable
+                readOnly = false
+                deliverable = true
+            }
+
+            rows.append(CapacityAlertVisibilityRow(
+                id: rule.id,
+                kind: rule.isPendingBalanceBinding ? .pendingBalanceBinding : .capacityRule,
+                provider: rule.provider,
+                seriesID: rule.seriesID,
+                conditionKind: rule.condition.kind,
+                percentThresholds: sortedPercentThresholds(rule.condition.enabledPercentThresholds),
+                balanceThresholdCanonical: rule.condition.thresholdCanonical,
+                balanceCurrency: rule.condition.balanceCurrency,
+                enabled: rule.enabled,
+                deliverable: deliverable,
+                readOnly: readOnly,
+                status: status,
+                channels: rowChannels
+            ))
+        }
+
+        if includeUnsupportedNotices {
+            appendUnsupported(.codex, to: &unsupportedProviders)
+            appendUnsupported(.gemini, to: &unsupportedProviders)
+        }
+
+        for provider in unsupportedProviders.sorted(by: { $0.rawValue < $1.rawValue }) {
+            rows.append(CapacityAlertVisibilityRow(
+                id: "unsupported/\(provider.rawValue)",
+                kind: .unsupportedNotice,
+                provider: provider,
+                deliverable: false,
+                readOnly: true,
+                status: .unsupportedSource
+            ))
+        }
+
+        if rows.isEmpty {
+            rows.append(CapacityAlertVisibilityRow(id: "empty/no-rules", kind: .empty, readOnly: true, status: .noRules))
+        }
+
+        let deliverableRuleCount = rows.filter { $0.kind == .capacityRule && $0.deliverable }.count
+        let pendingRuleCount = rows.filter { $0.status == .pendingBalanceBinding }.count
+        let unsupportedNoticeCount = rows.filter { $0.kind == .unsupportedNotice }.count
+        let effectiveChannelCount = rows.flatMap(\.channels).filter(\.effective).count
+        let pendingDeliveryCount = rows.flatMap(\.channels).filter { $0.deliveryStatus == .pending }.count
+        let failedDeliveryCount = rows.flatMap(\.channels).filter { $0.deliveryStatus == .failed }.count
+
+        let status: CapacityAlertVisibilityStatus
+        if !recoveryCodes.isEmpty {
+            status = .recoveryRequired
+        } else if deliverableRuleCount > 0 {
+            status = .deliverable
+        } else if pendingRuleCount > 0 {
+            status = .pendingBalanceBinding
+        } else if unsupportedNoticeCount > 0 {
+            status = .unsupportedSource
+        } else {
+            status = .noRules
+        }
+
+        return CapacityAlertVisibilitySummary(
+            status: status,
+            rows: rows,
+            deliverableRuleCount: deliverableRuleCount,
+            pendingRuleCount: pendingRuleCount,
+            unsupportedNoticeCount: unsupportedNoticeCount,
+            recoveryCodes: recoveryCodes,
+            recoveryWriteBlocked: recoveryWriteBlocked,
+            effectiveChannelCount: effectiveChannelCount,
+            pendingDeliveryCount: pendingDeliveryCount,
+            failedDeliveryCount: failedDeliveryCount
+        )
+    }
+
+    private func recoveryStatuses(
+        runtimeStatus: CapacityPersistenceStatus,
+        rulesStatus: CapacityPersistenceStatus,
+        deliveryStatus: CapacityPersistenceStatus,
+        migrationStatus: CapacityPersistenceStatus?
+    ) -> [(String, CapacityPersistenceStatus)] {
+        var statuses: [(String, CapacityPersistenceStatus)] = [
+            ("runtime", runtimeStatus),
+            ("rules", rulesStatus),
+            ("delivery", deliveryStatus)
+        ]
+        if let migrationStatus {
+            statuses.append(("migration", migrationStatus))
+        }
+        return statuses
+    }
+
+    private func sortedPercentThresholds(_ thresholds: Set<CapacityAlertPercentThreshold>) -> [CapacityAlertPercentThreshold] {
+        [.reset, .fifty, .eighty, .hundred].filter { thresholds.contains($0) }
+    }
+
+    private func routed(_ channel: CapacityAlertChannel, by routing: CapacityAlertRouting) -> Bool {
+        switch channel {
+        case .macOS: return routing.macOS
+        case .telegram: return routing.telegram
+        case .discord: return routing.discord
+        }
+    }
+
+    private func appendUnsupported(_ provider: Provider, to providers: inout [Provider]) {
+        guard !providers.contains(provider) else { return }
+        providers.append(provider)
     }
 }
 
@@ -1808,7 +2147,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
         var attempts: [CapacityAlertDeliveryAttempt] = []
 
         for rule in rules.sorted(by: { $0.id < $1.id }) {
-            guard rule.enabled, !rule.isPendingBalanceBinding, rule.provider != .codex else { continue }
+            guard rule.enabled, !rule.isPendingBalanceBinding, rule.provider != .codex, rule.provider != .gemini else { continue }
             guard let assessment = assessmentsBySeries[rule.seriesID.canonicalID]?.first(where: { assessment in
                 let observation = assessment.observation
                 return observation.seriesID == rule.seriesID && observation.authority == rule.authority && observation.stability == rule.stability
@@ -2082,7 +2421,7 @@ public enum CapacityAlertLegacyMigrator {
     }
 
     public static func migrate(settings: AppSettings, deepSeekBalance: ProviderBalance?, existingMarker: CapacityAlertMigrationMarker? = nil) throws -> Result {
-        let digest = settingsDigest(settings)
+        let digest = settingsDigest(settings, deepSeekBalance: deepSeekBalance)
         if let existingMarker, existingMarker.sourceSettingsDigest == digest {
             return Result(rules: [], marker: existingMarker, didMigrate: false)
         }
@@ -2108,7 +2447,7 @@ public enum CapacityAlertLegacyMigrator {
                 seriesID: balanceSeries,
                 authority: .providerReported,
                 stability: .supported,
-                enabled: settings.globalNotificationsEnabled,
+                enabled: true,
                 routing: CapacityAlertRouting(macOS: settings.macOSNotificationsEnabled, telegram: settings.telegramNotificationsEnabled, discord: settings.discordNotificationsEnabled),
                 condition: try .balanceBelow(threshold: settings.deepSeekBalance.lowBalanceThreshold, currency: deepSeekBalance.currency, rearmAtOrAboveThreshold: true)
             ))
@@ -2152,10 +2491,41 @@ public enum CapacityAlertLegacyMigrator {
         }
     }
 
-    private static func settingsDigest(_ settings: AppSettings) -> String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        let data = (try? encoder.encode(settings)) ?? Data()
+    private static func settingsDigest(_ settings: AppSettings, deepSeekBalance: ProviderBalance?) -> String {
+        let migratedClaudeRules = settings.alertRules
+            .filter { $0.provider == .claude }
+            .sorted { $0.id < $1.id }
+            .map { rule -> [String: Any] in
+                [
+                    "window": rule.window.rawValue,
+                    "reset": rule.resetEnabled,
+                    "fifty": rule.fiftyEnabled,
+                    "eighty": rule.eightyEnabled,
+                    "hundred": rule.hundredEnabled,
+                    "macOS": rule.macOSEnabled,
+                    "telegram": rule.telegramEnabled,
+                    "discord": rule.discordEnabled
+                ]
+            }
+        let officialCurrency = deepSeekBalance
+            .map(\.currency)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() }
+            .flatMap { CapacityValidationProxy.isValidCurrency($0) ? $0 : nil } ?? ""
+
+        let object: [String: Any] = [
+            "schema": 2,
+            "claudeAlertRules": migratedClaudeRules,
+            "deepSeekBalance": [
+                "officialCurrency": officialCurrency,
+                "lowBalanceThreshold": CapacityCanonical.thresholdCanonical(settings.deepSeekBalance.lowBalanceThreshold),
+                "routing": [
+                    "macOS": settings.macOSNotificationsEnabled,
+                    "telegram": settings.telegramNotificationsEnabled,
+                    "discord": settings.discordNotificationsEnabled
+                ]
+            ]
+        ]
+        let data = (try? CapacityCanonical.jsonData(object)) ?? Data()
         return CapacityCanonical.sha256Hex(data)
     }
 }

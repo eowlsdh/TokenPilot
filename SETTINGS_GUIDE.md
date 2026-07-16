@@ -137,7 +137,7 @@ TokenPilot은 local activity 탐색에서 credential 파일을 제외하고 아�
 | `/status` 또는 manual input | Medium 이하 | `manual`/`est.` 명시 |
 | local session JSONL | Medium 이하 | `EXPERIMENTAL · local Codex log · not web quota` |
 
-local JSONL token totals는 ChatGPT/Codex 웹 quota와 직접 비교하지 않고 history/export의 web-comparable totals에서 제외합니다.
+local JSONL token totals는 ChatGPT/Codex 웹 quota와 직접 비교하지 않습니다. export v2의 chart/provider share는 `localActivity`/`local_activity_not_provider_quota`로 라벨링되며, non-comparable experimental Codex local events는 제외합니다.
 
 ---
 

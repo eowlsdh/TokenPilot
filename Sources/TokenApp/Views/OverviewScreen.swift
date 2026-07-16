@@ -129,12 +129,6 @@ struct OverviewScreen: View {
                     )
                 }
 
-
-                ChallengeCard(
-                    target: model.challengeTargetTokens,
-                    today: model.overviewUsage.metrics.totalTokens,
-                    onTargetChange: { model.updateChallengeTarget($0) }
-                )
                 AlertsStatusRow(text: model.alertStatusText)
             }
             .padding(.bottom, 6)
@@ -154,6 +148,7 @@ struct CapacityDisplayItem: Identifiable {
     var count: Int? { Int(presentation.data["count"] ?? "") }
     var tokens: Int? { Int(presentation.data["tokens"] ?? "") }
     var resetAt: Date? { assessment.observation.resetAt }
+    var observedAt: Date { assessment.observation.observedAt }
 
     var progressPercent: Int? {
         valueKind == .percent ? remainingPercent : nil
@@ -260,6 +255,30 @@ struct CapacityDisplayItem: Identifiable {
         }
     }
 
+    func sourceTruthLabel(language: TokenPilotLanguage) -> String {
+        "\(authorityLabel(language: language)) · \(stabilityLabel(language: language))"
+    }
+
+    func authorityLabel(language: TokenPilotLanguage) -> String {
+        switch presentation.data["authority"] {
+        case "providerReported": return localized("Provider reported", language: language)
+        case "localDerived": return localized("Local derived", language: language)
+        case "userEntered": return localized("User entered", language: language)
+        case "synthetic": return localized("Synthetic", language: language)
+        default: return localized("Unavailable", language: language)
+        }
+    }
+
+    func stabilityLabel(language: TokenPilotLanguage) -> String {
+        switch presentation.data["stability"] {
+        case "supported": return localized("Supported", language: language)
+        case "compatibilityBridge": return localized("Compatibility bridge", language: language)
+        case "experimentalTransport": return localized("Experimental connector", language: language)
+        case "manual": return localized("Manual entry", language: language)
+        default: return localized("Unavailable", language: language)
+        }
+    }
+
     func actionLabel(language: TokenPilotLanguage) -> String {
         switch assessment.actionKey {
         case .waitForReset: return localized("Wait for reset", language: language)
@@ -284,7 +303,7 @@ struct CapacityDisplayItem: Identifiable {
     func detailText(language: TokenPilotLanguage) -> String {
         [
             resetText(language: language),
-            provenanceLabel(language: language),
+            sourceTruthLabel(language: language),
             freshnessLabel(language: language)
         ].joined(separator: " · ")
     }
@@ -384,43 +403,60 @@ struct UsageSummaryCard: View {
         return [
             primaryItem.title(language: language),
             primaryItem.primaryValue(language: language),
+            primaryItem.sourceTruthLabel(language: language),
             primaryItem.freshnessLabel(language: language),
-            primaryItem.provenanceLabel(language: language),
+            primaryItem.resetText(language: language),
             primaryItem.actionLabel(language: language)
         ].joined(separator: ", ")
     }
 
     @ViewBuilder
     private func summaryContent(for item: CapacityDisplayItem) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.title(language: language))
-                        .font(.system(size: 11, weight: .semibold))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 12) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Label(localized("Current capacity evidence", language: language), systemImage: "checkmark.seal")
+                        .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .lineLimit(1)
-                    Text(item.primaryValue(language: language))
-                        .font(.system(size: 30, weight: .semibold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                }
 
-                Spacer(minLength: 0)
-
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text(item.statusLabel(language: language))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(item.progressColor)
-                        .lineLimit(1)
-                    Text(item.resetText(language: language))
+                    Text(item.title(language: language))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
+
+                    Text(item.primaryValue(language: language))
+                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+
+                    Text(item.observedText(language: language))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 5) {
+                    StatusBadge(label: item.statusLabel(language: language), color: item.progressColor)
+                    Text(item.resetText(language: language))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                 }
             }
+
+            Text(item.sourceTruthLabel(language: language))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
 
             if let progressPercent = item.progressPercent {
                 ProgressLine(
@@ -450,18 +486,9 @@ struct UsageSummaryCard: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                summaryMetric(
-                    label: localized("Today tokens", language: language),
-                    value: "\(TokenPilotFormatters.compactNumber(model.overviewUsage.metrics.totalTokens)) \(localized("tok", language: language))"
-                )
-                summaryMetric(
-                    label: localized("Reset", language: language),
-                    value: item.resetAt.map { TokenPilotFormatters.clock($0) } ?? "—"
-                )
-                summaryMetric(
-                    label: localized("Action", language: language),
-                    value: item.actionLabel(language: language)
-                )
+                summaryMetric(label: localized("Freshness", language: language), value: item.freshnessLabel(language: language))
+                summaryMetric(label: localized("Reset", language: language), value: item.resetAt.map { TokenPilotFormatters.clock($0) } ?? "—")
+                summaryMetric(label: localized("Action", language: language), value: item.actionLabel(language: language))
             }
 
             if let error = model.capacityRefreshErrors.first {
@@ -471,7 +498,7 @@ struct UsageSummaryCard: View {
     }
 
     private var unavailableContent: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(localized("Capacity unavailable", language: language))
@@ -479,7 +506,7 @@ struct UsageSummaryCard: View {
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .lineLimit(1)
                     Text("—")
-                        .font(.system(size: 30, weight: .semibold, design: .monospaced))
+                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
                         .foregroundStyle(TokenPilotDesign.textPrimary)
                 }
                 Spacer(minLength: 0)
@@ -501,12 +528,9 @@ struct UsageSummaryCard: View {
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                summaryMetric(
-                    label: localized("Today tokens", language: language),
-                    value: "\(TokenPilotFormatters.compactNumber(model.overviewUsage.metrics.totalTokens)) \(localized("tok", language: language))"
-                )
+                summaryMetric(label: localized("Freshness", language: language), value: localized("Unavailable", language: language))
                 summaryMetric(label: localized("Reset", language: language), value: "—")
-                summaryMetric(label: localized("Action", language: language), value: localized("Connect providers in Settings", language: language))
+                summaryMetric(label: localized("Action", language: language), value: localized("Open Settings", language: language))
             }
         }
     }
@@ -921,69 +945,6 @@ struct CapacityErrorInline: View {
     }
 }
 
-struct ChallengeCard: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    let target: Int
-    let today: Int
-    var onTargetChange: ((Int) -> Void)?
-
-    @State private var showTargetPicker = false
-
-    private let presetTargets = [5_000, 10_000, 25_000, 50_000, 100_000]
-
-    var body: some View {
-        let progressPercent = target > 0 ? min(100, Int((Double(today) / Double(target) * 100).rounded())) : 0
-
-        Button {
-            showTargetPicker = true
-        } label: {
-            GlassCard {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack {
-                        Label(localized("Daily challenge", language: language), systemImage: "target")
-                            .font(.caption.weight(.semibold))
-                        Spacer()
-                        Text("\(progressPercent)%")
-                            .font(.system(.caption, design: .monospaced).weight(.bold))
-                            .foregroundStyle(TokenPilotDesign.goal)
-                    }
-                    HStack {
-                        Text("\(TokenPilotFormatters.compactNumber(today)) / \(TokenPilotFormatters.compactNumber(target))")
-                            .font(.system(.caption, design: .monospaced).weight(.bold))
-                        Spacer()
-                        Text(localized("Today tokens", language: language))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                    }
-                    ProgressLine(
-                        percent: progressPercent,
-                        color: TokenPilotDesign.goal,
-                        accessibilityLabel: localized("Daily challenge progress", language: language),
-                        accessibilityValue: "\(progressPercent)%"
-                    )
-                }
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .keyboardShortcut("g", modifiers: [.command])
-        .accessibilityLabel(localized("Daily challenge target", language: language))
-        .accessibilityValue("\(TokenPilotFormatters.compactNumber(today)) / \(TokenPilotFormatters.compactNumber(target)), \(progressPercent)%")
-        .accessibilityHint(localized("Change daily challenge target", language: language))
-        .confirmationDialog(
-            localized("Daily challenge target", language: language),
-            isPresented: $showTargetPicker,
-            titleVisibility: .visible
-        ) {
-            ForEach(presetTargets, id: \.self) { preset in
-                Button("\(TokenPilotFormatters.compactNumber(preset)) \(localized("tok", language: language))") {
-                    onTargetChange?(preset)
-                }
-            }
-            Button(localized("Cancel", language: language), role: .cancel) {}
-        }
-    }
-}
 
 private extension CapacityRefreshErrorCategory {
     func localizedLabel(language: TokenPilotLanguage) -> String {

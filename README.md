@@ -3,7 +3,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Tests](https://img.shields.io/badge/Tests-187%20passing-brightgreen.svg)](#testing)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
 > **A local-first macOS menu bar monitor for AI coding quota and usage.**
@@ -34,8 +33,8 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 | Surface | What changed / what it shows |
 |---|---|
 | **Menu bar** | Single-line remaining quota label: `5h`, weekly, and estimated/manual suffixes when needed. |
-| **Overview** | Current remaining quota, provider rows, daily challenge, and alert status. The duplicate 7-day usage chart and provider-share blocks are intentionally removed from Overview. |
-| **History** | Today / Last 7 days / This month token history, latest limit signals, 7-day chart, provider share, and JSON/CSV export. |
+| **Overview** | Capacity-first current evidence card, provider capacity rows, refresh/recovery notes, and alert status. No local activity analytics cards. |
+| **History** | Capacity evidence timeline plus usage event summary and JSON/CSV export. Local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota or visible dashboard surfaces. |
 | **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
 
 ---
@@ -50,8 +49,8 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
 | 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
-| 💵 **DeepSeek balance** | Optional `/user/balance` integration shows topped-up balance, native currency, manual fallback, and low-balance alerts. |
-| 📈 **History + export** | Period-based token history, 7-day chart in History only, provider share, JSON/CSV export. |
+| 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
+| 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
 
@@ -134,13 +133,12 @@ DS $12.34                # selected DeepSeek topped-up balance
 
 ## Screenshots
 
-The README screenshot is a release-facing composite of the current app surfaces:
+The README screenshot is a release-facing composite of shipped app surfaces:
 
 - Menu bar: compact remaining quota plus selected DeepSeek balance (`DS $12.34`).
-- Overview: remaining-first quota and provider rows including Antigravity CLI and DeepSeek topped-up balance; no duplicate 7-day chart/provider-share block.
+- Overview: capacity-first evidence card, provider capacity rows, refresh/recovery notes, and alert status.
+- History: capacity evidence timeline and usage-event export controls; local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota, and not visible dashboard surfaces.
 - Settings: provider diagnostics, Antigravity statusLine bridge, Codex limit hints, DeepSeek Keychain setup, and privacy boundaries.
-
-The 7-day chart and provider share are intentionally kept in **History**, not Overview.
 
 ---
 
@@ -205,10 +203,9 @@ Tests/
 
 ```bash
 swift test
-# Executed 187 tests, with 0 failures
 
 swift build -Xswiftc -warnings-as-errors
-# Build complete — zero warnings
+# strict build with warnings as errors
 
 make verify
 # build + tests + release bundle smoke

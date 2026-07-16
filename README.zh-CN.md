@@ -17,8 +17,8 @@
 | 界面 | 作用 |
 |---|---|
 | **Menu bar** | 以 `5h 18% · W 53% · DS $12.34` 这样的单行形式显示剩余额度和选中的 DeepSeek 余额。 |
-| **Overview** | 显示当前剩余额度、provider rows、DeepSeek topped-up balance、今日 token 和提醒状态。重复的 7-day chart 与 provider share 已从 Overview 移除。 |
-| **History** | 提供 Today / Last 7 days / This month、最新 limit signals、默认折叠的最近额度信号、7-day chart、provider share 和 JSON/CSV export。 |
+| **Overview** | 显示当前剩余额度、provider rows、DeepSeek topped-up balance、今日 token 和提醒状态。 |
+| **History** | 提供已保存的使用事件、最新 limit signals、默认折叠的最近额度信号和 JSON/CSV export。 |
 | **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
 
 ---
@@ -68,7 +68,6 @@
 
 ```bash
 swift test
-# Executed 187 tests, with 0 failures
 
 make bundle
 open build/TokenPilot.app

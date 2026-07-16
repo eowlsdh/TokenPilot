@@ -28,6 +28,9 @@ public final class UsageExportService {
         return formatter.string(from: date)
     }
 
+    private static let csvContractSource = "local_activity_contract"
+    private static let csvLocalActivitySource = "local_activity_not_provider_quota"
+
     public init() {}
 
     public func export(
@@ -81,6 +84,7 @@ public final class UsageExportService {
     }
 
     public func makeCSVString(usage: AggregatedUsage) -> String {
+        let exportUsage = sanitizedUsageForExport(usage)
         var rows: [[String]] = [[
             "row_type",
             "period",
@@ -99,16 +103,30 @@ public final class UsageExportService {
             "model"
         ]]
 
-        let metrics = usage.metrics
-        rows.append(summaryRow(period: usage.period, label: "total", totalTokens: metrics.totalTokens, requestCount: metrics.requestCount, cost: metrics.estimatedCostUSD))
-        rows.append(summaryRow(period: usage.period, label: "input", inputTokens: metrics.inputTokens))
-        rows.append(summaryRow(period: usage.period, label: "output", outputTokens: metrics.outputTokens))
-        rows.append(summaryRow(period: usage.period, label: "cache", cacheTokens: metrics.cacheTokens))
+        rows.append([
+            "metadata",
+            exportUsage.period.rawValue,
+            "",
+            "schema_version",
+            "", "", "", "", "",
+            "2",
+            "",
+            "",
+            "",
+            Self.csvContractSource,
+            ""
+        ])
 
-        for share in usage.providerShare {
+        let metrics = exportUsage.metrics
+        rows.append(summaryRow(period: exportUsage.period, label: "total", totalTokens: metrics.totalTokens, requestCount: metrics.requestCount, cost: metrics.estimatedCostUSD))
+        rows.append(summaryRow(period: exportUsage.period, label: "input", inputTokens: metrics.inputTokens))
+        rows.append(summaryRow(period: exportUsage.period, label: "output", outputTokens: metrics.outputTokens))
+        rows.append(summaryRow(period: exportUsage.period, label: "cache", cacheTokens: metrics.cacheTokens))
+
+        for share in exportUsage.providerShare {
             rows.append([
                 "provider_share",
-                usage.period.rawValue,
+                exportUsage.period.rawValue,
                 share.provider.rawValue,
                 "",
                 "", "", "", "", "",
@@ -116,15 +134,15 @@ public final class UsageExportService {
                 "",
                 "",
                 String(share.percent),
-                "",
+                Self.csvLocalActivitySource,
                 ""
             ])
         }
 
-        for bar in usage.sevenDayBars {
+        for bar in exportUsage.sevenDayBars {
             rows.append([
                 "daily_bar",
-                usage.period.rawValue,
+                exportUsage.period.rawValue,
                 "",
                 bar.dayLabel,
                 "", "", "", "", "",
@@ -132,15 +150,15 @@ public final class UsageExportService {
                 "",
                 "",
                 "",
-                "",
+                Self.csvLocalActivitySource,
                 ""
             ])
         }
 
-        for event in usage.events.sorted(by: { $0.timestamp < $1.timestamp }) {
+        for event in exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }) {
             rows.append([
                 "event",
-                usage.period.rawValue,
+                exportUsage.period.rawValue,
                 event.provider.rawValue,
                 Self.isoString(from: event.timestamp),
                 String(event.inputTokens),
@@ -202,16 +220,101 @@ public final class UsageExportService {
 }
 
 public struct UsageExportPayload: Codable, Equatable, Sendable {
+    public var schemaVersion: Int
     public var generatedAt: Date
     public var period: HistoryPeriod
     public var dataMode: String
     public var metrics: UsageMetrics
+    public var localActivity: LocalActivityExport
     public var sevenDayBars: [DailyUsageBar]
     public var providerShare: [ProviderShare]
     public var snapshots: [SnapshotExport]
     public var events: [EventExport]
     public var capacity: CapacityExportSection?
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case generatedAt
+        case period
+        case dataMode
+        case metrics
+        case localActivity
+        case sevenDayBars
+        case providerShare
+        case snapshots
+        case events
+        case capacity
+    }
+
+    public init(
+        schemaVersion: Int = 2,
+        generatedAt: Date,
+        period: HistoryPeriod,
+        dataMode: String,
+        metrics: UsageMetrics,
+        sevenDayBars: [DailyUsageBar],
+        providerShare: [ProviderShare],
+        snapshots: [SnapshotExport],
+        events: [EventExport],
+        capacity: CapacityExportSection? = nil,
+        localActivity: LocalActivityExport? = nil
+    ) {
+        let resolvedLocalActivity = localActivity ?? LocalActivityExport(sevenDayBars: sevenDayBars, providerShare: providerShare)
+        self.schemaVersion = schemaVersion
+        self.generatedAt = generatedAt
+        self.period = period
+        self.dataMode = dataMode
+        self.metrics = metrics
+        self.localActivity = resolvedLocalActivity
+        self.sevenDayBars = resolvedLocalActivity.sevenDayBars
+        self.providerShare = resolvedLocalActivity.providerShare
+        self.snapshots = snapshots
+        self.events = events
+        self.capacity = capacity
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let decodedSevenDayBars = try container.decodeIfPresent([DailyUsageBar].self, forKey: .sevenDayBars) ?? []
+        let decodedProviderShare = try container.decodeIfPresent([ProviderShare].self, forKey: .providerShare) ?? []
+        let resolvedLocalActivity = try container.decodeIfPresent(LocalActivityExport.self, forKey: .localActivity)
+            ?? LocalActivityExport(sevenDayBars: decodedSevenDayBars, providerShare: decodedProviderShare)
+
+        schemaVersion = try container.decodeIfPresent(Int.self, forKey: .schemaVersion) ?? 1
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        period = try container.decode(HistoryPeriod.self, forKey: .period)
+        dataMode = try container.decode(String.self, forKey: .dataMode)
+        metrics = try container.decode(UsageMetrics.self, forKey: .metrics)
+        localActivity = resolvedLocalActivity
+        sevenDayBars = resolvedLocalActivity.sevenDayBars
+        providerShare = resolvedLocalActivity.providerShare
+        snapshots = try container.decodeIfPresent([SnapshotExport].self, forKey: .snapshots) ?? []
+        events = try container.decodeIfPresent([EventExport].self, forKey: .events) ?? []
+        capacity = try container.decodeIfPresent(CapacityExportSection.self, forKey: .capacity)
+    }
 }
+
+public struct LocalActivityExport: Codable, Equatable, Sendable {
+    public static let defaultScope = "export_eligible_local_activity_not_provider_quota"
+
+    public var scope: String
+    public var sevenDayBars: [DailyUsageBar]
+    public var providerShare: [ProviderShare]
+    public var quotaComparableOnly: Bool
+
+    public init(
+        scope: String = Self.defaultScope,
+        sevenDayBars: [DailyUsageBar],
+        providerShare: [ProviderShare],
+        quotaComparableOnly: Bool = true
+    ) {
+        self.scope = scope
+        self.sevenDayBars = sevenDayBars
+        self.providerShare = providerShare
+        self.quotaComparableOnly = quotaComparableOnly
+    }
+}
+
 public struct CapacityExportSection: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var observations: [CapacityObservationExport]

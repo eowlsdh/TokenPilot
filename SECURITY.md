@@ -18,7 +18,7 @@ Telegram Bot API endpoints include the bot token in the URL path by design. Toke
 
 Codex values are intentionally conservative:
 
-- Local Codex activity is experimental local activity, not official web quota.
+- Local Codex activity is experimental local activity, not official web quota; exports label eligible local activity separately and exclude local experimental/non-comparable Codex events.
 - Codex Limit Hints Connector is opt-in and asks the local Codex CLI app-server for limit hints.
 - Manual Codex values are user-entered estimates.
 

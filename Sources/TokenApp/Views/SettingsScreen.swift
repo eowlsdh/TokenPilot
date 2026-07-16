@@ -306,14 +306,8 @@ struct SettingsScreen: View {
                     Text(model.t("Provider/window alert rules"))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
-                    ForEach($model.settings.alertRules) { $rule in
-                        AlertRuleRow(
-                            rule: $rule,
-                            globalEnabled: model.settings.globalNotificationsEnabled,
-                            macOSChannelEnabled: model.settings.macOSNotificationsEnabled,
-                            telegramChannelEnabled: telegramRouteAvailable,
-                            discordChannelEnabled: discordRouteAvailable
-                        )
+                    ForEach(model.capacityAlertRows) { row in
+                        CapacityAlertRuleRow(row: row, model: model)
                     }
                 }
             }
@@ -897,39 +891,48 @@ struct SettingsScreen: View {
     }
 }
 
-struct AlertRuleRow: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    @Binding var rule: AlertRule
-    let globalEnabled: Bool
-    let macOSChannelEnabled: Bool
-    let telegramChannelEnabled: Bool
-    let discordChannelEnabled: Bool
+struct CapacityAlertRuleRow: View {
+    let row: CapacityAlertVisibilityRow
+    @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("\(localized(rule.provider.displayName, language: language)) · \(rule.window.localizedLabel(language: language))")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-
-            HStack(spacing: 4) {
-                AlertTogglePill(label: "macOS", isOn: $rule.macOSEnabled, isEnabled: globalEnabled && macOSChannelEnabled)
-                AlertTogglePill(label: "TG", isOn: $rule.telegramEnabled, isEnabled: globalEnabled && telegramChannelEnabled)
-                AlertTogglePill(label: "DC", isOn: $rule.discordEnabled, isEnabled: globalEnabled && discordChannelEnabled)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.capacityAlertRowTitle(row))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                    Text(model.capacityAlertRowSubtitle(row))
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(2)
+                }
                 Spacer(minLength: 0)
+                StatusBadge(
+                    label: model.capacityAlertRowStatusText(row),
+                    color: model.capacityAlertRowStatusColor(row)
+                )
             }
 
-            HStack(spacing: 4) {
-                AlertTogglePill(label: localized("Reset", language: language), isOn: $rule.resetEnabled, isEnabled: globalEnabled)
-                AlertTogglePill(label: "50%", isOn: $rule.fiftyEnabled, isEnabled: globalEnabled)
-                AlertTogglePill(label: "80%", isOn: $rule.eightyEnabled, isEnabled: globalEnabled)
-                AlertTogglePill(label: "100%", isOn: $rule.hundredEnabled, isEnabled: globalEnabled)
-                Spacer(minLength: 0)
+            if !row.channels.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(row.channels) { channel in
+                        CapacityAlertInfoPill(
+                            label: model.capacityAlertChannelPillText(channel),
+                            color: model.capacityAlertChannelPillColor(channel),
+                            isMuted: !channel.routed
+                        )
+                    }
+                    Spacer(minLength: 0)
+                }
             }
 
-            if !globalEnabled {
-                Text(localized("Parent notifications are off.", language: language))
+            let detail = model.capacityAlertRowDetail(row)
+            if !detail.isEmpty {
+                Text(detail)
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.horizontal, 10)
@@ -939,31 +942,22 @@ struct AlertRuleRow: View {
     }
 }
 
-struct AlertTogglePill: View {
-    @Environment(\.tokenPilotLanguage) private var language
+struct CapacityAlertInfoPill: View {
     let label: String
-    @Binding var isOn: Bool
-    var isEnabled = true
+    let color: Color
+    var isMuted = false
 
     var body: some View {
-        Button {
-            guard isEnabled else { return }
-            isOn.toggle()
-        } label: {
-            Text("\(label) \(isOn ? localized("ON", language: language) : localized("OFF", language: language))")
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(isOn && isEnabled ? TokenPilotDesign.calm.opacity(0.16) : TokenPilotDesign.cardMuted)
-                .overlay(
-                    Capsule().stroke(isOn && isEnabled ? TokenPilotDesign.calm.opacity(0.22) : TokenPilotDesign.border, lineWidth: 1)
-                )
-                .foregroundStyle(isEnabled ? (isOn ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary) : TokenPilotDesign.textSecondary.opacity(0.55))
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .accessibilityHint(isEnabled ? "" : localized("Disabled by notification hierarchy.", language: language))
+        Text(label)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 4)
+            .background(isMuted ? TokenPilotDesign.cardMuted : color.opacity(0.16))
+            .overlay(
+                Capsule().stroke(isMuted ? TokenPilotDesign.border : color.opacity(0.22), lineWidth: 1)
+            )
+            .foregroundStyle(isMuted ? TokenPilotDesign.textSecondary.opacity(0.55) : color)
+            .clipShape(Capsule())
     }
 }
 

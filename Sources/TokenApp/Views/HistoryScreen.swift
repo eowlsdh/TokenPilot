@@ -20,7 +20,11 @@ struct HistoryScreen: View {
                     HistoryCapacityEmptyState(model: model)
                 } else {
                     if !model.capacityPresentations.isEmpty {
-                        CurrentCapacitySignalCard(presentations: model.capacityPresentations, model: model)
+                        CurrentCapacitySignalCard(
+                            assessments: model.capacityAssessments,
+                            presentations: model.capacityPresentations,
+                            model: model
+                        )
                     }
                     if !model.limitHistorySamples.isEmpty {
                         HistoryLimitSignalCard(samples: model.limitHistorySamples, model: model)
@@ -79,12 +83,6 @@ struct HistoryScreen: View {
                     .accessibilityElement(children: .combine)
                     .accessibilityLabel(model.t("Export"))
                     .accessibilityValue(model.t("Exports selected usage events and provider summaries only. Credentials, secret tokens, chat IDs, webhooks, local file paths, prompts, and responses are not included."))
-
-                    HistoryUsageVolumeChart(bars: model.historyUsage.sevenDayBars, model: model)
-                    ProviderShareRow(shares: model.historyUsage.providerShare)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(model.t("Provider share"))
-                        .accessibilityValue(providerShareAccessibility)
                 }
             }
             .padding(.bottom, 6)
@@ -105,12 +103,6 @@ struct HistoryScreen: View {
         ].joined(separator: ", ")
     }
 
-    private var providerShareAccessibility: String {
-        guard !model.historyUsage.providerShare.isEmpty else { return model.t("No data") }
-        return model.historyUsage.providerShare
-            .map { "\(model.t($0.provider.displayName)) \($0.percent)% \(TokenPilotFormatters.compactNumber($0.tokens))" }
-            .joined(separator: ", ")
-    }
 
     private func historyStat(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -148,28 +140,38 @@ struct HistorySectionHeader: View {
 }
 
 struct CurrentCapacitySignalCard: View {
+    let assessments: [CapacityAssessment]
     let presentations: [CapacityPresentation]
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
+        let visibleItems = Array(items.prefix(5))
+
         GlassCard {
             VStack(alignment: .leading, spacing: 9) {
                 HStack(alignment: .firstTextBaseline) {
                     Label(model.t("Current capacity evidence"), systemImage: "checkmark.seal")
                         .font(.caption.weight(.semibold))
                     Spacer(minLength: 6)
-                    StatusBadge(label: "\(presentations.count)", color: TokenPilotDesign.textSecondary)
+                    StatusBadge(label: "\(items.count)", color: TokenPilotDesign.textSecondary)
                 }
 
                 Text(model.t("Freshness and recovery actions are assessed by TokenCore capacity policy."))
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
-                ForEach(Array(presentations.prefix(4).enumerated()), id: \.offset) { index, presentation in
-                    capacitySignalRow(presentation)
-                    if index < min(presentations.count, 4) - 1 {
-                        Divider()
-                            .overlay(TokenPilotDesign.border.opacity(0.8))
+                if visibleItems.isEmpty {
+                    EmptyInlineState(text: model.t("No trusted capacity presentation"))
+                } else {
+                    VStack(spacing: 0) {
+                        ForEach(Array(visibleItems.enumerated()), id: \.element.id) { index, item in
+                            capacitySignalRow(item)
+                            if index < visibleItems.count - 1 {
+                                Divider()
+                                    .overlay(TokenPilotDesign.border.opacity(0.8))
+                                    .padding(.vertical, 8)
+                            }
+                        }
                     }
                 }
             }
@@ -179,147 +181,113 @@ struct CurrentCapacitySignalCard: View {
         .accessibilityValue(accessibilitySummary)
     }
 
-    private var accessibilitySummary: String {
-        presentations.prefix(4)
-            .map { presentation in
-                [
-                    providerTitle(for: presentation),
-                    titleText(for: presentation),
-                    freshnessTitle(for: presentation.data["freshness"]),
-                    actionTitle(for: presentation)
-                ].joined(separator: ", ")
+    private var items: [CapacityDisplayItem] {
+        Array(zip(assessments, presentations))
+            .map { CapacityDisplayItem(assessment: $0.0, presentation: $0.1) }
+            .sorted {
+                if $0.observedAt != $1.observedAt {
+                    return $0.observedAt > $1.observedAt
+                }
+                return $0.title(language: model.settings.localization.language) < $1.title(language: model.settings.localization.language)
             }
+    }
+
+    private var accessibilitySummary: String {
+        items.prefix(5)
+            .map { accessibilityLabel(for: $0) }
             .joined(separator: "; ")
     }
 
-    private func capacitySignalRow(_ presentation: CapacityPresentation) -> some View {
-        HStack(alignment: .center, spacing: 9) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(providerTitle(for: presentation))
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(TokenPilotDesign.textPrimary)
-                Text(titleText(for: presentation))
-                    .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(TokenPilotDesign.textPrimary)
-                Text("\(model.t("Provenance")): \(authorityTitle(for: presentation.data["authority"])) · \(stabilityTitle(for: presentation.data["stability"]))")
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
-                Text("\(model.t("Freshness")): \(freshnessTitle(for: presentation.data["freshness"]))")
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
+    private func capacitySignalRow(_ item: CapacityDisplayItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top, spacing: 9) {
+                ProviderSignatureMark(provider: item.provider, size: 24)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title(language: model.settings.localization.language))
+                        .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Text(item.primaryValue(language: model.settings.localization.language))
+                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(item.progressColor)
+                        .lineLimit(1)
+
+                    Text("\(model.t("Provenance")): \(item.sourceTruthLabel(language: model.settings.localization.language))")
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+
+                    Text("\(item.resetText(language: model.settings.localization.language)) · \(item.observedText(language: model.settings.localization.language))")
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+
+                Spacer(minLength: 0)
+
+                VStack(alignment: .trailing, spacing: 5) {
+                    StatusBadge(
+                        label: item.freshnessLabel(language: model.settings.localization.language),
+                        color: TokenPilotDesign.freshnessColor(item.assessment.freshness)
+                    )
+                    if actionIsButton(item) {
+                        Button {
+                            performAction(for: item)
+                        } label: {
+                            Text(actionTitle(for: item))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.78)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    } else {
+                        Text(actionTitle(for: item))
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
             }
 
-            Spacer(minLength: 0)
-
-            VStack(alignment: .trailing, spacing: 5) {
-                StatusBadge(label: freshnessTitle(for: presentation.data["freshness"]), color: freshnessColor(for: presentation.data["freshness"]))
-                if actionIsButton(presentation) {
-                    Button(actionTitle(for: presentation)) {
-                        performAction(for: presentation)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                } else {
-                    Text(actionTitle(for: presentation))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
+            if let progressPercent = item.progressPercent {
+                ProgressLine(
+                    percent: progressPercent,
+                    color: item.progressColor,
+                    accessibilityLabel: item.title(language: model.settings.localization.language),
+                    accessibilityValue: item.progressAccessibilityValue(language: model.settings.localization.language)
+                )
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel(for: presentation))
+        .accessibilityLabel(accessibilityLabel(for: item))
     }
 
-    private func accessibilityLabel(for presentation: CapacityPresentation) -> String {
+    private func accessibilityLabel(for item: CapacityDisplayItem) -> String {
         [
-            providerTitle(for: presentation),
-            titleText(for: presentation),
-            "\(model.t("Provenance")): \(authorityTitle(for: presentation.data["authority"]))",
-            "\(model.t("Freshness")): \(freshnessTitle(for: presentation.data["freshness"]))",
-            "\(model.t("Action")): \(actionTitle(for: presentation))"
+            item.title(language: model.settings.localization.language),
+            item.primaryValue(language: model.settings.localization.language),
+            "\(model.t("Provenance")): \(item.sourceTruthLabel(language: model.settings.localization.language))",
+            "\(model.t("Freshness")): \(item.freshnessLabel(language: model.settings.localization.language))",
+            item.resetText(language: model.settings.localization.language),
+            "\(model.t("Action")): \(actionTitle(for: item))"
         ].joined(separator: ", ")
     }
 
-    private func providerTitle(for presentation: CapacityPresentation) -> String {
-        guard let rawProvider = presentation.data["provider"], let provider = Provider(rawValue: rawProvider) else {
-            return model.t("Unknown")
-        }
-        return model.t(provider.displayName)
+    private func actionTitle(for item: CapacityDisplayItem) -> String {
+        item.actionLabel(language: model.settings.localization.language)
     }
 
-    private func titleText(for presentation: CapacityPresentation) -> String {
-        switch presentation.titleKey {
-        case "capacity.remaining.percent":
-            let remaining = Int(presentation.data["remainingPercent"] ?? "") ?? 0
-            return String(format: model.t("Capacity remaining %d%%"), remaining)
-        case "capacity.balance.money":
-            return String(format: model.t("Balance %@ %@"), presentation.data["amount"] ?? "—", presentation.data["currency"] ?? "")
-        case "capacity.count":
-            return String(format: model.t("Request count %@"), presentation.data["count"] ?? "—")
-        case "capacity.tokens":
-            return String(format: model.t("Tokens %@"), presentation.data["tokens"] ?? "—")
-        default:
-            return model.t("Capacity signal")
-        }
+    private func actionIsButton(_ item: CapacityDisplayItem) -> Bool {
+        item.assessment.actionKey != .waitForReset
     }
 
-    private func authorityTitle(for raw: String?) -> String {
-        switch raw {
-        case "providerReported": return model.t("Provider reported")
-        case "localDerived": return model.t("Local derived")
-        case "userEntered": return model.t("User entered")
-        case "synthetic": return model.t("Synthetic")
-        default: return model.t("Unavailable")
-        }
-    }
-
-    private func stabilityTitle(for raw: String?) -> String {
-        switch raw {
-        case "supported": return model.t("Supported")
-        case "compatibilityBridge": return model.t("Compatibility bridge")
-        case "experimentalTransport": return model.t("Experimental connector")
-        case "manual": return model.t("Manual entry")
-        default: return model.t("Unavailable")
-        }
-    }
-
-    private func freshnessTitle(for raw: String?) -> String {
-        switch raw {
-        case "fresh": return model.t("Fresh")
-        case "stale": return model.t("Stale")
-        default: return model.t("Freshness unavailable")
-        }
-    }
-
-    private func freshnessColor(for raw: String?) -> Color {
-        switch raw {
-        case "fresh": return TokenPilotDesign.calm
-        case "stale": return TokenPilotDesign.warning
-        default: return TokenPilotDesign.textSecondary
-        }
-    }
-
-    private func actionTitle(for presentation: CapacityPresentation) -> String {
-        switch presentation.data["action"] {
-        case "waitForReset": return model.t("Wait for reset")
-        case "refreshProvider": return model.t("Refresh provider")
-        case "reviewSource": return model.t("Review source")
-        case "reviewExperimentalConnector": return model.t("Review experimental connector")
-        case "enterManualValue": return model.t("Enter manual value")
-        case "reviewBalance": return model.t("Review balance")
-        default: return model.t("Open Provider Diagnostics")
-        }
-    }
-
-    private func actionIsButton(_ presentation: CapacityPresentation) -> Bool {
-        presentation.data["action"] != "waitForReset"
-    }
-
-    private func performAction(for presentation: CapacityPresentation) {
-        if presentation.data["action"] == "refreshProvider" {
+    private func performAction(for item: CapacityDisplayItem) {
+        if item.assessment.actionKey == .refreshProvider {
             Task { await model.refresh() }
         } else {
             model.selectedScreen = .settings
@@ -331,7 +299,7 @@ struct HistoryLimitSignalCard: View {
     let samples: [ProviderLimitSample]
     @ObservedObject var model: TokenPilotViewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var isExpanded = false
+    @State private var isExpanded = true
 
     var body: some View {
         GlassCard {
@@ -486,7 +454,7 @@ struct HistoryEmptyState: View {
     var body: some View {
         GlassCard {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: hasLimitSignals ? "chart.line.uptrend.xyaxis" : "tray")
+                Image(systemName: hasLimitSignals ? "doc.text.magnifyingglass" : "tray")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(hasLimitSignals ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
                     .frame(width: 28, height: 28)
@@ -497,7 +465,7 @@ struct HistoryEmptyState: View {
                     Text(model.t("No usage events recorded"))
                         .font(.system(size: 13, weight: .semibold, design: .rounded))
                         .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Text(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Connect a usage event source to fill token charts."))
+                    Text(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."))
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -511,139 +479,6 @@ struct HistoryEmptyState: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(model.t("No usage events recorded"))
-        .accessibilityValue(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Connect a usage event source to fill token charts."))
-    }
-}
-
-struct HistoryUsageVolumeChart: View {
-    let bars: [DailyUsageBar]
-    @ObservedObject var model: TokenPilotViewModel
-
-    private let barTrackHeight: CGFloat = 64
-
-    private var highest: Int {
-        max(1, bars.map(\.tokens).max() ?? 1)
-    }
-
-    private var totalTokens: Int {
-        bars.reduce(0) { $0 + $1.tokens }
-    }
-
-    private var averageTokens: Int {
-        guard !bars.isEmpty else { return 0 }
-        return totalTokens / bars.count
-    }
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .firstTextBaseline) {
-                    Label(model.t("Usage event volume"), systemImage: "chart.bar.xaxis")
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    Spacer(minLength: 6)
-                    chartMetric(TokenPilotFormatters.compactNumber(totalTokens), model.t("Total"))
-                    chartMetric(TokenPilotFormatters.compactNumber(averageTokens), model.t("Avg/day"))
-                }
-
-                ZStack {
-                    VStack(spacing: 0) {
-                        ForEach([75, 50, 25, 0], id: \.self) { tick in
-                            Divider()
-                                .overlay(TokenPilotDesign.border.opacity(0.32))
-                            if tick < 75 {
-                                Spacer(minLength: 0)
-                            }
-                        }
-                    }
-
-                    HStack(alignment: .bottom, spacing: 8) {
-                        ForEach(bars) { bar in
-                            VStack(spacing: 6) {
-                                if bar.tokens > 0 {
-                                    Text(TokenPilotFormatters.compactNumber(bar.tokens))
-                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                                        .lineLimit(1)
-                                        .minimumScaleFactor(0.75)
-                                } else {
-                                    Color.clear.frame(height: 10)
-                                }
-
-                                Capsule()
-                                    .fill(TokenPilotDesign.glassTint)
-                                    .frame(height: barTrackHeight)
-                                    .overlay(
-                                        Capsule()
-                                            .fill(barGradient(for: bar))
-                                            .frame(height: barHeight(for: bar), alignment: .bottom)
-                                            .frame(maxHeight: barTrackHeight, alignment: .bottom)
-                                            .frame(maxWidth: .infinity, alignment: .bottom),
-                                        alignment: .bottom
-                                    )
-
-                                Text(bar.dayLabel)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.8)
-                            }
-                        }
-                    }
-                }
-
-                HStack {
-                    Text(model.t("Usage events only"))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                    Spacer()
-                    Text("\(model.t("Peak")) \(TokenPilotFormatters.compactNumber(highest))")
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(model.t("Usage event volume"))
-        .accessibilityValue(accessibilitySummary)
-    }
-
-    private var accessibilitySummary: String {
-        [
-            "\(model.t("Total")) \(TokenPilotFormatters.compactNumber(totalTokens))",
-            "\(model.t("Avg/day")) \(TokenPilotFormatters.compactNumber(averageTokens))",
-            "\(model.t("Peak")) \(TokenPilotFormatters.compactNumber(highest))",
-            model.t("Usage events only")
-        ].joined(separator: ", ")
-    }
-
-    private func chartMetric(_ value: String, _ label: String) -> some View {
-        VStack(alignment: .trailing, spacing: 1) {
-            Text(value)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-        }
-    }
-
-    private func barGradient(for bar: DailyUsageBar) -> LinearGradient {
-        let ratio = ratio(for: bar)
-        return LinearGradient(
-            colors: [
-                TokenPilotDesign.calm.opacity(0.36 + 0.32 * ratio),
-                TokenPilotDesign.glassTint.opacity(0.78)
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    private func barHeight(for bar: DailyUsageBar) -> CGFloat {
-        max(5, barTrackHeight * ratio(for: bar))
-    }
-
-    private func ratio(for bar: DailyUsageBar) -> CGFloat {
-        CGFloat(Double(bar.tokens) / Double(highest))
+        .accessibilityValue(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."))
     }
 }
