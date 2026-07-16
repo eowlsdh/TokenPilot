@@ -153,6 +153,7 @@ struct TokenPilotRootView: View {
                     .buttonStyle(.plain)
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .focusable()
             }
         }
     }
@@ -216,6 +217,7 @@ struct OverviewScreen: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(TokenPilotDesign.status(.goal))
+            .focusable()
         }
     }
 }
@@ -401,7 +403,7 @@ struct CapacityDisplayItem: Identifiable {
 
     func resetText(language: TokenPilotLanguage) -> String {
         guard let resetAt else { return localized("No reset", language: language) }
-        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language))"
+        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language, now: assessment.observation.observedAt))"
     }
 
     func observedText(language: TokenPilotLanguage) -> String {

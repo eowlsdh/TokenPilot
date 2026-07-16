@@ -267,6 +267,7 @@ struct CurrentCapacitySignalCard: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .accessibilityLabel("\(model.t("Action")): \(actionTitle(for: item))")
+            .focusable()
         }
     }
 
@@ -753,11 +754,13 @@ struct HistoryExportCard: View {
                     .labelsHidden()
                     .pickerStyle(.segmented)
                     .frame(width: 112)
+                    .focusable()
 
                     Button(model.t("Save")) { model.exportHistory() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                         .tint(TokenPilotDesign.trust)
+                        .focusable()
                 }
 
                 Text(privacyCopy)
@@ -801,6 +804,7 @@ struct HistoryCapacityEmptyState: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(TokenPilotDesign.calm)
+                    .focusable()
                 }
             }
         }
@@ -836,6 +840,7 @@ struct HistoryEmptyState: View {
                     }
                     .buttonStyle(.bordered)
                     .tint(TokenPilotDesign.calm)
+                    .focusable()
                 }
             }
         }
