@@ -159,24 +159,158 @@ public final class MenuBarStatusService: @unchecked Sendable {
         modeLabel: String,
         now: Date = Date()
     ) -> String {
-        let visualTitle = title(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now)
+        let language = settings.localization.language
+        let visualTitle = accessibilityTitle(
+            title(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now),
+            modeLabel: modeLabel,
+            language: language
+        )
         guard let candidate = selectedCandidate(from: snapshots, settings: settings, now: now) else {
             return "TokenPilot, \(visualTitle)"
         }
 
-        var parts = ["TokenPilot", candidate.snapshot.provider.displayName, visualTitle]
+        var parts = [
+            "TokenPilot",
+            localized(candidate.snapshot.provider.displayName, language: language),
+            visualTitle
+        ]
         if let remaining = candidate.remainingPercent {
-            parts.append("remaining \(remaining)%")
+            parts.append(localizedRemaining(remaining, language: language))
         }
         if let resetAt = candidate.resetAt, resetAt > now {
-            parts.append("reset \(durationText(until: resetAt, now: now))")
+            parts.append(localizedReset(until: resetAt, now: now, language: language))
         }
-        parts.append(candidate.authority)
-        parts.append(candidate.stability)
-        parts.append(candidate.freshness)
-        parts.append(candidate.action)
-        parts.append(modeLabel)
-        return parts.joined(separator: ", ")
+        parts.append(localizedAuthority(candidate.authority, language: language))
+        parts.append(localizedStability(candidate.stability, language: language))
+        parts.append(localizedFreshness(candidate.freshness, language: language))
+        parts.append(localizedAction(candidate.action, language: language))
+        parts.append(localizedModeLabel(modeLabel, language: language))
+        return parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    private func localized(_ key: String, language: TokenPilotLanguage) -> String {
+        TokenPilotLocalizer.localized(key, language: language)
+    }
+
+    private func localizedRemaining(_ remaining: Int, language: TokenPilotLanguage) -> String {
+        let format = localized("Capacity remaining %d%%", language: language)
+        return String(format: format, remaining)
+    }
+
+    private func localizedReset(until resetAt: Date, now: Date, language: TokenPilotLanguage) -> String {
+        "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language, now: now))"
+    }
+
+    private func localizedAuthority(_ authority: String, language: TokenPilotLanguage) -> String {
+        switch authority {
+        case "provider-reported", "providerReported":
+            return localized("Provider reported", language: language)
+        case "local-derived", "localDerived":
+            return localized("Local derived", language: language)
+        case "user-entered", "userEntered":
+            return localized("User entered", language: language)
+        case "synthetic":
+            return localized("Synthetic", language: language)
+        case "unavailable":
+            return localized("Unavailable", language: language)
+        default:
+            return localized(authority, language: language)
+        }
+    }
+
+    private func localizedStability(_ stability: String, language: TokenPilotLanguage) -> String {
+        switch stability {
+        case "supported":
+            return localized("Supported", language: language)
+        case "manual":
+            return localized("Manual entry", language: language)
+        case "bridge", "compatibilityBridge":
+            return localized("Compatibility bridge", language: language)
+        case "experimental", "experimentalTransport":
+            return localized("Experimental connector", language: language)
+        case "local":
+            return localized("Local metadata only", language: language)
+        case "unavailable":
+            return localized("Unavailable", language: language)
+        default:
+            return localized(stability, language: language)
+        }
+    }
+
+    private func localizedFreshness(_ freshness: String, language: TokenPilotLanguage) -> String {
+        switch freshness {
+        case "fresh":
+            return localized("Fresh", language: language)
+        case "stale":
+            return localized("Stale", language: language)
+        case "unavailable":
+            return localized("Freshness unavailable", language: language)
+        default:
+            return localized(freshness, language: language)
+        }
+    }
+
+    private func localizedAction(_ action: String, language: TokenPilotLanguage) -> String {
+        switch action {
+        case "waitForReset":
+            return localized("Wait for reset", language: language)
+        case "refreshProvider":
+            return localized("Refresh provider", language: language)
+        case "reviewSource":
+            return localized("Review source", language: language)
+        case "reviewExperimentalConnector":
+            return localized("Review experimental connector", language: language)
+        case "enterManualValue":
+            return localized("Enter manual value", language: language)
+        case "reviewBalance":
+            return localized("Review balance", language: language)
+        case "openProviderDiagnostics":
+            return localized("Open Provider Diagnostics", language: language)
+        default:
+            return localized(action, language: language)
+        }
+    }
+
+    private func localizedModeLabel(_ modeLabel: String, language: TokenPilotLanguage) -> String {
+        switch modeLabel {
+        case "LIVE":
+            return localized("Live only", language: language)
+        case "LOCAL":
+            return localized("Local metadata only", language: language)
+        case "MANUAL":
+            return localized("Manual entry", language: language)
+        case "EXPERIMENTAL":
+            return localized("Experimental connector", language: language)
+        case "BRIDGE":
+            return localized("Compatibility bridge", language: language)
+        case "MOCK":
+            return localized("Mock preview", language: language)
+        case "STALE":
+            return localized("Stale", language: language)
+        default:
+            return localized(modeLabel, language: language)
+        }
+    }
+
+    private func accessibilityTitle(_ visualTitle: String, modeLabel: String, language: TokenPilotLanguage) -> String {
+        let replacements = [
+            ("EST STALE", "\(localized("Estimated", language: language)) \(localized("Stale", language: language))"),
+            ("EXP STALE", "\(localized("Experimental connector", language: language)) \(localized("Stale", language: language))"),
+            ("EXPERIMENTAL", localizedModeLabel("EXPERIMENTAL", language: language)),
+            ("MANUAL", localizedModeLabel("MANUAL", language: language)),
+            ("BRIDGE", localizedModeLabel("BRIDGE", language: language)),
+            ("LOCAL", localizedModeLabel("LOCAL", language: language)),
+            ("LIVE", localizedModeLabel("LIVE", language: language)),
+            ("MOCK", localizedModeLabel("MOCK", language: language)),
+            ("STALE", localizedModeLabel("STALE", language: language)),
+            ("EXP", localized("Experimental connector", language: language)),
+            ("EST", localized("Estimated", language: language)),
+            (modeLabel, localizedModeLabel(modeLabel, language: language))
+        ]
+
+        return replacements.reduce(visualTitle) { title, replacement in
+            title.replacingOccurrences(of: replacement.0, with: replacement.1)
+        }
     }
 
     private func selectedCandidate(from snapshots: [ProviderSnapshot], settings: AppSettings, now: Date) -> Candidate? {

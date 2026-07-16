@@ -6,14 +6,15 @@ struct SettingsScreen: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            LazyVStack(spacing: 10) {
-                dataSources
+            LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
+                consoleSummary
+                sourceSettings
                 notificationSettings
+                privacySettings
                 telegramSettings
                 discordSettings
                 languageSettings
                 setupGuide
-                privacySettings
             }
             .padding(.bottom, 16)
         }
@@ -22,254 +23,352 @@ struct SettingsScreen: View {
         }
     }
 
-    private var dataSources: some View {
-        VStack(spacing: 10) {
-            SettingsCard(title: model.t("1. Source Health"), icon: "externaldrive.badge.checkmark") {
-                VStack(alignment: .leading, spacing: 12) {
-                    sourceHealthSummary
-
-                    HStack(spacing: 8) {
-                        Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
-                            .buttonStyle(.borderedProminent)
-                            .tint(TokenPilotDesign.calm)
-                        Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
-                            .buttonStyle(.bordered)
-                    }
-
-                    Text(model.t("Auto-detect checks local default metadata and user-selected files only. Diagnostics hide raw paths, raw events, prompts, responses, and secrets."))
-                        .font(.caption2)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if model.capacityRuntimeRecoveryRequired {
-                        runtimeRecoveryBanner
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        LazyVGrid(
-                            columns: [GridItem(.flexible()), GridItem(.flexible())],
-                            spacing: 8
-                        ) {
-                            providerToggle(.claude)
-                            providerToggle(.codex)
-                            providerToggle(.gemini)
-                            providerToggle(.deepseek)
-                        }
-                        Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
-                            .font(.caption2)
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(spacing: 8) {
-                            Text(model.t("Menu bar status"))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(TokenPilotDesign.textSecondary)
-                            Spacer(minLength: 0)
-                            Picker(model.t("Menu bar status"), selection: menuBarTargetBinding) {
-                                Text(model.t("Highest risk")).tag(Optional<Provider>.none)
-                                ForEach(Provider.allCases) { provider in
-                                    Text(model.t(provider.displayName))
-                                        .tag(Optional(provider))
-                                        .disabled(!model.isProviderEnabled(provider))
-                                }
-                            }
-                            .labelsHidden()
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 170)
-                        }
-                        Text(model.t("Menu bar uses the core capacity assessment. Disabled providers are skipped."))
-                            .font(.caption2)
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                        Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .lineLimit(1)
-                            .accessibilityLabel(model.menuBarAccessibilityLabel)
-                    }
-                }
-            }
-
-            SettingsCard(title: model.t("Provider Diagnostics"), icon: "stethoscope") {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(model.t("Diagnostics summarize source health without showing raw local paths, raw events, prompts, responses, cookies, credentials, or tokens."))
-                        .font(.caption2)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !model.capacityRefreshErrors.isEmpty {
-                        capacityRefreshNotes
-                    }
-
-                    ForEach(model.providerDiagnostics) { diagnostic in
-                        providerDiagnosticRow(diagnostic)
-                    }
-
-                    Button(model.t("Check all providers")) { Task { await model.checkAllConnections() } }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TokenPilotDesign.calm)
-                }
-            }
-
-            ProviderSetupCard(provider: .claude, title: "Claude Code", status: model.sourceStatusText(.claude), statusColor: model.sourceStatusColor(.claude), detail: model.sourceDetailText(.claude)) {
-                Text(model.t("Claude status source"))
-                    .font(.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                HStack {
-                    sourceSelectionBadge(isSelected: !model.settings.claudeStatusFilePath.isEmpty)
-                    Spacer(minLength: 0)
-                    Button(model.t("Choose…")) { model.chooseClaudeStatusFile() }
-                }
-                Text(model.t("Raw local paths stay hidden. Choose again to replace the saved source bookmark."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
-                    .buttonStyle(.bordered)
-            }
-
-            ProviderSetupCard(provider: .gemini, title: "Antigravity CLI", status: model.sourceStatusText(.gemini), statusColor: model.sourceStatusColor(.gemini), detail: model.sourceDetailText(.gemini)) {
-                Text(model.t("Antigravity telemetry source"))
-                    .font(.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                HStack {
-                    sourceSelectionBadge(isSelected: !model.settings.geminiTelemetryLogPath.isEmpty)
-                    Spacer(minLength: 0)
-                    Button(model.t("Choose…")) { model.chooseGeminiTelemetrySource() }
-                }
-                Text(model.t("Select statusline JSON, legacy telemetry, or a session folder. Raw local paths stay hidden after selection."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                HStack {
-                    ForEach([1000, 1500, 2000], id: \.self) { cap in
-                        Button("\(cap)") { model.settings.geminiDailyRequestCap = cap }
-                            .buttonStyle(.bordered)
-                            .tint(model.settings.geminiDailyRequestCap == cap ? TokenPilotDesign.calm : .secondary)
-                    }
-                    Stepper(String(format: model.t("Custom: %d"), model.settings.geminiDailyRequestCap), value: $model.settings.geminiDailyRequestCap, in: 1...20_000, step: 100)
-                }
-                Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
-                    .buttonStyle(.bordered)
-            }
-
-            ProviderSetupCard(provider: .deepseek, title: "DeepSeek", status: model.sourceStatusText(.deepseek), statusColor: model.sourceStatusColor(.deepseek), detail: model.sourceDetailText(.deepseek)) {
-                HStack {
-                    StatusBadge(
-                        label: model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required"),
-                        color: model.hasSavedDeepSeekAPIKey ? TokenPilotDesign.calm : TokenPilotDesign.warning
-                    )
-                    Spacer(minLength: 0)
-                    Text(model.t("Official balance API"))
-                        .font(.caption2)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
-                SecureField(model.hasSavedDeepSeekAPIKey ? model.t("Saved API key hidden") : model.t("DeepSeek API Key"), text: $model.deepSeekAPIKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                Text(model.t("TokenPilot stores only its own DeepSeek API key Keychain item and calls the official /user/balance endpoint."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                HStack {
-                    Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TokenPilotDesign.calm)
-                    Button(model.t("Delete API Key"), role: .destructive) { model.deleteDeepSeekAPIKey() }
-                        .buttonStyle(.bordered)
-                        .disabled(!model.hasSavedDeepSeekAPIKey)
-                    Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
-                        .buttonStyle(.bordered)
-                }
-                Divider()
-                    .opacity(0.25)
-                Text(model.t("Manual DeepSeek balance fallback"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Toggle(model.t("Use Manual DeepSeek Balance"), isOn: $model.settings.deepSeekBalance.manualFallbackEnabled)
-                HStack {
-                    TextField(model.t("Balance"), text: $model.settings.deepSeekBalance.manualBalanceText)
-                        .textFieldStyle(.roundedBorder)
-                    TextField(model.t("Currency"), text: $model.settings.deepSeekBalance.manualCurrency)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 90)
-                    Button(model.t("Mark Balance Now")) {
-                        model.settings.deepSeekBalance.manualCapturedAt = Date()
-                    }
-                }
-                Stepper(
-                    String(format: model.t("Low balance alert: %.2f"), NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue),
-                    value: Binding(
-                        get: { NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue },
-                        set: { model.settings.deepSeekBalance.lowBalanceThreshold = Decimal(max($0, 0)) }
-                    ),
-                    in: 0...10_000,
-                    step: 1
+    private var consoleSummary: some View {
+        GlassCard(surface: .cardElevated) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                TokenPilotSectionHeader(
+                    title: model.t("Settings overview"),
+                    subtitle: model.t("Health, delivery, and privacy summaries stay visible before setup details."),
+                    systemImage: "slider.horizontal.3"
                 )
-            }
 
-            ProviderSetupCard(provider: .codex, title: "Codex", status: model.sourceStatusText(.codex), statusColor: model.sourceStatusColor(.codex), detail: model.sourceDetailText(.codex)) {
-                Text(model.t("Experimental Codex limit hints"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Toggle(model.t("Use experimental Codex limit hints"), isOn: $model.settings.codexManual.webConnectorEnabled)
-                Text(model.t("Experimental connector asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot never reads, stores, displays, or exports Codex access tokens."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Text(model.t("Codex limit hints are experimental and may break if the Codex CLI changes. They are not guaranteed official quota."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.warning)
-                Divider()
-                    .opacity(0.35)
-                Text(model.t("Manual Codex limit snapshot"))
-                    .font(.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Toggle(model.t("Use Manual Limit Snapshot"), isOn: $model.settings.codexManual.webSnapshotEnabled)
-                Text(model.t("Enter manual values you observed. TokenPilot stores only numbers and notes, not cookies, login tokens, or raw account pages."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Stepper(String(format: model.t("Manual today tokens: %d"), model.settings.codexManual.webTodayTokens), value: $model.settings.codexManual.webTodayTokens, in: 0...100_000_000, step: 1_000)
-                HStack {
-                    Button(model.t("Mark Manual Snapshot Now")) { model.markCodexWebSnapshotNow() }
-                    if let capturedAt = model.settings.codexManual.webSnapshotCapturedAt {
-                        Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt))")
-                            .font(.caption)
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                    consoleSummaryRow(
+                        systemImage: "externaldrive.badge.checkmark",
+                        title: model.t("Source health"),
+                        detail: sourceHealthSummaryText,
+                        status: sourceHealthStatusLabel,
+                        statusColor: sourceHealthStatusColor
+                    )
+
+                    TokenPilotSeparator()
+
+                    consoleSummaryRow(
+                        systemImage: hasEffectiveNotificationChannel ? "bell.badge" : "bell.slash",
+                        title: model.t("Effective notification delivery"),
+                        detail: notificationEffectiveDetail,
+                        status: hasEffectiveNotificationChannel ? model.t("Effective ON") : model.t("Effective OFF"),
+                        statusColor: hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
+                    )
+
+                    TokenPilotSeparator()
+
+                    VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                        consoleSummaryRow(
+                            systemImage: "lock.shield",
+                            title: model.t("Privacy and provider truth"),
+                            detail: privacySummaryText,
+                            status: model.settings.showMockDataWhenDisconnected ? model.t("Mock preview") : model.t("Live only"),
+                            statusColor: model.settings.showMockDataWhenDisconnected ? TokenPilotDesign.warning : TokenPilotDesign.trust
+                        )
+
+                        privacyTruthChips
                     }
                 }
-                Divider()
-                    .opacity(0.25)
-                TextField(model.t("Plan label"), text: $model.settings.codexManual.planLabel)
-                    .textFieldStyle(.roundedBorder)
-                Stepper(String(format: model.t("5h usage: %d%%"), model.settings.codexManual.fiveHourUsagePercentage), value: $model.settings.codexManual.fiveHourUsagePercentage, in: 0...100)
-                Stepper(String(format: model.t("Weekly usage: %d%%"), model.settings.codexManual.weeklyUsagePercentage), value: $model.settings.codexManual.weeklyUsagePercentage, in: 0...100)
-                TextField(model.t("Reset time"), text: $model.settings.codexManual.resetTimeText)
-                    .textFieldStyle(.roundedBorder)
-                TextField(model.t("Notes"), text: $model.settings.codexManual.notes)
-                    .textFieldStyle(.roundedBorder)
-                Text(model.t("Pasted /status output (cleared after parse)"))
-                    .font(.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                TextEditor(text: $model.settings.codexManual.pastedStatusOutput)
-                    .font(.system(size: 12, design: .monospaced))
-                    .frame(height: 90)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.black.opacity(0.25))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                HStack {
-                    Button(model.t("Paste Status")) { model.pasteCodexStatusFromClipboard() }
-                    Button(model.t("Parse Status")) { model.parseCodexStatus() }
-                    Text("\(model.t("Confidence")): \(model.settings.codexManual.confidence.localizedLabel(language: model.settings.localization.language))")
-                        .font(.caption)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                }
-                Text(model.t("Parsed status remains manual or estimated unless the source is provider-reported and fresh."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
-                    .buttonStyle(.bordered)
             }
         }
     }
 
+    private var sourceSettings: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
+            sourceHealthDisclosure
+            providerDiagnosticsDisclosure
+            claudeProviderSetup
+            geminiProviderSetup
+            deepSeekProviderSetup
+            codexProviderSetup
+        }
+    }
+
+    private var sourceHealthDisclosure: some View {
+        DisclosureCard(
+            initiallyExpanded: true,
+            accessibilityLabel: model.t("Source health"),
+            accessibilityValue: sourceHealthSummaryText
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("1. Source Health"),
+                subtitle: sourceHealthSummaryText,
+                status: sourceHealthStatusLabel,
+                statusColor: sourceHealthStatusColor,
+                systemImage: "externaldrive.badge.checkmark"
+            )
+        } content: {
+            VStack(alignment: .leading, spacing: 12) {
+                sourceHealthSummary
+
+                HStack(spacing: 8) {
+                    Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
+                        .buttonStyle(.borderedProminent)
+                        .tint(TokenPilotDesign.calm)
+                    Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
+                        .buttonStyle(.bordered)
+                }
+
+                Text(model.t("Auto-detect checks local default metadata and user-selected files only. Diagnostics hide raw paths, raw events, prompts, responses, and secrets."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if model.capacityRuntimeRecoveryRequired {
+                    runtimeRecoveryBanner
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    LazyVGrid(
+                        columns: [GridItem(.flexible()), GridItem(.flexible())],
+                        spacing: 8
+                    ) {
+                        providerToggle(.claude)
+                        providerToggle(.codex)
+                        providerToggle(.gemini)
+                        providerToggle(.deepseek)
+                    }
+                    Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        Text(model.t("Menu bar status"))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                        Spacer(minLength: 0)
+                        Picker(model.t("Menu bar status"), selection: menuBarTargetBinding) {
+                            Text(model.t("Highest risk")).tag(Optional<Provider>.none)
+                            ForEach(Provider.allCases) { provider in
+                                Text(model.t(provider.displayName))
+                                    .tag(Optional(provider))
+                                    .disabled(!model.isProviderEnabled(provider))
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 170)
+                    }
+                    Text(model.t("Menu bar uses the core capacity assessment. Disabled providers are skipped."))
+                        .font(.caption2)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                    Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityLabel(model.menuBarAccessibilityLabel)
+                }
+            }
+        }
+    }
+
+    private var providerDiagnosticsDisclosure: some View {
+        DisclosureCard(
+            initiallyExpanded: true,
+            accessibilityLabel: model.t("Provider Diagnostics"),
+            accessibilityValue: providerDiagnosticsSummaryText
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("Provider Diagnostics"),
+                subtitle: providerDiagnosticsSummaryText,
+                status: providerDiagnosticsStatusLabel,
+                statusColor: providerDiagnosticsStatusColor,
+                systemImage: "stethoscope"
+            )
+        } content: {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.t("Diagnostics summarize source health without showing raw local paths, raw events, prompts, responses, cookies, credentials, or tokens."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if !model.capacityRefreshErrors.isEmpty {
+                    capacityRefreshNotes
+                }
+
+                ForEach(model.providerDiagnostics) { diagnostic in
+                    providerDiagnosticRow(diagnostic)
+                }
+
+                Button(model.t("Check all providers")) { Task { await model.checkAllConnections() } }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+            }
+        }
+    }
+
+    private var claudeProviderSetup: some View {
+        providerSetupDisclosure(provider: .claude, title: model.t("Claude Code")) {
+            Text(model.t("Claude status source"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                sourceSelectionBadge(isSelected: !model.settings.claudeStatusFilePath.isEmpty)
+                Spacer(minLength: 0)
+                Button(model.t("Choose…")) { model.chooseClaudeStatusFile() }
+            }
+            Text(model.t("Raw local paths stay hidden. Choose again to replace the saved source bookmark."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var geminiProviderSetup: some View {
+        providerSetupDisclosure(provider: .gemini, title: model.t("Antigravity CLI")) {
+            Text(model.t("Antigravity telemetry source"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                sourceSelectionBadge(isSelected: !model.settings.geminiTelemetryLogPath.isEmpty)
+                Spacer(minLength: 0)
+                Button(model.t("Choose…")) { model.chooseGeminiTelemetrySource() }
+            }
+            Text(model.t("Select statusline JSON, legacy telemetry, or a session folder. Raw local paths stay hidden after selection."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                ForEach([1000, 1500, 2000], id: \.self) { cap in
+                    Button("\(cap)") { model.settings.geminiDailyRequestCap = cap }
+                        .buttonStyle(.bordered)
+                        .tint(model.settings.geminiDailyRequestCap == cap ? TokenPilotDesign.calm : .secondary)
+                }
+                Stepper(String(format: model.t("Custom: %d"), model.settings.geminiDailyRequestCap), value: $model.settings.geminiDailyRequestCap, in: 1...20_000, step: 100)
+            }
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var deepSeekProviderSetup: some View {
+        providerSetupDisclosure(provider: .deepseek, title: model.t("DeepSeek")) {
+            HStack {
+                StatusBadge(
+                    label: model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required"),
+                    color: model.hasSavedDeepSeekAPIKey ? TokenPilotDesign.calm : TokenPilotDesign.warning
+                )
+                Spacer(minLength: 0)
+                Text(model.t("Official balance API"))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+            }
+            SecureField(model.hasSavedDeepSeekAPIKey ? model.t("Saved API key hidden") : model.t("DeepSeek API Key"), text: $model.deepSeekAPIKeyInput)
+                .textFieldStyle(.roundedBorder)
+            Text(model.t("TokenPilot stores only its own DeepSeek API key Keychain item and calls the official /user/balance endpoint."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+                Button(model.t("Delete API Key"), role: .destructive) { model.deleteDeepSeekAPIKey() }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.hasSavedDeepSeekAPIKey)
+                Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
+                    .buttonStyle(.bordered)
+            }
+            TokenPilotSeparator()
+            Text(model.t("Manual DeepSeek balance fallback"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Use Manual DeepSeek Balance"), isOn: $model.settings.deepSeekBalance.manualFallbackEnabled)
+            HStack {
+                TextField(model.t("Balance"), text: $model.settings.deepSeekBalance.manualBalanceText)
+                    .textFieldStyle(.roundedBorder)
+                TextField(model.t("Currency"), text: $model.settings.deepSeekBalance.manualCurrency)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 90)
+                Button(model.t("Mark Balance Now")) {
+                    model.settings.deepSeekBalance.manualCapturedAt = Date()
+                }
+            }
+            Stepper(
+                String(format: model.t("Low balance alert: %.2f"), NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue),
+                value: Binding(
+                    get: { NSDecimalNumber(decimal: model.settings.deepSeekBalance.lowBalanceThreshold).doubleValue },
+                    set: { model.settings.deepSeekBalance.lowBalanceThreshold = Decimal(max($0, 0)) }
+                ),
+                in: 0...10_000,
+                step: 1
+            )
+        }
+    }
+
+    private var codexProviderSetup: some View {
+        providerSetupDisclosure(provider: .codex, title: model.t("Codex")) {
+            Text(model.t("Experimental Codex limit hints"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Use experimental Codex limit hints"), isOn: $model.settings.codexManual.webConnectorEnabled)
+            Text(model.t("Experimental connector asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot never reads, stores, displays, or exports Codex access tokens."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("Codex limit hints are experimental and may break if the Codex CLI changes. They are not guaranteed official quota."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+            TokenPilotSeparator()
+            Text(model.t("Manual Codex limit snapshot"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Use Manual Limit Snapshot"), isOn: $model.settings.codexManual.webSnapshotEnabled)
+            Text(model.t("Enter manual values you observed. TokenPilot stores only numbers and notes, not cookies, login tokens, or raw account pages."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Stepper(String(format: model.t("Manual today tokens: %d"), model.settings.codexManual.webTodayTokens), value: $model.settings.codexManual.webTodayTokens, in: 0...100_000_000, step: 1_000)
+            HStack {
+                Button(model.t("Mark Manual Snapshot Now")) { model.markCodexWebSnapshotNow() }
+                if let capturedAt = model.settings.codexManual.webSnapshotCapturedAt {
+                    Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt, language: model.settings.localization.language))")
+                        .font(.caption)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+            }
+            TokenPilotSeparator()
+            TextField(model.t("Plan label"), text: $model.settings.codexManual.planLabel)
+                .textFieldStyle(.roundedBorder)
+            Stepper(String(format: model.t("5h usage: %d%%"), model.settings.codexManual.fiveHourUsagePercentage), value: $model.settings.codexManual.fiveHourUsagePercentage, in: 0...100)
+            Stepper(String(format: model.t("Weekly usage: %d%%"), model.settings.codexManual.weeklyUsagePercentage), value: $model.settings.codexManual.weeklyUsagePercentage, in: 0...100)
+            TextField(model.t("Reset time"), text: $model.settings.codexManual.resetTimeText)
+                .textFieldStyle(.roundedBorder)
+            TextField(model.t("Notes"), text: $model.settings.codexManual.notes)
+                .textFieldStyle(.roundedBorder)
+            Text(model.t("Pasted /status output (cleared after parse)"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            TextEditor(text: $model.settings.codexManual.pastedStatusOutput)
+                .font(.system(size: 12, design: .monospaced))
+                .frame(height: 90)
+                .scrollContentBackground(.hidden)
+                .background(TokenPilotDesign.surface(.cardMuted))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            HStack {
+                Button(model.t("Paste Status")) { model.pasteCodexStatusFromClipboard() }
+                Button(model.t("Parse Status")) { model.parseCodexStatus() }
+                Text("\(model.t("Confidence")): \(model.settings.codexManual.confidence.localizedLabel(language: model.settings.localization.language))")
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+            }
+            Text(model.t("Parsed status remains manual or estimated unless the source is provider-reported and fresh."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
+                .buttonStyle(.bordered)
+        }
+    }
+
     private var notificationSettings: some View {
-        SettingsCard(title: model.t("2. Notifications"), icon: "bell") {
+        DisclosureCard(
+            initiallyExpanded: model.settings.notificationPermissionStatus == .denied,
+            accessibilityLabel: model.t("Notifications"),
+            accessibilityValue: notificationSummaryText
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("2. Notifications"),
+                subtitle: notificationSummaryText,
+                status: hasEffectiveNotificationChannel ? model.t("Effective ON") : model.t("Effective OFF"),
+                statusColor: hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
+                systemImage: "bell"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 12) {
                 notificationEffectiveSummary
 
@@ -315,7 +414,19 @@ struct SettingsScreen: View {
     }
 
     private var telegramSettings: some View {
-        SettingsCard(title: model.t("3. Telegram"), icon: "paperplane") {
+        DisclosureCard(
+            initiallyExpanded: telegramDisclosureDefaultExpanded,
+            accessibilityLabel: model.t("Telegram"),
+            accessibilityValue: telegramSummaryText
+        ) {
+            deliverySummary(
+                title: model.t("3. Telegram"),
+                detail: telegramSummaryText,
+                status: telegramEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
+                statusColor: telegramEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
+                systemImage: "paperplane"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Toggle(model.t("Enable Telegram Alerts"), isOn: $model.settings.telegram.isEnabled)
@@ -358,7 +469,7 @@ struct SettingsScreen: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(model.t("Connection status")): \(model.localizedStatus(model.settings.telegram.connectionStatus))")
-                    Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.telegram.lastTestSentAt))")
+                    Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.telegram.lastTestSentAt, language: model.settings.localization.language))")
                 }
                 .font(.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
@@ -378,7 +489,19 @@ struct SettingsScreen: View {
     }
 
     private var discordSettings: some View {
-        SettingsCard(title: model.t("4. Discord"), icon: "bubble.left.and.bubble.right") {
+        DisclosureCard(
+            initiallyExpanded: discordDisclosureDefaultExpanded,
+            accessibilityLabel: model.t("Discord"),
+            accessibilityValue: discordSummaryText
+        ) {
+            deliverySummary(
+                title: model.t("4. Discord"),
+                detail: discordSummaryText,
+                status: discordEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
+                statusColor: discordEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
+                systemImage: "bubble.left.and.bubble.right"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
                     Toggle(model.t("Enable Discord Alerts"), isOn: $model.settings.discord.isEnabled)
@@ -411,7 +534,7 @@ struct SettingsScreen: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text("\(model.t("Connection status")): \(model.localizedStatus(model.settings.discord.connectionStatus))")
-                    Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.discord.lastTestSentAt))")
+                    Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.discord.lastTestSentAt, language: model.settings.localization.language))")
                 }
                 .font(.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
@@ -431,7 +554,18 @@ struct SettingsScreen: View {
     }
 
     private var languageSettings: some View {
-        SettingsCard(title: model.t("5. Language"), icon: "globe") {
+        DisclosureCard(
+            accessibilityLabel: model.t("Language"),
+            accessibilityValue: model.settings.localization.language.displayName
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("5. Language"),
+                subtitle: model.t("Language changes may require restarting TokenPilot."),
+                status: model.settings.localization.language.displayName,
+                statusColor: TokenPilotDesign.trust,
+                systemImage: "globe"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 10) {
                 Picker(model.t("Language"), selection: $model.settings.localization.language) {
                     ForEach(TokenPilotLanguage.allCases) { language in
@@ -450,7 +584,18 @@ struct SettingsScreen: View {
     }
 
     private var setupGuide: some View {
-        SettingsCard(title: model.t("6. Setup Guide"), icon: "checkmark.seal") {
+        DisclosureCard(
+            accessibilityLabel: model.t("Setup Guide"),
+            accessibilityValue: setupGuideSummaryText
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("6. Setup Guide"),
+                subtitle: setupGuideSummaryText,
+                status: model.t("Setup Guide"),
+                statusColor: TokenPilotDesign.textSecondary,
+                systemImage: "checkmark.seal"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 10) {
                 GuideCard(
                     title: model.t("Connect Claude Code"),
@@ -473,6 +618,17 @@ struct SettingsScreen: View {
                     copyText: geminiSettingsSnippet,
                     onPrimary: { Task { await model.checkConnection(.gemini) } },
                     onCopy: { model.copyToClipboard(geminiSettingsSnippet) }
+                )
+                GuideCard(
+                    title: model.t("DeepSeek"),
+                    status: model.sourceStatusText(.deepseek),
+                    statusColor: model.sourceStatusColor(.deepseek),
+                    detail: model.sourceDetailText(.deepseek),
+                    explanation: model.t("Save a DeepSeek API key to enable official balance checks."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.deepseek) } },
+                    onCopy: nil
                 )
                 GuideCard(
                     title: model.t("Add Codex status"),
@@ -517,9 +673,23 @@ struct SettingsScreen: View {
     }
 
     private var privacySettings: some View {
-        SettingsCard(title: model.t("7. Privacy"), icon: "lock.shield") {
+        DisclosureCard(
+            initiallyExpanded: privacyDetailsDefaultExpanded,
+            accessibilityLabel: model.t("Privacy"),
+            accessibilityValue: privacySummaryText
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("Privacy"),
+                status: model.settings.showMockDataWhenDisconnected ? model.t("Mock preview") : model.t("Live only"),
+                statusColor: model.settings.showMockDataWhenDisconnected ? TokenPilotDesign.warning : TokenPilotDesign.trust,
+                systemImage: "lock.shield"
+            )
+        } content: {
             VStack(alignment: .leading, spacing: 8) {
-                Toggle(model.t("Preview sample data when no source is connected"), isOn: $model.settings.showMockDataWhenDisconnected)
+                Toggle(isOn: $model.settings.showMockDataWhenDisconnected) {
+                    Text(model.t("Preview sample data when no source is connected"))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 privacyLine(model.t("Sample preview is optional and off by default so release builds never look connected before setup."))
                 privacyLine(model.t("Reads local usage metadata and selected files only."))
                 privacyLine(model.t("Does not read browser cookies or other Keychain items."))
@@ -567,8 +737,14 @@ struct SettingsScreen: View {
             }
         }
         .padding(9)
-        .background(TokenPilotDesign.warning.opacity(0.10))
+        .background {
+            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(TokenPilotDesign.warning, lineWidth: 1)
+        )
     }
 
     private var capacityRefreshNotes: some View {
@@ -584,7 +760,7 @@ struct SettingsScreen: View {
             }
         }
         .padding(8)
-        .background(TokenPilotDesign.cardMuted.opacity(0.65))
+        .background(TokenPilotDesign.surface(.cardMuted))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
@@ -614,7 +790,7 @@ struct SettingsScreen: View {
 
     private var readyProviderCount: Int {
         model.providerDiagnostics.filter { diagnostic in
-            diagnostic.status == .connected || diagnostic.status == .manual || diagnostic.status == .estimated
+            diagnostic.status == .connected
         }.count
     }
 
@@ -668,6 +844,307 @@ struct SettingsScreen: View {
         }
         return String(format: model.t("Effective channels: %@"), enabled.joined(separator: " · "))
     }
+    private var sourceHealthSummaryText: String {
+        "\(readyProviderCount)/\(Provider.allCases.count) \(model.t("sources ready")) · \(model.capacityRuntimeRecoveryRequired ? model.t("Recovery needed") : model.t("Runtime ready")) · \(attentionProviderCount) \(model.t("needs attention"))"
+    }
+
+    private var sourceHealthStatusLabel: String {
+        if model.capacityRuntimeRecoveryRequired {
+            return model.t("Recovery needed")
+        }
+        if attentionProviderCount > 0 {
+            return "\(attentionProviderCount) \(model.t("needs attention"))"
+        }
+        return model.t("Runtime ready")
+    }
+
+    private var sourceHealthStatusColor: Color {
+        if model.capacityRuntimeRecoveryRequired || attentionProviderCount > 0 || readyProviderCount == 0 {
+            return TokenPilotDesign.warning
+        }
+        return TokenPilotDesign.calm
+    }
+
+    private var providerDiagnosticsSummaryText: String {
+        "\(model.t("Provider Diagnostics")) · \(attentionProviderCount) \(model.t("needs attention"))"
+    }
+
+    private var providerDiagnosticsStatusLabel: String {
+        if !model.capacityRefreshErrors.isEmpty {
+            return model.t("Capacity refresh notes")
+        }
+        if attentionProviderCount > 0 {
+            return "\(attentionProviderCount) \(model.t("needs attention"))"
+        }
+        return model.t("Runtime ready")
+    }
+
+    private var providerDiagnosticsStatusColor: Color {
+        model.capacityRefreshErrors.isEmpty && attentionProviderCount == 0 ? TokenPilotDesign.calm : TokenPilotDesign.warning
+    }
+
+    private var privacySummaryText: String {
+        model.t("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded.")
+    }
+
+    private var privacyDetailsDefaultExpanded: Bool {
+        !model.providerDiagnostics.contains { $0.status == .connected }
+    }
+
+    private var notificationSummaryText: String {
+        "\(model.t("Permission")): \(model.settings.notificationPermissionStatus.localizedLabel(language: model.settings.localization.language)) · \(notificationEffectiveDetail)"
+    }
+
+    private var telegramSummaryText: String {
+        let token = model.hasSavedTelegramToken ? model.t("Token saved") : model.t("No token")
+        let chat = model.settings.telegram.chatID.isEmpty ? model.t("No chat ID") : model.t("Chat ID set")
+        return "\(token) · \(chat) · \(model.t("Connection status")): \(model.localizedStatus(model.settings.telegram.connectionStatus)) · \(model.t("Next action")): \(telegramNextActionText)"
+    }
+
+    private var telegramDisclosureDefaultExpanded: Bool {
+        model.settings.telegram.isEnabled || statusIndicatesError(model.settings.telegram.connectionStatus)
+    }
+
+    private var telegramNextActionText: String {
+        if !model.settings.telegram.isEnabled {
+            return model.t("Enable Telegram Alerts")
+        }
+        if !model.hasSavedTelegramToken {
+            return model.t("Save Token")
+        }
+        if model.settings.telegram.chatID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return model.t("Find Chat ID")
+        }
+        if !model.settings.globalNotificationsEnabled {
+            return model.t("Global notifications")
+        }
+        if !model.settings.telegramNotificationsEnabled {
+            return model.t("Telegram notifications")
+        }
+        return model.t("Send Test Message")
+    }
+
+    private var discordSummaryText: String {
+        let webhook = model.hasSavedDiscordWebhook ? model.t("Webhook saved") : model.t("No webhook")
+        return "\(webhook) · \(model.t("Connection status")): \(model.localizedStatus(model.settings.discord.connectionStatus)) · \(model.t("Next action")): \(discordNextActionText)"
+    }
+
+    private var discordDisclosureDefaultExpanded: Bool {
+        model.settings.discord.isEnabled || statusIndicatesError(model.settings.discord.connectionStatus)
+    }
+
+    private var discordNextActionText: String {
+        if !model.settings.discord.isEnabled {
+            return model.t("Enable Discord Alerts")
+        }
+        if !model.hasSavedDiscordWebhook {
+            return model.t("Save Webhook")
+        }
+        if !model.settings.globalNotificationsEnabled {
+            return model.t("Global notifications")
+        }
+        if !model.settings.discordNotificationsEnabled {
+            return model.t("Discord notifications")
+        }
+        return model.t("Send Test Message")
+    }
+
+    private var setupGuideSummaryText: String {
+        "\(model.t("Connect Claude Code")) · \(model.t("Connect Antigravity CLI")) · \(model.t("DeepSeek")) · \(model.t("Add Codex status"))"
+    }
+
+    private var privacyTruthChips: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                SemanticChip(label: model.t("Local metadata only"), systemImage: "externaldrive", role: .truth)
+                SemanticChip(label: model.t("Secrets hidden"), systemImage: "key.slash", role: .truth)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                SemanticChip(label: model.t("Manual/experimental labels shown"), systemImage: "tag", role: .truth)
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func deliverySummary(
+        title: String,
+        detail: String,
+        status: String,
+        statusColor: Color,
+        systemImage: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            DisclosureSummaryRow(
+                title: title,
+                status: status,
+                statusColor: statusColor,
+                systemImage: systemImage
+            )
+            Text(detail)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+    private func consoleSummaryRow(
+        systemImage: String,
+        title: String,
+        detail: String,
+        status: String,
+        statusColor: Color
+    ) -> some View {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
+            Image(systemName: systemImage)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(statusColor)
+                .frame(width: 24, height: 24)
+                .background(TokenPilotDesign.surface(.cardMuted))
+                .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                Text(title)
+                    .font(TokenPilotDesign.Typography.cardTitle)
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                Text(detail)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: TokenPilotDesign.Spacing.sm)
+
+            StatusBadge(label: status, color: statusColor)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(title)
+        .accessibilityValue("\(detail). \(status)")
+    }
+
+    private func providerSetupDisclosure<Content: View>(
+        provider: Provider,
+        title: String,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        let diagnostic = providerDiagnostic(for: provider)
+        let status = model.sourceStatusText(provider)
+        let detail = model.sourceDetailText(provider)
+
+        return DisclosureCard(
+            initiallyExpanded: providerDefaultExpanded(provider),
+            accessibilityLabel: "\(title), \(status)",
+            accessibilityValue: "\(detail). \(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic)). \(providerSecretSummary(provider))"
+        ) {
+            providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)
+        } content: {
+            VStack(alignment: .leading, spacing: 10) {
+                content()
+            }
+        }
+    }
+
+    private func providerSetupSummary(
+        provider: Provider,
+        title: String,
+        diagnostic: ProviderConnectionDiagnostic
+    ) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            CompactProviderStatusRow(
+                provider: provider,
+                title: title,
+                subtitle: model.sourceDetailText(provider),
+                providerMarkSize: 30
+            ) {
+                StatusBadge(
+                    label: model.sourceStatusText(provider),
+                    color: model.sourceStatusColor(provider)
+                )
+            }
+
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                SemanticChip(
+                    label: "\(model.t("Confidence")): \(diagnostic.confidence.localizedLabel(language: model.settings.localization.language))",
+                    systemImage: "checkmark.seal",
+                    color: TokenPilotDesign.confidenceColor(diagnostic.confidence)
+                )
+                SemanticChip(
+                    label: providerSecretSummary(provider),
+                    systemImage: providerSecretSystemImage(provider),
+                    color: providerSecretColor(provider)
+                )
+                Spacer(minLength: 0)
+            }
+
+            Text("\(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic))")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var providerSetupOrder: [Provider] {
+        [.claude, .gemini, .deepseek, .codex]
+    }
+
+    private var firstAttentionProvider: Provider? {
+        providerSetupOrder.first { providerNeedsAttention($0) }
+    }
+
+    private func providerDefaultExpanded(_ provider: Provider) -> Bool {
+        firstAttentionProvider == provider
+    }
+
+    private func providerNeedsAttention(_ provider: Provider) -> Bool {
+        let diagnostic = providerDiagnostic(for: provider)
+        return diagnostic.status != .connected && diagnostic.status != .disabled
+    }
+
+    private func providerDiagnostic(for provider: Provider) -> ProviderConnectionDiagnostic {
+        model.providerDiagnostics.first { $0.provider == provider } ?? ProviderDataSource(
+            provider: provider,
+            isEnabled: model.isProviderEnabled(provider),
+            status: model.isProviderEnabled(provider) ? .notFound : .disabled,
+            confidence: .low
+        ).connectionDiagnostic()
+    }
+
+    private func providerSecretSummary(_ provider: Provider) -> String {
+        switch provider {
+        case .deepseek:
+            return model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required")
+        case .codex:
+            return model.t("No Codex token stored")
+        case .claude, .gemini:
+            return model.t("No secret required")
+        }
+    }
+
+    private func providerSecretColor(_ provider: Provider) -> Color {
+        if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
+            return TokenPilotDesign.warning
+        }
+        return TokenPilotDesign.trust
+    }
+
+    private func providerSecretSystemImage(_ provider: Provider) -> String {
+        if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
+            return "key"
+        }
+        return "key.slash"
+    }
+
+    private func statusIndicatesError(_ status: String) -> Bool {
+        let normalized = status.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.contains("failed") ||
+            normalized.contains("denied") ||
+            normalized.contains("invalid") ||
+            normalized.contains("error")
+    }
 
     private func sourceSelectionBadge(isSelected: Bool) -> some View {
         StatusBadge(
@@ -711,7 +1188,9 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
         }
         .padding(9)
-        .background(Color.white.opacity(0.025))
+        .background {
+            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
     private func providerToggle(_ provider: Provider) -> some View {
@@ -728,24 +1207,6 @@ struct SettingsScreen: View {
         .frame(maxWidth: .infinity)
     }
 
-    private func sourceBlock<Content: View>(title: String, icon: String, provider: Provider, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Label(title, systemImage: icon)
-                    .font(.subheadline.weight(.semibold))
-                Spacer()
-                Text(model.sourceStatusText(provider))
-                    .font(.caption)
-                    .foregroundStyle(model.sourceStatusColor(provider))
-            }
-            content()
-            Text(model.sourceDetailText(provider))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(2)
-                .truncationMode(.middle)
-        }
-    }
 
     private func privacyLine(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
@@ -754,6 +1215,7 @@ struct SettingsScreen: View {
             Text(text)
                 .font(.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -937,7 +1399,9 @@ struct CapacityAlertRuleRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(Color.white.opacity(0.04))
+        .background {
+            LiquidGlassBackground(cornerRadius: 9, intensity: 0.55, surface: .cardMuted)
+        }
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 }
@@ -952,7 +1416,7 @@ struct CapacityAlertInfoPill: View {
             .font(.system(size: 10, weight: .bold, design: .monospaced))
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background(isMuted ? TokenPilotDesign.cardMuted : color.opacity(0.16))
+            .background(isMuted ? TokenPilotDesign.surface(.badge) : color.opacity(0.16))
             .overlay(
                 Capsule().stroke(isMuted ? TokenPilotDesign.border : color.opacity(0.22), lineWidth: 1)
             )
@@ -1004,23 +1468,9 @@ struct GuideCard: View {
             }
         }
         .padding(10)
-        .background(Color.white.opacity(0.025))
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-    }
-}
-
-struct SettingsCard<Content: View>: View {
-    let title: String
-    let icon: String
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(title, systemImage: icon)
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                content
-            }
+        .background {
+            LiquidGlassBackground(cornerRadius: 12, intensity: 0.55, surface: .cardMuted)
         }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

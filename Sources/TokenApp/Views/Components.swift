@@ -1,48 +1,258 @@
 import SwiftUI
 import TokenCore
 
-struct ProviderSetupCard<Content: View>: View {
-    let provider: Provider
+struct TokenPilotSectionHeader<Accessory: View>: View {
     let title: String
-    let status: String
-    let statusColor: Color
-    let detail: String
-    @ViewBuilder var content: Content
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+    private let accessory: Accessory
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
-
-    @State private var isExpanded = false
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String? = nil,
+        @ViewBuilder accessory: () -> Accessory
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.accessory = accessory()
+    }
 
     var body: some View {
-        GlassCard(padding: 12) {
-            VStack(alignment: .leading, spacing: 10) {
-                Button {
-                    toggleExpanded()
-                } label: {
-                    HStack(alignment: .center, spacing: 10) {
-                        ProviderSignatureMark(provider: provider, size: 30)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(title)
-                                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                                .foregroundStyle(TokenPilotDesign.textPrimary)
-                            Text(detail)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(TokenPilotDesign.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        Spacer(minLength: 0)
-                        StatusBadge(label: status, color: statusColor)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .rotationEffect(.degrees(isExpanded ? 180 : 0))
-                    }
-                    .contentShape(Rectangle())
+        HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+                titleView
+                    .font(TokenPilotDesign.Typography.sectionTitle)
+                    .foregroundStyle(palette.text(.primary))
+                    .lineLimit(1)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(TokenPilotDesign.Typography.caption)
+                        .foregroundStyle(palette.text(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("\(title), \(status)")
-                .accessibilityValue(detail)
+            }
+
+            Spacer(minLength: TokenPilotDesign.Spacing.sm)
+            accessory
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    @ViewBuilder
+    private var titleView: some View {
+        if let systemImage {
+            Label(title, systemImage: systemImage)
+        } else {
+            Text(title)
+        }
+    }
+}
+
+extension TokenPilotSectionHeader where Accessory == EmptyView {
+    init(title: String, subtitle: String? = nil, systemImage: String? = nil) {
+        self.init(title: title, subtitle: subtitle, systemImage: systemImage) {
+            EmptyView()
+        }
+    }
+}
+
+struct CompactProviderStatusRow<Trailing: View>: View {
+    let provider: Provider
+    let title: String
+    var subtitle: String? = nil
+    var value: String? = nil
+    var valueColor: Color? = nil
+    var providerMarkDecorative = true
+    var providerMarkSize: CGFloat = 28
+    private let trailing: Trailing
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(
+        provider: Provider,
+        title: String,
+        subtitle: String? = nil,
+        value: String? = nil,
+        valueColor: Color? = nil,
+        providerMarkDecorative: Bool = true,
+        providerMarkSize: CGFloat = 28,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.provider = provider
+        self.title = title
+        self.subtitle = subtitle
+        self.value = value
+        self.valueColor = valueColor
+        self.providerMarkDecorative = providerMarkDecorative
+        self.providerMarkSize = providerMarkSize
+        self.trailing = trailing()
+    }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.lg) {
+            ProviderSignatureMark(provider: provider, size: providerMarkSize, decorative: providerMarkDecorative)
+
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                Text(title)
+                    .font(TokenPilotDesign.Typography.cardTitle)
+                    .foregroundStyle(palette.text(.primary))
+                    .lineLimit(1)
+
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(TokenPilotDesign.Typography.caption)
+                        .foregroundStyle(palette.text(.secondary))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            if let value, !value.isEmpty {
+                Text(value)
+                    .font(TokenPilotDesign.Typography.metric)
+                    .monospacedDigit()
+                    .foregroundStyle(valueColor ?? palette.text(.primary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+            }
+
+            trailing
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+extension CompactProviderStatusRow where Trailing == EmptyView {
+    init(
+        provider: Provider,
+        title: String,
+        subtitle: String? = nil,
+        value: String? = nil,
+        valueColor: Color? = nil,
+        providerMarkDecorative: Bool = true,
+        providerMarkSize: CGFloat = 28
+    ) {
+        self.init(
+            provider: provider,
+            title: title,
+            subtitle: subtitle,
+            value: value,
+            valueColor: valueColor,
+            providerMarkDecorative: providerMarkDecorative,
+            providerMarkSize: providerMarkSize
+        ) {
+            EmptyView()
+        }
+    }
+}
+
+struct DisclosureSummaryRow: View {
+    var provider: Provider? = nil
+    let title: String
+    var subtitle: String? = nil
+    var status: String? = nil
+    var statusColor: Color? = nil
+    var systemImage: String? = nil
+    var providerMarkDecorative = true
+    var providerMarkSize: CGFloat = 28
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    var body: some View {
+        if let provider {
+            CompactProviderStatusRow(
+                provider: provider,
+                title: title,
+                subtitle: subtitle,
+                providerMarkDecorative: providerMarkDecorative,
+                providerMarkSize: providerMarkSize
+            ) {
+                statusBadge
+            }
+        } else {
+            HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(palette.text(.secondary))
+                        .frame(width: 24, height: 24)
+                        .background(palette.surface(.cardMuted))
+                        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
+                        .accessibilityHidden(true)
+                }
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                    Text(title)
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(palette.text(.primary))
+                        .lineLimit(1)
+
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(TokenPilotDesign.Typography.caption)
+                            .foregroundStyle(palette.text(.secondary))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+
+                Spacer(minLength: 0)
+                statusBadge
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        if let status, !status.isEmpty {
+            StatusBadge(label: status, color: statusColor)
+        }
+    }
+}
+
+struct DisclosureCard<Summary: View, Content: View>: View {
+    var padding: CGFloat = TokenPilotDesign.cardPadding
+    var surface: TokenPilotDesign.Surface = .card
+    var initiallyExpanded = false
+    var accessibilityLabel: String? = nil
+    var accessibilityValue: String? = nil
+    private let summary: () -> Summary
+    private let content: Content
+
+    @State private var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(
+        padding: CGFloat = TokenPilotDesign.cardPadding,
+        surface: TokenPilotDesign.Surface = .card,
+        initiallyExpanded: Bool = false,
+        accessibilityLabel: String? = nil,
+        accessibilityValue: String? = nil,
+        @ViewBuilder summary: @escaping () -> Summary,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.padding = padding
+        self.surface = surface
+        self.initiallyExpanded = initiallyExpanded
+        self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
+        self.summary = summary
+        self.content = content()
+        self._isExpanded = State(initialValue: initiallyExpanded)
+    }
+
+    var body: some View {
+        GlassCard(padding: padding, surface: surface) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                disclosureButton
 
                 if isExpanded {
                     content
@@ -50,6 +260,44 @@ struct ProviderSetupCard<Content: View>: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var disclosureButton: some View {
+        let button = Button {
+            toggleExpanded()
+        } label: {
+            HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
+                summary()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(palette.text(.secondary))
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable()
+
+        let stateValue = localized(isExpanded ? "Expanded" : "Collapsed", language: language)
+        if let accessibilityLabel, let accessibilityValue {
+            button
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityValue("\(accessibilityValue), \(stateValue)")
+        } else if let accessibilityLabel {
+            button
+                .accessibilityLabel(accessibilityLabel)
+                .accessibilityValue(stateValue)
+        } else {
+            button
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(stateValue)
+        }
+    }
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
     }
 
     private func toggleExpanded() {
@@ -63,183 +311,40 @@ struct ProviderSetupCard<Content: View>: View {
     }
 }
 
-struct ProviderSnapshotCard: View {
-    @Environment(\.tokenPilotLanguage) private var language
-    let snapshot: ProviderSnapshot
+
+struct TokenPilotSeparator: View {
+    var axis: Axis = .horizontal
+    var length: CGFloat? = nil
+
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
-        GlassCard {
-            VStack(alignment: .leading, spacing: 9) {
-                header
-                rows
-            }
+        Rectangle()
+            .fill(palette.separatorColor)
+            .frame(width: width, height: height)
+            .accessibilityHidden(true)
+    }
+
+
+    private var width: CGFloat? {
+        switch axis {
+        case .horizontal:
+            return length
+        case .vertical:
+            return palette.borderWidth()
         }
     }
 
-    private var header: some View {
-        HStack(spacing: 9) {
-            ProviderSignatureMark(provider: snapshot.provider)
-
-            Text(localized(snapshot.provider.displayName, language: language))
-                .font(.system(size: 13, weight: .semibold, design: .rounded))
-                .foregroundStyle(TokenPilotDesign.textPrimary)
-                .lineLimit(1)
-
-            Spacer(minLength: 0)
-
-            if snapshot.isStale {
-                StatusBadge(label: localized("STALE", language: language), color: TokenPilotDesign.warning)
-            }
-
-            StatusBadge(
-                label: snapshot.confidence.localizedLabel(language: language),
-                color: TokenPilotDesign.confidenceColor(snapshot.confidence)
-            )
+    private var height: CGFloat? {
+        switch axis {
+        case .horizontal:
+            return palette.borderWidth()
+        case .vertical:
+            return length
         }
-    }
-
-    @ViewBuilder
-    private var rows: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            if let fiveHour = snapshot.fiveHour {
-                progressMetric(window: fiveHour)
-            }
-
-            if let weekly = snapshot.weekly {
-                progressMetric(window: weekly)
-            }
-
-            if snapshot.provider == .gemini,
-               let used = snapshot.dailyRequestsUsed,
-               let limit = snapshot.dailyRequestsLimit {
-                requestMetric(used: used, limit: limit)
-            }
-
-            MetricRow(
-                label: localized("Today", language: language),
-                value: todayValue,
-                detail: todayDetail
-            )
-
-            if snapshot.provider == .gemini, let avgTokensPerRequest {
-                MetricRow(
-                    label: localized("Avg/request", language: language),
-                    value: "\(TokenPilotFormatters.compactNumber(avgTokensPerRequest)) \(localized("tok", language: language))",
-                    detail: dailyCapText
-                )
-            }
-
-            if snapshot.fiveHour == nil,
-               snapshot.weekly == nil,
-               snapshot.dailyRequestsUsed == nil,
-               snapshot.todayTokens == 0 {
-                EmptyInlineState(text: localized("No limits", language: language))
-            }
-        }
-    }
-
-    private func progressMetric(window: LimitWindow) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            MetricRow(
-                label: localized(window.label, language: language),
-                value: remainingPercentText(window.remainingPercent),
-                detail: limitDetail(window)
-            )
-            ProgressLine(
-                percent: window.remainingPercent,
-                color: TokenPilotDesign.riskColor(window.usedPercent),
-                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized(window.label, language: language)) \(localized("Remaining capacity", language: language))",
-                accessibilityValue: progressAccessibilityValue(window.remainingPercent)
-            )
-        }
-    }
-
-    private func requestMetric(used: Int, limit: Int) -> some View {
-        let usedPercent = snapshot.dailyRequestsPercent
-        return VStack(alignment: .leading, spacing: 5) {
-            MetricRow(
-                label: localized("Daily", language: language),
-                value: "\(TokenPilotFormatters.compactNumber(used)) / \(TokenPilotFormatters.compactNumber(limit))",
-                detail: usedPercent.map { "\(localized("Used", language: language)) \($0)%" }
-            )
-            ProgressLine(
-                percent: usedPercent,
-                color: TokenPilotDesign.riskColor(usedPercent),
-                accessibilityLabel: "\(localized(snapshot.provider.displayName, language: language)) \(localized("Daily", language: language)) \(localized("Used", language: language))",
-                accessibilityValue: usedPercent.map { "\(localized("Used", language: language)) \($0)%" }
-            )
-        }
-    }
-
-    private var todayValue: String {
-        if showsCodexLocalLogOnly {
-            return localized("Local log", language: language)
-        }
-        return "\(TokenPilotFormatters.compactNumber(snapshot.todayTokens)) \(localized("tok", language: language))"
-    }
-
-    private var todayDetail: String? {
-        if showsCodexLocalLogOnly {
-            return localized("Not web quota", language: language)
-        }
-        var parts: [String] = []
-        if let cost = snapshot.todayCostUSD {
-            parts.append(TokenPilotFormatters.cost(cost))
-        }
-        if shouldShowEstimatedLabel {
-            parts.append(localized("est.", language: language))
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private var dailyCapText: String? {
-        guard let cap = snapshot.dailyRequestsLimit else { return nil }
-        return "\(localized("Daily cap", language: language)) \(TokenPilotFormatters.compactNumber(cap))"
-    }
-
-    private func remainingPercentText(_ percent: Int?) -> String {
-        guard let percent else { return "—" }
-        if shouldShowEstimatedLabel {
-            return "\(percent)% \(localized("est.", language: language))"
-        }
-        return "\(percent)%"
-    }
-
-    private func progressAccessibilityValue(_ percent: Int?) -> String {
-        guard let percent else { return localized("Unavailable", language: language) }
-        return String(format: localized("Remaining %d%%", language: language), percent)
-    }
-
-    private var shouldShowEstimatedLabel: Bool {
-        snapshot.provider == .codex || snapshot.confidence == .manual
-    }
-
-    private var showsCodexLocalLogOnly: Bool {
-        snapshot.isCodexLocalLogOnly
-    }
-
-    private func limitDetail(_ window: LimitWindow) -> String? {
-        var parts: [String] = []
-        if let reset = resetText(window.resetAt) {
-            parts.append(reset)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    private func resetText(_ resetAt: Date?) -> String? {
-        guard let resetAt else { return nil }
-        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt))"
-    }
-
-    private var requestCount: Int {
-        snapshot.events.reduce(0) { $0 + $1.requestCount }
-    }
-
-    private var avgTokensPerRequest: Int? {
-        guard requestCount > 0 else { return nil }
-        return max(0, snapshot.todayTokens / requestCount)
     }
 }
+
 
 struct ProviderSignatureMark: View {
     let provider: Provider
@@ -247,37 +352,41 @@ struct ProviderSignatureMark: View {
     var decorative: Bool = true
     @State private var isVisible = false
     @Environment(\.tokenPilotLanguage) private var language
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            TokenPilotDesign.accent(for: provider).opacity(0.24),
-                            TokenPilotDesign.cardElevated.opacity(0.96)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(palette.surface(.cardElevated))
                 .overlay(
                     RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
-                        .stroke(TokenPilotDesign.accent(for: provider).opacity(isVisible ? 0.56 : 0.24), lineWidth: 1)
+                        .stroke(
+                            palette.borderColor(),
+                            lineWidth: palette.borderWidth()
+                        )
                 )
 
             providerGlyph
-                .scaleEffect(isVisible ? 1 : 0.78)
-                .opacity(isVisible ? 1 : 0.35)
+                .scaleEffect(isRevealed ? 1 : 0.78)
         }
         .frame(width: size, height: size)
-        .scaleEffect(isVisible ? 1 : 0.92)
+        .scaleEffect(isRevealed ? 1 : 0.92)
         .onAppear {
             reveal()
         }
         .accessibilityHidden(decorative)
         .accessibilityLabel(TokenPilotLocalizer.localized(provider.displayName, language: language))
+    }
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+
+    private var isRevealed: Bool {
+        reduceMotion || isVisible
     }
 
     private func reveal() {
@@ -297,10 +406,10 @@ struct ProviderSignatureMark: View {
             ZStack {
                 Circle()
                     .trim(from: 0.12, to: 0.88)
-                    .stroke(TokenPilotDesign.accent(for: provider), style: StrokeStyle(lineWidth: size * 0.095, lineCap: .round))
-                    .rotationEffect(.degrees(isVisible ? 20 : -70))
+                    .stroke(palette.accent(for: provider), style: StrokeStyle(lineWidth: size * 0.095, lineCap: .round))
+                    .rotationEffect(.degrees(isRevealed ? 20 : -70))
                 Circle()
-                    .fill(TokenPilotDesign.accent(for: provider).opacity(0.85))
+                    .fill(palette.accent(for: provider))
                     .frame(width: size * 0.16, height: size * 0.16)
                     .offset(x: size * 0.13, y: -size * 0.10)
             }
@@ -309,42 +418,42 @@ struct ProviderSignatureMark: View {
             VStack(alignment: .leading, spacing: size * 0.10) {
                 HStack(spacing: size * 0.07) {
                     Capsule()
-                        .fill(TokenPilotDesign.accent(for: provider))
+                        .fill(palette.accent(for: provider))
                         .frame(width: size * 0.24, height: size * 0.07)
                     Capsule()
-                        .fill(TokenPilotDesign.accent(for: provider).opacity(0.62))
+                        .fill(palette.accent(for: provider))
                         .frame(width: size * 0.13, height: size * 0.07)
                 }
                 Capsule()
-                    .fill(TokenPilotDesign.accent(for: provider))
+                    .fill(palette.accent(for: provider))
                     .frame(width: size * 0.40, height: size * 0.07)
                 Capsule()
-                    .fill(TokenPilotDesign.textPrimary.opacity(isVisible ? 0.86 : 0.25))
+                    .fill(palette.text(.secondary))
                     .frame(width: size * 0.16, height: size * 0.07)
-                    .offset(x: isVisible ? size * 0.18 : 0)
+                    .offset(x: isRevealed ? size * 0.18 : 0)
             }
             .padding(size * 0.27)
         case .gemini:
             ZStack {
                 Diamond()
-                    .fill(TokenPilotDesign.accent(for: provider))
+                    .fill(palette.accent(for: provider))
                     .frame(width: size * 0.36, height: size * 0.36)
-                    .rotationEffect(.degrees(isVisible ? 45 : 10))
+                    .rotationEffect(.degrees(isRevealed ? 45 : 10))
                 Diamond()
-                    .fill(TokenPilotDesign.textPrimary.opacity(0.86))
+                    .fill(palette.text(.primary))
                     .frame(width: size * 0.14, height: size * 0.14)
                     .offset(x: size * 0.17, y: -size * 0.16)
-                    .scaleEffect(isVisible ? 1 : 0.4)
+                    .scaleEffect(isRevealed ? 1 : 0.4)
             }
         case .deepseek:
             ZStack {
                 Circle()
-                    .stroke(TokenPilotDesign.accent(for: provider).opacity(0.95), lineWidth: size * 0.08)
+                    .stroke(palette.accent(for: provider), lineWidth: size * 0.08)
                     .frame(width: size * 0.42, height: size * 0.42)
                 Text("$")
                     .font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
-                    .foregroundStyle(TokenPilotDesign.accent(for: provider))
-                    .scaleEffect(isVisible ? 1 : 0.7)
+                    .foregroundStyle(palette.accent(for: provider))
+                    .scaleEffect(isRevealed ? 1 : 0.7)
             }
             .padding(size * 0.22)
         }
@@ -353,23 +462,28 @@ struct ProviderSignatureMark: View {
 
 struct TokenPilotBrandMark: View {
     @State private var isVisible = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(TokenPilotDesign.cardElevated)
+                .fill(palette.surface(.cardElevated))
                 .overlay(
                     RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .stroke(TokenPilotDesign.calm.opacity(0.35), lineWidth: 1)
+                        .stroke(
+                            palette.borderColor(),
+                            lineWidth: palette.borderWidth()
+                        )
                 )
             Text("TP")
                 .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                .foregroundStyle(TokenPilotDesign.textPrimary)
+                .foregroundStyle(palette.text(.primary))
             Circle()
-                .fill(TokenPilotDesign.calm)
+                .fill(palette.status(.calm))
                 .frame(width: 4, height: 4)
-                .offset(x: isVisible ? 7 : -7, y: -7)
+                .offset(x: isRevealed ? 7 : -7, y: -7)
         }
         .frame(width: 24, height: 24)
         .onAppear {
@@ -382,6 +496,14 @@ struct TokenPilotBrandMark: View {
             }
         }
         .accessibilityHidden(true)
+    }
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    private var isRevealed: Bool {
+        reduceMotion || isVisible
     }
 }
 
@@ -412,27 +534,29 @@ struct MetricRow: View {
     let label: String
     let value: String
     var detail: String? = nil
+    var labelWidth: CGFloat = 58
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .font(TokenPilotDesign.Typography.label)
+                .foregroundStyle(palette.text(.secondary))
                 .lineLimit(1)
-                .frame(width: 58, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
 
             Text(value)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                .foregroundStyle(TokenPilotDesign.textPrimary)
+                .font(TokenPilotDesign.Typography.metric)
+                .foregroundStyle(palette.text(.primary))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
 
             if let detail, !detail.isEmpty {
-                Spacer(minLength: 8)
+                Spacer(minLength: TokenPilotDesign.Spacing.md)
                 Text(detail)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .font(TokenPilotDesign.Typography.label)
+                    .foregroundStyle(palette.text(.secondary))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
@@ -446,9 +570,10 @@ struct MetricRow: View {
 
 struct ProgressLine: View {
     @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     let percent: Int?
-    let color: Color
+    let color: Color?
     var accessibilityLabel: String? = nil
     var accessibilityValue: String? = nil
     var isDecorative: Bool = false
@@ -456,40 +581,88 @@ struct ProgressLine: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.white.opacity(0.07))
-                Capsule()
-                    .fill(color.opacity(0.86))
-                    .frame(width: progressWidth(in: geo.size.width))
+                ProgressTrack(palette: palette)
+                ProgressFill(
+                    color: color ?? palette.status(.neutral),
+                    width: progressWidth(in: geo.size.width)
+                )
             }
         }
-        .frame(height: 4)
+        .frame(height: progressHeight)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel ?? localized("Progress", language: language))
         .accessibilityValue(accessibilityValue ?? progressAssistiveText)
         .accessibilityHidden(isDecorative)
     }
 
+
     private var progressAssistiveText: String {
         guard let percent else { return localized("Unavailable", language: language) }
-        return "\(percent)%"
+        return "\(clampedPercent(percent))%"
+    }
+
+    private var progressHeight: CGFloat {
+        palette.colorSchemeContrast == .increased ? 5 : 4
+    }
+
+    private var minimumVisibleWidth: CGFloat {
+        progressHeight
     }
 
     private func progressWidth(in width: CGFloat) -> CGFloat {
         guard let percent else { return 0 }
-        return max(percent == 0 ? 0 : 4, width * CGFloat(Double(percent) / 100.0))
+        let clamped = clampedPercent(percent)
+        return max(clamped == 0 ? 0 : minimumVisibleWidth, width * CGFloat(Double(clamped) / 100.0))
+    }
+
+    private func clampedPercent(_ percent: Int) -> Int {
+        min(max(percent, 0), 100)
+    }
+
+    private struct ProgressTrack: View {
+        let palette: TokenPilotDesign.SemanticPalette
+
+        var body: some View {
+            Capsule()
+                .fill(palette.surface(.progressTrack))
+                .overlay(ProgressBorder(palette: palette))
+        }
+    }
+
+    private struct ProgressBorder: View {
+        let palette: TokenPilotDesign.SemanticPalette
+
+        var body: some View {
+            Capsule()
+                .stroke(
+                    palette.borderColor(),
+                    lineWidth: palette.borderWidth()
+                )
+        }
+    }
+
+    private struct ProgressFill: View {
+        let color: Color
+        let width: CGFloat
+
+        var body: some View {
+            Capsule()
+                .fill(color)
+                .frame(width: width)
+        }
     }
 }
 
 struct EmptyInlineState: View {
     let text: String
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(TokenPilotDesign.textSecondary)
+            .font(TokenPilotDesign.Typography.caption)
+            .foregroundStyle(palette.text(.secondary))
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 2)
+            .padding(.vertical, TokenPilotDesign.Spacing.xxs)
     }
 }
 
@@ -497,23 +670,28 @@ struct EmptyStateCard: View {
     let icon: String
     let title: String
     let message: String
+    @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
         GlassCard {
-            HStack(spacing: 10) {
+            HStack(spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .foregroundStyle(palette.text(.secondary))
                     .frame(width: 24, height: 24)
-                    .background(Color.white.opacity(0.04))
-                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
+                    .background(palette.surface(.cardMuted))
+                    .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                     Text(title)
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(palette.text(.primary))
                     Text(message)
-                        .font(.system(size: 10, weight: .regular))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .font(TokenPilotDesign.Typography.caption)
+                        .foregroundStyle(palette.text(.secondary))
                 }
+
                 Spacer(minLength: 0)
             }
         }
@@ -522,70 +700,161 @@ struct EmptyStateCard: View {
 
 struct StatusBadge: View {
     let label: String
-    let color: Color
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .monospacedDigit()
-            .lineLimit(1)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .overlay(
-                Capsule().stroke(color.opacity(0.22), lineWidth: 1)
-            )
-            .foregroundStyle(color)
-            .clipShape(Capsule())
-            .accessibilityLabel(label)
-    }
-}
-
-struct SemanticChip: View {
-    let label: String
+    let color: Color?
     var systemImage: String? = nil
-    var color: Color = TokenPilotDesign.trust
+
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(label: String, color: Color? = nil, systemImage: String? = nil) {
+        self.label = label
+        self.color = color
+        self.systemImage = systemImage
+    }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: TokenPilotDesign.Spacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 8, weight: .semibold))
+                    .accessibilityHidden(true)
             }
+
             Text(label)
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+        }
+        .font(TokenPilotDesign.Typography.badge)
+        .monospacedDigit()
+        .lineLimit(1)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .foregroundStyle(color ?? palette.status(.trust))
+        .background {
+            Capsule()
+                .fill(palette.surface(.badge))
+        }
+        .overlay {
+            Capsule()
+                .stroke(
+                    palette.borderColor(),
+                    lineWidth: palette.borderWidth()
+                )
+        }
+        .clipShape(Capsule())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(label)
+    }
+
+}
+
+struct SemanticChip: View {
+    enum Role {
+        case neutral
+        case truth
+        case action
+        case success
+        case warning
+        case danger
+
+        var statusRole: TokenPilotDesign.StatusRole {
+            switch self {
+            case .neutral: return .neutral
+            case .truth: return .trust
+            case .action: return .goal
+            case .success: return .calm
+            case .warning: return .warning
+            case .danger: return .danger
+            }
+        }
+    }
+
+    let label: String
+    var systemImage: String? = nil
+    private let color: Color?
+    private let role: Role?
+
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(label: String, systemImage: String? = nil, color: Color? = nil) {
+        self.label = label
+        self.systemImage = systemImage
+        self.color = color
+        self.role = nil
+    }
+
+    init(label: String, systemImage: String? = nil, role: Role) {
+        self.label = label
+        self.systemImage = systemImage
+        self.color = nil
+        self.role = role
+    }
+
+    var body: some View {
+        HStack(spacing: TokenPilotDesign.Spacing.xs) {
+            if let systemImage {
+                Image(systemName: systemImage)
+                    .font(.system(size: 8, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+
+            Text(label)
+                .font(TokenPilotDesign.Typography.micro)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
-        .foregroundStyle(color)
-        .background(TokenPilotDesign.neutralChip)
-        .overlay(
-            Capsule().stroke(color.opacity(0.22), lineWidth: 0.8)
-        )
+        .foregroundStyle(foregroundColor)
+        .background {
+            Capsule()
+                .fill(palette.surface(.chip))
+        }
+        .overlay {
+            Capsule()
+                .stroke(
+                    palette.borderColor(),
+                    lineWidth: palette.borderWidth()
+                )
+        }
         .clipShape(Capsule())
         .accessibilityElement(children: .combine)
         .accessibilityLabel(label)
     }
-}
 
+    private var foregroundColor: Color {
+        if let color {
+            return color
+        }
+        return palette.status(role?.statusRole ?? .trust)
+    }
+}
 
 struct GlassCard<Content: View>: View {
     var padding: CGFloat = TokenPilotDesign.cardPadding
-    @ViewBuilder var content: Content
+    var surface: TokenPilotDesign.Surface = .card
+    var cornerRadius: CGFloat = TokenPilotDesign.cardRadius
+    var intensity: CGFloat = 1.0
+    private let content: Content
+
+    init(
+        padding: CGFloat = TokenPilotDesign.cardPadding,
+        surface: TokenPilotDesign.Surface = .card,
+        cornerRadius: CGFloat = TokenPilotDesign.cardRadius,
+        intensity: CGFloat = 1.0,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.padding = padding
+        self.surface = surface
+        self.cornerRadius = cornerRadius
+        self.intensity = intensity
+        self.content = content()
+    }
 
     var body: some View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                LiquidGlassBackground(cornerRadius: TokenPilotDesign.cardRadius, intensity: 1.0)
+                LiquidGlassBackground(cornerRadius: cornerRadius, intensity: intensity, surface: surface)
             }
-            .overlay(
-                RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous)
-                    .stroke(TokenPilotDesign.border.opacity(0.72), lineWidth: 0.8)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }

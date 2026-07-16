@@ -75,6 +75,16 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_000_000), "1M")
     }
 
+    func testRemainingTimeFormatterLocalizesUnits() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let reset = now.addingTimeInterval(7_500)
+
+        XCTAssertEqual(TokenPilotFormatters.remainingTime(until: reset, language: .en, now: now), "2h 5m")
+        XCTAssertEqual(TokenPilotFormatters.remainingTime(until: reset, language: .ko, now: now), "2시간 5분")
+        XCTAssertEqual(TokenPilotFormatters.remainingTime(until: reset, language: .ja, now: now), "2時間 5分")
+        XCTAssertEqual(TokenPilotFormatters.remainingTime(until: reset, language: .zhHans, now: now), "2小时 5分钟")
+    }
+
     func testDefaultAlertRulesCoverMVPProvidersAndWindows() {
         let rules = AppSettings.defaultAlertRules
         XCTAssertTrue(rules.contains { $0.provider == .claude && $0.window == .fiveHour })
@@ -276,6 +286,142 @@ final class TokenMonitorTests: XCTestCase {
         )
     }
 
+    func testViewModelFollowUpLocalizationKeysHaveFourLocaleParityAndObsoleteKeysAreAbsent() throws {
+        let targetKeys: [(key: String, translations: [(language: TokenPilotLanguage, locale: String, value: String)])] = [
+            (
+                "Auto-detected sources: %@",
+                [
+                    (.en, "en", "Auto-detected sources: %@"),
+                    (.ko, "ko", "자동 감지된 소스: %@"),
+                    (.ja, "ja", "自動検出したソース: %@"),
+                    (.zhHans, "zh-Hans", "已自动检测到来源：%@")
+                ]
+            ),
+            (
+                "Choose Claude source",
+                [
+                    (.en, "en", "Choose Claude source"),
+                    (.ko, "ko", "Claude 소스 선택"),
+                    (.ja, "ja", "Claude ソースを選択"),
+                    (.zhHans, "zh-Hans", "选择 Claude 数据源")
+                ]
+            ),
+            (
+                "Choose Claude statusline JSON or a .claude/projects folder.",
+                [
+                    (.en, "en", "Choose Claude statusline JSON or a .claude/projects folder."),
+                    (.ko, "ko", "Claude statusline JSON 또는 .claude/projects 폴더를 선택하세요."),
+                    (.ja, "ja", "Claude statusline JSON または .claude/projects フォルダを選択してください。"),
+                    (.zhHans, "zh-Hans", "选择 Claude statusline JSON 或 .claude/projects 文件夹。")
+                ]
+            ),
+            (
+                "Connection check complete.",
+                [
+                    (.en, "en", "Connection check complete."),
+                    (.ko, "ko", "연결 확인이 완료되었습니다."),
+                    (.ja, "ja", "接続確認が完了しました。"),
+                    (.zhHans, "zh-Hans", "连接检查完成。")
+                ]
+            ),
+            (
+                "Detected",
+                [
+                    (.en, "en", "Detected"),
+                    (.ko, "ko", "감지됨"),
+                    (.ja, "ja", "検出済み"),
+                    (.zhHans, "zh-Hans", "已检测")
+                ]
+            ),
+            (
+                "Detected paths",
+                [
+                    (.en, "en", "Detected paths"),
+                    (.ko, "ko", "감지된 경로"),
+                    (.ja, "ja", "検出済みパス"),
+                    (.zhHans, "zh-Hans", "检测到的路径")
+                ]
+            ),
+            (
+                "Export Usage",
+                [
+                    (.en, "en", "Export Usage"),
+                    (.ko, "ko", "사용량 내보내기"),
+                    (.ja, "ja", "使用量を書き出し"),
+                    (.zhHans, "zh-Hans", "导出使用量")
+                ]
+            ),
+            (
+                "Exported",
+                [
+                    (.en, "en", "Exported"),
+                    (.ko, "ko", "내보냄"),
+                    (.ja, "ja", "書き出し済み"),
+                    (.zhHans, "zh-Hans", "已导出")
+                ]
+            ),
+            (
+                "Invalid format",
+                [
+                    (.en, "en", "Invalid format"),
+                    (.ko, "ko", "잘못된 형식"),
+                    (.ja, "ja", "無効な形式"),
+                    (.zhHans, "zh-Hans", "格式无效")
+                ]
+            ),
+            (
+                "Run Check Connection to scan local paths.",
+                [
+                    (.en, "en", "Run Check Connection to scan local paths."),
+                    (.ko, "ko", "로컬 경로를 스캔하려면 연결 확인을 실행하세요."),
+                    (.ja, "ja", "ローカルパスをスキャンするには接続確認を実行してください。"),
+                    (.zhHans, "zh-Hans", "运行检查连接以扫描本地路径。")
+                ]
+            )
+        ]
+
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        let liveTargetKeys = Set(targetKeys.map { $0.key }.filter { viewModelSource.contains("t(\"\($0)\")") })
+        XCTAssertEqual(liveTargetKeys, Set(targetKeys.map { $0.key }))
+
+        let rootURL = try Self.projectRootURL()
+        let coreFallbackSource = try String(contentsOf: rootURL.appendingPathComponent("Sources/TokenCore/TokenPilotLocalization.swift"))
+        let catalogData = try Data(contentsOf: rootURL.appendingPathComponent("Sources/TokenApp/Resources/Localizable.xcstrings"))
+        let catalogRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let catalogStrings = try XCTUnwrap(catalogRoot["strings"] as? [String: Any])
+
+        for (key, translations) in targetKeys {
+            XCTAssertTrue(coreFallbackSource.contains("\"\(key)\": [.en:"), "Missing runtime fallback key: \(key)")
+
+            let catalogEntry = try XCTUnwrap(catalogStrings[key] as? [String: Any], "Missing catalog key: \(key)")
+            let localizations = try XCTUnwrap(catalogEntry["localizations"] as? [String: Any], "Missing catalog localizations: \(key)")
+
+            for (language, locale, expectedValue) in translations {
+                let fallbackValue = TokenPilotLocalizer.localized(key, language: language)
+                XCTAssertFalse(fallbackValue.isEmpty, "Empty runtime fallback for \(locale): \(key)")
+                XCTAssertEqual(fallbackValue, expectedValue, "Wrong runtime fallback for \(locale): \(key)")
+
+                let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing catalog locale \(locale): \(key)")
+                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing catalog string unit \(locale): \(key)")
+                let catalogValue = try XCTUnwrap(stringUnit["value"] as? String, "Missing catalog value \(locale): \(key)")
+                XCTAssertFalse(catalogValue.isEmpty, "Empty catalog value for \(locale): \(key)")
+                XCTAssertEqual(catalogValue, expectedValue, "Wrong catalog value for \(locale): \(key)")
+            }
+        }
+
+        let obsoleteKeys = [
+            "capacity.alert.recovery.codes.format",
+            "defaultClaudePath",
+            "defaultGeminiPath1",
+            "defaultGeminiPath2"
+        ]
+        for obsoleteKey in obsoleteKeys {
+            XCTAssertFalse(coreFallbackSource.contains("\"\(obsoleteKey)\""))
+            XCTAssertNil(catalogStrings[obsoleteKey])
+            XCTAssertEqual(TokenPilotLocalizer.localized(obsoleteKey, language: .ko), obsoleteKey)
+        }
+    }
+
     func testExportPrivacyCopyClarifiesUsageTotalsAreIncludedButSecretsAreExcluded() {
         let copy = TokenPilotLocalizer.localized(
             "Exports the selected History period only. Credentials, tokens, chat IDs, webhooks, and local file paths are not included.",
@@ -332,6 +478,31 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(copy.contains("연결된 것처럼"))
     }
 
+    func testSettingsDisclosurePolishCopyIsLocalized() {
+        let expectations: [(String, TokenPilotLanguage, String)] = [
+            ("Settings overview", .en, "Settings overview"),
+            ("Settings overview", .ko, "설정 요약"),
+            ("Settings overview", .ja, "設定の概要"),
+            ("Settings overview", .zhHans, "设置概览"),
+            ("Privacy and provider truth", .en, "Privacy and data sources"),
+            ("Privacy and provider truth", .ko, "개인정보 및 데이터 출처"),
+            ("Privacy and provider truth", .ja, "プライバシーとデータの出所"),
+            ("Privacy and provider truth", .zhHans, "隐私与数据来源"),
+            ("Expanded", .en, "Expanded"),
+            ("Expanded", .ko, "펼쳐짐"),
+            ("Expanded", .ja, "展開中"),
+            ("Expanded", .zhHans, "已展开"),
+            ("Collapsed", .en, "Collapsed"),
+            ("Collapsed", .ko, "접힘"),
+            ("Collapsed", .ja, "折りたたみ中"),
+            ("Collapsed", .zhHans, "已折叠")
+        ]
+
+        for (key, language, expected) in expectations {
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: language), expected)
+        }
+    }
+
     func testOverviewDoesNotShowToolRecommendationCard() throws {
         let source = try Self.tokenMonitorAppSource()
 
@@ -359,24 +530,59 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(source.contains("Timer.scheduledTimer(withTimeInterval: menuBarTickInterval"))
     }
 
-    func testProviderMarksUseCustomAnimatedBrandSystem() throws {
-        let source = try Self.tokenMonitorAppSource()
+    func testProviderMarksUseSemanticBrandSystemWithAccessibilityMotionAndContrast() throws {
+        let componentsSource = try Self.tokenAppSourceFile("Views/Components.swift")
+        let designSource = try Self.tokenAppSourceFile("DesignSystem/TokenPilotDesign.swift")
 
-        XCTAssertTrue(source.contains("struct ProviderSignatureMark"))
-        XCTAssertTrue(source.contains("withAnimation(.spring"))
-        XCTAssertTrue(source.contains("ProviderSetupCard("))
-        XCTAssertTrue(source.contains("TokenPilotBrandMark"))
-        XCTAssertFalse(source.contains("ProviderMark(provider: snapshot.provider)"))
+        XCTAssertTrue(componentsSource.contains("struct ProviderSignatureMark"))
+        XCTAssertTrue(componentsSource.contains("struct TokenPilotBrandMark"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.accessibilityReduceMotion) private var systemReduceMotion"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.tokenPilotReduceMotionOverride) private var reduceMotionOverride"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.tokenPilotSemanticPalette) private var palette"))
+        XCTAssertTrue(componentsSource.contains("private var isRevealed: Bool"))
+        XCTAssertTrue(componentsSource.contains("if reduceMotion {"))
+        XCTAssertTrue(componentsSource.contains("reduceMotionOverride ?? systemReduceMotion"))
+        XCTAssertTrue(componentsSource.contains("palette.surface(.cardElevated)"))
+        XCTAssertTrue(componentsSource.contains("palette.borderColor()"))
+        XCTAssertTrue(componentsSource.contains("lineWidth: palette.borderWidth()"))
+        XCTAssertTrue(componentsSource.contains("palette.accent(for: provider)"))
+        XCTAssertTrue(designSource.contains("struct SemanticPalette"))
+        XCTAssertTrue(designSource.contains("let colorSchemeContrast: ColorSchemeContrast"))
+        XCTAssertTrue(designSource.contains("TokenPilotDesign.borderColor(colorSchemeContrast, emphasized: emphasized)"))
+        XCTAssertTrue(designSource.contains("TokenPilotDesign.borderWidth(colorSchemeContrast, emphasized: emphasized)"))
+        XCTAssertTrue(designSource.contains("TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)"))
+        XCTAssertFalse(componentsSource.contains("@Environment(\\.colorSchemeContrast) private var systemColorSchemeContrast"))
+        XCTAssertFalse(componentsSource.contains("@Environment(\\.tokenPilotContrastOverride) private var contrastOverride"))
     }
 
-    func testSettingsDataSourcesAreSplitIntoProviderCards() throws {
+    func testSettingsDataSourcesUseFourProviderDisclosuresWithPreservedControls() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertTrue(source.contains("ProviderSetupCard(provider: .claude"))
-        XCTAssertTrue(source.contains("ProviderSetupCard(provider: .codex"))
-        XCTAssertTrue(source.contains("ProviderSetupCard(provider: .gemini"))
-        XCTAssertTrue(source.contains("ProviderSetupCard(provider: .deepseek"))
-        XCTAssertTrue(source.contains("Use Manual DeepSeek Balance"))
+        XCTAssertTrue(source.contains("private func providerSetupDisclosure<Content: View>"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .claude, title: model.t(\"Claude Code\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .gemini, title: model.t(\"Antigravity CLI\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .deepseek, title: model.t(\"DeepSeek\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .codex, title: model.t(\"Codex\"))"))
+        XCTAssertTrue(source.contains("DisclosureCard(\n            initiallyExpanded: providerDefaultExpanded(provider)"))
+        XCTAssertTrue(source.contains("providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)"))
+        XCTAssertTrue(source.contains("CompactProviderStatusRow("))
+        XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
+        XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
+        XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .codex]"))
+
+        XCTAssertTrue(source.contains("providerToggle(.claude)"))
+        XCTAssertTrue(source.contains("providerToggle(.codex)"))
+        XCTAssertTrue(source.contains("providerToggle(.gemini)"))
+        XCTAssertTrue(source.contains("providerToggle(.deepseek)"))
+        XCTAssertTrue(source.contains("model.chooseClaudeStatusFile()"))
+        XCTAssertTrue(source.contains("model.chooseGeminiTelemetrySource()"))
+        XCTAssertTrue(source.contains("Toggle(model.t(\"Use Manual DeepSeek Balance\")"))
+        XCTAssertTrue(source.contains("Button(model.t(\"Delete API Key\"), role: .destructive)"))
+        XCTAssertTrue(source.contains("Toggle(model.t(\"Use experimental Codex limit hints\")"))
+        XCTAssertTrue(source.contains("Toggle(model.t(\"Use Manual Limit Snapshot\")"))
+        XCTAssertTrue(source.contains("Button(model.t(\"Paste Status\"))"))
+        XCTAssertTrue(source.contains("Button(model.t(\"Parse Status\"))"))
         XCTAssertFalse(source.contains("Divider().padding(.vertical, 4)"))
     }
 
@@ -411,27 +617,108 @@ final class TokenMonitorTests: XCTestCase {
     }
 
     func testOverviewAndHistoryEmptyStatesLinkToProviderDiagnostics() throws {
-        let source = try Self.tokenMonitorAppSource()
+        let overviewSource = try Self.tokenAppSourceFile("Views/OverviewScreen.swift")
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
 
-        XCTAssertTrue(source.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."))
-        XCTAssertTrue(source.contains("Open Provider Diagnostics"))
-        XCTAssertTrue(source.contains("model.selectedScreen = .settings"))
-        XCTAssertTrue(source.contains("HistoryEmptyState("))
+        XCTAssertTrue(overviewSource.contains("message: model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\")"))
+        XCTAssertTrue(overviewSource.contains("Button(model.t(\"Open Settings\"))"))
+        XCTAssertTrue(overviewSource.contains("model.selectedScreen = .settings"))
+        XCTAssertFalse(overviewSource.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."))
+        XCTAssertTrue(historySource.contains("Text(model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\"))"))
+        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
+        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("HistoryCapacityEmptyState(model: model)"))
+        XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
     }
 
-    func testHistoryScreenShowsLimitSignalsAndHelpfulEmptyState() throws {
-        let source = try Self.tokenMonitorAppSource()
+    func testHistoryScreenShowsCompactCapacityEvidenceTimelineAndHelpfulEmptyStates() throws {
+        let appSource = try Self.tokenMonitorAppSource()
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
+        let componentsSource = try Self.tokenAppSourceFile("Views/Components.swift")
 
-        XCTAssertTrue(source.contains("@Published var limitHistorySamples"))
-        XCTAssertTrue(source.contains("HistoryLimitSignalCard(samples: model.limitHistorySamples"))
-        XCTAssertTrue(source.contains("HistoryEmptyState("))
-        XCTAssertTrue(source.contains("No usage events recorded"))
-        XCTAssertTrue(source.contains("@State private var isExpanded = false"))
-        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
-        XCTAssertTrue(source.contains("if reduceMotion {"))
-        XCTAssertTrue(source.contains("Recorded capacity signal history"))
-        XCTAssertTrue(source.contains("Show recorded capacity signal history"))
-        XCTAssertTrue(source.contains("Hide recorded capacity signal history"))
+        XCTAssertTrue(appSource.contains("@Published var limitHistorySamples"))
+        XCTAssertTrue(historySource.contains("private var hasCapacitySignals: Bool"))
+        XCTAssertTrue(historySource.contains("!model.capacityPresentations.isEmpty || !model.limitHistorySamples.isEmpty"))
+        XCTAssertTrue(historySource.contains("CurrentCapacitySignalCard("))
+        XCTAssertTrue(historySource.contains("HistoryLimitSignalCard(samples: model.limitHistorySamples, model: model)"))
+        XCTAssertTrue(historySource.contains("DisclosureCard(\n            padding: 10,\n            initiallyExpanded: true"))
+        XCTAssertTrue(historySource.contains("DisclosureSummaryRow(\n                title: model.t(\"Recorded capacity signal history\")"))
+        XCTAssertTrue(historySource.contains("HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)"))
+        XCTAssertTrue(historySource.contains("HistoryUsageEventRow(event: event, model: model)"))
+        XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
+        XCTAssertTrue(historySource.contains("No usage events recorded"))
+        XCTAssertTrue(historySource.contains("Capacity signals are available above, but no token usage events are stored for this period."))
+        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
+        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: sample.provider, size: 24)"))
+        XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: event.provider, size: 22)"))
+        XCTAssertTrue(historySource.contains("SemanticChip("))
+        XCTAssertTrue(historySource.contains("role: .truth"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.accessibilityReduceMotion) private var systemReduceMotion"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.tokenPilotReduceMotionOverride) private var reduceMotionOverride"))
+        XCTAssertTrue(componentsSource.contains("reduceMotionOverride ?? systemReduceMotion"))
+        XCTAssertTrue(componentsSource.contains(".transition(reduceMotion ? .identity"))
+        XCTAssertTrue(componentsSource.contains("if reduceMotion {"))
+        XCTAssertFalse(historySource.contains("@State private var isExpanded = false"))
+        XCTAssertFalse(historySource.contains("Show recorded capacity signal history"))
+        XCTAssertFalse(historySource.contains("Hide recorded capacity signal history"))
+    }
+
+    func testRedesignedCapacityConsoleKeepsCompactDisclosureAndSourceOnlyContracts() throws {
+        let appSource = try Self.tokenMonitorAppSource()
+        let rootSource = try Self.tokenAppSourceFile("Views/OverviewScreen.swift")
+        let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
+        let componentsSource = try Self.tokenAppSourceFile("Views/Components.swift")
+        let settingsCollapsed = settingsSource.collapsedWhitespace
+        let historyCollapsed = historySource.collapsedWhitespace
+        let redesignedViewSource = [rootSource, settingsSource, historySource, componentsSource].joined(separator: "\n")
+
+        XCTAssertTrue(appSource.contains(".frame(width: 420, height: 620)"))
+        XCTAssertTrue(rootSource.contains(".frame(width: 420, height: 620)"))
+
+        for removedSurface in ["import Charts", "LineMark(", "BarMark(", "AreaMark(", "Chart(", "Daily challenge", "Provider share"] {
+            XCTAssertFalse(redesignedViewSource.contains(removedSurface), "Removed dashboard/chart surface should stay absent: \(removedSurface)")
+        }
+        XCTAssertFalse(redesignedViewSource.localizedCaseInsensitiveContains("dashboard"))
+
+        XCTAssertTrue(settingsCollapsed.contains("consoleSummary sourceSettings notificationSettings privacySettings"))
+        XCTAssertTrue(settingsSource.contains("title: model.t(\"Settings overview\")"))
+        XCTAssertFalse(settingsSource.contains("Settings disclosure console"))
+        XCTAssertTrue(settingsSource.contains("title: model.t(\"Source health\")"))
+        XCTAssertTrue(settingsSource.contains("title: model.t(\"Privacy and provider truth\")"))
+        XCTAssertTrue(settingsSource.contains("private var privacyTruthChips: some View"))
+        XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Local metadata only\")"))
+        XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Secrets hidden\")"))
+        XCTAssertTrue(settingsSource.contains("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded."))
+        XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Manual/experimental labels shown\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Source health\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Provider Diagnostics\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: privacyDetailsDefaultExpanded"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: providerDefaultExpanded(provider)"))
+        XCTAssertTrue(historyCollapsed.contains("DisclosureCard( padding: 10, initiallyExpanded: true, accessibilityLabel: model.t(\"Recorded capacity signal history\")"))
+        XCTAssertTrue(componentsSource.contains("localized(isExpanded ? \"Expanded\" : \"Collapsed\", language: language)"))
+
+        XCTAssertTrue(redesignedViewSource.contains("TokenPilotDesign.surface("))
+        XCTAssertTrue(redesignedViewSource.contains("TokenPilotDesign.textPrimary"))
+        XCTAssertTrue(redesignedViewSource.contains("TokenPilotDesign.textSecondary"))
+        XCTAssertTrue(redesignedViewSource.contains("SemanticChip("))
+        XCTAssertTrue(redesignedViewSource.contains("role: .truth"))
+
+        let forbiddenPersistenceMarkers = [
+            "UserDefaults",
+            "AppSettingsStore(",
+            "UsageHistoryStore(",
+            "LimitHistoryStore(",
+            "CapacityAlertPersistence",
+            "FileManager.",
+            "JSONEncoder()",
+            "JSONDecoder()",
+            ".write(to:"
+        ]
+        for marker in forbiddenPersistenceMarkers {
+            XCTAssertFalse(redesignedViewSource.contains(marker), "Redesigned views should not add production persistence: \(marker)")
+        }
     }
 
     func testMenuBarLabelUsesSingleLineCompactTitleInsteadOfClippedBadgeStack() throws {
@@ -462,16 +749,29 @@ final class TokenMonitorTests: XCTestCase {
 
         XCTAssertTrue(appSource.contains("TokenPilotRootView(model: model)"))
         XCTAssertTrue(appSource.contains("productionMenuBarLabel(model: model)"))
-        XCTAssertTrue(appSource.contains("TokenPilotViewModel(debugFixture: TokenPilotDebugFixture.resolve())"))
+        XCTAssertTrue(appSource.contains("TokenPilotDebugFixture.resolve()"))
+        XCTAssertTrue(appSource.contains("TokenPilotViewModel(debugFixture: debugFixture)"))
         XCTAssertFalse(appSource.contains("TokenPilotDebugFixtureView"))
         XCTAssertFalse(appSource.contains("debugFixtureLabel"))
         XCTAssertFalse(appSource.contains("launchState"))
+        XCTAssertTrue(appSource.contains("private let debugAccessibilityProfile: TokenPilotDebugAccessibilityProfile?"))
+        XCTAssertTrue(appSource.contains(".tokenPilotDebugAccessibilityProfile(debugAccessibilityProfile)"))
 
         XCTAssertTrue(viewModelSource.contains("#if DEBUG\n    init(debugFixture: TokenPilotDebugFixture? = TokenPilotDebugFixture.resolve())"))
         XCTAssertTrue(viewModelSource.contains("#else\n    init() {\n        self.settings = settingsStore.load()"))
         XCTAssertTrue(viewModelSource.contains("refreshStoredCredentialPresence()"))
         XCTAssertTrue(viewModelSource.contains("guard !debugFixtureMode else { return }"))
         XCTAssertTrue(viewModelSource.contains("blockDebugFixtureExternalAction()"))
+        XCTAssertFalse(viewModelSource.contains("func chooseGeminiLogFile()"))
+
+        let fixtureActionGuard = "#if DEBUG\n        guard !blockDebugFixtureExternalAction() else { return }\n#endif"
+        for functionName in ["pasteCodexStatusFromClipboard", "markCodexWebSnapshotNow", "copyToClipboard"] {
+            let body = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: functionName), "Missing \(functionName)")
+            XCTAssertTrue(body.contains(fixtureActionGuard), "\(functionName) must be blocked before pasteboard or wall-clock side effects in DEBUG fixture mode.")
+        }
+        let fixtureBlockBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "blockDebugFixtureExternalAction"))
+        XCTAssertTrue(fixtureBlockBody.contains("bannerMessage = nil"))
+        XCTAssertFalse(fixtureBlockBody.localizedCaseInsensitiveContains("DEBUG fixture mode"))
         XCTAssertFalse(viewModelSource.contains("ProcessInfo.processInfo.environment[\"TOKENPILOT_UI_TESTING\"] == \"1\" ? AppSettings() : settingsStore.load()"))
         XCTAssertFalse(viewModelSource.contains("guard ProcessInfo.processInfo.environment[\"TOKENPILOT_UI_TESTING\"] != \"1\" else { return }"))
 
@@ -481,11 +781,15 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(fixtureSource.contains("#if DEBUG"))
         XCTAssertTrue(fixtureSource.contains("TOKENPILOT_UI_TESTING"))
         XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_SCENARIO"))
-        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_700_000_000)"))
+        XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_SCREEN"))
+        XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_LANGUAGE"))
+        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_784_289_600)"))
         XCTAssertTrue(fixtureSource.contains("privacyContract"))
         XCTAssertTrue(fixtureSource.contains("No network. No real provider accounts. No credentials. No local paths. No secrets."))
         XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_UI_TESTING"))
         XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_DEBUG_SCENARIO"))
+        XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_DEBUG_SCREEN"))
+        XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_DEBUG_LANGUAGE"))
 
         let approvedScenarios = [
             "empty",
@@ -510,9 +814,384 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(viewModelSource.contains("capacityPresentations = fixture.capacityPresentations"))
         XCTAssertTrue(viewModelSource.contains("capacityAlertRules = fixture.capacityAlertRules"))
         XCTAssertTrue(viewModelSource.contains("dataSources = fixture.dataSources"))
+        XCTAssertTrue(fixtureSource.contains("detectedPaths: []"))
+        XCTAssertTrue(fixtureSource.contains("customPath: nil"))
+        XCTAssertTrue(fixtureSource.contains("source: \"debug-fixture\""))
+        XCTAssertFalse(fixtureSource.contains("UserDefaults"))
+        XCTAssertFalse(fixtureSource.contains("settingsStore.save"))
+        XCTAssertFalse(fixtureSource.contains("KeychainService"))
+        for visibleFixtureStatusLeak in [
+            "statusMessage: \"DEBUG fixture",
+            "Official statusline stale",
+            "Local log activity only; not web quota",
+            "UNOFFICIAL · Codex app-server limit hints",
+            "Manual estimate",
+            "Official balance endpoint",
+            "Manual balance estimate",
+            "Antigravity statusline bridge",
+            "Legacy Codex local evidence is not alert-deliverable",
+            "Manual fixture",
+            "resetTimeText: \"fixed\""
+        ] {
+            XCTAssertFalse(fixtureSource.contains(visibleFixtureStatusLeak), "DEBUG fixture visible copy should be localized or omitted: \(visibleFixtureStatusLeak)")
+        }
 
         for forbidden in ["/Users/", "~/", "Bearer ", "auth.json", "\".env\"", "id_rsa", "id_ed25519", "https://", "http://", "sk-", "pk-"] {
             XCTAssertFalse(fixtureSource.contains(forbidden), "DEBUG fixtures must not contain private paths, credential filenames, URLs, or secret-looking values: \(forbidden)")
+        }
+    }
+    func testDataSourceModesStayTruthfulForCanonicalDebugEvidenceAndLocalizedLabels() throws {
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+        let modeBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "derivedDataSourceMode"))
+        let expectedModeBody = try XCTUnwrap(fixtureSource.swiftFunctionBody(named: "expectedDataSourceMode"))
+
+        for declaration in [
+            "case live = \"LIVE\"",
+            "case stale = \"STALE\"",
+            "case local = \"LOCAL\"",
+            "case manual = \"MANUAL\"",
+            "case experimental = \"EXPERIMENTAL\"",
+            "case compatibilityBridge = \"BRIDGE\"",
+            "case mock = \"MOCK\"",
+            "case disconnected = \"--\""
+        ] {
+            XCTAssertTrue(viewModelSource.contains(declaration), "Missing DataSourceMode declaration: \(declaration)")
+        }
+
+        XCTAssertTrue(viewModelSource.contains("dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)"))
+        XCTAssertTrue(fixtureSource.contains("TokenPilotViewModel.derivedDataSourceMode("))
+        XCTAssertTrue(fixtureSource.contains("assert(dataSourceMode == expectedDataSourceMode(for: scenario)"))
+
+        let staleRange = try XCTUnwrap(modeBody.range(of: "return .stale"))
+        let liveRange = try XCTUnwrap(modeBody.range(of: "return .live"))
+        let experimentalRange = try XCTUnwrap(modeBody.range(of: "return .experimental"))
+        let bridgeRange = try XCTUnwrap(modeBody.range(of: "return .compatibilityBridge"))
+        let manualRange = try XCTUnwrap(modeBody.range(of: "return .manual"))
+        let localRange = try XCTUnwrap(modeBody.range(of: "return .local"))
+        XCTAssertLessThan(staleRange.lowerBound, liveRange.lowerBound)
+        XCTAssertLessThan(liveRange.lowerBound, experimentalRange.lowerBound)
+        XCTAssertLessThan(experimentalRange.lowerBound, bridgeRange.lowerBound)
+        XCTAssertLessThan(bridgeRange.lowerBound, manualRange.lowerBound)
+        XCTAssertLessThan(manualRange.lowerBound, localRange.lowerBound)
+
+        let expectedScenarioModes = [
+            "case .claudeOfficialFresh, .deepseekOfficialBalance:\n            return .live",
+            "case .claudeOfficialStale:\n            return .stale",
+            "case .codexLocalOnly, .alertsUnsupportedCodexLegacy:\n            return .local",
+            "case .codexConnectorExperimental:\n            return .experimental",
+            "case .codexManual, .deepseekManualBalance:\n            return .manual",
+            "case .antigravityBridge:\n            return .compatibilityBridge",
+            "case .empty, .runtimeRecoveryRequired, .alertsPendingDeepSeekCurrency:\n            return .disconnected"
+        ]
+        for expectation in expectedScenarioModes {
+            XCTAssertTrue(expectedModeBody.contains(expectation), "Missing scenario mode expectation: \(expectation)")
+        }
+
+        XCTAssertTrue(fixtureSource.contains("case .codexLocalOnly:"))
+        XCTAssertTrue(fixtureSource.contains("dataSource: .localLog"))
+        XCTAssertTrue(fixtureSource.contains("case .codexConnectorExperimental:"))
+        XCTAssertTrue(fixtureSource.contains("stability: .experimentalTransport"))
+        XCTAssertTrue(fixtureSource.contains("case .codexManual:"))
+        XCTAssertTrue(fixtureSource.contains("authority: .userEntered, stability: .manual"))
+        XCTAssertTrue(fixtureSource.contains("case .deepseekManualBalance:"))
+        XCTAssertTrue(fixtureSource.contains("moneyObservation(amount: \"8.75\", currency: \"USD\", authority: .userEntered, stability: .manual"))
+        XCTAssertTrue(fixtureSource.contains("case .antigravityBridge:"))
+        XCTAssertTrue(fixtureSource.contains("stability: .compatibilityBridge"))
+
+        let localizedModes: [(String, String, String, String)] = [
+            ("LIVE", "실시간", "ライブ", "实时"),
+            ("LOCAL", "로컬", "ローカル", "本地"),
+            ("MANUAL", "수동", "手動", "手动"),
+            ("EXPERIMENTAL", "실험적", "実験的", "实验性"),
+            ("BRIDGE", "브리지", "ブリッジ", "桥接"),
+            ("MOCK", "목업", "モック", "模拟"),
+            ("STALE", "오래됨", "古い", "过期")
+        ]
+
+        for (key, ko, ja, zhHans) in localizedModes {
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .en), key)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ko), ko)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ja), ja)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .zhHans), zhHans)
+        }
+    }
+
+    func testDebugFixtureResetDatesUseCurrentFixedReferenceClockForDeterministicScreenshots() throws {
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+
+        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_784_289_600)"))
+        XCTAssertTrue(fixtureSource.contains("resetAt: resetAfter.map { fixedReferenceDate.addingTimeInterval($0) }"))
+        XCTAssertTrue(fixtureSource.contains("let assessments = observations.map { assessmentService.assess($0, now: fixedReferenceDate) }"))
+        XCTAssertFalse(fixtureSource.contains("Date(timeIntervalSince1970: 1_700_000_000)"))
+        XCTAssertFalse(fixtureSource.contains("Reset 0m"))
+    }
+    func testDebugScreenAndLanguageControlsAreUiTestingGatedValidatedAndNonPersistent() throws {
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+
+        let resolveBody = try XCTUnwrap(fixtureSource.swiftFunctionBody(named: "resolve"))
+        XCTAssertTrue(resolveBody.contains("guard environment[\"TOKENPILOT_UI_TESTING\"] == \"1\" else { return nil }"))
+        XCTAssertTrue(resolveBody.contains("TokenPilotDebugScenario(rawValue: rawScenario) ?? .empty"))
+        XCTAssertTrue(resolveBody.contains("debugScreen(from: environment[\"TOKENPILOT_DEBUG_SCREEN\"])"))
+        XCTAssertTrue(resolveBody.contains("debugLanguage(from: environment[\"TOKENPILOT_DEBUG_LANGUAGE\"])"))
+        XCTAssertTrue(resolveBody.contains("return make(scenario).applying(selectedScreen: selectedScreen, language: language)"))
+
+        let screenBody = try XCTUnwrap(fixtureSource.swiftFunctionBody(named: "debugScreen"))
+        XCTAssertTrue(screenBody.contains("case .some(\"overview\"), .none:"))
+        XCTAssertTrue(screenBody.contains("return .overview"))
+        XCTAssertTrue(screenBody.contains("case .some(\"history\"):"))
+        XCTAssertTrue(screenBody.contains("return .history"))
+        XCTAssertTrue(screenBody.contains("case .some(\"settings\"):"))
+        XCTAssertTrue(screenBody.contains("return .settings"))
+        XCTAssertTrue(screenBody.contains("default:\n            return .overview"))
+
+        let languageBody = try XCTUnwrap(fixtureSource.swiftFunctionBody(named: "debugLanguage"))
+        XCTAssertTrue(languageBody.contains("case .some(\"en\"), .none:"))
+        XCTAssertTrue(languageBody.contains("return .en"))
+        XCTAssertTrue(languageBody.contains("case .some(\"ko\"):"))
+        XCTAssertTrue(languageBody.contains("return .ko"))
+        XCTAssertTrue(languageBody.contains("case .some(\"ja\"):"))
+        XCTAssertTrue(languageBody.contains("return .ja"))
+        XCTAssertTrue(languageBody.contains("case .some(\"zh-Hans\"):"))
+        XCTAssertTrue(languageBody.contains("return .zhHans"))
+        XCTAssertTrue(languageBody.contains("default:\n            return .en"))
+        XCTAssertFalse(languageBody.contains("return .system"))
+
+        let applyingBody = try XCTUnwrap(fixtureSource.swiftFunctionBody(named: "applying"))
+        XCTAssertTrue(applyingBody.contains("var localizedSettings = settings"))
+        XCTAssertTrue(applyingBody.contains("localizedSettings.localization.language = language"))
+        XCTAssertTrue(applyingBody.contains("selectedScreen: selectedScreen"))
+        XCTAssertTrue(applyingBody.contains("settings: localizedSettings"))
+        XCTAssertFalse(applyingBody.contains("UserDefaults"))
+        XCTAssertFalse(applyingBody.contains("settingsStore"))
+        XCTAssertFalse(applyingBody.contains("save("))
+        XCTAssertFalse(applyingBody.contains("persistSettingsDebounced"))
+        XCTAssertFalse(applyingBody.contains("scheduleSettingsDrivenRefresh"))
+
+        let releaseSource = String(viewModelSource[..<fixtureStart.lowerBound])
+        XCTAssertFalse(releaseSource.contains("TOKENPILOT_DEBUG_SCREEN"))
+        XCTAssertFalse(releaseSource.contains("TOKENPILOT_DEBUG_LANGUAGE"))
+        XCTAssertTrue(releaseSource.contains("#else\n    init() {\n        self.settings = settingsStore.load()"))
+    }
+    func testDebugAccessibilityProfilesAreUiTestingGatedAppScopedAndReleaseIgnored() throws {
+        let appSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/TokenMonitorApp.swift"))
+        let designSource = try Self.tokenAppSourceFile("DesignSystem/TokenPilotDesign.swift")
+        let componentsSource = try Self.tokenAppSourceFile("Views/Components.swift")
+        let resolveBody = try XCTUnwrap(appSource.swiftFunctionBody(named: "resolve"))
+        let modifierBody = try XCTUnwrap(appSource.swiftFunctionBody(named: "tokenPilotDebugAccessibilityProfile"))
+        let releaseSource = Self.releasePreprocessedSource(from: appSource)
+
+        XCTAssertTrue(appSource.contains("private enum TokenPilotDebugAccessibilityProfile: String"))
+        XCTAssertTrue(appSource.contains("debugAccessibilityProfile = TokenPilotDebugAccessibilityProfile.resolve()"))
+        XCTAssertTrue(appSource.contains("TokenPilotRootView(model: model)"))
+        XCTAssertTrue(appSource.contains(".tokenPilotDebugAccessibilityProfile(debugAccessibilityProfile)"))
+
+        for profileCase in ["case standard", "case reduceMotion", "case reduceTransparency", "case increaseContrast"] {
+            XCTAssertTrue(appSource.contains(profileCase), "Missing accessibility profile case: \(profileCase)")
+        }
+
+        XCTAssertTrue(resolveBody.contains("guard environment[\"TOKENPILOT_UI_TESTING\"] == \"1\" else { return nil }"))
+        XCTAssertTrue(resolveBody.contains("TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE"))
+        XCTAssertTrue(resolveBody.contains("return .standard"))
+        XCTAssertTrue(resolveBody.contains("guard let profile = Self(rawValue: rawProfile) else {"))
+        XCTAssertTrue(resolveBody.contains("preconditionFailure(\"Invalid DEBUG TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE"))
+        XCTAssertTrue(resolveBody.contains("return profile"))
+        XCTAssertFalse(resolveBody.contains("?? .standard"))
+
+        XCTAssertTrue(appSource.contains("var reduceMotion: Bool {\n        self == .reduceMotion\n    }"))
+        XCTAssertTrue(appSource.contains("var reduceTransparency: Bool {\n        self == .reduceTransparency\n    }"))
+        XCTAssertTrue(appSource.contains("var colorSchemeContrast: ColorSchemeContrast {\n        self == .increaseContrast ? .increased : .standard\n    }"))
+        XCTAssertTrue(modifierBody.contains("environment(\\.tokenPilotReduceMotionOverride, profile.reduceMotion)"))
+        XCTAssertTrue(modifierBody.contains("environment(\\.tokenPilotReduceTransparencyOverride, profile.reduceTransparency)"))
+        XCTAssertTrue(modifierBody.contains("environment(\\.tokenPilotContrastOverride, profile.colorSchemeContrast)"))
+        XCTAssertFalse(modifierBody.contains("environment(\\.accessibilityReduceMotion"))
+        XCTAssertFalse(modifierBody.contains("environment(\\.accessibilityReduceTransparency"))
+        XCTAssertFalse(modifierBody.contains("environment(\\.colorSchemeContrast"))
+        XCTAssertTrue(designSource.contains("private struct TokenPilotReduceMotionOverrideKey: EnvironmentKey"))
+        XCTAssertTrue(designSource.contains("private struct TokenPilotReduceTransparencyOverrideKey: EnvironmentKey"))
+        XCTAssertTrue(designSource.contains("private struct TokenPilotContrastOverrideKey: EnvironmentKey"))
+        XCTAssertTrue(designSource.contains("var tokenPilotReduceMotionOverride: Bool?"))
+        XCTAssertTrue(designSource.contains("var tokenPilotReduceTransparencyOverride: Bool?"))
+        XCTAssertTrue(designSource.contains("var tokenPilotContrastOverride: ColorSchemeContrast?"))
+        XCTAssertTrue(designSource.contains("private struct TokenPilotSemanticPaletteKey: EnvironmentKey"))
+        XCTAssertTrue(designSource.contains("var tokenPilotSemanticPalette: TokenPilotDesign.SemanticPalette"))
+        XCTAssertTrue(designSource.contains("private struct TokenPilotSemanticPaletteModifier: ViewModifier"))
+        XCTAssertTrue(designSource.contains("@Environment(\\.colorSchemeContrast) private var systemColorSchemeContrast"))
+        XCTAssertTrue(designSource.contains("@Environment(\\.tokenPilotContrastOverride) private var contrastOverride"))
+        XCTAssertTrue(designSource.contains("TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)"))
+        XCTAssertTrue(designSource.contains("reduceTransparencyOverride ?? systemReduceTransparency"))
+        XCTAssertTrue(appSource.contains(".tokenPilotSemanticPalette()"))
+        XCTAssertTrue(componentsSource.contains("@Environment(\\.tokenPilotSemanticPalette) private var palette"))
+        XCTAssertTrue(componentsSource.contains("reduceMotionOverride ?? systemReduceMotion"))
+        XCTAssertTrue(componentsSource.contains("palette.borderColor()"))
+        XCTAssertFalse(componentsSource.contains("@Environment(\\.tokenPilotContrastOverride) private var contrastOverride"))
+
+        for forbidden in ["System Settings", "com.apple.universalaccess", "osascript", "AXIsProcessTrusted", "AXUIElement", "UserDefaults.standard"] {
+            XCTAssertFalse(appSource.contains(forbidden), "DEBUG accessibility profiles must be app-scoped and non-persistent: \(forbidden)")
+        }
+
+        XCTAssertTrue(releaseSource.contains("_model = StateObject(wrappedValue: TokenPilotViewModel())"))
+        XCTAssertTrue(releaseSource.contains("TokenPilotRootView(model: model)"))
+        XCTAssertFalse(releaseSource.contains("TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE"))
+        XCTAssertFalse(releaseSource.contains("debugAccessibilityProfile"))
+        XCTAssertFalse(releaseSource.contains("accessibilityReduceMotion"))
+        XCTAssertFalse(releaseSource.contains("accessibilityReduceTransparency"))
+        XCTAssertFalse(releaseSource.contains("colorSchemeContrast"))
+    }
+
+
+    func testOverviewHeroRankingPinsCanonicalFixtureStatesWithoutProviderParsingMathDuplication() throws {
+        let appSource = try Self.tokenMonitorAppSource()
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+        let rankBody = try XCTUnwrap(appSource.swiftFunctionBody(named: "capacityDisplayRank"))
+
+        XCTAssertTrue(appSource.contains("items.sorted { capacityDisplayRank($0) > capacityDisplayRank($1) }.first"))
+        XCTAssertTrue(rankBody.contains("case .percent: eligibilityRank = 100"))
+        XCTAssertTrue(rankBody.contains("case .balance: eligibilityRank = 70"))
+        XCTAssertTrue(rankBody.contains("case .ineligible: eligibilityRank = 20"))
+        XCTAssertTrue(rankBody.contains("case .critical: riskRank = 60"))
+        XCTAssertTrue(rankBody.contains("case .warning: riskRank = 50"))
+        XCTAssertTrue(rankBody.contains("case .normal: riskRank = 40"))
+        XCTAssertTrue(rankBody.contains("case .informational: riskRank = 30"))
+        XCTAssertTrue(rankBody.contains("case .stale: riskRank = 10"))
+        XCTAssertTrue(rankBody.contains("case .unavailable: riskRank = 0"))
+        XCTAssertFalse(rankBody.contains("ProviderSnapshot("))
+        XCTAssertFalse(rankBody.contains("usedPercent"))
+        XCTAssertFalse(rankBody.contains("remainingPercent"))
+
+        XCTAssertTrue(fixtureSource.contains("case .claudeOfficialFresh:"))
+        XCTAssertTrue(fixtureSource.contains("percentObservation(seriesID: claudeFiveHourSeries(), used: 58"))
+        XCTAssertTrue(fixtureSource.contains("authority: .providerReported, stability: .supported, comparability: .comparable"))
+        XCTAssertTrue(fixtureSource.contains("case .deepseekOfficialBalance:"))
+        XCTAssertTrue(fixtureSource.contains("moneyObservation(amount: \"3.34\", currency: \"USD\", authority: .providerReported, stability: .supported, comparability: .comparable)"))
+        XCTAssertTrue(fixtureSource.contains("balanceAlertRule(threshold: \"5.00\", currency: \"USD\")"))
+        XCTAssertTrue(fixtureSource.contains("case .codexManual:"))
+        XCTAssertTrue(fixtureSource.contains("authority: .userEntered, stability: .manual, comparability: .incomparable"))
+        XCTAssertTrue(fixtureSource.contains("case .claudeOfficialStale:"))
+        XCTAssertTrue(fixtureSource.contains("freshnessSeconds: 3_600"))
+        XCTAssertTrue(fixtureSource.contains("case .empty:"))
+        XCTAssertTrue(fixtureSource.contains("return fixture(scenario: scenario, settings: baseSettings(), dataSourceMode: .disconnected)"))
+        XCTAssertTrue(fixtureSource.contains("case .runtimeRecoveryRequired:"))
+        XCTAssertTrue(fixtureSource.contains("capacityRuntimeRecoveryRequired: true"))
+        XCTAssertTrue(fixtureSource.contains("Capacity runtime recovery required; safe defaults are active."))
+    }
+    func testRuntimeRecoveryFixtureUiHidesInternalCodesAndLocalizesRecoveryErrorCopy() throws {
+        let overviewSource = try Self.tokenAppSourceFile("Views/OverviewScreen.swift")
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+        let alertStatusStart = try XCTUnwrap(viewModelSource.range(of: "    var alertStatusText: String {"))
+        let alertStatusEnd = try XCTUnwrap(
+            viewModelSource.range(
+                of: "\n    private var currentCapacityAlertChannels",
+                range: alertStatusStart.upperBound..<viewModelSource.endIndex
+            )
+        )
+        let alertStatusSource = String(viewModelSource[alertStatusStart.lowerBound..<alertStatusEnd.lowerBound])
+        let alertDetailBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "capacityAlertRowDetail"))
+        let recoveryMessageKey = "Capacity runtime recovery required; safe defaults are active."
+
+        XCTAssertTrue(fixtureSource.contains("case .runtimeRecoveryRequired:"))
+        XCTAssertTrue(fixtureSource.contains("code: \"runtimeRecoveryRequired\""))
+        XCTAssertTrue(fixtureSource.contains("redactedMessage: \"\(recoveryMessageKey)\""))
+        XCTAssertTrue(overviewSource.contains("Text(localized(error.redactedMessage, language: language))"))
+        XCTAssertTrue(overviewSource.contains("return localized(error.redactedMessage, language: language)"))
+        XCTAssertFalse(overviewSource.contains("Text(error.redactedMessage)"))
+
+        XCTAssertTrue(alertStatusSource.contains("if summary.recoveryRequired {\n            parts.append(t(\"Recovery needed\"))"))
+        XCTAssertFalse(alertStatusSource.contains("recoveryCodes"))
+        XCTAssertFalse(alertStatusSource.contains("runtimeRecoveryRequired"))
+        XCTAssertFalse(alertDetailBody.contains("row.recoveryCode"))
+        XCTAssertFalse(alertDetailBody.contains("runtimeRecoveryRequired"))
+
+
+        XCTAssertEqual(TokenPilotLocalizer.localized(recoveryMessageKey, language: .en), recoveryMessageKey)
+        XCTAssertFalse(TokenPilotLocalizer.localized(recoveryMessageKey, language: .en).contains("runtimeRecoveryRequired"))
+
+        let recoverySummary = CapacityAlertVisibilityBuilder().make(
+            runtime: CapacityRuntimeControl(assessmentEnabled: false),
+            runtimeStatus: .recoveryRequired(writeBlocked: true, code: "runtimeRecoveryRequired"),
+            rules: [],
+            rulesStatus: .ready(source: .absentDefault, generation: nil),
+            deliveryStates: [:],
+            deliveryStatus: .ready(source: .absentDefault, generation: nil),
+            channels: CapacityAlertChannelSettings()
+        )
+        XCTAssertEqual(recoverySummary.status, .recoveryRequired)
+        XCTAssertEqual(recoverySummary.recoveryCodes, ["runtimeRecoveryRequired"])
+        XCTAssertEqual(recoverySummary.rows.first?.recoveryCode, "runtimeRecoveryRequired")
+
+        let nonEnglishCopies: [(TokenPilotLanguage, String)] = [
+            (.ko, "수용량 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."),
+            (.ja, "容量ランタイムの復旧が必要です。安全な既定値が有効です。"),
+            (.zhHans, "需要恢复容量运行时；安全默认值已启用。")
+        ]
+        for (language, expected) in nonEnglishCopies {
+            let localizedCopy = TokenPilotLocalizer.localized(recoveryMessageKey, language: language)
+            XCTAssertEqual(localizedCopy, expected)
+            XCTAssertNotEqual(localizedCopy, recoveryMessageKey)
+            XCTAssertFalse(localizedCopy.localizedCaseInsensitiveContains("safe defaults"))
+            XCTAssertFalse(localizedCopy.localizedCaseInsensitiveContains("Capacity runtime recovery required"))
+        }
+    }
+
+    func testUnsupportedCodexLegacyFixtureLocalizesNonDeliverableCopyAcrossLocales() throws {
+        let overviewSource = try Self.tokenAppSourceFile("Views/OverviewScreen.swift")
+        let viewModelSource = try String(contentsOf: try Self.projectRootURL().appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
+        let fixtureMarker = "// MARK: - DEBUG deterministic fixtures"
+        let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
+        let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
+        let messageKey = "Codex legacy capacity alerts are unsupported for delivery."
+        let expectedCopies: [(language: TokenPilotLanguage, locale: String, value: String)] = [
+            (.en, "en", messageKey),
+            (.ko, "ko", "Codex 레거시 수용량 알림은 전달을 지원하지 않습니다."),
+            (.ja, "ja", "Codex レガシー容量アラートは配信に対応していません。"),
+            (.zhHans, "zh-Hans", "Codex 旧版容量提醒不支持投递。")
+        ]
+
+        XCTAssertTrue(fixtureSource.contains("case .alertsUnsupportedCodexLegacy:"))
+        XCTAssertTrue(fixtureSource.contains("code: \"debugUnsupportedCodexLegacy\""))
+        XCTAssertTrue(fixtureSource.contains("redactedMessage: \"\(messageKey)\""))
+        XCTAssertTrue(overviewSource.contains("Text(localized(error.redactedMessage, language: language))"))
+        XCTAssertTrue(overviewSource.contains("return localized(error.redactedMessage, language: language)"))
+
+        let catalogURL = try Self.projectRootURL()
+            .appendingPathComponent("Sources/TokenApp/Resources/Localizable.xcstrings")
+        let catalogData = try Data(contentsOf: catalogURL)
+        let catalogRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let catalogStrings = try XCTUnwrap(catalogRoot["strings"] as? [String: Any])
+        let catalogEntry = try XCTUnwrap(catalogStrings[messageKey] as? [String: Any])
+        let localizations = try XCTUnwrap(catalogEntry["localizations"] as? [String: Any])
+
+        for (language, locale, expectedValue) in expectedCopies {
+            let localizedCopy = TokenPilotLocalizer.localized(messageKey, language: language)
+            XCTAssertFalse(localizedCopy.isEmpty, "Empty runtime fallback for \(locale)")
+            XCTAssertEqual(localizedCopy, expectedValue, "Wrong runtime fallback for \(locale)")
+
+            let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing catalog locale \(locale)")
+            let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing catalog string unit \(locale)")
+            let catalogValue = try XCTUnwrap(stringUnit["value"] as? String, "Missing catalog value \(locale)")
+            XCTAssertFalse(catalogValue.isEmpty, "Empty catalog value for \(locale)")
+            XCTAssertEqual(catalogValue, expectedValue, "Wrong catalog value for \(locale)")
+        }
+
+        for expected in expectedCopies where expected.language != .en {
+            let localizedCopy = TokenPilotLocalizer.localized(messageKey, language: expected.language)
+            XCTAssertNotEqual(localizedCopy, messageKey)
+            XCTAssertFalse(localizedCopy.localizedCaseInsensitiveContains("unsupported for delivery"))
+            XCTAssertFalse(localizedCopy.localizedCaseInsensitiveContains("legacy capacity alerts"))
         }
     }
 
@@ -526,18 +1205,21 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(source.contains("overviewUsage.providerShare"))
     }
 
-    func testLimitCardsPreferRemainingPercentCopy() throws {
-        let source = try Self.tokenMonitorAppSource()
+    func testActiveCapacityRowsPreferRemainingPercentCopy() throws {
+        let overviewSource = try Self.tokenAppSourceFile("Views/OverviewScreen.swift")
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
 
-        XCTAssertTrue(source.contains("remainingPercentText"))
-        XCTAssertTrue(source.contains("value: remainingPercentText(window.remainingPercent)"))
-        XCTAssertTrue(source.contains("percent: window.remainingPercent"))
-        XCTAssertTrue(source.contains("return \"\\(remainingPercent)%\""))
-        XCTAssertFalse(source.contains("return TokenPilotFormatters.remainingTime(until: resetAt)"))
-        XCTAssertTrue(source.contains("remainingPercentText(window.remainingPercent)"))
-        XCTAssertTrue(source.contains("String(format: localized(\"Remaining %d%%\""))
-        XCTAssertFalse(source.contains("Text(percentText)"))
-        XCTAssertFalse(source.contains("value: percentText(window.usedPercent)"))
+        XCTAssertTrue(overviewSource.contains("var remainingPercent: Int? { Int(presentation.data[\"remainingPercent\"] ?? \"\") }"))
+        XCTAssertTrue(overviewSource.contains("var progressPercent: Int? {\n        valueKind == .percent ? remainingPercent : nil\n    }"))
+        XCTAssertTrue(overviewSource.contains("return \"\\(remainingPercent)%\""))
+        XCTAssertTrue(overviewSource.contains("value: item.primaryValue(language: language)"))
+        XCTAssertTrue(overviewSource.contains("value: primary.primaryValue(language: language)"))
+        XCTAssertTrue(overviewSource.contains("percent: progressPercent"))
+        XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
+        XCTAssertTrue(overviewSource.contains("primary.progressAccessibilityValue(language: language)"))
+        XCTAssertTrue(historySource.contains("Text(String(format: model.t(\"Remaining %d%%\"), sample.remainingPercent))"))
+        XCTAssertTrue(historySource.contains("percent: sample.remainingPercent"))
+        XCTAssertTrue(historySource.contains("\"\\(model.t(\"Remaining\")) \\(sample.remainingPercent)%, \\(model.t(\"Used\")) \\(sample.usedPercent)%\""))
     }
 
     func testCommercialReleaseResourcesArePresentAndPackaged() throws {
@@ -611,7 +1293,6 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(readme.contains("do not claim notarization"))
         XCTAssertFalse(readme.contains("notarized and App Store-ready"))
         XCTAssertTrue(readme.contains("DeepSeek balance"))
-        XCTAssertTrue(readme.contains("DS $12.34"))
         XCTAssertTrue(readme.contains("README.ja.md"))
         XCTAssertTrue(readme.contains("README.zh-CN.md"))
     }
@@ -694,12 +1375,51 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(releaseDoc.contains("actual executable product `TokenMonitor`"))
         for scenario in scenarios {
             XCTAssertTrue(
-                releaseDoc.contains("TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=\(scenario) swift run TokenMonitor"),
-                "Release QA docs should include the executable fixture command for \(scenario)."
+                releaseDoc.contains("TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=\(scenario) TOKENPILOT_DEBUG_SCREEN=overview TOKENPILOT_DEBUG_LANGUAGE=en TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE=standard swift run TokenMonitor"),
+                "Release QA docs should include the five-env-var executable fixture command for \(scenario)."
             )
         }
 
         let requiredMarkers = [
+            "TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=<scenario> TOKENPILOT_DEBUG_SCREEN=<overview|history|settings> TOKENPILOT_DEBUG_LANGUAGE=<en|ko|ja|zh-Hans> TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE=<standard|reduceMotion|reduceTransparency|increaseContrast> swift run TokenMonitor",
+            "TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE=standard",
+            "ignored `.gjc/evidence/redesign/`",
+            "\"schema\": \"tokenpilot.redesign.qa.manifest.v1\"",
+            "\"artifactBuildSHA\"",
+            "\"generatedAt\"",
+            "\"counts\"",
+            "\"baseline\": 36",
+            "\"locale\": 60",
+            "\"accessibility\": 45",
+            "\"rows\": 141",
+            "\"uniqueScreenshots\": 126",
+            "\"productTarget\": \"TokenMonitor\"",
+            "\"scenario\"",
+            "\"screen\"",
+            "\"locale\"",
+            "\"accessibilityProfile\"",
+            "\"matrix\": \"baseline\"",
+            "\"windowDimensions\": { \"width\": 420, \"height\": 620 }",
+            "\"screenshotPath\"",
+            "\"screenshotSHA256\"",
+            "\"transcriptPath\"",
+            "\"transcriptSHA256\"",
+            "\"tester\"",
+            "\"capturedAt\"",
+            "\"status\": \"pass\"",
+            "\"blockedReason\": null",
+            "screenshot coverage >=99/100",
+            "transcript coverage >=99/100",
+            "evidence scoring >=99/100",
+            "Baseline scenario/screen matrix — 36 rows",
+            "Locale sentinel matrix — 60 rows",
+            "unique screenshot count remains 126 rather than 141",
+            "Accessibility matrix — 45 captured rows",
+            "`standard`, `reduceMotion`, `reduceTransparency`, and `increaseContrast`",
+            "app-owned optional SwiftUI environment override keys",
+            "macOS accessibility settings are never changed by automation",
+            "Automation must not mutate macOS settings",
+            "manual final spot-check remains optional and user-controlled",
             "Xcode `TokenPilot` app target alternative",
             "current-build popover screenshot",
             "popover transcript",
@@ -708,12 +1428,17 @@ final class TokenMonitorTests: XCTestCase {
             "VoiceOver order",
             "KO/EN/JA/zh-Hans overflow",
             "Reduced Motion",
+            "Reduce Transparency",
             "High Contrast",
-            "permission-blocked results must be recorded as blocked—not pass"
+            "permission-blocked results must be recorded as blocked—not pass",
+            "A blocked row never satisfies the release gate until rerun with evidence."
         ]
 
         for marker in requiredMarkers {
             XCTAssertTrue(releaseDoc.contains(marker), "Missing release QA requirement: \(marker)")
+        }
+        for forbidden in ["same four environment variables", "keyboard-voiceover", "reduced-motion", "high-contrast", "record the active macOS setting", "tokenpilot.redesign.evidence.v1", "\"currentBuild\"", "\"dimensions\": \"420x620\"", "\"launch\"", "\"screenshotSha256\"", "\"transcriptSha256\"", "\"status\": \"complete\"", "sha256-hex-or-null", "or-current", "local-debug-or-release", "\"blocker\": null"] {
+            XCTAssertFalse(releaseDoc.contains(forbidden), "Release QA docs should not contain stale manifest or system-mutation marker: \(forbidden)")
         }
     }
 
@@ -946,8 +1671,12 @@ final class TokenMonitorTests: XCTestCase {
 
     func testHistoryScreenDoesNotCreateSelectionPublisherFeedbackLoop() throws {
         let source = try Self.tokenMonitorAppSource()
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
         let sourceCollapsed = source.collapsedWhitespace
+        let historyCollapsed = historySource.collapsedWhitespace
 
+        XCTAssertTrue(source.contains("@Published var selectedHistoryPeriod: HistoryPeriod = .last7Days"))
+        XCTAssertTrue(source.contains("rebuildHistoryUsage(for: selectedHistoryPeriod)"))
         XCTAssertFalse(
             sourceCollapsed.contains(".onReceive(model.$selectedHistoryPeriod.removeDuplicates())"),
             "History should not subscribe to and write back the same selectedHistoryPeriod publisher; that feedback loop can spin during Settings → History navigation."
@@ -956,15 +1685,30 @@ final class TokenMonitorTests: XCTestCase {
             sourceCollapsed.contains(".onChange(of: model.selectedHistoryPeriod"),
             "History should not react to selectedHistoryPeriod changes by mutating the same state during view updates."
         )
-        // Period picker was removed — history screen now uses a fixed last7Days period
         XCTAssertFalse(
-            sourceCollapsed.contains("Picker(model.t(\"Period\")"),
-            "History screen should not have a period picker (removed per user request)."
+            historySource.contains("HistoryPeriodControl"),
+            "History should not define or render a period picker/control; the redesign uses the fixed selected history period."
+        )
+        XCTAssertFalse(
+            historyCollapsed.contains("Picker(model.t(\"Period\")"),
+            "History screen should not have a period picker."
+        )
+        XCTAssertFalse(
+            historySource.contains("ForEach(HistoryPeriod.allCases)"),
+            "History screen should not expose period choices."
+        )
+        XCTAssertFalse(
+            historySource.contains("model.selectHistoryPeriod("),
+            "History view should not invoke selectHistoryPeriod while using the fixed history period."
         )
 
         let selectionBody = try XCTUnwrap(
             source.swiftFunctionBody(named: "selectHistoryPeriod"),
             "Could not find function body for selectHistoryPeriod"
+        )
+        XCTAssertTrue(
+            selectionBody.contains("if selectedHistoryPeriod != period"),
+            "selectHistoryPeriod should preserve guarded state updates for non-view callers."
         )
         XCTAssertFalse(
             selectionBody.collapsedWhitespace.contains("selectedHistoryPeriod = period historyUsage"),
@@ -976,6 +1720,35 @@ final class TokenMonitorTests: XCTestCase {
         )
     }
 
+    private static func releasePreprocessedSource(from source: String) -> String {
+        var output: [String] = []
+        var debugStack: [Bool] = []
+
+        for line in source.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed == "#if DEBUG" {
+                debugStack.append(true)
+                continue
+            }
+
+            if trimmed == "#else", !debugStack.isEmpty {
+                debugStack[debugStack.count - 1] = false
+                continue
+            }
+
+            if trimmed == "#endif", !debugStack.isEmpty {
+                debugStack.removeLast()
+                continue
+            }
+
+            if !debugStack.contains(true) {
+                output.append(line)
+            }
+        }
+
+        return output.joined(separator: "\n")
+    }
     private static func projectRootURL() throws -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -995,6 +1768,15 @@ final class TokenMonitorTests: XCTestCase {
         }
         return try allFiles.sorted { $0.lastPathComponent < $1.lastPathComponent }
             .map { try String(contentsOf: $0) }.joined(separator: "\n")
+    }
+
+    private static func tokenAppSourceFile(_ relativePath: String) throws -> String {
+        let tokenAppDir = try projectRootURL()
+            .appendingPathComponent("Sources/TokenApp")
+        let sourceURL = relativePath.split(separator: "/").reduce(tokenAppDir) { url, component in
+            url.appendingPathComponent(String(component))
+        }
+        return try String(contentsOf: sourceURL)
     }
 
     private static func tokenCoreModelsSource() throws -> String {
@@ -1189,7 +1971,7 @@ final class TokenMonitorTests: XCTestCase {
         let balanceRule = try CapacityAlertRule(provider: .deepseek, seriesID: balanceSeries, authority: .providerReported, stability: .supported, enabled: true, routing: .init(), condition: try .balanceBelow(threshold: 5, currency: "USD", rearmAtOrAboveThreshold: true))
         XCTAssertEqual(CapacityAssessmentService().eligibility(for: balanceRule, assessment: percentAssessment), .ineligible)
 
-        let balanceObservation = try CapacityObservation(seriesID: balanceSeries, observedAt: now, value: try CapacityValue(money: 4, currency: "USD"), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 3_600), comparability: .comparable, parserRevision: "test", now: now)
+        let balanceObservation = try CapacityObservation(seriesID: balanceSeries, observedAt: now, value: try CapacityValue(money: Decimal(string: "3.34")!, currency: "USD"), authority: .providerReported, stability: .supported, freshnessPolicy: .init(maximumAge: 3_600), comparability: .comparable, parserRevision: "test", now: now)
         let balanceAssessment = CapacityAssessmentService().assess(balanceObservation, now: now)
         XCTAssertEqual(CapacityAssessmentService().eligibility(for: balanceRule, assessment: balanceAssessment), .balance)
 
@@ -1337,8 +2119,13 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(source.contains("· write-blocked"))
         XCTAssertFalse(source.contains("deliveryStatus.rawValue"))
         XCTAssertTrue(source.contains("Button(model.t(\"Delete API Key\"), role: .destructive)"))
-        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(snapshot.provider.displayName, language: language)) \\(localized(window.label, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
+        XCTAssertTrue(source.contains("@Environment(\\.accessibilityReduceMotion) private var systemReduceMotion"))
+        XCTAssertTrue(source.contains("@Environment(\\.tokenPilotReduceMotionOverride) private var reduceMotionOverride"))
+        XCTAssertTrue(source.contains("let stateValue = localized(isExpanded ? \"Expanded\" : \"Collapsed\", language: language)"))
+        XCTAssertTrue(source.contains(".accessibilityValue(\"\\(accessibilityValue), \\(stateValue)\")"))
+        XCTAssertTrue(source.contains(".accessibilityValue(stateValue)"))
+        XCTAssertTrue(source.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(provider.displayName, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
     }
 
     func testG004LocalizationKeysHaveRuntimeAndCatalogParity() throws {
@@ -1348,6 +2135,7 @@ final class TokenMonitorTests: XCTestCase {
             "Remaining capacity",
             "Runtime recovery required",
             "Capacity runtime recovery required",
+            "Capacity runtime recovery required; safe defaults are active.",
             "DeepSeek API Key",
             "Source unavailable",
             "Unsupported source",
@@ -1360,13 +2148,45 @@ final class TokenMonitorTests: XCTestCase {
             "No trusted capacity",
             "No trusted capacity presentation",
             "Open Provider Diagnostics",
+            "Reset",
+            "Estimated",
+            "Capacity remaining %d%%",
+            "Provider reported",
+            "Local derived",
+            "User entered",
+            "Supported",
+            "Compatibility bridge",
+            "Experimental connector",
+            "Manual entry",
+            "Fresh",
+            "Stale",
+            "Freshness unavailable",
+            "Wait for reset",
+            "Refresh provider",
+            "Review source",
+            "Review experimental connector",
+            "Enter manual value",
+            "Review balance",
+            "Live only",
+            "Local metadata only",
+            "Mock preview",
+            "Settings overview",
+            "Privacy and provider truth",
+            "Expanded",
+            "Collapsed",
             "write-blocked",
+            "LIVE",
+            "LOCAL",
+            "MANUAL",
+            "EXPERIMENTAL",
+            "BRIDGE",
+            "MOCK",
+            "STALE",
             "capacity.alert.channel.preference.format",
             "capacity.alert.channel.state.format",
             "capacity.alert.delivery.failed.count",
             "capacity.alert.delivery.pending.count",
             "capacity.alert.pill.status.format",
-            "capacity.alert.recovery.codes.format",
             "capacity.alert.rule.count.status",
             "capacity.alert.segment.format",
             "capacity.alert.segment.separator",
@@ -1415,7 +2235,8 @@ final class TokenMonitorTests: XCTestCase {
             "Change daily challenge target",
             "Daily challenge progress",
             "7-day usage",
-            "Provider share"
+            "Provider share",
+            "Settings disclosure console"
         ]
         for key in retiredActiveKeys {
             XCTAssertNil(strings[key], "Retired UI key should not remain in the catalog: \(key)")

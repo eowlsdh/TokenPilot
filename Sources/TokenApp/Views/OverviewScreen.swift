@@ -5,34 +5,12 @@ struct TokenPilotRootView: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: TokenPilotDesign.Spacing.section) {
             header
-            Picker(model.t("Screen"), selection: $model.selectedScreen) {
-                ForEach(TokenPilotViewModel.Screen.allCases) { screen in
-                    Text(model.t(screen.rawValue)).tag(screen)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
+            navigation
 
             if let message = model.bannerMessage {
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                    Text(message)
-                        .lineLimit(2)
-                    Spacer()
-                    Button(model.t("Dismiss")) { model.bannerMessage = nil }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                }
-                .font(.caption)
-                .padding(9)
-                .background(TokenPilotDesign.cardMuted)
-                .overlay(
-                    RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous)
-                        .stroke(TokenPilotDesign.border, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous))
+                banner(message)
             }
 
             Group {
@@ -45,57 +23,151 @@ struct TokenPilotRootView: View {
                     SettingsScreen(model: model)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .environment(\.tokenPilotLanguage, model.settings.localization.language)
         .environment(\.locale, Locale(identifier: model.settings.localization.language.localeIdentifier ?? Locale.current.identifier))
-        .padding(12)
+        .padding(TokenPilotDesign.Spacing.xl)
         .frame(width: 420, height: 620)
-        .foregroundStyle(TokenPilotDesign.textPrimary)
+        .foregroundStyle(TokenPilotDesign.text(.primary))
         .background(
             VisualEffectBackground(material: .sidebar, blendingMode: .behindWindow)
+                .overlay(TokenPilotDesign.glassTint)
         )
     }
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: TokenPilotDesign.Spacing.md) {
             TokenPilotBrandMark()
+                .scaleEffect(0.88)
+                .frame(width: 22, height: 22)
 
-            Text(model.t("TokenPilot"))
-                .font(.system(size: 15, weight: .semibold, design: .rounded))
-                .foregroundStyle(TokenPilotDesign.textPrimary)
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                Text(model.t("TokenPilot"))
+                    .font(TokenPilotDesign.Typography.cardTitle)
+                    .foregroundStyle(TokenPilotDesign.text(.primary))
+                    .lineLimit(1)
 
-            StatusBadge(
-                label: model.t(model.dataSourceMode.displayLabel),
-                color: TokenPilotDesign.modeColor(model.dataSourceMode)
-            )
-
-            Spacer(minLength: 0)
-
-            Button {
-                Task { await model.refresh() }
-            } label: {
-                Group {
-                    if model.isRefreshing {
-                        ProgressView()
-                            .controlSize(.mini)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 11, weight: .semibold))
-                    }
-                }
-                .frame(width: 24, height: 24)
-                .background(TokenPilotDesign.cardMuted.opacity(0.7))
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text(model.menuBarTitle)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                    .help(model.menuBarAccessibilityLabel)
+                    .accessibilityLabel(model.menuBarAccessibilityLabel)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(TokenPilotDesign.textSecondary)
-            .disabled(model.isRefreshing)
-            .keyboardShortcut("r", modifiers: [.command])
-            .accessibilityLabel(model.t("Refresh"))
-            .accessibilityValue(model.isRefreshing ? model.t("Refreshing") : model.t("Ready"))
-            .help(model.t("Refresh"))
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+
+            headerModeIndicator
+
+            refreshButton
         }
-        .frame(height: 26)
+        .frame(height: 30)
+    }
+
+    private var headerModeIndicator: some View {
+        HStack(spacing: TokenPilotDesign.Spacing.xs) {
+            Circle()
+                .fill(TokenPilotDesign.status(model.dataSourceMode.headerStatusRole))
+                .frame(width: 5, height: 5)
+                .accessibilityHidden(true)
+
+            Text(model.t(model.dataSourceMode.displayLabel))
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.text(.secondary))
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(model.t(model.dataSourceMode.displayLabel))
+        .help(model.t(model.dataSourceMode.displayLabel))
+    }
+
+    private var navigation: some View {
+        Picker(model.t("Screen"), selection: $model.selectedScreen) {
+            ForEach(TokenPilotViewModel.Screen.allCases) { screen in
+                Text(model.t(screen.rawValue)).tag(screen)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(height: 24)
+        .accessibilityLabel(model.t("Screen"))
+        .focusable()
+    }
+
+    private var refreshButton: some View {
+        Button {
+            Task { await model.refresh() }
+        } label: {
+            Group {
+                if model.isRefreshing {
+                    ProgressView()
+                        .controlSize(.mini)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .frame(width: 28, height: 28)
+            .background {
+                LiquidGlassBackground(
+                    cornerRadius: TokenPilotDesign.Radius.sm,
+                    intensity: 0.70,
+                    surface: .chip
+                )
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(TokenPilotDesign.text(.secondary))
+        .disabled(model.isRefreshing)
+        .keyboardShortcut("r", modifiers: [.command])
+        .accessibilityLabel(model.t("Refresh"))
+        .accessibilityValue(model.isRefreshing ? model.t("Refreshing") : model.t("Ready"))
+        .help(model.t("Refresh"))
+        .focusable()
+    }
+
+    private func banner(_ message: String) -> some View {
+        GlassCard(
+            padding: TokenPilotDesign.Spacing.lg,
+            surface: .cardMuted,
+            cornerRadius: TokenPilotDesign.Radius.md,
+            intensity: 0.70
+        ) {
+            HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .accessibilityHidden(true)
+
+                Text(message)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+
+                Button(model.t("Dismiss")) { model.bannerMessage = nil }
+                    .buttonStyle(.plain)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+            }
+        }
+    }
+}
+
+private extension TokenPilotViewModel.DataSourceMode {
+    var headerStatusRole: TokenPilotDesign.StatusRole {
+        switch self {
+        case .live:
+            return .trust
+        case .experimental, .compatibilityBridge:
+            return .warning
+        case .local, .manual, .stale, .mock, .disconnected:
+            return .neutral
+        }
     }
 }
 
@@ -104,21 +176,11 @@ struct OverviewScreen: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 UsageSummaryCard(model: model)
-                if model.overviewSnapshots.isEmpty && model.capacityPresentations.isEmpty && model.capacityRefreshErrors.isEmpty && !model.capacityRuntimeRecoveryRequired {
-                    VStack(alignment: .leading, spacing: 8) {
-                        EmptyStateCard(
-                            icon: "tray",
-                            title: model.t("No data"),
-                            message: model.t("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity.")
-                        )
-                        Button(model.t("Settings")) {
-                            model.selectedScreen = .settings
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TokenPilotDesign.trust)
-                    }
+
+                if hasNoOverviewData {
+                    emptyOverviewState
                 } else {
                     ProviderOverviewList(
                         snapshots: model.overviewSnapshots,
@@ -131,7 +193,29 @@ struct OverviewScreen: View {
 
                 AlertsStatusRow(text: model.alertStatusText)
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, TokenPilotDesign.Spacing.section)
+        }
+    }
+
+    private var hasNoOverviewData: Bool {
+        model.overviewSnapshots.isEmpty &&
+            model.capacityPresentations.isEmpty &&
+            model.capacityRefreshErrors.isEmpty &&
+            !model.capacityRuntimeRecoveryRequired
+    }
+
+    private var emptyOverviewState: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+            EmptyStateCard(
+                icon: "tray",
+                title: model.t("No data"),
+                message: model.t("Run Auto-detect or Provider Diagnostics to recover source health.")
+            )
+            Button(model.t("Open Settings")) {
+                model.selectedScreen = .settings
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(TokenPilotDesign.status(.goal))
         }
     }
 }
@@ -157,6 +241,28 @@ struct CapacityDisplayItem: Identifiable {
     var progressColor: Color {
         TokenPilotDesign.quotaRiskColor(assessment.risk, eligibility: assessment.alertEligibility)
     }
+    var statusColor: Color {
+        switch assessment.risk {
+        case .critical:
+            return TokenPilotDesign.status(.danger)
+        case .warning:
+            return TokenPilotDesign.status(.warning)
+        case .normal:
+            return assessment.alertEligibility == .percent ? TokenPilotDesign.status(.calm) : TokenPilotDesign.text(.secondary)
+        case .informational:
+            return TokenPilotDesign.text(.secondary)
+        case .stale:
+            return TokenPilotDesign.status(.warning)
+        case .unavailable:
+            return TokenPilotDesign.text(.tertiary)
+        }
+    }
+
+    var valueColor: Color {
+        valueKind == .percent ? progressColor : TokenPilotDesign.text(.primary)
+    }
+
+
 
     func title(language: TokenPilotLanguage) -> String {
         "\(localized(provider.displayName, language: language)) · \(seriesLabel(language: language))"
@@ -255,9 +361,6 @@ struct CapacityDisplayItem: Identifiable {
         }
     }
 
-    func sourceTruthLabel(language: TokenPilotLanguage) -> String {
-        "\(authorityLabel(language: language)) · \(stabilityLabel(language: language))"
-    }
 
     func authorityLabel(language: TokenPilotLanguage) -> String {
         switch presentation.data["authority"] {
@@ -291,21 +394,37 @@ struct CapacityDisplayItem: Identifiable {
         }
     }
 
+    func guidanceLabel(language: TokenPilotLanguage) -> String {
+        "\(localized("Next action", language: language)): \(actionLabel(language: language))"
+    }
+
+
     func resetText(language: TokenPilotLanguage) -> String {
         guard let resetAt else { return localized("No reset", language: language) }
-        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt))"
+        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language))"
     }
 
     func observedText(language: TokenPilotLanguage) -> String {
-        "\(localized("Last updated", language: language)) \(TokenPilotFormatters.clock(assessment.observation.observedAt))"
+        "\(localized("Last updated", language: language)) \(TokenPilotFormatters.clock(assessment.observation.observedAt, language: language))"
     }
 
-    func detailText(language: TokenPilotLanguage) -> String {
+    func truthSummary(language: TokenPilotLanguage) -> String {
         [
-            resetText(language: language),
-            sourceTruthLabel(language: language),
+            authorityLabel(language: language),
+            stabilityLabel(language: language),
             freshnessLabel(language: language)
         ].joined(separator: " · ")
+    }
+
+    func metadataSummary(language: TokenPilotLanguage) -> String {
+        [
+            resetText(language: language),
+            observedText(language: language)
+        ].joined(separator: " · ")
+    }
+
+    var showsRiskStatusBadge: Bool {
+        assessment.alertEligibility == .percent
     }
 
     func progressAccessibilityValue(language: TokenPilotLanguage) -> String {
@@ -374,15 +493,11 @@ struct UsageSummaryCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
-            if let primaryItem {
-                summaryContent(for: primaryItem)
-            } else {
-                unavailableContent
-            }
+        if let primaryItem {
+            primaryContent(for: primaryItem)
+        } else {
+            unavailableContent
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilityLabel)
     }
 
     private var items: [CapacityDisplayItem] {
@@ -396,143 +511,128 @@ struct UsageSummaryCard: View {
         items.sorted { capacityDisplayRank($0) > capacityDisplayRank($1) }.first
     }
 
-    private var accessibilityLabel: String {
-        guard let primaryItem else {
-            return "\(localized("Capacity unavailable", language: language)). \(unavailableDetail)"
-        }
-        return [
-            primaryItem.title(language: language),
-            primaryItem.primaryValue(language: language),
-            primaryItem.sourceTruthLabel(language: language),
-            primaryItem.freshnessLabel(language: language),
-            primaryItem.resetText(language: language),
-            primaryItem.actionLabel(language: language)
-        ].joined(separator: ", ")
-    }
+    private func primaryContent(for item: CapacityDisplayItem) -> some View {
+        GlassCard {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                capacityHeader(
+                    value: item.primaryValue(language: language),
+                    detail: item.title(language: language),
+                    statusLabel: item.showsRiskStatusBadge ? item.statusLabel(language: language) : nil,
+                    statusColor: item.statusColor
+                )
 
-    @ViewBuilder
-    private func summaryContent(for item: CapacityDisplayItem) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Label(localized("Current capacity evidence", language: language), systemImage: "checkmark.seal")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-
-                    Text(item.title(language: language))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.78)
-
-                    Text(item.primaryValue(language: language))
-                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.68)
-
-                    Text(item.observedText(language: language))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
+                if let progressPercent = item.progressPercent {
+                    ProgressLine(
+                        percent: progressPercent,
+                        color: item.progressColor,
+                        accessibilityLabel: localized("Remaining capacity", language: language),
+                        accessibilityValue: item.progressAccessibilityValue(language: language)
+                    )
                 }
 
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+                    compactSummaryLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
+                    compactSummaryLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
+                }
 
-                VStack(alignment: .trailing, spacing: 5) {
-                    StatusBadge(label: item.statusLabel(language: language), color: item.progressColor)
-                    Text(item.resetText(language: language))
-                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                        .monospacedDigit()
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+                metadataLine(item.metadataSummary(language: language))
+
+                if let error = model.capacityRefreshErrors.first {
+                    CapacityErrorInline(error: error)
                 }
             }
-
-            Text(item.sourceTruthLabel(language: language))
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.78)
-
-            if let progressPercent = item.progressPercent {
-                ProgressLine(
-                    percent: progressPercent,
-                    color: item.progressColor,
-                    accessibilityLabel: localized("Remaining capacity", language: language),
-                    accessibilityValue: item.progressAccessibilityValue(language: language)
-                )
-            }
-
-            HStack(spacing: 6) {
-                SemanticChip(
-                    label: item.freshnessLabel(language: language),
-                    systemImage: item.assessment.freshness == .fresh ? "checkmark.seal" : "clock",
-                    color: TokenPilotDesign.freshnessColor(item.assessment.freshness)
-                )
-                SemanticChip(
-                    label: item.provenanceLabel(language: language),
-                    systemImage: provenanceIcon(for: item),
-                    color: TokenPilotDesign.trust
-                )
-                SemanticChip(
-                    label: item.actionLabel(language: language),
-                    systemImage: "arrow.forward.circle",
-                    color: TokenPilotDesign.textSecondary
-                )
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                summaryMetric(label: localized("Freshness", language: language), value: item.freshnessLabel(language: language))
-                summaryMetric(label: localized("Reset", language: language), value: item.resetAt.map { TokenPilotFormatters.clock($0) } ?? "—")
-                summaryMetric(label: localized("Action", language: language), value: item.actionLabel(language: language))
-            }
-
-            if let error = model.capacityRefreshErrors.first {
-                CapacityErrorInline(error: error)
-            }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityLabel(for: item))
     }
 
     private var unavailableContent: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(localized("Capacity unavailable", language: language))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-                    Text("—")
-                        .font(.system(size: 34, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                }
-                Spacer(minLength: 0)
-                SemanticChip(
-                    label: unavailableStatus,
-                    systemImage: "exclamationmark.circle",
-                    color: TokenPilotDesign.textSecondary
+        GlassCard {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                capacityHeader(
+                    value: "—",
+                    detail: localized("Capacity unavailable", language: language),
+                    statusLabel: unavailableStatus,
+                    statusColor: unavailableStatusColor
                 )
-            }
 
-            Text(unavailableDetail)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(2)
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+                    compactSummaryLine(unavailableDetail, color: TokenPilotDesign.text(.secondary))
+                    compactSummaryLine(unavailableGuidance, color: TokenPilotDesign.text(.secondary))
+                }
 
-            HStack(spacing: 6) {
-                SemanticChip(label: localized("Unavailable", language: language), systemImage: "slash.circle", color: TokenPilotDesign.textSecondary)
-                SemanticChip(label: localized("Open Provider Diagnostics", language: language), systemImage: "wrench.and.screwdriver", color: TokenPilotDesign.textSecondary)
-            }
+                metadataLine(unavailableMetadataSummary)
 
-            HStack(alignment: .firstTextBaseline, spacing: 9) {
-                summaryMetric(label: localized("Freshness", language: language), value: localized("Unavailable", language: language))
-                summaryMetric(label: localized("Reset", language: language), value: "—")
-                summaryMetric(label: localized("Action", language: language), value: localized("Open Settings", language: language))
+                if let error = model.capacityRefreshErrors.first {
+                    CapacityErrorInline(error: error)
+                }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(localized("Capacity unavailable", language: language)), \(unavailableStatus), \(unavailableDetail), \(unavailableGuidance)")
+    }
+
+    private func capacityHeader(value: String, detail: String, statusLabel: String?, statusColor: Color) -> some View {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+                Text(value)
+                    .font(TokenPilotDesign.Typography.metricLarge)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.text(.primary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+
+                Text(detail)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .lineLimit(2)
+            }
+
+            Spacer(minLength: 0)
+
+            if let statusLabel, !statusLabel.isEmpty {
+                StatusBadge(label: statusLabel, color: statusColor)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func compactSummaryLine(_ text: String, color: Color) -> some View {
+        if !text.isEmpty {
+            Text(text)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+    }
+
+    private func metadataLine(_ text: String) -> some View {
+        Text(text)
+            .font(TokenPilotDesign.Typography.micro)
+            .foregroundStyle(TokenPilotDesign.text(.tertiary))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+    }
+
+    private var unavailableMetadataSummary: String {
+        [
+            localized("No reset", language: language),
+            "\(localized("Last updated", language: language)) —"
+        ].joined(separator: " · ")
+    }
+
+    private func accessibilityLabel(for item: CapacityDisplayItem) -> String {
+        [
+            item.title(language: language),
+            item.primaryValue(language: language),
+            "\(localized("Provenance", language: language)): \(item.authorityLabel(language: language))",
+            "\(localized("Status", language: language)): \(item.stabilityLabel(language: language))",
+            "\(localized("Freshness", language: language)): \(item.freshnessLabel(language: language))",
+            item.resetText(language: language),
+            item.observedText(language: language),
+            item.guidanceLabel(language: language)
+        ].joined(separator: ", ")
     }
 
     private var unavailableStatus: String {
@@ -545,50 +645,26 @@ struct UsageSummaryCard: View {
         return localized("No trusted capacity", language: language)
     }
 
+    private var unavailableStatusColor: Color {
+        if model.capacityRuntimeRecoveryRequired || !model.capacityRefreshErrors.isEmpty {
+            return TokenPilotDesign.status(.warning)
+        }
+        return TokenPilotDesign.text(.secondary)
+    }
+
+
     private var unavailableDetail: String {
         if model.capacityRuntimeRecoveryRequired {
             return localized("Capacity runtime recovery required", language: language)
         }
         if let error = model.capacityRefreshErrors.first {
-            return error.redactedMessage
+            return localized(error.redactedMessage, language: language)
         }
         return localized("Connect providers in Settings", language: language)
     }
 
-    private func provenanceIcon(for item: CapacityDisplayItem) -> String {
-        switch item.assessment.eligibilityReason {
-        case .manualSource:
-            return "person.crop.circle"
-        case .unsupportedSource:
-            return item.assessment.observation.stability == .experimentalTransport ? "flask" : "link"
-        case .eligible:
-            return "checkmark.shield"
-        case .staleEvidence:
-            return "clock.arrow.circlepath"
-        case .activityOnly:
-            return "waveform.path.ecg"
-        case .invalidEvidence:
-            return "slash.circle"
-        case .pendingBalanceBinding:
-            return "creditcard"
-        }
-    }
-
-    private func summaryMetric(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(value)
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                .monospacedDigit()
-                .foregroundStyle(TokenPilotDesign.textPrimary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-            Text(label)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private var unavailableGuidance: String {
+        "\(localized("Next action", language: language)): \(localized("Open Provider Diagnostics", language: language))"
     }
 }
 
@@ -602,10 +678,13 @@ struct ProviderOverviewList: View {
 
     var body: some View {
         GlassCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Label(localized("Providers", language: language), systemImage: "list.bullet.rectangle")
-                    .font(.system(size: 13, weight: .semibold, design: .rounded))
-                    .foregroundStyle(TokenPilotDesign.textPrimary)
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                TokenPilotSectionHeader(
+                    title: localized("Providers", language: language),
+                    systemImage: "list.bullet.rectangle"
+                ) {
+                    StatusBadge(label: "\(providerOrder.count)", color: TokenPilotDesign.text(.secondary))
+                }
 
                 if providerOrder.isEmpty {
                     EmptyInlineState(text: localized("No trusted capacity", language: language))
@@ -614,15 +693,17 @@ struct ProviderOverviewList: View {
                         ForEach(Array(providerOrder.enumerated()), id: \.element) { index, provider in
                             providerRow(provider)
                             if index < providerOrder.count - 1 {
-                                Divider()
-                                    .overlay(TokenPilotDesign.border.opacity(0.72))
-                                    .padding(.vertical, 8)
+                                TokenPilotSeparator()
+                                    .padding(.vertical, TokenPilotDesign.Spacing.lg)
                             }
                         }
                     }
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(localized("Providers", language: language))
+        .accessibilityValue(providerOrder.map { localized($0.displayName, language: language) }.joined(separator: ", "))
     }
 
     private var items: [CapacityDisplayItem] {
@@ -683,48 +764,18 @@ struct ProviderCapacityRow: View {
     var body: some View {
         let primary = items[0]
 
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 9) {
-                ProviderSignatureMark(provider: provider)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localized(provider.displayName, language: language))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                        .lineLimit(1)
-                    Text(primary.detailText(language: language))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+            CompactProviderStatusRow(
+                provider: provider,
+                title: localized(provider.displayName, language: language),
+                subtitle: primary.seriesLabel(language: language),
+                value: primary.primaryValue(language: language),
+                valueColor: primary.valueColor,
+                providerMarkSize: 26
+            ) {
+                if primary.showsRiskStatusBadge {
+                    StatusBadge(label: primary.statusLabel(language: language), color: primary.statusColor)
                 }
-
-                Spacer(minLength: 0)
-
-                Text(primary.primaryValue(language: language))
-                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(primary.progressColor)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-            }
-
-            HStack(spacing: 5) {
-                SemanticChip(
-                    label: primary.freshnessLabel(language: language),
-                    systemImage: primary.assessment.freshness == .fresh ? "checkmark.seal" : "clock",
-                    color: TokenPilotDesign.freshnessColor(primary.assessment.freshness)
-                )
-                SemanticChip(
-                    label: primary.provenanceLabel(language: language),
-                    systemImage: provenanceIcon(for: primary),
-                    color: TokenPilotDesign.trust
-                )
-                SemanticChip(
-                    label: primary.actionLabel(language: language),
-                    systemImage: "arrow.forward.circle",
-                    color: TokenPilotDesign.textSecondary
-                )
             }
 
             if let progressPercent = primary.progressPercent {
@@ -736,8 +787,10 @@ struct ProviderCapacityRow: View {
                 )
             }
 
+            providerEvidenceSummary(for: primary)
+
             ForEach(Array(items.dropFirst())) { item in
-                CapacitySignalLine(item: item)
+                CapacitySignalLine(item: item, referenceItem: primary)
             }
 
             if let error = errors.first {
@@ -748,39 +801,54 @@ struct ProviderCapacityRow: View {
         .accessibilityLabel(accessibilityLabel(primary: primary))
     }
 
+    private func providerEvidenceSummary(for item: CapacityDisplayItem) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            compactProviderLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
+            compactProviderLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
+            providerMetadataLine(item.metadataSummary(language: language))
+        }
+    }
+
+    @ViewBuilder
+    private func compactProviderLine(_ text: String, color: Color) -> some View {
+        if !text.isEmpty {
+            Text(text)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
+        }
+    }
+
+    private func providerMetadataLine(_ text: String) -> some View {
+        Text(text)
+            .font(TokenPilotDesign.Typography.micro)
+            .foregroundStyle(TokenPilotDesign.text(.tertiary))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+    }
+
     private func accessibilityLabel(primary: CapacityDisplayItem) -> String {
         [
             localized(provider.displayName, language: language),
+            primary.seriesLabel(language: language),
             primary.primaryValue(language: language),
-            primary.freshnessLabel(language: language),
-            primary.provenanceLabel(language: language),
-            primary.actionLabel(language: language)
+            primary.truthSummary(language: language),
+            primary.guidanceLabel(language: language),
+            primary.metadataSummary(language: language)
         ].joined(separator: ", ")
-    }
-
-    private func provenanceIcon(for item: CapacityDisplayItem) -> String {
-        switch item.assessment.eligibilityReason {
-        case .manualSource:
-            return "person.crop.circle"
-        case .unsupportedSource:
-            return item.assessment.observation.stability == .experimentalTransport ? "flask" : "link"
-        case .eligible:
-            return "checkmark.shield"
-        case .staleEvidence:
-            return "clock.arrow.circlepath"
-        case .activityOnly:
-            return "waveform.path.ecg"
-        case .invalidEvidence:
-            return "slash.circle"
-        case .pendingBalanceBinding:
-            return "creditcard"
-        }
     }
 }
 
 struct CapacitySignalLine: View {
     @Environment(\.tokenPilotLanguage) private var language
     let item: CapacityDisplayItem
+    let referenceItem: CapacityDisplayItem?
+
+    init(item: CapacityDisplayItem, referenceItem: CapacityDisplayItem? = nil) {
+        self.item = item
+        self.referenceItem = referenceItem
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -794,23 +862,25 @@ struct CapacitySignalLine: View {
                 Text(item.primaryValue(language: language))
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .monospacedDigit()
-                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                    .foregroundStyle(item.valueColor)
                     .lineLimit(1)
 
                 Spacer(minLength: 6)
-
-                Text(item.actionLabel(language: language))
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
             }
 
-            Text(item.detailText(language: language))
-                .font(.system(size: 9, weight: .medium))
+            Text(item.metadataSummary(language: language))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundStyle(TokenPilotDesign.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
+
+            if shouldShowEvidenceSummary {
+                Text(evidenceSummary)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+            }
 
             if let progressPercent = item.progressPercent {
                 ProgressLine(
@@ -822,6 +892,19 @@ struct CapacitySignalLine: View {
             }
         }
     }
+
+    private var shouldShowEvidenceSummary: Bool {
+        guard let referenceItem else { return true }
+        return item.truthSummary(language: language) != referenceItem.truthSummary(language: language) ||
+            item.guidanceLabel(language: language) != referenceItem.guidanceLabel(language: language)
+    }
+
+    private var evidenceSummary: String {
+        [
+            item.truthSummary(language: language),
+            item.guidanceLabel(language: language)
+        ].joined(separator: " · ")
+    }
 }
 
 struct ProviderCapacityUnavailableRow: View {
@@ -832,42 +915,32 @@ struct ProviderCapacityUnavailableRow: View {
     let runtimeRecoveryRequired: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 9) {
-                ProviderSignatureMark(provider: provider)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(localized(provider.displayName, language: language))
-                        .font(.system(size: 13, weight: .semibold, design: .rounded))
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                        .lineLimit(1)
-                    Text(detailText)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.72)
-                }
-
-                Spacer(minLength: 0)
-
-                Text(localized("Unavailable", language: language))
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+            CompactProviderStatusRow(
+                provider: provider,
+                title: localized(provider.displayName, language: language),
+                subtitle: detailText,
+                value: localized("Unavailable", language: language),
+                valueColor: TokenPilotDesign.text(.secondary),
+                providerMarkSize: 26
+            ) {
+                StatusBadge(label: statusLabel, color: statusColor)
             }
 
-            HStack(spacing: 5) {
-                SemanticChip(label: statusLabel, systemImage: statusIcon, color: TokenPilotDesign.textSecondary)
-                SemanticChip(label: actionLabel, systemImage: "arrow.forward.circle", color: TokenPilotDesign.textSecondary)
-            }
+            Text(guidanceText)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.text(.secondary))
+                .lineLimit(1)
+                .minimumScaleFactor(0.74)
 
             if let error = errors.first {
                 CapacityErrorInline(error: error)
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(localized(provider.displayName, language: language)), \(statusLabel), \(actionLabel)")
+        .accessibilityLabel("\(localized(provider.displayName, language: language)), \(statusLabel), \(detailText), \(guidanceText)")
     }
+
 
     private var statusLabel: String {
         if runtimeRecoveryRequired {
@@ -888,12 +961,16 @@ struct ProviderCapacityUnavailableRow: View {
         return localized("No trusted capacity", language: language)
     }
 
-    private var statusIcon: String {
-        if snapshot?.dataSource == .mock { return "eye" }
-        if snapshot?.dataSource == .manual || snapshot?.confidence == .manual { return "person.crop.circle" }
-        if snapshot?.isStale == true { return "clock" }
-        return "slash.circle"
+    private var statusColor: Color {
+        if runtimeRecoveryRequired || !errors.isEmpty {
+            return TokenPilotDesign.status(.warning)
+        }
+        if snapshot?.isStale == true {
+            return TokenPilotDesign.status(.warning)
+        }
+        return TokenPilotDesign.text(.secondary)
     }
+
 
     private var actionLabel: String {
         if runtimeRecoveryRequired {
@@ -905,12 +982,16 @@ struct ProviderCapacityUnavailableRow: View {
         return localized("Open Provider Diagnostics", language: language)
     }
 
+    private var guidanceText: String {
+        "\(localized("Next action", language: language)): \(actionLabel)"
+    }
+
     private var detailText: String {
         if runtimeRecoveryRequired {
             return localized("Capacity runtime recovery required", language: language)
         }
         if let error = errors.first {
-            return error.redactedMessage
+            return localized(error.redactedMessage, language: language)
         }
         if snapshot?.dataSource == .mock {
             return localized("Sample data is not live capacity", language: language)
@@ -931,7 +1012,7 @@ struct CapacityErrorInline: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
-            Text(error.redactedMessage)
+            Text(localized(error.redactedMessage, language: language))
                 .font(.system(size: 9, weight: .medium))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(2)
@@ -966,24 +1047,29 @@ struct AlertsStatusRow: View {
     let text: String
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: "bell.badge")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-            Text(text)
-                .font(.system(size: 10, design: .monospaced).weight(.medium))
-                .foregroundStyle(TokenPilotDesign.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Spacer(minLength: 0)
+        GlassCard(
+            padding: TokenPilotDesign.Spacing.md,
+            surface: .cardMuted,
+            cornerRadius: TokenPilotDesign.Radius.md,
+            intensity: 0.55
+        ) {
+            HStack(spacing: TokenPilotDesign.Spacing.md) {
+                Image(systemName: "bell.badge")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .accessibilityHidden(true)
+
+                Text(text)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+
+                Spacer(minLength: 0)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Color.white.opacity(0.03))
-        .overlay(
-            RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous)
-                .stroke(TokenPilotDesign.border.opacity(0.6), lineWidth: 1)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.cardRadius, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(text)
     }
 }

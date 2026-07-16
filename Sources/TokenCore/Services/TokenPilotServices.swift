@@ -781,7 +781,7 @@ public final class NotificationRuleService: @unchecked Sendable {
 
     private func makeEvent(provider: Provider, window: LimitWindowKind, threshold: AlertThreshold, usedPercent: Int?, resetAt: Date?, cycleID: String, language: TokenPilotLanguage) -> AlertEvent {
         let title = titleFor(threshold: threshold, language: language)
-        let resetText = resetAt.map { TokenPilotFormatters.remainingTime(until: $0) } ?? "—"
+        let resetText = resetAt.map { TokenPilotFormatters.remainingTime(until: $0, language: language) } ?? "—"
         let providerWindowText = "\(TokenPilotLocalizer.localized(provider.displayName, language: language)) · \(TokenPilotLocalizer.localized(window.label, language: language))"
         let body: String
         switch threshold {
@@ -1106,12 +1106,27 @@ public enum TokenPilotFormatters {
         String(format: "$%.4f", NSDecimalNumber(decimal: value).doubleValue)
     }
 
-    public static func remainingTime(until date: Date) -> String {
-        let seconds = max(0, Int(date.timeIntervalSince(Date())))
+    public static func remainingTime(
+        until date: Date,
+        language: TokenPilotLanguage = .en,
+        now: Date = Date()
+    ) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
-        if hours > 0 { return "\(hours)h \(minutes)m" }
-        return "\(minutes)m"
+        let units: (hour: String, minute: String)
+        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
+        case .system, .en:
+            units = ("h", "m")
+        case .ko:
+            units = ("시간", "분")
+        case .ja:
+            units = ("時間", "分")
+        case .zhHans:
+            units = ("小时", "分钟")
+        }
+        if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute)" }
+        return "\(minutes)\(units.minute)"
     }
 
     public static func compactRemainingTime(until date: Date, now: Date = Date()) -> String {
@@ -1124,16 +1139,41 @@ public enum TokenPilotFormatters {
         return "\(minutes)m"
     }
 
-    private static let clockFormatter = OSAllocatedUnfairLock(initialState: {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .none
-        formatter.timeStyle = .short
-        return formatter
-    }())
+    private static let clockFormatters = OSAllocatedUnfairLock(initialState: [String: DateFormatter]())
+
+    public static func clock(_ date: Date?, language: TokenPilotLanguage) -> String {
+        guard let date else { return "—" }
+        let localeIdentifier = clockLocaleIdentifier(for: language)
+
+        return clockFormatters.withLock { formatters in
+            if let formatter = formatters[localeIdentifier] {
+                return formatter.string(from: date)
+            }
+
+            let formatter = DateFormatter()
+            formatter.dateStyle = .none
+            formatter.timeStyle = .short
+            formatter.locale = Locale(identifier: localeIdentifier)
+            formatters[localeIdentifier] = formatter
+            return formatter.string(from: date)
+        }
+    }
 
     public static func clock(_ date: Date?) -> String {
-        guard let date else { return "—" }
-        return clockFormatter.withLock { $0.string(from: date) }
+        clock(date, language: .system)
+    }
+
+    private static func clockLocaleIdentifier(for language: TokenPilotLanguage) -> String {
+        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
+        case .system, .en:
+            return "en_US"
+        case .ko:
+            return "ko_KR"
+        case .ja:
+            return "ja_JP"
+        case .zhHans:
+            return "zh_Hans_CN"
+        }
     }
 }
 

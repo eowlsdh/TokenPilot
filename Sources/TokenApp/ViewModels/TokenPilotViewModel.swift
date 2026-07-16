@@ -8,6 +8,10 @@ final class TokenPilotViewModel: ObservableObject {
     enum DataSourceMode: String, CaseIterable {
         case live = "LIVE"
         case stale = "STALE"
+        case local = "LOCAL"
+        case manual = "MANUAL"
+        case experimental = "EXPERIMENTAL"
+        case compatibilityBridge = "BRIDGE"
         case mock = "MOCK"
         case disconnected = "--"
 
@@ -175,7 +179,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
     private func blockDebugFixtureExternalAction() -> Bool {
         guard debugFixtureMode else { return false }
-        bannerMessage = "DEBUG fixture mode disables external provider, file, keychain, and notification actions."
+        bannerMessage = nil
         return true
     }
 #endif
@@ -260,7 +264,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var nearestResetText: String {
-        nearestReset.map { TokenPilotFormatters.remainingTime(until: $0) } ?? localized("—", language: settings.localization.language)
+        nearestReset.map { TokenPilotFormatters.remainingTime(until: $0, language: settings.localization.language) } ?? localized("—", language: settings.localization.language)
     }
 
 
@@ -302,8 +306,7 @@ final class TokenPilotViewModel: ObservableObject {
         var parts = [capacityAlertChannelPreferenceSummary()]
 
         if summary.recoveryRequired {
-            let codes = summary.recoveryCodes.joined(separator: "/")
-            parts.append(codes.isEmpty ? t("Recovery needed") : String(format: t("capacity.alert.recovery.codes.format"), t("Recovery needed"), codes))
+            parts.append(t("Recovery needed"))
         } else {
             switch summary.status {
             case .deliverable:
@@ -401,8 +404,7 @@ final class TokenPilotViewModel: ObservableObject {
             }
             return t("Unsupported source")
         case .recoveryRequired:
-            let code = row.recoveryCode.map { " \($0)" } ?? ""
-            return "\(t("Capacity alerts use safe defaults until local runtime state is readable again."))\(code)"
+            return t("Capacity alerts use safe defaults until local runtime state is readable again.")
         case .empty:
             return t("No trusted capacity")
         }
@@ -649,7 +651,7 @@ final class TokenPilotViewModel: ObservableObject {
         let settingsAtStart = settings
         let result = await usageStore.refresh(settings: settingsAtStart)
         snapshots = result.snapshots
-        dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData)
+        dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
@@ -725,14 +727,121 @@ final class TokenPilotViewModel: ObservableObject {
         rebuildHistoryUsage(for: selectedHistoryPeriod)
     }
 
-    private func determineDataMode(hasConnectedData: Bool) -> DataSourceMode {
-        if settings.showMockDataWhenDisconnected && !hasConnectedData {
+    private func determineDataMode(
+        hasConnectedData: Bool,
+        snapshots: [ProviderSnapshot],
+        capacityObservations: [CapacityObservation],
+        observedAt: Date
+    ) -> DataSourceMode {
+        let assessments = capacityObservations.map { capacityAssessmentService.assess($0, now: observedAt) }
+        return Self.derivedDataSourceMode(
+            hasConnectedData: hasConnectedData,
+            showMockDataWhenDisconnected: settings.showMockDataWhenDisconnected,
+            snapshots: snapshots,
+            assessments: assessments
+        )
+    }
+
+    fileprivate nonisolated static func derivedDataSourceMode(
+        hasConnectedData: Bool,
+        showMockDataWhenDisconnected: Bool,
+        snapshots: [ProviderSnapshot],
+        assessments: [CapacityAssessment]
+    ) -> DataSourceMode {
+        if snapshots.contains(where: { $0.dataSource == .mock }) || (showMockDataWhenDisconnected && !hasConnectedData) {
             return .mock
         }
-        if snapshots.contains(where: { $0.isStale }) {
+        if snapshots.contains(where: { $0.isStale }) || assessments.contains(where: { $0.freshness == .stale }) {
             return .stale
         }
-        return hasConnectedData ? .live : .disconnected
+
+        let evidenceSnapshots = snapshots.filter(Self.snapshotHasDataModeEvidence)
+        let freshAssessments = assessments.filter { $0.freshness == .fresh }
+
+        if evidenceSnapshots.contains(where: Self.isOfficialSupportedSnapshot) ||
+            freshAssessments.contains(where: Self.isOfficialSupportedAssessment) {
+            return .live
+        }
+        if evidenceSnapshots.contains(where: Self.isExperimentalSnapshot) ||
+            freshAssessments.contains(where: Self.isExperimentalAssessment) {
+            return .experimental
+        }
+        if evidenceSnapshots.contains(where: Self.isCompatibilityBridgeSnapshot) ||
+            freshAssessments.contains(where: Self.isCompatibilityBridgeAssessment) {
+            return .compatibilityBridge
+        }
+        if evidenceSnapshots.contains(where: Self.isManualSnapshot) ||
+            freshAssessments.contains(where: Self.isManualAssessment) {
+            return .manual
+        }
+        if evidenceSnapshots.contains(where: Self.isLocalSnapshot) ||
+            freshAssessments.contains(where: Self.isLocalAssessment) {
+            return .local
+        }
+        if hasConnectedData || !evidenceSnapshots.isEmpty || !freshAssessments.isEmpty {
+            return .local
+        }
+        return .disconnected
+    }
+
+    fileprivate nonisolated static func snapshotHasDataModeEvidence(_ snapshot: ProviderSnapshot) -> Bool {
+        !snapshot.events.isEmpty ||
+            snapshot.primaryUsedPercent != nil ||
+            snapshot.dailyRequestsUsed != nil ||
+            snapshot.balance != nil ||
+            snapshot.contextWindowUsedPercent != nil ||
+            snapshot.todayTokens > 0 ||
+            snapshot.dataSource == .mock
+    }
+
+    private nonisolated static func isOfficialSupportedSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        guard !snapshot.isStale, !snapshot.isExperimental, snapshot.confidence != .manual else { return false }
+        switch (snapshot.provider, snapshot.dataSource) {
+        case (.claude, .officialStatusline), (.deepseek, .officialTelemetry):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private nonisolated static func isOfficialSupportedAssessment(_ assessment: CapacityAssessment) -> Bool {
+        assessment.observation.authority == .providerReported &&
+            assessment.observation.stability == .supported
+    }
+
+    private nonisolated static func isExperimentalSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        snapshot.dataSource == .webUsage || (snapshot.isExperimental && snapshot.dataSource != .localLog)
+    }
+
+    private nonisolated static func isExperimentalAssessment(_ assessment: CapacityAssessment) -> Bool {
+        assessment.observation.stability == .experimentalTransport
+    }
+
+    private nonisolated static func isCompatibilityBridgeSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        snapshot.provider == .gemini && snapshot.dataSource == .officialStatusline
+    }
+
+    private nonisolated static func isCompatibilityBridgeAssessment(_ assessment: CapacityAssessment) -> Bool {
+        assessment.observation.stability == .compatibilityBridge
+    }
+
+    private nonisolated static func isManualSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        snapshot.dataSource == .manual ||
+            snapshot.dataSource == .estimated ||
+            snapshot.confidence == .manual
+    }
+
+    private nonisolated static func isManualAssessment(_ assessment: CapacityAssessment) -> Bool {
+        assessment.observation.authority == .userEntered ||
+            assessment.observation.stability == .manual
+    }
+
+    private nonisolated static func isLocalSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        snapshot.dataSource == .localLog || snapshot.isCodexLocalLogOnly
+    }
+
+    private nonisolated static func isLocalAssessment(_ assessment: CapacityAssessment) -> Bool {
+        assessment.observation.authority == .localDerived
     }
 
     func selectHistoryPeriod(_ period: HistoryPeriod) {
@@ -839,9 +948,6 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
-    func chooseGeminiLogFile() {
-        chooseGeminiTelemetrySource()
-    }
 
     private func chooseLocalSource(
         provider: Provider,
@@ -1010,7 +1116,7 @@ final class TokenPilotViewModel: ObservableObject {
         guard let lastCheckedAt = diagnostic.lastCheckedAt else {
             return t("Never checked")
         }
-        return TokenPilotFormatters.clock(lastCheckedAt)
+        return TokenPilotFormatters.clock(lastCheckedAt, language: settings.localization.language)
     }
 
     func diagnosticNextActionText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
@@ -1083,6 +1189,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func pasteCodexStatusFromClipboard() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         if let string = NSPasteboard.general.string(forType: .string) {
             var parsed = CodexStatusParser.safeParse(string, previous: settings.codexManual)
             parsed.pastedStatusOutput = ""
@@ -1092,6 +1201,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func markCodexWebSnapshotNow() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         var next = settings
         next.codexManual.webSnapshotEnabled = true
         next.codexManual.webSnapshotCapturedAt = Date()
@@ -1100,6 +1212,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func copyToClipboard(_ text: String) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         bannerMessage = t("Copied.")
@@ -1410,7 +1525,7 @@ enum TokenPilotDebugScenario: String, CaseIterable {
 
 struct TokenPilotDebugFixture {
     static let privacyContract = "DEBUG fixture uses fixed dates. No network. No real provider accounts. No credentials. No local paths. No secrets."
-    private static let fixedReferenceDate = Date(timeIntervalSince1970: 1_700_000_000)
+    private static let fixedReferenceDate = Date(timeIntervalSince1970: 1_784_289_600)
 
     let scenario: TokenPilotDebugScenario
     let referenceDate: Date
@@ -1439,9 +1554,73 @@ struct TokenPilotDebugFixture {
 
     static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> TokenPilotDebugFixture? {
         guard environment["TOKENPILOT_UI_TESTING"] == "1" else { return nil }
+
         let rawScenario = environment["TOKENPILOT_DEBUG_SCENARIO"] ?? TokenPilotDebugScenario.empty.rawValue
-        guard let scenario = TokenPilotDebugScenario(rawValue: rawScenario) else { return nil }
-        return make(scenario)
+        let scenario = TokenPilotDebugScenario(rawValue: rawScenario) ?? .empty
+        let selectedScreen = debugScreen(from: environment["TOKENPILOT_DEBUG_SCREEN"])
+        let language = debugLanguage(from: environment["TOKENPILOT_DEBUG_LANGUAGE"])
+
+        return make(scenario).applying(selectedScreen: selectedScreen, language: language)
+    }
+
+    private func applying(selectedScreen: TokenPilotViewModel.Screen, language: TokenPilotLanguage) -> TokenPilotDebugFixture {
+        var localizedSettings = settings
+        localizedSettings.localization.language = language
+
+        return TokenPilotDebugFixture(
+            scenario: scenario,
+            referenceDate: referenceDate,
+            selectedScreen: selectedScreen,
+            settings: localizedSettings,
+            snapshots: snapshots,
+            historySnapshots: historySnapshots,
+            limitHistorySamples: limitHistorySamples,
+            dataSourceMode: dataSourceMode,
+            dataSources: dataSources,
+            capacityAssessments: capacityAssessments,
+            capacityPresentations: capacityPresentations,
+            capacityRefreshErrors: capacityRefreshErrors,
+            capacityRuntimeRecoveryRequired: capacityRuntimeRecoveryRequired,
+            capacityAlertRuntimeControl: capacityAlertRuntimeControl,
+            capacityAlertRuntimeRecoveryStatus: capacityAlertRuntimeRecoveryStatus,
+            capacityAlertRules: capacityAlertRules,
+            capacityAlertRulesRecoveryStatus: capacityAlertRulesRecoveryStatus,
+            capacityAlertDeliveryStates: capacityAlertDeliveryStates,
+            capacityAlertDeliveryRecoveryStatus: capacityAlertDeliveryRecoveryStatus,
+            capacityAlertMigrationRecoveryStatus: capacityAlertMigrationRecoveryStatus,
+            bannerMessage: bannerMessage,
+            hasSavedTelegramToken: hasSavedTelegramToken,
+            hasSavedDiscordWebhook: hasSavedDiscordWebhook,
+            hasSavedDeepSeekAPIKey: hasSavedDeepSeekAPIKey
+        )
+    }
+
+    private static func debugScreen(from rawValue: String?) -> TokenPilotViewModel.Screen {
+        switch rawValue {
+        case .some("history"):
+            return .history
+        case .some("settings"):
+            return .settings
+        case .some("overview"), .none:
+            return .overview
+        default:
+            return .overview
+        }
+    }
+
+    private static func debugLanguage(from rawValue: String?) -> TokenPilotLanguage {
+        switch rawValue {
+        case .some("ko"):
+            return .ko
+        case .some("ja"):
+            return .ja
+        case .some("zh-Hans"):
+            return .zhHans
+        case .some("en"), .none:
+            return .en
+        default:
+            return .en
+        }
     }
 
     private static func make(_ scenario: TokenPilotDebugScenario) -> TokenPilotDebugFixture {
@@ -1496,7 +1675,6 @@ struct TokenPilotDebugFixture {
                     confidence: .high,
                     dataSource: .officialStatusline,
                     isStale: true,
-                    statusMessage: "Official statusline stale",
                     events: events
                 )
             ]
@@ -1526,7 +1704,6 @@ struct TokenPilotDebugFixture {
                     confidence: .low,
                     dataSource: .localLog,
                     isExperimental: true,
-                    statusMessage: "Local log activity only; not web quota",
                     events: events
                 )
             ]
@@ -1547,8 +1724,7 @@ struct TokenPilotDebugFixture {
                     todayTokens: 4_100,
                     confidence: .medium,
                     dataSource: .webUsage,
-                    isExperimental: true,
-                    statusMessage: "UNOFFICIAL · Codex app-server limit hints"
+                    isExperimental: true
                 )
             ]
             return fixture(
@@ -1563,10 +1739,10 @@ struct TokenPilotDebugFixture {
 
         case .codexManual:
             let codexManual = CodexManualSettings(
-                planLabel: "Manual fixture",
+                planLabel: "",
                 fiveHourUsagePercentage: 72,
                 weeklyUsagePercentage: 18,
-                resetTimeText: "fixed",
+                resetTimeText: "",
                 confidence: .manual,
                 webSnapshotEnabled: true,
                 webTodayTokens: 2_500,
@@ -1580,8 +1756,7 @@ struct TokenPilotDebugFixture {
                     weekly: limitWindow(.weekly, used: 18, resetAfter: 345_600, confidence: .manual, providerWindowID: "manual-weekly", durationMinutes: 10_080),
                     todayTokens: 2_500,
                     confidence: .manual,
-                    dataSource: .manual,
-                    statusMessage: "Manual estimate"
+                    dataSource: .manual
                 )
             ]
             return fixture(
@@ -1595,14 +1770,13 @@ struct TokenPilotDebugFixture {
             )
 
         case .deepseekOfficialBalance:
-            let balance = ProviderBalance(currency: "USD", totalBalance: decimal("18.00"), grantedBalance: decimal("5.66"), toppedUpBalance: decimal("12.34"), capturedAt: fixedReferenceDate)
+            let balance = ProviderBalance(currency: "USD", totalBalance: decimal("3.34"), grantedBalance: decimal("0.00"), toppedUpBalance: decimal("3.34"), capturedAt: fixedReferenceDate)
             let snapshots = [
                 ProviderSnapshot(
                     provider: .deepseek,
                     updatedAt: fixedReferenceDate,
                     confidence: .high,
                     dataSource: .officialTelemetry,
-                    statusMessage: "Official balance endpoint",
                     balance: balance
                 )
             ]
@@ -1611,7 +1785,7 @@ struct TokenPilotDebugFixture {
                 settings: baseSettings(menuBarTarget: .deepseek, deepSeekAPIKeyConfigured: true),
                 snapshots: snapshots,
                 observations: [
-                    moneyObservation(amount: "12.34", currency: "USD", authority: .providerReported, stability: .supported, comparability: .comparable)
+                    moneyObservation(amount: "3.34", currency: "USD", authority: .providerReported, stability: .supported, comparability: .comparable)
                 ],
                 capacityAlertRules: [
                     balanceAlertRule(threshold: "5.00", currency: "USD")
@@ -1628,7 +1802,6 @@ struct TokenPilotDebugFixture {
                     updatedAt: fixedReferenceDate,
                     confidence: .manual,
                     dataSource: .manual,
-                    statusMessage: "Manual balance estimate",
                     balance: balance
                 )
             ]
@@ -1654,7 +1827,6 @@ struct TokenPilotDebugFixture {
                     todayTokens: events.reduce(0) { $0 + $1.totalTokens },
                     confidence: .high,
                     dataSource: .officialStatusline,
-                    statusMessage: "Antigravity statusline bridge",
                     model: "antigravity",
                     contextWindowUsedPercent: 32,
                     events: events
@@ -1691,8 +1863,7 @@ struct TokenPilotDebugFixture {
                     todayTokens: 1_200,
                     confidence: .low,
                     dataSource: .localLog,
-                    isExperimental: true,
-                    statusMessage: "Legacy Codex local evidence is not alert-deliverable"
+                    isExperimental: true
                 )
             ]
             return fixture(
@@ -1747,7 +1918,14 @@ struct TokenPilotDebugFixture {
         let presentationMapper = CapacityPresentationMapper()
         let assessments = observations.map { assessmentService.assess($0, now: fixedReferenceDate) }
         let presentations = assessments.map { presentationMapper.map($0) }
-        let dataSourceMode = explicitDataSourceMode ?? inferredDataSourceMode(from: snapshots)
+        let hasConnectedData = snapshots.contains(where: TokenPilotViewModel.snapshotHasDataModeEvidence)
+        let dataSourceMode = explicitDataSourceMode ?? TokenPilotViewModel.derivedDataSourceMode(
+            hasConnectedData: hasConnectedData,
+            showMockDataWhenDisconnected: settings.showMockDataWhenDisconnected,
+            snapshots: snapshots,
+            assessments: assessments
+        )
+        assert(dataSourceMode == expectedDataSourceMode(for: scenario), "DEBUG fixture \(scenario.rawValue) inferred \(dataSourceMode.rawValue), expected \(expectedDataSourceMode(for: scenario).rawValue)")
         let limitHistorySamples = explicitLimitHistorySamples ?? makeLimitHistorySamples(from: snapshots)
 
         return TokenPilotDebugFixture(
@@ -1996,16 +2174,29 @@ struct TokenPilotDebugFixture {
                     customPath: nil,
                     lastScanAt: fixedReferenceDate,
                     status: status,
-                    confidence: confidence,
-                    statusMessage: "DEBUG fixture \(scenario.rawValue)"
+                    confidence: confidence
                 )
             )
         })
     }
 
-    private static func inferredDataSourceMode(from snapshots: [ProviderSnapshot]) -> TokenPilotViewModel.DataSourceMode {
-        guard !snapshots.isEmpty else { return .disconnected }
-        return snapshots.contains { $0.isStale } ? .stale : .live
+    private static func expectedDataSourceMode(for scenario: TokenPilotDebugScenario) -> TokenPilotViewModel.DataSourceMode {
+        switch scenario {
+        case .claudeOfficialFresh, .deepseekOfficialBalance:
+            return .live
+        case .claudeOfficialStale:
+            return .stale
+        case .codexLocalOnly, .alertsUnsupportedCodexLegacy:
+            return .local
+        case .codexConnectorExperimental:
+            return .experimental
+        case .codexManual, .deepseekManualBalance:
+            return .manual
+        case .antigravityBridge:
+            return .compatibilityBridge
+        case .empty, .runtimeRecoveryRequired, .alertsPendingDeepSeekCurrency:
+            return .disconnected
+        }
     }
 
     private static func percentAlertRule(provider: Provider, seriesID: CapacitySeriesID) -> CapacityAlertRule {

@@ -3485,6 +3485,198 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(title, "5h 12% · 7d 38%")
         XCTAssertFalse(title.contains("12K"))
     }
+
+    func testMenuBarAccessibilityLocalizesCapacitySemanticsAcrossModesAndLanguages() {
+        struct AccessibilityScenario {
+            let name: String
+            let snapshot: ProviderSnapshot
+            let modeLabel: String
+            let expectedFragments: [(TokenPilotLanguage, [String])]
+        }
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let scenarios = [
+            AccessibilityScenario(
+                name: "official fresh percent",
+                snapshot: ProviderSnapshot(
+                    provider: .claude,
+                    fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(3_600)),
+                    confidence: .high,
+                    dataSource: .officialStatusline
+                ),
+                modeLabel: "LIVE",
+                expectedFragments: [
+                    (.en, ["Capacity remaining 18%", "Reset 1h 0m", "Provider reported", "Supported", "Fresh", "Wait for reset", "Live only"]),
+                    (.ko, ["수용량 18% 남음", "리셋 1시간 0분", "제공자 보고", "지원됨", "최신", "리셋 대기", "실시간만"]),
+                    (.ja, ["容量残り 18%", "リセット 1時間 0分", "プロバイダ報告", "対応済み", "新鮮", "リセット待ち", "ライブのみ"]),
+                    (.zhHans, ["容量剩余 18%", "重置 1小时 0分钟", "提供方报告", "受支持", "新鲜", "等待重置", "仅实时"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "official stale percent",
+                snapshot: ProviderSnapshot(
+                    provider: .claude,
+                    fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(3_600)),
+                    confidence: .high,
+                    dataSource: .officialStatusline,
+                    isStale: true
+                ),
+                modeLabel: "STALE",
+                expectedFragments: [
+                    (.en, ["Capacity remaining 18%", "Provider reported", "Supported", "Stale", "Refresh provider"]),
+                    (.ko, ["수용량 18% 남음", "제공자 보고", "지원됨", "오래됨", "제공자 새로고침"]),
+                    (.ja, ["容量残り 18%", "プロバイダ報告", "対応済み", "古い", "プロバイダを更新"]),
+                    (.zhHans, ["容量剩余 18%", "提供方报告", "受支持", "过期", "刷新提供方"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "manual percent",
+                snapshot: ProviderSnapshot(
+                    provider: .codex,
+                    fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 74),
+                    confidence: .manual,
+                    dataSource: .manual
+                ),
+                modeLabel: "MANUAL",
+                expectedFragments: [
+                    (.en, ["Capacity remaining 26%", "User entered", "Manual entry", "Fresh", "Enter manual value"]),
+                    (.ko, ["수용량 26% 남음", "사용자 입력", "수동 입력", "최신", "수동 값 입력"]),
+                    (.ja, ["容量残り 26%", "ユーザー入力", "手動入力", "新鮮", "手動値を入力"]),
+                    (.zhHans, ["容量剩余 26%", "用户输入", "手动输入", "新鲜", "输入手动值"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "experimental percent",
+                snapshot: ProviderSnapshot(
+                    provider: .codex,
+                    fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 42),
+                    confidence: .high,
+                    dataSource: .webUsage,
+                    isExperimental: true
+                ),
+                modeLabel: "EXPERIMENTAL",
+                expectedFragments: [
+                    (.en, ["Capacity remaining 58%", "Provider reported", "Experimental connector", "Fresh", "Review experimental connector"]),
+                    (.ko, ["수용량 58% 남음", "제공자 보고", "실험적 커넥터", "최신", "실험적 커넥터 검토"]),
+                    (.ja, ["容量残り 58%", "プロバイダ報告", "実験的コネクタ", "新鮮", "実験的コネクタを確認"]),
+                    (.zhHans, ["容量剩余 58%", "提供方报告", "实验性连接器", "新鲜", "检查实验性连接器"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "local activity",
+                snapshot: ProviderSnapshot(
+                    provider: .codex,
+                    todayTokens: 4_800,
+                    confidence: .low,
+                    dataSource: .localLog
+                ),
+                modeLabel: "LOCAL",
+                expectedFragments: [
+                    (.en, ["Local derived", "Local metadata only", "Fresh", "Open Provider Diagnostics"]),
+                    (.ko, ["로컬 파생", "로컬 메타데이터만", "최신", "제공자 진단 열기"]),
+                    (.ja, ["ローカル派生", "ローカルメタデータのみ", "新鮮", "プロバイダ診断を開く"]),
+                    (.zhHans, ["本地推导", "仅本地元数据", "新鲜", "打开提供方诊断"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "compatibility bridge",
+                snapshot: ProviderSnapshot(
+                    provider: .gemini,
+                    confidence: .high,
+                    dataSource: .officialStatusline,
+                    contextWindowUsedPercent: 32
+                ),
+                modeLabel: "BRIDGE",
+                expectedFragments: [
+                    (.en, ["Capacity remaining 68%", "Provider reported", "Compatibility bridge", "Fresh", "Review source"]),
+                    (.ko, ["수용량 68% 남음", "제공자 보고", "호환성 브리지", "최신", "소스 검토"]),
+                    (.ja, ["容量残り 68%", "プロバイダ報告", "互換ブリッジ", "新鮮", "ソースを確認"]),
+                    (.zhHans, ["容量剩余 68%", "提供方报告", "兼容桥接", "新鲜", "检查来源"])
+                ]
+            ),
+            AccessibilityScenario(
+                name: "official balance",
+                snapshot: ProviderSnapshot(
+                    provider: .deepseek,
+                    confidence: .high,
+                    dataSource: .officialTelemetry,
+                    balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "0.85")!)
+                ),
+                modeLabel: "LIVE",
+                expectedFragments: [
+                    (.en, ["Provider reported", "Supported", "Fresh", "Review balance", "Live only"]),
+                    (.ko, ["제공자 보고", "지원됨", "최신", "잔액 검토", "실시간만"]),
+                    (.ja, ["プロバイダ報告", "対応済み", "新鮮", "残高を確認", "ライブのみ"]),
+                    (.zhHans, ["提供方报告", "受支持", "新鲜", "检查余额", "仅实时"])
+                ]
+            )
+        ]
+
+        let rawFragments = [
+            "waitForReset",
+            "refreshProvider",
+            "reviewSource",
+            "reviewExperimentalConnector",
+            "enterManualValue",
+            "reviewBalance",
+            "openProviderDiagnostics",
+            "provider-reported",
+            "local-derived",
+            "user-entered",
+            "providerReported",
+            "localDerived",
+            "userEntered",
+            "LIVE"
+        ]
+        let nonEnglishFragments = [
+            "remaining",
+            "reset",
+            "Provider reported",
+            "Local derived",
+            "User entered",
+            "Supported",
+            "Manual entry",
+            "Compatibility bridge",
+            "Experimental connector",
+            "Fresh",
+            "Stale",
+            "Wait for reset",
+            "Refresh provider",
+            "Review balance",
+            "Open Provider Diagnostics",
+            "Review source",
+            "Review experimental connector",
+            "Enter manual value",
+            "Live only",
+            "Local metadata only"
+        ]
+
+        for scenario in scenarios {
+            for (language, expectedFragments) in scenario.expectedFragments {
+                var settings = AppSettings()
+                settings.localization.language = language
+                let label = MenuBarStatusService().accessibilityLabel(
+                    snapshots: [scenario.snapshot],
+                    settings: settings,
+                    modeLabel: scenario.modeLabel,
+                    now: now
+                )
+
+                for fragment in expectedFragments {
+                    XCTAssertTrue(label.contains(fragment), "Missing \(fragment) for \(scenario.name) \(language): \(label)")
+                }
+                for raw in rawFragments {
+                    XCTAssertFalse(label.contains(raw), "Raw fragment \(raw) leaked for \(scenario.name) \(language): \(label)")
+                }
+                if language != .en {
+                    for fragment in nonEnglishFragments {
+                        XCTAssertFalse(label.localizedCaseInsensitiveContains(fragment), "English fragment \(fragment) leaked for \(scenario.name) \(language): \(label)")
+                    }
+                }
+            }
+        }
+    }
+
     func testMenuBarStatusServiceUsesExplicitTargetAndSameRankHysteresis() {
         var settings = AppSettings()
         let service = MenuBarStatusService()

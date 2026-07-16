@@ -4,10 +4,15 @@ import AppKit
 @main
 struct TokenMonitorApp: App {
     @StateObject private var model: TokenPilotViewModel
+#if DEBUG
+    private let debugAccessibilityProfile: TokenPilotDebugAccessibilityProfile?
+#endif
 
     init() {
 #if DEBUG
-        _model = StateObject(wrappedValue: TokenPilotViewModel(debugFixture: TokenPilotDebugFixture.resolve()))
+        let debugFixture = TokenPilotDebugFixture.resolve()
+        _model = StateObject(wrappedValue: TokenPilotViewModel(debugFixture: debugFixture))
+        debugAccessibilityProfile = TokenPilotDebugAccessibilityProfile.resolve()
 #else
         _model = StateObject(wrappedValue: TokenPilotViewModel())
 #endif
@@ -25,11 +30,22 @@ struct TokenMonitorApp: App {
 
     @ViewBuilder
     private func productionRootView(model: TokenPilotViewModel) -> some View {
+#if DEBUG
         TokenPilotRootView(model: model)
             .frame(width: 420, height: 620)
             .onAppear {
                 Task { await model.refreshAfterPopoverOpen() }
             }
+            .tokenPilotSemanticPalette()
+            .tokenPilotDebugAccessibilityProfile(debugAccessibilityProfile)
+#else
+        TokenPilotRootView(model: model)
+            .frame(width: 420, height: 620)
+            .onAppear {
+                Task { await model.refreshAfterPopoverOpen() }
+            }
+            .tokenPilotSemanticPalette()
+#endif
     }
 
     @ViewBuilder
@@ -44,3 +60,55 @@ struct TokenMonitorApp: App {
             .accessibilityLabel(model.menuBarAccessibilityLabel)
     }
 }
+#if DEBUG
+private enum TokenPilotDebugAccessibilityProfile: String {
+    case standard
+    case reduceMotion
+    case reduceTransparency
+    case increaseContrast
+
+    var reduceMotion: Bool {
+        self == .reduceMotion
+    }
+
+    var reduceTransparency: Bool {
+        self == .reduceTransparency
+    }
+
+    var colorSchemeContrast: ColorSchemeContrast {
+        self == .increaseContrast ? .increased : .standard
+    }
+
+    static func resolve(environment: [String: String] = ProcessInfo.processInfo.environment) -> Self? {
+        guard environment["TOKENPILOT_UI_TESTING"] == "1" else { return nil }
+
+        guard let rawProfile = environment["TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE"] else {
+            return .standard
+        }
+
+        guard let profile = Self(rawValue: rawProfile) else {
+            preconditionFailure("Invalid DEBUG TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE '\(rawProfile)'. Valid values: \(validProfileList).")
+        }
+        return profile
+    }
+
+    private static var validProfileList: String {
+        [Self.standard, .reduceMotion, .reduceTransparency, .increaseContrast]
+            .map(\.rawValue)
+            .joined(separator: ", ")
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func tokenPilotDebugAccessibilityProfile(_ profile: TokenPilotDebugAccessibilityProfile?) -> some View {
+        if let profile {
+            self.environment(\.tokenPilotReduceMotionOverride, profile.reduceMotion)
+                .environment(\.tokenPilotReduceTransparencyOverride, profile.reduceTransparency)
+                .environment(\.tokenPilotContrastOverride, profile.colorSchemeContrast)
+        } else {
+            self
+        }
+    }
+}
+#endif
