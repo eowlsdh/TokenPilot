@@ -9101,6 +9101,86 @@
         }
       }
     },
+    "Menu bar layout": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대 레이아웃" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Menu bar layout" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏布局" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーのレイアウト" } }
+      }
+    },
+    "Detailed": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "상세" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Detailed" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "详细" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "詳細" } }
+      }
+    },
+    "Compact": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "간략" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Compact" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "紧凑" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "コンパクト" } }
+      }
+    },
+    "Icon only": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "아이콘만" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Icon only" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅图标" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "アイコンのみ" } }
+      }
+    },
+    "Primary provider": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "기본 제공자" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Primary provider" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主要提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "主なプロバイダ" } }
+      }
+    },
+    "Show secondary provider": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "보조 제공자 표시" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Show secondary provider" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示次要提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "2番目のプロバイダを表示" } }
+      }
+    },
+    "Secondary provider": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "보조 제공자" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Secondary provider" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "次要提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "2番目のプロバイダ" } }
+      }
+    },
+    "Up to two providers can be shown": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "최대 두 제공자를 표시할 수 있습니다" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Up to two providers can be shown" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最多可显示两个提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "最大2つのプロバイダを表示できます" } }
+      }
+    },
+    "Select provider": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "제공자 선택" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Select provider" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダを選択" } }
+      }
+    },
+    "Menu bar reflects saved source data and does not refresh providers.": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대는 저장된 소스 데이터를 표시하며 제공자를 새로 고치지 않습니다." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Menu bar reflects saved source data and does not refresh providers." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏反映已保存的数据源数据，不会刷新提供方。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーは保存済みのソースデータを表示し、プロバイダを更新しません。" } }
+      }
+    },
     "Highest risk": {
       "localizations": {
         "ko": {
@@ -12233,6 +12313,34 @@
           "stringUnit": {
             "state": "translated",
             "value": "请先输入 xAI Management 密钥。"
+          }
+        }
+      }
+    },
+    "Menu bar data unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu bar data unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대 데이터를 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーのデータを利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏数据不可用"
           }
         }
       }

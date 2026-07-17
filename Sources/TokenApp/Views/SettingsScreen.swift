@@ -132,13 +132,27 @@ struct SettingsScreen: View {
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text(model.t("Menu bar status"))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                        Spacer(minLength: 0)
-                        Picker(model.t("Menu bar status"), selection: menuBarTargetBinding) {
+                GlassCard(surface: .cardMuted) {
+                    VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                        HStack(spacing: 8) {
+                            Label(model.t("Menu bar layout"), systemImage: "menubar.rectangle")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                            Spacer(minLength: 0)
+                            Text(model.t("Up to two providers can be shown"))
+                                .font(.caption2)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                        }
+
+                        Picker(model.t("Menu bar layout"), selection: menuBarStyleBinding) {
+                            Text(model.t("Detailed")).tag(MenuBarDisplayStyle.detailed)
+                            Text(model.t("Compact")).tag(MenuBarDisplayStyle.compact)
+                            Text(model.t("Icon only")).tag(MenuBarDisplayStyle.iconOnly)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel(model.t("Menu bar layout"))
+
+                        Picker(model.t("Primary provider"), selection: menuBarTargetBinding) {
                             Text(model.t("Highest risk")).tag(Optional<Provider>.none)
                             ForEach(Provider.allCases) { provider in
                                 Text(model.t(provider.displayName))
@@ -146,18 +160,41 @@ struct SettingsScreen: View {
                                     .disabled(!model.isProviderEnabled(provider))
                             }
                         }
-                        .labelsHidden()
                         .pickerStyle(.menu)
-                        .frame(maxWidth: 170)
+                        .accessibilityLabel(model.t("Primary provider"))
+
+                        if model.settings.menuBarDisplayStyle != .iconOnly {
+                            Toggle(model.t("Show secondary provider"), isOn: menuBarShowsSecondaryBinding)
+                                .disabled(!hasAvailableSecondaryProvider)
+
+                            if model.settings.menuBarShowsSecondaryProvider {
+                                Picker(model.t("Secondary provider"), selection: menuBarSecondaryTargetBinding) {
+                                    Text(model.t("Select provider")).tag(Optional<Provider>.none)
+                                    ForEach(Provider.allCases) { provider in
+                                        Text(model.t(provider.displayName))
+                                            .tag(Optional(provider))
+                                            .disabled(
+                                                provider == model.settings.menuBarDisplayTarget ||
+                                                !model.isProviderEnabled(provider)
+                                            )
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .accessibilityLabel(model.t("Secondary provider"))
+                            }
+                        }
+
+                        Text(model.t("Menu bar reflects saved source data and does not refresh providers."))
+                            .font(.caption2)
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .lineLimit(1)
+                            .accessibilityLabel(model.menuBarAccessibilityLabel)
                     }
-                    Text(model.t("Menu bar uses the core capacity assessment. Disabled providers are skipped."))
-                        .font(.caption2)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                    Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .lineLimit(1)
-                        .accessibilityLabel(model.menuBarAccessibilityLabel)
                 }
             }
         }
@@ -1268,10 +1305,37 @@ struct SettingsScreen: View {
             color: isSelected ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary
         )
     }
+    private var hasAvailableSecondaryProvider: Bool {
+        Provider.allCases.contains {
+            model.isProviderEnabled($0) && $0 != model.settings.menuBarDisplayTarget
+        }
+    }
+
+    private var menuBarStyleBinding: Binding<MenuBarDisplayStyle> {
+        Binding(
+            get: { model.settings.menuBarDisplayStyle },
+            set: { model.setMenuBarDisplayStyle($0) }
+        )
+    }
+
     private var menuBarTargetBinding: Binding<Provider?> {
         Binding(
             get: { model.settings.menuBarDisplayTarget },
             set: { model.setMenuBarDisplayTarget($0) }
+        )
+    }
+
+    private var menuBarShowsSecondaryBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.menuBarShowsSecondaryProvider },
+            set: { model.setMenuBarShowsSecondaryProvider($0) }
+        )
+    }
+
+    private var menuBarSecondaryTargetBinding: Binding<Provider?> {
+        Binding(
+            get: { model.settings.menuBarSecondaryDisplayTarget },
+            set: { model.setMenuBarSecondaryDisplayTarget($0) }
         )
     }
 

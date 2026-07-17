@@ -34,6 +34,17 @@ public enum TokenPilotLocalizer {
     }
 
     private static let supplementalFallback: [String: [TokenPilotLanguage: String]] = [
+        "Menu bar layout": [.en: "Menu bar layout", .ko: "메뉴 막대 레이아웃", .ja: "メニューバーのレイアウト", .zhHans: "菜单栏布局"],
+        "Detailed": [.en: "Detailed", .ko: "상세", .ja: "詳細", .zhHans: "详细"],
+        "Compact": [.en: "Compact", .ko: "간략", .ja: "コンパクト", .zhHans: "紧凑"],
+        "Icon only": [.en: "Icon only", .ko: "아이콘만", .ja: "アイコンのみ", .zhHans: "仅图标"],
+        "Primary provider": [.en: "Primary provider", .ko: "기본 제공자", .ja: "主なプロバイダ", .zhHans: "主要提供方"],
+        "Show secondary provider": [.en: "Show secondary provider", .ko: "보조 제공자 표시", .ja: "2番目のプロバイダを表示", .zhHans: "显示次要提供方"],
+        "Secondary provider": [.en: "Secondary provider", .ko: "보조 제공자", .ja: "2番目のプロバイダ", .zhHans: "次要提供方"],
+        "Up to two providers can be shown": [.en: "Up to two providers can be shown", .ko: "최대 두 제공자를 표시할 수 있습니다", .ja: "最大2つのプロバイダを表示できます", .zhHans: "最多可显示两个提供方"],
+        "Select provider": [.en: "Select provider", .ko: "제공자 선택", .ja: "プロバイダを選択", .zhHans: "选择提供方"],
+        "Menu bar reflects saved source data and does not refresh providers.": [.en: "Menu bar reflects saved source data and does not refresh providers.", .ko: "메뉴 막대는 저장된 소스 데이터를 표시하며 제공자를 새로 고치지 않습니다.", .ja: "メニューバーは保存済みのソースデータを表示し、プロバイダを更新しません。", .zhHans: "菜单栏反映已保存的数据源数据，不会刷新提供方。"],
+        "Menu bar data unavailable": [.en: "Menu bar data unavailable", .ko: "메뉴 막대 데이터를 사용할 수 없음", .ja: "メニューバーのデータを利用できません", .zhHans: "菜单栏数据不可用"],
         "Choose a local source or run Auto-detect.": [.en: "Choose a local source or run Auto-detect.", .ko: "로컬 소스를 선택하거나 자동 감지를 실행하세요.", .ja: "ローカルソースを選択するか、自動検出を実行してください。", .zhHans: "请选择本地数据源或运行自动检测。"],
         "Paste /status or enter manual estimates.": [.en: "Paste /status or enter manual estimates.", .ko: "/status를 붙여넣거나 수동 추정값을 입력하세요.", .ja: "/status を貼り付けるか、手動の推定値を入力してください。", .zhHans: "请粘贴 /status 或输入手动估算值。"],
         "Save a provider API key in TokenPilot Keychain.": [.en: "Save a provider API key in TokenPilot Keychain.", .ko: "제공자 API 키를 TokenPilot Keychain에 저장하세요.", .ja: "プロバイダの API キーを TokenPilot Keychain に保存してください。", .zhHans: "请将提供方 API 密钥保存到 TokenPilot Keychain。"],

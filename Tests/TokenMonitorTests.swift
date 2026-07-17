@@ -281,6 +281,165 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertNotEqual(falseLiveTitle, "xAI · LIVE")
         XCTAssertFalse(falseLiveTitle.contains("LIVE"))
     }
+    func testCompactMenuBarCompositionIsTruthfulAndLimitedToTwoProviders() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarDisplayTarget = .claude
+        settings.menuBarSecondaryDisplayTarget = .codex
+        settings.menuBarShowsSecondaryProvider = true
+        let snapshots = [
+            ProviderSnapshot(
+                provider: .claude,
+                fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20),
+                confidence: .high,
+                dataSource: .officialStatusline
+            ),
+            ProviderSnapshot(
+                provider: .codex,
+                fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 74),
+                confidence: .manual,
+                dataSource: .manual
+            )
+        ]
+
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Cl 80% · Co Manual")
+        let accessibility = service.accessibilityLabel(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
+        XCTAssertTrue(accessibility.contains("Claude Code"))
+        XCTAssertTrue(accessibility.contains("Codex"))
+        XCTAssertFalse(accessibility.contains("Co Manual"))
+
+        settings.menuBarDisplayStyle = .iconOnly
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "TP")
+
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarSecondaryDisplayTarget = .claude
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Cl 80%")
+        settings.menuBarSecondaryDisplayTarget = .gemini
+        XCTAssertTrue(settings.setProviderEnabled(.gemini, isEnabled: false))
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Cl 80%")
+    }
+
+    func testCompactMenuBarUsesNativeBalanceAndNeutralUnavailableLabels() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarDisplayTarget = .deepseek
+        let balance = ProviderSnapshot(
+            provider: .deepseek,
+            confidence: .high,
+            dataSource: .officialTelemetry,
+            balance: ProviderBalance(currency: "EUR", toppedUpBalance: Decimal(string: "12.34")!)
+        )
+        XCTAssertEqual(service.title(snapshots: [balance], settings: settings, modeLabel: "LIVE", now: now), "DS EUR 12.34")
+
+        settings.menuBarDisplayTarget = .xai
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        XCTAssertEqual(service.title(snapshots: [balance], settings: settings, modeLabel: "LIVE", now: now), "xAI Unavailable")
+        XCTAssertFalse(service.title(snapshots: [balance], settings: settings, modeLabel: "LIVE", now: now).contains("LIVE"))
+
+        settings.menuBarDisplayTarget = .codex
+        let localCodex = ProviderSnapshot(provider: .codex, todayTokens: 12_400, confidence: .medium, dataSource: .localLog)
+        let title = service.title(snapshots: [localCodex], settings: settings, modeLabel: "LIVE", now: now)
+        XCTAssertEqual(title, "Co Local")
+        XCTAssertFalse(title.contains("%"))
+    }
+    func testAutomaticCompactPrimaryExcludesEnabledSecondaryProvider() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarSecondaryDisplayTarget = .claude
+        settings.menuBarShowsSecondaryProvider = true
+        let snapshots = [
+            ProviderSnapshot(
+                provider: .claude,
+                fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20),
+                confidence: .high,
+                dataSource: .officialStatusline
+            ),
+            ProviderSnapshot(
+                provider: .codex,
+                fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 30),
+                confidence: .high,
+                dataSource: .webUsage,
+                isExperimental: true
+            )
+        ]
+
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Co 70% EXP · Cl 80%")
+        let accessibility = service.accessibilityLabel(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
+        XCTAssertLessThan(accessibility.range(of: "Codex")!.lowerBound, accessibility.range(of: "Claude Code")!.lowerBound)
+    }
+
+    func testAutomaticCompactPrimaryFallsBackToSecondaryWhenNoAlternativeExists() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarSecondaryDisplayTarget = .claude
+        settings.menuBarShowsSecondaryProvider = true
+        let snapshots = [
+            ProviderSnapshot(
+                provider: .claude,
+                fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20),
+                confidence: .high,
+                dataSource: .officialStatusline
+            )
+        ]
+
+        XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Cl 80%")
+        let accessibility = service.accessibilityLabel(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
+        XCTAssertEqual(accessibility.components(separatedBy: "Claude Code").count, 2)
+    }
+
+    func testCompactAndIconOnlyAccessibilityAreLocalizedAndTruthful() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+            var settings = AppSettings()
+            settings.localization.language = language
+            settings.menuBarDisplayStyle = .compact
+            settings.menuBarDisplayTarget = .claude
+
+            let compactAccessibility = MenuBarStatusService().accessibilityLabel(
+                snapshots: [snapshot],
+                settings: settings,
+                modeLabel: "LIVE",
+                now: now
+            )
+            XCTAssertTrue(compactAccessibility.contains(TokenPilotLocalizer.localized("Claude Code", language: language)))
+            XCTAssertTrue(compactAccessibility.contains(String(format: TokenPilotLocalizer.localized("Capacity remaining %d%%", language: language), 80)))
+            XCTAssertFalse(compactAccessibility.contains("Cl 80%"))
+
+            settings.menuBarDisplayStyle = .iconOnly
+            let iconAccessibility = MenuBarStatusService().accessibilityLabel(
+                snapshots: [],
+                settings: settings,
+                modeLabel: "LIVE",
+                now: now
+            )
+            XCTAssertTrue(iconAccessibility.contains(TokenPilotLocalizer.localized("Unavailable", language: language)))
+            XCTAssertFalse(iconAccessibility.contains("%"))
+            settings.menuBarDisplayTarget = nil
+            let unavailableIconAccessibility = MenuBarStatusService().accessibilityLabel(
+                snapshots: [],
+                settings: settings,
+                modeLabel: "LIVE",
+                now: now
+            )
+            XCTAssertTrue(unavailableIconAccessibility.contains(TokenPilotLocalizer.localized("Menu bar data unavailable", language: language)))
+            XCTAssertFalse(unavailableIconAccessibility.contains("%"))
+        }
+    }
 
     func testMenuBarTitleUsesSelectedCodexManualValuesBeforeNextRefresh() {
         let snapshot = ProviderSnapshot(

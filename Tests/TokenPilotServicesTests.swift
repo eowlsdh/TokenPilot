@@ -171,6 +171,84 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(decoded.xaiEnabled)
         XCTAssertFalse(decoded.enabledProviders.contains(.xai))
     }
+    func testMenuBarCompositionSettingsDefaultAndRoundTrip() throws {
+        let defaults = AppSettings()
+        XCTAssertEqual(defaults.menuBarDisplayStyle, .detailed)
+        XCTAssertNil(defaults.menuBarSecondaryDisplayTarget)
+        XCTAssertFalse(defaults.menuBarShowsSecondaryProvider)
+
+        var settings = defaults
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarDisplayTarget = .claude
+        settings.menuBarSecondaryDisplayTarget = .deepseek
+        settings.menuBarShowsSecondaryProvider = true
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+
+        XCTAssertEqual(decoded.menuBarDisplayStyle, .compact)
+        XCTAssertEqual(decoded.menuBarDisplayTarget, .claude)
+        XCTAssertEqual(decoded.menuBarSecondaryDisplayTarget, .deepseek)
+        XCTAssertTrue(decoded.menuBarShowsSecondaryProvider)
+    }
+
+    func testMenuBarCompositionSettingsUnknownStyleAndProviderDecodeSafely() throws {
+        let json = """
+        {
+          "menuBarDisplayStyle": "Future display",
+          "menuBarDisplayTarget": "claude",
+          "menuBarSecondaryDisplayTarget": "future-provider",
+          "menuBarShowsSecondaryProvider": true
+        }
+        """
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.menuBarDisplayStyle, .detailed)
+        XCTAssertEqual(decoded.menuBarDisplayTarget, .claude)
+        XCTAssertNil(decoded.menuBarSecondaryDisplayTarget)
+        XCTAssertFalse(decoded.menuBarShowsSecondaryProvider)
+    }
+    func testAppSettingsDecodeNormalizesInvalidMenuBarComposition() throws {
+        let json = """
+        {
+          "claudeEnabled": true,
+          "codexEnabled": false,
+          "geminiEnabled": false,
+          "deepseekEnabled": false,
+          "monitoredProviders": {
+            "enabledProviders": ["claude"]
+          },
+          "menuBarDisplayTarget": "codex",
+          "menuBarSecondaryDisplayTarget": "claude",
+          "menuBarShowsSecondaryProvider": true
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+
+        XCTAssertNil(decoded.menuBarDisplayTarget)
+        XCTAssertEqual(decoded.menuBarSecondaryDisplayTarget, .claude)
+        XCTAssertTrue(decoded.menuBarShowsSecondaryProvider)
+    }
+
+    func testSettingsStoreRepairsInvalidMenuBarComposition() {
+        let suite = "TokenPilotMenuBarCompositionTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TokenPilotSettingsStore(defaults: defaults)
+
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .iconOnly
+        settings.menuBarDisplayTarget = .claude
+        settings.menuBarSecondaryDisplayTarget = .claude
+        settings.menuBarShowsSecondaryProvider = true
+
+        store.save(settings)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.menuBarDisplayStyle, .iconOnly)
+        XCTAssertEqual(loaded.menuBarDisplayTarget, .claude)
+        XCTAssertNil(loaded.menuBarSecondaryDisplayTarget)
+        XCTAssertFalse(loaded.menuBarShowsSecondaryProvider)
+    }
 
     private func abortKeychainTestOnAuthorizationError(_ error: Error) throws {
         #if canImport(Security)

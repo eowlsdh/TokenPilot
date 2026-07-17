@@ -445,6 +445,7 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         }
         copy.xAI.teamID = copy.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.normalizeProviderEnablement()
+        copy.normalizeMenuBarComposition()
         return copy
     }
 }

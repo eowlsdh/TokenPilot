@@ -88,6 +88,21 @@ public final class MenuBarStatusService: @unchecked Sendable {
         modeLabel: String,
         now: Date = Date()
     ) -> String {
+        if settings.menuBarDisplayStyle == .iconOnly {
+            return "TP"
+        }
+        if settings.menuBarDisplayStyle == .detailed && !settings.menuBarShowsSecondaryProvider {
+            return detailedTitle(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now)
+        }
+        return compactTitle(snapshots: snapshots, settings: settings, now: now)
+    }
+
+    private func detailedTitle(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        modeLabel: String,
+        now: Date
+    ) -> String {
         let candidates = allCandidates(from: snapshots, settings: settings)
         if let target = settings.menuBarDisplayTarget,
            settings.isProviderEnabled(target),
@@ -126,6 +141,52 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
     }
 
+    private func compactTitle(snapshots: [ProviderSnapshot], settings: AppSettings, now: Date) -> String {
+        let candidates = allCandidates(from: snapshots, settings: settings)
+        let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
+        let primaryCandidate = compactPrimaryCandidate(
+            from: candidates,
+            selectedTarget: selectedTarget,
+            settings: settings,
+            now: now
+        )
+        let primaryProvider = selectedTarget ?? primaryCandidate?.snapshot.provider
+        var segments = [compactSegment(provider: primaryProvider, candidate: primaryCandidate, settings: settings)]
+
+        if settings.menuBarShowsSecondaryProvider,
+           let secondary = settings.menuBarSecondaryDisplayTarget,
+           settings.isProviderEnabled(secondary),
+           secondary != primaryProvider {
+            let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
+            segments.append(compactSegment(provider: secondary, candidate: secondaryCandidate, settings: settings))
+        }
+        return segments.joined(separator: " · ")
+    }
+
+    private func compactSegment(provider: Provider?, candidate: Candidate?, settings: AppSettings) -> String {
+        guard let provider else { return "TP Setup" }
+        if provider == .xai {
+            return xAIManagementSetupConfigured(settings) ? "xAI Setup" : "xAI Unavailable"
+        }
+        guard let candidate else { return "\(provider.shortName) Setup" }
+        if candidate.kind == .percent, candidate.authority == "provider-reported",
+           let remaining = candidate.remainingPercent {
+            let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+            return "\(provider.shortName) \(remaining)%\(suffix)"
+        }
+        if candidate.kind == .money, let balance = candidate.snapshot.balance {
+            return "\(provider.shortName) \(DeepSeekBalanceFormatter.display(balance))"
+        }
+        switch candidate.authority {
+        case "user-entered":
+            return "\(provider.shortName) Manual"
+        case "local-derived":
+            return "\(provider.shortName) Local"
+        default:
+            return "\(provider.shortName) Unavailable"
+        }
+    }
+
     public func statusLevel(snapshots: [ProviderSnapshot], settings: AppSettings) -> MenuBarStatusLevel {
         guard let candidate = selectedCandidate(from: snapshots, settings: settings, now: Date()),
               candidate.kind == .percent,
@@ -160,6 +221,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
         now: Date = Date()
     ) -> String {
         let language = settings.localization.language
+        if settings.menuBarDisplayStyle != .detailed || settings.menuBarShowsSecondaryProvider {
+            return compactAccessibilityLabel(snapshots: snapshots, settings: settings, now: now, language: language)
+        }
         if settings.menuBarDisplayTarget == .xai, settings.isProviderEnabled(.xai) {
             return "TokenPilot, \(targetedXAIStatusTitle(settings: settings, language: language))"
         }
@@ -190,6 +254,79 @@ public final class MenuBarStatusService: @unchecked Sendable {
         parts.append(localizedAction(candidate.action, language: language))
         parts.append(localizedModeLabel(modeLabel, language: language))
         return parts.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
+    private func compactAccessibilityLabel(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        now: Date,
+        language: TokenPilotLanguage
+    ) -> String {
+        let candidates = allCandidates(from: snapshots, settings: settings)
+        let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
+        let primaryCandidate = compactPrimaryCandidate(
+            from: candidates,
+            selectedTarget: selectedTarget,
+            settings: settings,
+            now: now
+        )
+        let primaryProvider = selectedTarget ?? primaryCandidate?.snapshot.provider
+        var parts = ["TokenPilot", compactAccessibilitySegment(provider: primaryProvider, candidate: primaryCandidate, settings: settings, language: language)]
+
+        if settings.menuBarShowsSecondaryProvider,
+           let secondary = settings.menuBarSecondaryDisplayTarget,
+           settings.isProviderEnabled(secondary),
+           secondary != primaryProvider {
+            let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
+            parts.append(compactAccessibilitySegment(provider: secondary, candidate: secondaryCandidate, settings: settings, language: language))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    private func compactAccessibilitySegment(
+        provider: Provider?,
+        candidate: Candidate?,
+        settings: AppSettings,
+        language: TokenPilotLanguage
+    ) -> String {
+        guard let provider else { return localized("Menu bar data unavailable", language: language) }
+        let name = localized(provider.displayName, language: language)
+        if provider == .xai {
+            return "\(name), \(targetedXAIStatusTitle(settings: settings, language: language))"
+        }
+        guard let candidate else { return "\(name), \(localized("Unavailable", language: language))" }
+        if candidate.kind == .percent, candidate.authority == "provider-reported",
+           let remaining = candidate.remainingPercent {
+            return "\(name), \(localizedRemaining(remaining, language: language)), \(localizedAuthority(candidate.authority, language: language))"
+        }
+        if candidate.kind == .money, let balance = candidate.snapshot.balance {
+            return "\(name), \(localized("Balance", language: language)) \(DeepSeekBalanceFormatter.display(balance)), \(localizedAuthority(candidate.authority, language: language))"
+        }
+        return "\(name), \(localizedAuthority(candidate.authority, language: language))"
+    }
+    private func compactPrimaryCandidate(
+        from candidates: [Candidate],
+        selectedTarget: Provider?,
+        settings: AppSettings,
+        now: Date
+    ) -> Candidate? {
+        if let selectedTarget {
+            return representativeCandidate(from: candidates.filter { $0.snapshot.provider == selectedTarget })
+        }
+
+        let candidatesExcludingSecondary: [Candidate]
+        if settings.menuBarShowsSecondaryProvider,
+           let secondary = settings.menuBarSecondaryDisplayTarget,
+           settings.isProviderEnabled(secondary) {
+            candidatesExcludingSecondary = candidates.filter { $0.snapshot.provider != secondary }
+        } else {
+            candidatesExcludingSecondary = candidates
+        }
+        return selectedCandidate(
+            from: candidatesExcludingSecondary.isEmpty ? candidates : candidatesExcludingSecondary,
+            settings: settings,
+            now: now
+        )
     }
 
     private func localized(_ key: String, language: TokenPilotLanguage) -> String {

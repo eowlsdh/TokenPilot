@@ -40,6 +40,12 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum MenuBarDisplayStyle: String, Codable, CaseIterable, Sendable {
+    case detailed = "Detailed"
+    case compact = "Compact"
+    case iconOnly = "Icon Only"
+}
+
 public enum DataConfidence: String, Codable, CaseIterable, Identifiable, Sendable {
     case high
     case medium
@@ -1006,6 +1012,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
+    public var menuBarDisplayStyle: MenuBarDisplayStyle
+    public var menuBarSecondaryDisplayTarget: Provider?
+    public var menuBarShowsSecondaryProvider: Bool
     public var claudeStatusFilePath: String
     public var claudeStatusFileBookmarkData: Data?
     public var geminiTelemetryLogPath: String
@@ -1056,6 +1065,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
+        menuBarDisplayStyle: MenuBarDisplayStyle = .detailed,
+        menuBarSecondaryDisplayTarget: Provider? = nil,
+        menuBarShowsSecondaryProvider: Bool = false,
         challengeTargetTokens: Int = 10_000
     ) {
         self.claudeEnabled = claudeEnabled
@@ -1066,6 +1078,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
+        self.menuBarDisplayStyle = menuBarDisplayStyle
+        self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
+        self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
         self.claudeStatusFilePath = claudeStatusFilePath
         self.claudeStatusFileBookmarkData = claudeStatusFileBookmarkData
         self.geminiTelemetryLogPath = geminiTelemetryLogPath
@@ -1086,6 +1101,20 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
     }
+    public mutating func normalizeMenuBarComposition() {
+        if let primary = menuBarDisplayTarget, !isProviderEnabled(primary) {
+            menuBarDisplayTarget = nil
+        }
+
+        guard let secondary = menuBarSecondaryDisplayTarget,
+              isProviderEnabled(secondary),
+              secondary != menuBarDisplayTarget else {
+            menuBarSecondaryDisplayTarget = nil
+            menuBarShowsSecondaryProvider = false
+            return
+        }
+    }
+
 
     private enum CodingKeys: String, CodingKey {
         case claudeEnabled
@@ -1096,6 +1125,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
+        case menuBarDisplayStyle
+        case menuBarSecondaryDisplayTarget
+        case menuBarShowsSecondaryProvider
         case claudeStatusFilePath
         case claudeStatusFileBookmarkData
         case geminiTelemetryLogPath
@@ -1146,13 +1178,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
+            menuBarDisplayStyle: Self.decodeMenuBarDisplayStyle(from: container),
+            menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
+            menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000
         )
+        self.normalizeMenuBarComposition()
     }
 
     private static func decodeProviderIfPresent(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Provider? {
         guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
         return Provider(rawValue: rawValue)
+    }
+    private static func decodeMenuBarDisplayStyle(from container: KeyedDecodingContainer<CodingKeys>) -> MenuBarDisplayStyle {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .menuBarDisplayStyle) else {
+            return .detailed
+        }
+        return MenuBarDisplayStyle(rawValue: rawValue) ?? .detailed
     }
 
     public static var defaultAlertRules: [AlertRule] {

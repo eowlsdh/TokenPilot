@@ -551,6 +551,7 @@ final class TokenPilotViewModel: ObservableObject {
     func setProvider(_ provider: Provider, isEnabled: Bool) {
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
+            next.normalizeMenuBarComposition()
             settings = next
             if provider == .xai {
                 updateXAIDataSourceForCredentialState()
@@ -561,7 +562,60 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func setMenuBarDisplayTarget(_ provider: Provider?) {
-        settings.menuBarDisplayTarget = provider
+        var next = settings
+        if let provider, !next.isProviderEnabled(provider) { return }
+        next.menuBarDisplayTarget = provider
+        next.normalizeMenuBarComposition()
+        settings = next
+    }
+    func setMenuBarDisplayStyle(_ style: MenuBarDisplayStyle) {
+        settings.menuBarDisplayStyle = style
+    }
+
+    func setMenuBarShowsSecondaryProvider(_ showsSecondary: Bool) {
+        var next = settings
+        guard showsSecondary else {
+            next.menuBarShowsSecondaryProvider = false
+            next.normalizeMenuBarComposition()
+            settings = next
+            return
+        }
+
+        guard let secondary = firstAvailableSecondaryProvider(in: next) else {
+            next.menuBarShowsSecondaryProvider = false
+            next.menuBarSecondaryDisplayTarget = nil
+            settings = next
+            return
+        }
+
+        next.menuBarShowsSecondaryProvider = true
+        if next.menuBarSecondaryDisplayTarget == nil ||
+            next.menuBarSecondaryDisplayTarget == next.menuBarDisplayTarget ||
+            !next.isProviderEnabled(next.menuBarSecondaryDisplayTarget!) {
+            next.menuBarSecondaryDisplayTarget = secondary
+        }
+        next.normalizeMenuBarComposition()
+        settings = next
+    }
+
+    func setMenuBarSecondaryDisplayTarget(_ provider: Provider?) {
+        var next = settings
+        guard let provider else {
+            next.menuBarSecondaryDisplayTarget = nil
+            next.normalizeMenuBarComposition()
+            settings = next
+            return
+        }
+        guard provider != next.menuBarDisplayTarget, next.isProviderEnabled(provider) else { return }
+        next.menuBarSecondaryDisplayTarget = provider
+        next.normalizeMenuBarComposition()
+        settings = next
+    }
+
+    private func firstAvailableSecondaryProvider(in settings: AppSettings) -> Provider? {
+        Provider.allCases.first {
+            settings.isProviderEnabled($0) && $0 != settings.menuBarDisplayTarget
+        }
     }
 
 
