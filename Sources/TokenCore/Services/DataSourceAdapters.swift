@@ -1736,6 +1736,9 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
                 case .weekly:
                     if ["secondary", "week", "weekly", "7d", "seven", "long"].contains(where: { path.contains($0) }) { score += 100 }
                     if let minutes, minutes >= 24 * 60 { score += 50 }
+                case .monthly:
+                    if ["month", "monthly", "30d"].contains(where: { path.contains($0) }) { score += 100 }
+                    if let minutes, minutes >= 28 * 24 * 60 { score += 50 }
                 case .dailyRequests:
                     if path.contains("daily") { score += 100 }
                 }

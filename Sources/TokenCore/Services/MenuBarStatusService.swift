@@ -19,6 +19,20 @@ public struct MenuBarLowestRemainingSummary: Equatable, Sendable {
         self.remainingPercent = min(max(remainingPercent, 0), 100)
     }
 }
+public struct MenuBarProviderMetricSegment: Equatable, Sendable {
+    public let provider: Provider?
+    public let providerShortLabel: String
+    public let displayValue: String
+    public let accessibilityLabel: String
+
+    public init(provider: Provider?, providerShortLabel: String, displayValue: String, accessibilityLabel: String) {
+        self.provider = provider
+        self.providerShortLabel = providerShortLabel
+        self.displayValue = displayValue
+        self.accessibilityLabel = accessibilityLabel
+    }
+}
+
 
 public final class MenuBarStatusService: @unchecked Sendable {
     private enum CandidateKind: Equatable, Sendable {
@@ -74,6 +88,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
     }
 
     public func displayWindow(for snapshot: ProviderSnapshot) -> LimitWindow? {
+        if snapshot.provider == .xai {
+            guard snapshot.isExperimental,
+                  snapshot.dataSource == .experimentalCLI else {
+                return nil
+            }
+            return snapshot.monthly
+        }
         if let fiveHour = snapshot.fiveHour { return fiveHour }
         if let weekly = snapshot.weekly { return weekly }
         if let dailyRequestsPercent = snapshot.dailyRequestsPercent {
@@ -88,13 +109,43 @@ public final class MenuBarStatusService: @unchecked Sendable {
         modeLabel: String,
         now: Date = Date()
     ) -> String {
-        if settings.menuBarDisplayStyle == .iconOnly {
+        switch settings.menuBarDisplayStyle {
+        case .iconOnly:
             return "TP"
-        }
-        if settings.menuBarDisplayStyle == .detailed && !settings.menuBarShowsSecondaryProvider {
+        case .providerMetrics:
+            return providerMetricsTitle(snapshots: snapshots, settings: settings, now: now)
+        case .detailed where !settings.menuBarShowsSecondaryProvider:
             return detailedTitle(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now)
+        case .detailed, .compact:
+            return compactTitle(snapshots: snapshots, settings: settings, now: now)
         }
-        return compactTitle(snapshots: snapshots, settings: settings, now: now)
+    }
+
+    public func providerMetricsSegments(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        now: Date = Date()
+    ) -> [MenuBarProviderMetricSegment] {
+        let candidates = providerMetricsCandidates(from: snapshots, settings: settings)
+        let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
+        let primaryCandidate = compactPrimaryCandidate(
+            from: candidates,
+            selectedTarget: selectedTarget,
+            settings: settings,
+            now: now
+        )
+        let primaryProvider = selectedTarget ?? primaryCandidate?.snapshot.provider
+        var segments = [providerMetricSegment(provider: primaryProvider, candidate: primaryCandidate, settings: settings)]
+
+        if settings.menuBarShowsSecondaryProvider,
+           let secondary = settings.menuBarSecondaryDisplayTarget,
+           settings.isProviderEnabled(secondary),
+           secondary != primaryProvider {
+            let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
+            segments.append(providerMetricSegment(provider: secondary, candidate: secondaryCandidate, settings: settings))
+        }
+
+        return Array(segments.prefix(2))
     }
 
     private func detailedTitle(
@@ -141,7 +192,12 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
     }
 
-    private func compactTitle(snapshots: [ProviderSnapshot], settings: AppSettings, now: Date) -> String {
+    private func compactTitle(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        now: Date,
+        separator: String = " · "
+    ) -> String {
         let candidates = allCandidates(from: snapshots, settings: settings)
         let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
         let primaryCandidate = compactPrimaryCandidate(
@@ -160,8 +216,97 @@ public final class MenuBarStatusService: @unchecked Sendable {
             let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
             segments.append(compactSegment(provider: secondary, candidate: secondaryCandidate, settings: settings))
         }
-        return segments.joined(separator: " · ")
+        return segments.joined(separator: separator)
     }
+
+    private func providerMetricsTitle(snapshots: [ProviderSnapshot], settings: AppSettings, now: Date) -> String {
+        providerMetricsSegments(snapshots: snapshots, settings: settings, now: now)
+            .map { "\($0.providerShortLabel) \($0.displayValue)" }
+            .joined(separator: "  ")
+    }
+
+    private func providerMetricSegment(
+        provider: Provider?,
+        candidate: Candidate?,
+        settings: AppSettings
+    ) -> MenuBarProviderMetricSegment {
+        guard let provider else {
+            return MenuBarProviderMetricSegment(provider: nil, providerShortLabel: "TP", displayValue: "Setup", accessibilityLabel: "TokenPilot, \(localized("Setup", language: settings.localization.language))")
+        }
+
+        if provider == .xai {
+            if let candidate,
+               isExperimentalOpenCodeBarPercentage(candidate),
+               let remaining = candidate.remainingPercent {
+                return MenuBarProviderMetricSegment(
+                    provider: provider,
+                    providerShortLabel: provider.shortName,
+                    displayValue: "\(remaining)%·\(candidate.freshness == "stale" ? "ES" : "E")",
+                    accessibilityLabel: [
+                        localized(provider.displayName, language: settings.localization.language),
+                        localizedRemaining(remaining, language: settings.localization.language),
+                        localizedStability(candidate.stability, language: settings.localization.language),
+                        localized("Unofficial", language: settings.localization.language),
+                        localized("Monthly", language: settings.localization.language),
+                        localizedFreshness(candidate.freshness, language: settings.localization.language)
+                    ].joined(separator: ", ")
+                )
+            }
+            let marker = settings.xAI.usageSource == .experimentalOpenCodeBarCLI ? "Experimental" :
+                (xAIManagementSetupConfigured(settings) ? "Setup" : "Unavailable")
+            return MenuBarProviderMetricSegment(
+                provider: provider,
+                providerShortLabel: provider.shortName,
+                displayValue: marker,
+                accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
+            )
+        }
+
+        guard let candidate else {
+            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: provider.shortName, displayValue: "Setup", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
+        }
+        if candidate.kind == .percent, candidate.authority == "provider-reported",
+           let remaining = candidate.remainingPercent {
+            let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+            return MenuBarProviderMetricSegment(
+                provider: provider,
+                providerShortLabel: provider.shortName,
+                displayValue: "\(remaining)%\(suffix)",
+                accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localizedRemaining(remaining, language: settings.localization.language)), \(localizedAuthority(candidate.authority, language: settings.localization.language)), \(localizedFreshness(candidate.freshness, language: settings.localization.language))"
+            )
+        }
+        if candidate.kind == .money, let balance = candidate.snapshot.balance {
+            let value = DeepSeekBalanceFormatter.display(balance)
+            return MenuBarProviderMetricSegment(
+                provider: provider,
+                providerShortLabel: provider.shortName,
+                displayValue: "\(value)\(candidate.suffix.isEmpty ? "" : " \(candidate.suffix)")",
+                accessibilityLabel: [
+                    localized(provider.displayName, language: settings.localization.language),
+                    "\(localized("Balance", language: settings.localization.language)) \(value)",
+                    localizedAuthority(candidate.authority, language: settings.localization.language),
+                    localizedStability(candidate.stability, language: settings.localization.language),
+                    localizedFreshness(candidate.freshness, language: settings.localization.language)
+                ].joined(separator: ", ")
+            )
+        }
+        let marker: String
+        switch candidate.authority {
+        case "user-entered":
+            marker = "Manual"
+        case "local-derived":
+            marker = "Local"
+        default:
+            marker = "Unavailable"
+        }
+        return MenuBarProviderMetricSegment(
+            provider: provider,
+            providerShortLabel: provider.shortName,
+            displayValue: marker,
+            accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
+        )
+    }
+
 
     private func compactSegment(provider: Provider?, candidate: Candidate?, settings: AppSettings) -> String {
         guard let provider else { return "TP Setup" }
@@ -221,9 +366,16 @@ public final class MenuBarStatusService: @unchecked Sendable {
         now: Date = Date()
     ) -> String {
         let language = settings.localization.language
+        if settings.menuBarDisplayStyle == .providerMetrics {
+            let segments = providerMetricsSegments(snapshots: snapshots, settings: settings, now: now)
+                .map(\.accessibilityLabel)
+                .joined(separator: ", ")
+            return "TokenPilot, \(segments)"
+        }
         if settings.menuBarDisplayStyle != .detailed || settings.menuBarShowsSecondaryProvider {
             return compactAccessibilityLabel(snapshots: snapshots, settings: settings, now: now, language: language)
         }
+
         if settings.menuBarDisplayTarget == .xai, settings.isProviderEnabled(.xai) {
             return "TokenPilot, \(targetedXAIStatusTitle(settings: settings, language: language))"
         }
@@ -561,6 +713,49 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func allCandidates(from snapshots: [ProviderSnapshot], settings: AppSettings) -> [Candidate] {
         presentationSnapshots(from: snapshots, settings: settings)
             .flatMap { candidates(for: $0) }
+    }
+    private func providerMetricsCandidates(from snapshots: [ProviderSnapshot], settings: AppSettings) -> [Candidate] {
+        presentationSnapshots(from: snapshots, settings: settings)
+            .flatMap { snapshot -> [Candidate] in
+                if snapshot.provider == .xai {
+                    guard settings.xAI.usageSource == .experimentalOpenCodeBarCLI else { return [] }
+                    return experimentalOpenCodeBarCandidate(for: snapshot).map { [$0] } ?? []
+                }
+                return candidates(for: snapshot)
+            }
+    }
+
+    private func experimentalOpenCodeBarCandidate(for snapshot: ProviderSnapshot) -> Candidate? {
+        guard snapshot.provider == .xai,
+              snapshot.isExperimental,
+              snapshot.dataSource == .experimentalCLI,
+              snapshot.statusMessage?.contains("OpenCode Bar") == true,
+              let window = snapshot.monthly,
+              let used = window.usedPercent else {
+            return nil
+        }
+        return Candidate(
+            snapshot: snapshot,
+            kind: .percent,
+            rank: snapshot.isStale ? 6 : 2,
+            usedPercent: used,
+            remainingPercent: min(max(100 - used, 0), 100),
+            resetAt: window.resetAt,
+            durationMinutes: window.durationMinutes,
+            seriesID: "\(snapshot.provider.rawValue)/opencodebar",
+            suffix: snapshot.isStale ? "EXP STALE" : "EXP",
+            authority: "provider-reported",
+            stability: "experimental",
+            freshness: snapshot.isStale ? "stale" : "fresh",
+            action: snapshot.isStale ? "refreshProvider" : "reviewExperimentalConnector"
+        )
+    }
+
+    private func isExperimentalOpenCodeBarPercentage(_ candidate: Candidate) -> Bool {
+        candidate.snapshot.provider == .xai &&
+            candidate.kind == .percent &&
+            candidate.stability == "experimental" &&
+            candidate.snapshot.statusMessage?.contains("OpenCode Bar") == true
     }
 
     private func candidates(for snapshot: ProviderSnapshot) -> [Candidate] {

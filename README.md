@@ -6,7 +6,7 @@
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
 > **A local-first macOS menu bar monitor for AI coding quota and usage.**
-> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini CLI fallback, and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector. A Grok/xAI provider setup foundation is present but disabled by default and sends no xAI network requests.
+> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini CLI fallback, and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector. Grok/xAI is disabled by default: Management setup remains no-network, and an optional EXPERIMENTAL OpenCode Bar bridge is separately opt-in.
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, or xAI.
 
@@ -35,7 +35,7 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 | **Menu bar** | Single-line remaining quota label: `5h`, weekly, and estimated/manual suffixes when needed. |
 | **Overview** | Capacity-first current evidence card, provider capacity rows, refresh/recovery notes, and alert status. No local activity analytics cards. |
 | **History** | Capacity evidence timeline plus usage event summary and JSON/CSV export. Local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota or visible dashboard surfaces. |
-| **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, Grok/xAI no-network setup, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
+| **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, no-network Grok/xAI Management setup, optional OpenCode Bar Grok bridge, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
 
 ---
 
@@ -44,13 +44,13 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Native menu bar utility** | `MenuBarExtra` app with compact quota display and no Dock icon. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini fallback, DeepSeek balance, and no-network Grok/xAI setup status in one place. |
+| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini fallback, DeepSeek balance, no-network Grok/xAI Management setup, and an optional experimental Grok bridge in one place. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
 | 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
 | 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
-| 🧰 **Grok/xAI setup foundation** | Disabled by default; auth-unconfirmed and no-network until xAI publishes explicit Management-key transport docs. No live balance/usage or Grok web subscription tracking. |
+| 🧰 **Grok/xAI sources** | Default-disabled Management setup remains auth-unconfirmed and no-network. An explicit opt-in OpenCode Bar bridge imports only Grok usage percentage/reset and is experimental/unofficial. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
@@ -96,7 +96,7 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 | **Codex** | Opt-in Codex CLI limit hints, manual `/status` / manual estimates, local activity JSONL | Medium/estimated/unofficial unless Codex exposes stable official quota metadata. |
 | **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini telemetry/session paths remain fallback-only | High for Antigravity statusLine and legacy telemetry metadata; local session JSON remains local/metadata-only. |
 | **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
-| **Grok / xAI API** | Disabled-by-default local setup only: Management key presence in TokenPilot Keychain + local team ID presence | Auth-unconfirmed; production sends zero xAI HTTP requests, no live balance/usage, and no Grok web subscription tracking. Future Management endpoints are blocked pending explicit xAI transport docs. |
+| **Grok / xAI** | Disabled-by-default Management setup: Management key presence in TokenPilot Keychain + local team ID presence. Optional EXPERIMENTAL OpenCode Bar bridge runs only `opencodebar provider grok --json` when explicitly enabled and imports only percentage/reset. | Grok Settings → Usage remains the official source of truth. The bridge is unofficial, may break, and is not official API billing or web-subscription entitlement evidence. |
 
 ### Provider diagnostics
 
@@ -106,17 +106,16 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - Diagnostics summarize local metadata availability without showing raw paths, prompts, responses, cookies, tokens, or raw events.
 - Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
-- Grok/xAI setup state is explicit: disabled, setup needed, or auth-unconfirmed; Check Connection only checks local setup and sends zero xAI HTTP requests.
+- Grok/xAI state is explicit: disabled Management setup, auth-unconfirmed Management setup, or optional experimental OpenCode Bar bridge. The Management Check Connection is local-only; disabling the bridge stops TokenPilot subprocess invocation.
 
-### Grok / xAI setup foundation
+### Grok / xAI sources
 
-Grok / xAI API support is a **disabled-by-default setup foundation**, not live monitoring:
+Grok Settings → Usage remains the official source of truth. TokenPilot offers two separate, disabled-by-default paths:
 
-- Saving a Management key stores it only in TokenPilot's Keychain item; it is never displayed or exported.
-- The team ID stays local, is masked or represented as presence-only in summaries/diagnostics/accessibility, and is excluded from exports.
-- Even with both values saved, status remains **auth-unconfirmed**. TokenPilot does not validate xAI credentials.
-- Production builds send **zero xAI HTTP requests**. There is no live xAI balance, usage, prepaid-balance alert, or Grok web subscription tracking yet.
-- Future Management-key endpoint scope (for example usage, billing, or prepaid balance) is blocked until xAI publishes explicit Management-key transport documentation; it is not current capability.
+- **Management setup (no network):** Saving a Management key stores it only in TokenPilot's Keychain item; it is never displayed or exported. The team ID stays local, is masked or represented as presence-only in summaries/diagnostics/accessibility, and is excluded from exports. Even with both values saved, status remains **auth-unconfirmed**. TokenPilot does not validate xAI credentials or call xAI endpoints; the prior “zero xAI HTTP requests” claim applies to TokenPilot itself.
+- **Optional OpenCode Bar Grok bridge:** Install OpenCode Bar and complete its Grok CLI setup according to its documentation, then explicitly enable this source in TokenPilot. TokenPilot runs only the fixed command `opencodebar provider grok --json`, imports only percentage and reset data, and stops invoking the subprocess when the source is disabled.
+- The bridge is **EXPERIMENTAL** and **UNOFFICIAL**. OpenCode Bar may read its own Grok CLI authentication and call undocumented endpoints, so its results may break and are not guarantees of official API billing or Grok web-subscription entitlement.
+- Future TokenPilot Management-key endpoint scope (for example usage, billing, or prepaid balance) remains blocked until xAI publishes explicit Management-key transport documentation; it is not current capability.
 
 ### Antigravity CLI setup
 

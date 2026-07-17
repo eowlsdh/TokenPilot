@@ -50,16 +50,37 @@ struct TokenMonitorApp: App {
 
     @ViewBuilder
     private func productionMenuBarLabel(model: TokenPilotViewModel) -> some View {
-        Text(model.menuBarTitle)
-            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-            .monospacedDigit()
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .fixedSize(horizontal: true, vertical: false)
+        if model.settings.menuBarDisplayStyle == .providerMetrics {
+            HStack(alignment: .center, spacing: 5) {
+                ForEach(Array(model.menuBarMetricSegments.enumerated()), id: \.offset) { _, segment in
+                    VStack(alignment: .leading, spacing: -2) {
+                        Text(segment.providerShortLabel)
+                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                        Text(segment.displayValue)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                    }
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .frame(height: 20)
             .help(model.menuBarAccessibilityLabel)
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel(model.menuBarAccessibilityLabel)
+        } else {
+            Text(model.menuBarTitle)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: true, vertical: false)
+                .help(model.menuBarAccessibilityLabel)
+                .accessibilityLabel(model.menuBarAccessibilityLabel)
+        }
     }
 }
+
 #if DEBUG
 private enum TokenPilotDebugAccessibilityProfile: String {
     case standard

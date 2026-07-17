@@ -228,6 +228,13 @@ final class TokenPilotViewModel: ObservableObject {
             now: menuBarNow
         )
     }
+    var menuBarMetricSegments: [MenuBarProviderMetricSegment] {
+        menuBarStatusService.providerMetricsSegments(
+            snapshots: snapshots,
+            settings: settings,
+            now: menuBarNow
+        )
+    }
 
     var menuBarStatusLevel: MenuBarStatusLevel {
         menuBarStatusService.statusLevel(snapshots: snapshots, settings: settings)
@@ -1063,8 +1070,14 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         if provider == .xai {
-            updateXAIDataSourceForCredentialState(lastScanAt: Date())
-            bannerMessage = "\(t(provider.displayName)): \(sourceStatusText(provider)). \(t("No xAI HTTP requests are sent."))"
+            if settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
+                await refresh(reason: .manual)
+                let status = snapshots.first(where: { $0.provider == .xai })?.statusMessage ?? t("Unavailable")
+                bannerMessage = "\(t(provider.displayName)): \(status)"
+            } else {
+                updateXAIDataSourceForCredentialState(lastScanAt: Date())
+                bannerMessage = "\(t(provider.displayName)): \(sourceStatusText(provider)). \(t("No xAI HTTP requests are sent."))"
+            }
             return
         }
         let source = await connectionService.check(settings: settings, provider: provider)
@@ -1359,11 +1372,17 @@ final class TokenPilotViewModel: ObservableObject {
         xAIManagementKeyConfigured && xAITeamIDConfigured
     }
 
+    private var usesExperimentalOpenCodeBar: Bool {
+        settings.xAI.usageSource == .experimentalOpenCodeBarCLI
+    }
+
     private func xAIDataSourceForCredentialState(lastScanAt: Date? = nil) -> ProviderDataSource {
         let enabled = settings.isProviderEnabled(.xai)
         let statusMessage: String
         if !enabled {
             statusMessage = "xAI disabled"
+        } else if usesExperimentalOpenCodeBar {
+            statusMessage = "EXPERIMENTAL / UNOFFICIAL · OpenCode Bar CLI"
         } else if xAISetupInputsComplete {
             statusMessage = "Management authentication unconfirmed"
         } else if !xAIManagementKeyConfigured && !xAITeamIDConfigured {
@@ -1382,7 +1401,7 @@ final class TokenPilotViewModel: ObservableObject {
             customPath: nil,
             lastScanAt: lastScanAt,
             status: enabled ? .manual : .disabled,
-            confidence: xAISetupInputsComplete ? .manual : .low,
+            confidence: usesExperimentalOpenCodeBar ? .manual : (xAISetupInputsComplete ? .manual : .low),
             statusMessage: statusMessage
         )
     }
@@ -1395,6 +1414,16 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func xAIStatusText(_ source: ProviderDataSource) -> String {
         guard source.status != .disabled else { return t("Disabled") }
+        if usesExperimentalOpenCodeBar {
+            if let snapshot = snapshots.first(where: {
+                $0.provider == .xai &&
+                    $0.statusMessage?.contains("OpenCode Bar") == true &&
+                    Self.snapshotHasDataModeEvidence($0)
+            }), let status = snapshot.statusMessage {
+                return t(status)
+            }
+            return t("EXPERIMENTAL / UNOFFICIAL · OpenCode Bar CLI")
+        }
         let message = source.statusMessage.map(t) ?? t("Setup needed")
         if xAISetupInputsComplete {
             return message
@@ -1403,6 +1432,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func xAISourceDetailText() -> String {
+        if usesExperimentalOpenCodeBar {
+            return "\(t("EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values.")) \(t("TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota."))"
+        }
         guard settings.isProviderEnabled(.xai) else {
             return t("xAI is disabled by default. Enable it only when you want local setup visibility.")
         }
@@ -1413,6 +1445,11 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func xAINextActionText() -> String {
+        if usesExperimentalOpenCodeBar {
+            return settings.isProviderEnabled(.xai)
+                ? "\(t("OpenCode Bar CLI (Experimental)")) · \(t("Check Connection"))"
+                : "\(t("Enable xAI")) · \(t("OpenCode Bar CLI (Experimental)"))"
+        }
         guard settings.isProviderEnabled(.xai) else {
             return t("Enable xAI only when you want local setup visibility.")
         }
@@ -1420,6 +1457,10 @@ final class TokenPilotViewModel: ObservableObject {
             return t("Authentication is unconfirmed; verify credentials outside TokenPilot.")
         }
         return t("Enter a local team ID and save a Management key; Check Connection stays local.")
+    }
+
+    var xAIExperimentalGuideText: String {
+        "\(xAISourceDetailText()) \(xAINextActionText())"
     }
 
     private func updateDeepSeekDataSourceForCredentialState() {

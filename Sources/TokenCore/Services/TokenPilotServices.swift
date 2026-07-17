@@ -1,5 +1,8 @@
 import Foundation
 import os
+#if os(macOS)
+import Darwin
+#endif
 #if canImport(UserNotifications)
 import UserNotifications
 #endif
@@ -171,6 +174,400 @@ public struct XAIManagementDiagnosticsAdapter: ProviderRefreshAdapter {
             dataSource: .manual,
             statusMessage: message
         )
+    }
+}
+public struct XAIOpenCodeBarAdapter: ProviderRefreshAdapter {
+    public let provider: Provider = .xai
+
+    private static let maximumOutputBytes = 64 * 1_024
+    private static let timeout: TimeInterval = 5
+    private static let terminationGrace: TimeInterval = 0.25
+    private static let terminationWait: TimeInterval = 1
+    private let runner: @Sendable (ProcessLifecycle) throws -> Data
+
+    public init() {
+        runner = Self.runOpenCodeBar
+    }
+
+    init(runner: @escaping @Sendable () throws -> Data) {
+        self.runner = { _ in try runner() }
+    }
+
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        guard settings.xaiEnabled,
+              settings.isProviderEnabled(.xai),
+              settings.xAI.usageSource == .experimentalOpenCodeBarCLI else {
+            return await XAIManagementDiagnosticsAdapter().refresh(settings: settings, now: now)
+        }
+
+        let snapshot: ProviderSnapshot
+        let lifecycle = ProcessLifecycle()
+        do {
+            let runner = self.runner
+            let task = Task.detached(priority: .utility) {
+                try runner(lifecycle)
+            }
+            let data = try await withTaskCancellationHandler(operation: {
+                try await task.value
+            }, onCancel: {
+                lifecycle.requestCancellation()
+            })
+            try Task.checkCancellation()
+            snapshot = try Self.snapshot(from: data, now: now)
+        } catch let error as OpenCodeBarError {
+            snapshot = Self.unavailableSnapshot(now: now, message: error.message)
+        } catch {
+            snapshot = Self.unavailableSnapshot(now: now, message: "OpenCode Bar CLI unavailable")
+        }
+
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now),
+            typedErrors: [],
+            observedAt: now
+        )
+    }
+
+    private static func runOpenCodeBar(lifecycle: ProcessLifecycle) throws -> Data {
+        let process = Process()
+        process.executableURL = try executableURL()
+        process.arguments = ["provider", "grok", "--json"]
+        process.environment = minimalEnvironment()
+
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        let collector = OutputCollector(limit: maximumOutputBytes)
+        let stdoutEOF = DispatchSemaphore(value: 0)
+        let stderrEOF = DispatchSemaphore(value: 0)
+        stdout.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                stdoutEOF.signal()
+            } else {
+                collector.appendStdout(data)
+                if collector.exceededLimit { lifecycle.requestTermination() }
+            }
+        }
+        stderr.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+                handle.readabilityHandler = nil
+                stderrEOF.signal()
+            } else {
+                collector.appendStderr(data)
+                if collector.exceededLimit { lifecycle.requestTermination() }
+            }
+        }
+
+        let terminated = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in terminated.signal() }
+
+        do {
+            try process.run()
+        } catch {
+            stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
+            throw OpenCodeBarError.unavailable
+        }
+        lifecycle.attach(process)
+
+        let deadline = Date().addingTimeInterval(timeout)
+        var result: OpenCodeBarError?
+        var didTerminate = false
+        while !didTerminate {
+            if terminated.wait(timeout: .now()) == .success {
+                didTerminate = true
+                break
+            }
+            if collector.exceededLimit {
+                result = .outputTooLarge
+                lifecycle.requestTermination()
+            } else if lifecycle.isCancellationRequested {
+                result = .cancelled
+                lifecycle.requestTermination()
+            } else if Date() >= deadline {
+                result = .timeout
+                lifecycle.requestTermination()
+            }
+
+            if result != nil {
+                guard terminated.wait(timeout: .now() + terminationGrace + terminationWait) == .success else {
+                    stdout.fileHandleForReading.readabilityHandler = nil
+                    stderr.fileHandleForReading.readabilityHandler = nil
+                    throw OpenCodeBarError.failed
+                }
+                didTerminate = true
+                break
+            }
+            didTerminate = terminated.wait(timeout: .now() + 0.05) == .success
+        }
+
+        guard stdoutEOF.wait(timeout: .now() + terminationWait) == .success,
+              stderrEOF.wait(timeout: .now() + terminationWait) == .success else {
+            stdout.fileHandleForReading.readabilityHandler = nil
+            stderr.fileHandleForReading.readabilityHandler = nil
+            throw OpenCodeBarError.failed
+        }
+
+        if let result { throw result }
+        guard !collector.exceededLimit else { throw OpenCodeBarError.outputTooLarge }
+        guard process.terminationStatus == 0 else { throw OpenCodeBarError.failed }
+        return collector.stdout
+    }
+
+    private static func executableURL() throws -> URL {
+        let manager = FileManager.default
+        for directory in ["/opt/homebrew/bin", "/usr/local/bin"] {
+            let candidate = URL(fileURLWithPath: directory, isDirectory: true)
+                .appendingPathComponent("opencodebar", isDirectory: false)
+                .resolvingSymlinksInPath()
+                .standardizedFileURL
+            guard let attributes = try? manager.attributesOfItem(atPath: candidate.path),
+                  let type = attributes[.type] as? FileAttributeType,
+                  let owner = (attributes[.ownerAccountID] as? NSNumber)?.uint32Value,
+                  let permissions = (attributes[.posixPermissions] as? NSNumber)?.intValue,
+                  isTrustedExecutable(
+                    canonicalPath: candidate.path,
+                    isRegularFile: type == .typeRegular,
+                    isExecutable: manager.isExecutableFile(atPath: candidate.path),
+                    ownerID: owner,
+                    currentUserID: currentUserID(),
+                    permissions: permissions
+                  ) else {
+                continue
+            }
+            return candidate
+        }
+        throw OpenCodeBarError.unavailable
+    }
+
+    internal static func isTrustedExecutable(
+        canonicalPath: String,
+        isRegularFile: Bool,
+        isExecutable: Bool,
+        ownerID: UInt32,
+        currentUserID: UInt32,
+        permissions: Int
+    ) -> Bool {
+        let roots = [
+            "/opt/homebrew/Cellar/opencode-bar/",
+            "/usr/local/Cellar/opencode-bar/"
+        ]
+        guard roots.contains(where: { canonicalPath.hasPrefix($0) }),
+              canonicalPath.hasSuffix("/bin/opencodebar"),
+              isRegularFile,
+              isExecutable,
+              ownerID == 0 || ownerID == currentUserID,
+              permissions & 0o022 == 0 else {
+            return false
+        }
+        return true
+    }
+
+    private static func currentUserID() -> UInt32 {
+        UInt32(getuid())
+    }
+
+    private static func minimalEnvironment() -> [String: String] {
+        var environment = ["PATH": "/usr/bin:/bin", "LANG": "C"]
+        if let home = ProcessInfo.processInfo.environment["HOME"], home.hasPrefix("/") {
+            environment["HOME"] = home
+        }
+        return environment
+    }
+
+    private static func snapshot(from data: Data, now: Date) throws -> ProviderSnapshot {
+        guard data.count <= maximumOutputBytes,
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let grok = root["grok"] as? [String: Any],
+              let percentage = percentage(from: grok["usagePercentage"]) else {
+            throw data.count > maximumOutputBytes ? OpenCodeBarError.outputTooLarge : OpenCodeBarError.malformed
+        }
+
+        let resetAt = date(from: grok["primaryReset"])
+        let quota = LimitWindow(
+            kind: .monthly,
+            name: "Grok monthly usage",
+            usedPercent: percentage,
+            resetAt: resetAt,
+            label: "Grok monthly usage",
+            confidence: .low
+        )
+        return ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            monthly: quota,
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage"
+        )
+    }
+
+    private static func percentage(from value: Any?) -> Int? {
+        let number: Double?
+        if let value = value as? NSNumber {
+            number = value.doubleValue
+        } else if let value = value as? String {
+            number = Double(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            number = nil
+        }
+        guard let number, number.isFinite else { return nil }
+        return min(max(Int(number.rounded()), 0), 100)
+    }
+
+    private static func date(from value: Any?) -> Date? {
+        if let timestamp = value as? NSNumber {
+            return Date(timeIntervalSince1970: timestamp.doubleValue)
+        }
+        guard let string = value as? String else { return nil }
+        let iso8601 = ISO8601DateFormatter()
+        return iso8601.date(from: string)
+    }
+
+    private static func unavailableSnapshot(now: Date, message: String) -> ProviderSnapshot {
+        ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · \(message)"
+        )
+    }
+
+    private enum OpenCodeBarError: Error {
+        case unavailable
+        case timeout
+        case cancelled
+        case outputTooLarge
+        case failed
+        case malformed
+
+        var message: String {
+            switch self {
+            case .unavailable: return "Install OpenCode Bar CLI to enable usage refresh"
+            case .timeout: return "OpenCode Bar CLI timed out; try again"
+            case .cancelled: return "OpenCode Bar CLI refresh cancelled"
+            case .outputTooLarge: return "OpenCode Bar CLI returned too much data"
+            case .failed: return "OpenCode Bar CLI could not refresh usage"
+            case .malformed: return "OpenCode Bar CLI returned an unsupported response"
+            }
+        }
+    }
+
+    private final class ProcessLifecycle: @unchecked Sendable {
+        private let lock = NSLock()
+        private var process: Process?
+        private var cancellationRequested = false
+        private var terminationRequested = false
+
+        var isCancellationRequested: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return cancellationRequested
+        }
+
+        func attach(_ process: Process) {
+            #if os(macOS)
+            let processID = process.processIdentifier
+            if processID > 0 { _ = setpgid(processID, processID) }
+            #endif
+            lock.lock()
+            self.process = process
+            let shouldTerminate = cancellationRequested || terminationRequested
+            lock.unlock()
+            if shouldTerminate { sendTerminationSignal(to: process) }
+        }
+
+        func requestCancellation() {
+            lock.lock()
+            cancellationRequested = true
+            lock.unlock()
+            requestTermination()
+        }
+
+        func requestTermination() {
+            lock.lock()
+            guard !terminationRequested else {
+                lock.unlock()
+                return
+            }
+            terminationRequested = true
+            let process = self.process
+            lock.unlock()
+
+            guard let process else { return }
+            sendTerminationSignal(to: process)
+        }
+
+        private func sendTerminationSignal(to process: Process) {
+            #if os(macOS)
+            let processID = process.processIdentifier
+            if processID > 0 { _ = kill(-processID, SIGTERM) }
+            #endif
+            if process.isRunning { process.terminate() }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + XAIOpenCodeBarAdapter.terminationGrace) {
+                guard process.isRunning else { return }
+                #if os(macOS)
+                let processID = process.processIdentifier
+                if processID > 0 { _ = kill(-processID, SIGKILL) }
+                if processID > 0 { _ = kill(processID, SIGKILL) }
+                #endif
+                if process.isRunning { process.terminate() }
+            }
+        }
+    }
+
+    private final class OutputCollector: @unchecked Sendable {
+        private let lock = NSLock()
+        private let limit: Int
+        private var stdoutData = Data()
+        private var byteCount = 0
+        private var didExceedLimit = false
+
+        init(limit: Int) {
+            self.limit = limit
+        }
+
+        var stdout: Data {
+            lock.lock()
+            defer { lock.unlock() }
+            return stdoutData
+        }
+
+        var exceededLimit: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return didExceedLimit
+        }
+
+        func appendStdout(_ data: Data) {
+            append(data, includeInStdout: true)
+        }
+
+        func appendStderr(_ data: Data) {
+            append(data, includeInStdout: false)
+        }
+
+        private func append(_ data: Data, includeInStdout: Bool) {
+            lock.lock()
+            defer { lock.unlock() }
+            guard !data.isEmpty else { return }
+            let remaining = limit - byteCount
+            if remaining > 0, includeInStdout {
+                stdoutData.append(data.prefix(remaining))
+            }
+            byteCount += data.count
+            if byteCount > limit {
+                didExceedLimit = true
+            }
+        }
     }
 }
 
@@ -613,7 +1010,7 @@ public final class UsageStore: @unchecked Sendable {
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
             CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
             DeepSeekBalanceAdapter(),
-            XAIManagementDiagnosticsAdapter()
+            XAIOpenCodeBarAdapter()
         ]
     }
 
@@ -810,6 +1207,7 @@ public final class NotificationRuleService: @unchecked Sendable {
     private func windowValue(snapshot: ProviderSnapshot, window: LimitWindowKind) -> Int? {
         switch window {
         case .fiveHour: return snapshot.fiveHour?.usedPercent
+        case .monthly: return snapshot.monthly?.usedPercent
         case .weekly: return snapshot.weekly?.usedPercent
         case .dailyRequests: return snapshot.dailyRequestsPercent
         }
@@ -818,6 +1216,7 @@ public final class NotificationRuleService: @unchecked Sendable {
     private func windowReset(snapshot: ProviderSnapshot, window: LimitWindowKind) -> Date? {
         switch window {
         case .fiveHour: return snapshot.fiveHour?.resetAt
+        case .monthly: return snapshot.monthly?.resetAt
         case .weekly: return snapshot.weekly?.resetAt
         case .dailyRequests: return Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
         }

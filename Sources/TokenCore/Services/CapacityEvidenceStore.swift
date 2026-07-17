@@ -2486,7 +2486,7 @@ public enum CapacityAlertLegacyMigrator {
             return try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
         case .weekly:
             return try CapacitySeriesID(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, unit: .percent)
-        case .dailyRequests:
+        case .dailyRequests, .monthly:
             throw CapacityContractError.unsupportedSeries
         }
     }

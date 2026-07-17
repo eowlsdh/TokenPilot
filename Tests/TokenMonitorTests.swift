@@ -320,6 +320,102 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(settings.setProviderEnabled(.gemini, isEnabled: false))
         XCTAssertEqual(service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now), "Cl 80%")
     }
+    func testProviderMetricsRetainsXAIExperimentalProvenanceAndHonorsOptOut() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarDisplayTarget = .xai
+        settings.menuBarSecondaryDisplayTarget = .claude
+        settings.menuBarShowsSecondaryProvider = true
+        settings.xAI.usageSource = .experimentalOpenCodeBarCLI
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+
+        let experimental = ProviderSnapshot(
+            provider: .xai,
+            monthly: LimitWindow(kind: .monthly, usedPercent: 42, resetAt: now.addingTimeInterval(3_600)),
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage"
+        )
+        let staleExperimental = ProviderSnapshot(
+            provider: .xai,
+            monthly: LimitWindow(kind: .monthly, usedPercent: 42, resetAt: now.addingTimeInterval(3_600)),
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            isStale: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage"
+        )
+        let claude = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+
+        let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude])
+        XCTAssertEqual(segments.first?.displayValue, "58%·E")
+        XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
+        XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("unofficial") == true)
+        XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("monthly") == true)
+
+        let staleSegments = service.providerMetricsSegments(snapshots: [staleExperimental, claude], settings: settings, now: now)
+        XCTAssertEqual(staleSegments.count, 2)
+        XCTAssertEqual(staleSegments.first?.displayValue, "58%·ES")
+        XCTAssertTrue(staleSegments.first?.accessibilityLabel.localizedCaseInsensitiveContains("stale") == true)
+
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+            settings.localization.language = language
+            let accessibility = service.accessibilityLabel(
+                snapshots: [staleExperimental, claude],
+                settings: settings,
+                modeLabel: "EXPERIMENTAL",
+                now: now
+            )
+            XCTAssertTrue(accessibility.contains(TokenPilotLocalizer.localized("Experimental connector", language: language)))
+            XCTAssertTrue(accessibility.contains(TokenPilotLocalizer.localized("Stale", language: language)))
+            XCTAssertTrue(accessibility.contains(TokenPilotLocalizer.localized("Unofficial", language: language)))
+            XCTAssertTrue(accessibility.contains(TokenPilotLocalizer.localized("Monthly", language: language)))
+            XCTAssertTrue(accessibility.contains(String(format: TokenPilotLocalizer.localized("Capacity remaining %d%%", language: language), 58)))
+        }
+
+        settings.xAI.usageSource = .managementSetup
+        let optedOutSegments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
+        XCTAssertEqual(optedOutSegments.count, 2)
+        XCTAssertEqual(optedOutSegments.first?.provider, .xai)
+        XCTAssertEqual(optedOutSegments.first?.displayValue, "Unavailable")
+        XCTAssertFalse(optedOutSegments.first?.displayValue.contains("%") == true)
+        XCTAssertFalse(service.accessibilityLabel(snapshots: [experimental, claude], settings: settings, modeLabel: "LIVE", now: now).contains("58%"))
+    }
+
+    func testProviderMetricsManualStaleBalanceKeepsVisibleAndAccessibleProvenance() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarDisplayTarget = .deepseek
+        let snapshot = ProviderSnapshot(
+            provider: .deepseek,
+            confidence: .manual,
+            dataSource: .manual,
+            isStale: true,
+            balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "12.34")!)
+        )
+
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+            settings.localization.language = language
+            let segment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [snapshot], settings: settings, now: now).first)
+            XCTAssertEqual(segment.displayValue, "$12.34 EST STALE")
+            XCTAssertTrue(segment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Balance", language: language)))
+            XCTAssertTrue(segment.accessibilityLabel.contains(TokenPilotLocalizer.localized("User entered", language: language)))
+            XCTAssertTrue(segment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Manual entry", language: language)))
+            XCTAssertTrue(segment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Stale", language: language)))
+        }
+    }
 
     func testCompactMenuBarUsesNativeBalanceAndNeutralUnavailableLabels() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -2439,6 +2535,8 @@ final class TokenMonitorTests: XCTestCase {
             "Supported",
             "Compatibility bridge",
             "Experimental connector",
+            "Monthly",
+            "Unofficial",
             "Manual entry",
             "Fresh",
             "Stale",

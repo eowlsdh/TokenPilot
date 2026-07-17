@@ -86,6 +86,46 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(LimitWindow(kind: .weekly, usedPercent: 0).remainingPercent, 100)
         XCTAssertNil(LimitWindow(kind: .weekly).remainingPercent)
     }
+    func testProviderSnapshotLegacyDecodeAndMonthlyRoundTrip() throws {
+        let legacyJSON = """
+        {
+          "provider": "xai",
+          "updatedAt": 1800000000,
+          "fiveHour": {
+            "id": "fiveHour",
+            "kind": "fiveHour",
+            "name": "Legacy window",
+            "usedPercent": 12,
+            "label": "5h",
+            "confidence": "low"
+          },
+          "todayTokens": 0,
+          "confidence": "low",
+          "dataSource": "localLog",
+          "isExperimental": true,
+          "isStale": false,
+          "events": []
+        }
+        """
+        let legacy = try JSONDecoder().decode(ProviderSnapshot.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertEqual(legacy.fiveHour?.usedPercent, 12)
+        XCTAssertNil(legacy.monthly)
+        XCTAssertEqual(legacy.dataSource, .localLog)
+
+        let monthly = ProviderSnapshot(
+            provider: .xai,
+            monthly: LimitWindow(kind: .monthly, usedPercent: 37),
+            dataSource: .experimentalCLI,
+            isExperimental: true
+        )
+        let roundTrip = try JSONDecoder().decode(ProviderSnapshot.self, from: JSONEncoder().encode(monthly))
+
+        XCTAssertEqual(roundTrip.monthly?.kind, .monthly)
+        XCTAssertEqual(roundTrip.primaryUsedPercent, 37)
+        XCTAssertEqual(roundTrip.dataSource, .experimentalCLI)
+    }
+
 
     func testAppSettingsDecodeUsesClaudeStatuslineDefaultPath() throws {
         let decoded = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
@@ -144,6 +184,12 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(legacy.xAI.prepaidBalanceAlertThresholdUSD, Decimal(5))
         XCTAssertFalse(legacy.enabledProviders.contains(.xai))
         XCTAssertFalse(legacy.alertRules.contains { $0.provider == .xai })
+        XCTAssertEqual(legacy.xAI.usageSource, .managementSetup)
+
+        var experimental = AppSettings()
+        experimental.xAI = XAISettings(usageSource: .experimentalOpenCodeBarCLI)
+        let experimentalRoundTrip = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(experimental))
+        XCTAssertEqual(experimentalRoundTrip.xAI.usageSource, .experimentalOpenCodeBarCLI)
 
         let unknownProviderJSON = """
         {
@@ -3429,6 +3475,180 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(refresh.typedErrors.isEmpty)
     }
 
+    func testXAIOpenCodeBarAdapterTrustsOnlyCanonicalSecureHomebrewExecutables() {
+        XCTAssertTrue(XAIOpenCodeBarAdapter.isTrustedExecutable(
+            canonicalPath: "/opt/homebrew/Cellar/opencode-bar/1.2.3/bin/opencodebar",
+            isRegularFile: true,
+            isExecutable: true,
+            ownerID: 0,
+            currentUserID: 501,
+            permissions: 0o755
+        ))
+        XCTAssertTrue(XAIOpenCodeBarAdapter.isTrustedExecutable(
+            canonicalPath: "/usr/local/Cellar/opencode-bar/1.2.3/bin/opencodebar",
+            isRegularFile: true,
+            isExecutable: true,
+            ownerID: 0,
+            currentUserID: 501,
+            permissions: 0o555
+        ))
+        XCTAssertFalse(XAIOpenCodeBarAdapter.isTrustedExecutable(
+            canonicalPath: "/Users/person/bin/opencodebar",
+            isRegularFile: true,
+            isExecutable: true,
+            ownerID: 0,
+            currentUserID: 501,
+            permissions: 0o755
+        ))
+        XCTAssertFalse(XAIOpenCodeBarAdapter.isTrustedExecutable(
+            canonicalPath: "/opt/homebrew/Cellar/opencode-bar/1.2.3/bin/opencodebar",
+            isRegularFile: true,
+            isExecutable: true,
+            ownerID: 0,
+            currentUserID: 501,
+            permissions: 0o775
+        ))
+        XCTAssertFalse(XAIOpenCodeBarAdapter.isTrustedExecutable(
+            canonicalPath: "/opt/homebrew/Cellar/opencode-bar/1.2.3/bin/opencodebar",
+            isRegularFile: false,
+            isExecutable: true,
+            ownerID: 0,
+            currentUserID: 501,
+            permissions: 0o755
+        ))
+    }
+    func testXAIOpenCodeBarAdapterUsesInjectedRunnerOnlyForExplicitExperimentalSource() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.xAI = XAISettings(teamID: "local-team", managementAPIKeyConfigured: true)
+
+        let adapter = XAIOpenCodeBarAdapter(runner: {
+            throw CancellationError()
+        })
+        let management = await adapter.refresh(settings: settings, now: now)
+
+        XCTAssertEqual(management.snapshot.dataSource, .manual)
+        XCTAssertEqual(management.snapshot.statusMessage, "Management authentication unconfirmed")
+        XCTAssertFalse(management.snapshot.isExperimental)
+
+        settings.xAI.usageSource = .experimentalOpenCodeBarCLI
+        let experimental = await adapter.refresh(settings: settings, now: now)
+
+        XCTAssertTrue(experimental.snapshot.isExperimental)
+        XCTAssertEqual(experimental.snapshot.dataSource, .experimentalCLI)
+        XCTAssertNil(experimental.snapshot.primaryUsedPercent)
+        XCTAssertTrue(experimental.snapshot.statusMessage?.contains("EXPERIMENTAL") == true)
+        XCTAssertTrue(experimental.snapshot.statusMessage?.contains("UNOFFICIAL") == true)
+        XCTAssertFalse(experimental.snapshot.statusMessage?.contains("CancellationError") == true)
+    }
+
+    func testXAIOpenCodeBarAdapterParsesTopLevelGrokMonthlyUsageWithoutIdentityFields() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let payload = """
+        {
+          "grok": {
+            "usagePercentage": "37.4",
+            "primaryReset": "2027-01-01T00:00:00Z",
+            "email": "person@example.com",
+            "accountId": "account-123",
+            "oauthToken": "oauth-secret",
+            "authSource": "cookies"
+          }
+        }
+        """
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.xAI.usageSource = .experimentalOpenCodeBarCLI
+        let adapter = XAIOpenCodeBarAdapter(runner: { Data(payload.utf8) })
+
+        let result = await adapter.refresh(settings: settings, now: now)
+        let snapshot = result.snapshot
+
+        XCTAssertEqual(snapshot.provider, .xai)
+        XCTAssertEqual(snapshot.monthly?.kind, .monthly)
+        XCTAssertEqual(snapshot.monthly?.usedPercent, 37)
+        XCTAssertEqual(snapshot.monthly?.resetAt, Date(timeIntervalSince1970: 1_798_761_600))
+        XCTAssertEqual(snapshot.monthly?.name, "Grok monthly usage")
+        XCTAssertEqual(snapshot.monthly?.label, "Grok monthly usage")
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertEqual(snapshot.dataSource, .experimentalCLI)
+        XCTAssertTrue(snapshot.isExperimental)
+        XCTAssertTrue(snapshot.statusMessage?.contains("EXPERIMENTAL") == true)
+        XCTAssertTrue(snapshot.statusMessage?.contains("UNOFFICIAL") == true)
+        XCTAssertTrue(snapshot.statusMessage?.localizedCaseInsensitiveContains("monthly") == true)
+        let exposed = "\(snapshot.statusMessage ?? "") \(snapshot.events)"
+        XCTAssertFalse(exposed.contains("person@example.com"))
+        XCTAssertFalse(exposed.contains("account-123"))
+        XCTAssertFalse(exposed.contains("oauth-secret"))
+        XCTAssertFalse(exposed.contains("cookies"))
+    }
+
+    func testXAIOpenCodeBarAdapterReturnsNeutralUnavailableSnapshotsForInvalidRunnerResults() async {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.xAI.usageSource = .experimentalOpenCodeBarCLI
+
+        let malformed = await XAIOpenCodeBarAdapter(runner: { Data("{".utf8) }).refresh(settings: settings, now: now)
+        let missing = await XAIOpenCodeBarAdapter(runner: { Data(#"{"grok":{}}"#.utf8) }).refresh(settings: settings, now: now)
+        let oversized = await XAIOpenCodeBarAdapter(runner: { Data(repeating: 0x20, count: 64 * 1_024 + 1) }).refresh(settings: settings, now: now)
+        let failed = await XAIOpenCodeBarAdapter(runner: {
+            throw NSError(domain: "raw stderr oauth-secret person@example.com", code: 1)
+        }).refresh(settings: settings, now: now)
+
+        for result in [malformed, missing, oversized, failed] {
+            XCTAssertEqual(result.snapshot.provider, .xai)
+            XCTAssertEqual(result.snapshot.dataSource, .experimentalCLI)
+            XCTAssertTrue(result.snapshot.isExperimental)
+            XCTAssertNil(result.snapshot.primaryUsedPercent)
+            XCTAssertNil(result.snapshot.fiveHour)
+            XCTAssertNil(result.snapshot.monthly)
+            XCTAssertTrue(result.snapshot.events.isEmpty)
+            XCTAssertTrue(result.capacityObservations.isEmpty)
+            XCTAssertTrue(result.typedErrors.isEmpty)
+        }
+        XCTAssertTrue(malformed.snapshot.statusMessage?.contains("unsupported response") == true)
+        XCTAssertTrue(missing.snapshot.statusMessage?.contains("unsupported response") == true)
+        XCTAssertTrue(oversized.snapshot.statusMessage?.contains("too much data") == true)
+        XCTAssertTrue(failed.snapshot.statusMessage?.contains("unavailable") == true)
+        XCTAssertFalse(failed.snapshot.statusMessage?.contains("raw stderr") == true)
+        XCTAssertFalse(failed.snapshot.statusMessage?.contains("oauth-secret") == true)
+        XCTAssertFalse(failed.snapshot.statusMessage?.contains("person@example.com") == true)
+    }
+    func testMenuBarDisplaysOpenCodeBarAsUnofficialMonthlyOnlyWhenOptedIn() {
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarDisplayTarget = .xai
+        let snapshot = ProviderSnapshot(
+            provider: .xai,
+            monthly: LimitWindow(kind: .monthly, usedPercent: 37),
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage"
+        )
+        let service = MenuBarStatusService()
+
+        XCTAssertEqual(service.displayWindow(for: snapshot)?.kind, .monthly)
+        XCTAssertNil(service.displayWindow(for: ProviderSnapshot(
+            provider: .xai,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 37),
+            dataSource: .experimentalCLI,
+            isExperimental: true,
+            statusMessage: "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI"
+        )))
+
+        settings.xAI.usageSource = .experimentalOpenCodeBarCLI
+        let optedIn = service.providerMetricsSegments(snapshots: [snapshot], settings: settings)
+        XCTAssertEqual(optedIn.first?.displayValue, "63%·E")
+        XCTAssertTrue(optedIn.first?.accessibilityLabel.contains("Unofficial") == true)
+        XCTAssertTrue(optedIn.first?.accessibilityLabel.contains("Monthly") == true)
+
+        settings.xAI.usageSource = .managementSetup
+        let optedOut = service.providerMetricsSegments(snapshots: [snapshot], settings: settings)
+        XCTAssertNotEqual(optedOut.first?.displayValue, "63%·E")
+    }
     func testXAINoDefaultAlertsOrCapacityEvidence() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         var settings = AppSettings()

@@ -5349,6 +5349,70 @@
         }
       }
     },
+    "xAI usage source": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI usage source" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "xAI 사용량 소스" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "xAI 使用量ソース" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "xAI 用量来源" } }
+      }
+    },
+    "Management setup only": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Management setup only" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "Management 설정만" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "Management 設定のみ" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅 Management 设置" } }
+      }
+    },
+    "OpenCode Bar CLI (Experimental)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI (Experimental)" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI(실험적)" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI（実験的）" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI（实验性）" } }
+      }
+    },
+    "xAI is disabled by default. Management setup stays local: no usage lookup and no network requests.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI is disabled by default. Management setup stays local: no usage lookup and no network requests." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "xAI는 기본적으로 비활성화됩니다. Management 설정은 로컬에만 유지되며 사용량 조회나 네트워크 요청을 하지 않습니다." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "xAI はデフォルトで無効です。Management 設定はローカルに留まり、使用量の照会やネットワーク要求は行いません。" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "xAI 默认禁用。Management 设置仅保留在本地：不查询用量，也不发出网络请求。" } }
+      }
+    },
+    "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "실험적 / 비공식: TokenPilot은 고정 명령 `opencodebar provider grok --json`을 실행하고 백분율 및 재설정 값만 가져옵니다." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "実験的 / 非公式: TokenPilot は固定コマンド `opencodebar provider grok --json` を実行し、割合とリセット値のみを取り込みます。" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实验性 / 非官方：TokenPilot 运行固定命令 `opencodebar provider grok --json`，且只导入百分比和重置值。" } }
+      }
+    },
+    "Monthly": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Monthly" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "월간" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "月間" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "每月" } }
+      }
+    },
+    "Unofficial": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unofficial" } },
+        "ko": { "stringUnit": { "state": "translated", "value": "비공식" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "非公式" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "非官方" } }
+      }
+    },
+    "TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota." } },
+        "ko": { "stringUnit": { "state": "translated", "value": "TokenPilot은 OAuth 파일이나 브라우저 쿠키를 읽지 않습니다. OpenCode Bar는 자체 Grok CLI 인증에 접근하고 문서화되지 않은 엔드포인트로 외부 요청을 보낼 수 있습니다. 이 타사 통합은 작동하지 않을 수 있으며 공식 한도가 아닙니다." } },
+        "ja": { "stringUnit": { "state": "translated", "value": "TokenPilot は OAuth ファイルやブラウザ Cookie を読み取りません。OpenCode Bar は独自の Grok CLI 認証にアクセスし、文書化されていないエンドポイントへ外部リクエストを送る場合があります。このサードパーティ統合は動作しなくなる可能性があり、公式クォータではありません。" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "TokenPilot 不读取 OAuth 文件或浏览器 Cookie。OpenCode Bar 可能访问其自身的 Grok CLI 身份验证，并向未公开文档的端点发出外部请求。此第三方集成可能会失效，且不代表官方额度。" } }
+      }
+    },
     "xAI": {
       "localizations": {
         "en": {
@@ -9115,6 +9179,22 @@
         "en": { "stringUnit": { "state": "translated", "value": "Detailed" } },
         "zh-Hans": { "stringUnit": { "state": "translated", "value": "详细" } },
         "ja": { "stringUnit": { "state": "translated", "value": "詳細" } }
+      }
+    },
+    "Provider metrics": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "제공자 지표" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Provider metrics" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提供方指标" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダ指標" } }
+      }
+    },
+    "Provider metrics matches simple provider/value blocks.": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "제공자 지표는 간단한 제공자/값 블록 형식과 일치합니다." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Provider metrics matches simple provider/value blocks." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提供方指标与简单的提供方/数值块布局一致。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダ指標はシンプルなプロバイダ/値ブロックに対応します。" } }
       }
     },
     "Compact": {

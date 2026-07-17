@@ -1,6 +1,6 @@
 # TokenPilot — macOS メニューバー AI クォータ / 使用量モニター
 
-**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini CLI fallback）、DeepSeek balance シグナル、デフォルト OFF の Grok/xAI setup foundation を local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。
+**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini CLI fallback）、DeepSeek balance シグナル、デフォルト OFF の Grok/xAI を local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。Management setup は no-network のままで、OpenCode Bar Grok bridge は別途明示的に opt-in する EXPERIMENTAL 機能です。
 
 > TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、provider auth ファイル、任意の Keychain 項目は読みません。
 >
@@ -19,7 +19,7 @@
 | **Menu bar** | `5h 18% · W 53% · DS $12.34` のように残りクォータと選択した DeepSeek 残高を1行で表示します。 |
 | **Overview** | 現在の残りクォータ、provider rows、DeepSeek topped-up balance、今日のトークン、アラート状態を表示します。 |
 | **History** | 保存済みの使用イベント、最新 limit signals、折りたたみ式の最近の制限、JSON/CSV export を提供します。 |
-| **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok/xAI no-network setup、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
+| **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok/xAI Management no-network setup、任意の OpenCode Bar Grok bridge、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
 
 ---
 
@@ -27,9 +27,9 @@
 
 - **macOS メニューバーアプリ**: Dock アイコンなしの `MenuBarExtra` ユーティリティ。
 - **残りクォータ優先 UI**: 使用済みではなく「どれだけ残っているか」を優先表示します。
-- **Claude / Codex / Antigravity（従来の Gemini fallback）/ DeepSeek 統合**: 各 provider のローカルメタデータと任意の balance シグナルを1つの画面に集約します。
+- **Claude / Codex / Antigravity（従来の Gemini fallback）/ DeepSeek / Grok/xAI 統合**: 各 provider のローカルメタデータ、任意の balance シグナル、no-network Management setup、任意の experimental Grok bridge を1つの画面に集約します。
 - **DeepSeek balance**: API key を Keychain に保存した場合、公式 `/user/balance` の `topped_up_balance` を native currency で表示します。
-- **Grok/xAI setup foundation**: デフォルト OFF です。Management key は TokenPilot Keychain item のみに保存し、Team ID はローカル / マスク / presence-only として扱い export から除外します。現在の状態は auth-unconfirmed で、xAI HTTP request、live balance / usage、Grok web subscription tracking はありません。
+- **Grok/xAI sources**: デフォルト OFF です。Management key は TokenPilot Keychain item のみに保存し、Team ID はローカル / マスク / presence-only として扱い export から除外します。別途明示的に ON にした OpenCode Bar bridge は percentage/reset のみを取り込み、EXPERIMENTAL / UNOFFICIAL です。
 - **手動 fallback と stale 表示**: API key がない、または取得に失敗した場合でも値の信頼度を明示します。
 - **低残高アラート**: topped-up balance が $5 以下になった場合に通知できます。
 - **Privacy-first export**: JSON/CSV export には secret、API key、webhook、chat ID、raw prompt/response、local file path を含めません。
@@ -63,14 +63,13 @@
 - API key は TokenPilot-owned Keychain item に保存され、export されません。
 - 接続失敗時は最後に成功した値を stale として表示するか、manual fallback を明示して表示します。
 
-### Grok / xAI API
+### Grok / xAI sources
 
-Grok / xAI API 対応は **デフォルト OFF の setup foundation** であり、live monitoring ではありません。
+Grok Settings → Usage が公式 source of truth です。TokenPilot にはデフォルト OFF の2経路があります。
 
-- Management key を保存しても TokenPilot-owned Keychain item のみに保存され、表示 / export されません。
-- Team ID はローカルにだけ保存され、summary / diagnostics / accessibility ではマスクまたは presence-only として扱い、export から除外します。
-- key と Team ID が揃っても現在の状態は **auth-unconfirmed** です。TokenPilot は xAI credential を検証しません。
-- Production build は **xAI HTTP request を 0 件**送信します。現時点で live xAI balance / usage、prepaid-balance alert、Grok web subscription tracking はありません。
+- **Management setup (no network)**: Management key は TokenPilot-owned Keychain item のみに保存され、表示 / export されません。Team ID はローカルにだけ保存され、summary / diagnostics / accessibility ではマスクまたは presence-only として扱い、export から除外します。key と Team ID が揃っても **auth-unconfirmed** であり、TokenPilot は xAI credential を検証せず、xAI endpoint を呼びません。従来の「xAI HTTP request 0 件」は TokenPilot 自体についての説明です。
+- **任意の OpenCode Bar Grok bridge**: OpenCode Bar をインストールし、そのドキュメントに従って Grok CLI setup を完了してから、TokenPilot でこの source を明示的に ON にします。TokenPilot が実行するのは固定の `opencodebar provider grok --json` だけで、percentage/reset のみを取り込みます。source を OFF にすると subprocess 呼び出しも停止します。
+- この bridge は **EXPERIMENTAL / UNOFFICIAL** です。OpenCode Bar は自身の Grok CLI auth を読み、undocumented endpoint を呼ぶ場合があるため、結果は壊れる可能性があり、official API billing や Grok web-subscription entitlement を保証しません。
 - Management-key endpoint scope（usage、billing、prepaid balance など）は、xAI が explicit official Management-key transport documentation を公開するまで blocked future work であり、現在の capability ではありません。
 
 ---

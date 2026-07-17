@@ -44,6 +44,7 @@ public enum MenuBarDisplayStyle: String, Codable, CaseIterable, Sendable {
     case detailed = "Detailed"
     case compact = "Compact"
     case iconOnly = "Icon Only"
+    case providerMetrics = "Provider Metrics"
 }
 
 public enum DataConfidence: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -70,6 +71,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
     case officialManagementAPI
     case webUsage
     case localLog
+    case experimentalCLI
     case manual
     case estimated
     case mock
@@ -84,6 +86,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
         case .officialManagementAPI: return "official management API (future)"
         case .webUsage: return "limit hints"
         case .localLog: return "local log"
+        case .experimentalCLI: return "experimental CLI (unofficial)"
         case .manual: return "manual"
         case .estimated: return "est."
         case .mock: return "mock"
@@ -244,6 +247,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
 public enum LimitWindowKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case fiveHour
     case weekly
+    case monthly
     case dailyRequests
 
     public var id: String { rawValue }
@@ -252,6 +256,7 @@ public enum LimitWindowKind: String, Codable, CaseIterable, Identifiable, Sendab
         switch self {
         case .fiveHour: return "5h"
         case .weekly: return "Week"
+        case .monthly: return "Month"
         case .dailyRequests: return "Daily"
         }
     }
@@ -260,6 +265,7 @@ public enum LimitWindowKind: String, Codable, CaseIterable, Identifiable, Sendab
         switch self {
         case .fiveHour: return "5-hour window"
         case .weekly: return "Weekly window"
+        case .monthly: return "Monthly window"
         case .dailyRequests: return "Daily requests"
         }
     }
@@ -361,6 +367,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var provider: Provider
     public var updatedAt: Date
     public var fiveHour: LimitWindow?
+    public var monthly: LimitWindow?
     public var weekly: LimitWindow?
     public var dailyRequestsUsed: Int?
     public var dailyRequestsLimit: Int?
@@ -380,6 +387,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         provider: Provider,
         updatedAt: Date = Date(),
         fiveHour: LimitWindow? = nil,
+        monthly: LimitWindow? = nil,
         weekly: LimitWindow? = nil,
         dailyRequestsUsed: Int? = nil,
         dailyRequestsLimit: Int? = nil,
@@ -398,6 +406,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         self.provider = provider
         self.updatedAt = updatedAt
         self.fiveHour = fiveHour
+        self.monthly = monthly
         self.weekly = weekly
         self.dailyRequestsUsed = dailyRequestsUsed.map { max($0, 0) }
         self.dailyRequestsLimit = dailyRequestsLimit.map { max($0, 0) }
@@ -418,6 +427,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         case provider
         case updatedAt
         case fiveHour
+        case monthly
         case weekly
         case dailyRequestsUsed
         case dailyRequestsLimit
@@ -440,6 +450,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
             provider: try container.decode(Provider.self, forKey: .provider),
             updatedAt: try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date(),
             fiveHour: try container.decodeIfPresent(LimitWindow.self, forKey: .fiveHour),
+            monthly: try container.decodeIfPresent(LimitWindow.self, forKey: .monthly),
             weekly: try container.decodeIfPresent(LimitWindow.self, forKey: .weekly),
             dailyRequestsUsed: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsUsed),
             dailyRequestsLimit: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsLimit),
@@ -462,6 +473,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         try container.encode(provider, forKey: .provider)
         try container.encode(updatedAt, forKey: .updatedAt)
         try container.encodeIfPresent(fiveHour, forKey: .fiveHour)
+        try container.encodeIfPresent(monthly, forKey: .monthly)
         try container.encodeIfPresent(weekly, forKey: .weekly)
         try container.encodeIfPresent(dailyRequestsUsed, forKey: .dailyRequestsUsed)
         try container.encodeIfPresent(dailyRequestsLimit, forKey: .dailyRequestsLimit)
@@ -486,7 +498,8 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var primaryUsedPercent: Int? {
         if let fiveHour = fiveHour?.usedPercent { return fiveHour }
         if let dailyRequestsPercent { return dailyRequestsPercent }
-        return weekly?.usedPercent
+        if let weekly = weekly?.usedPercent { return weekly }
+        return monthly?.usedPercent
     }
 
     public var isCodexLocalLogOnly: Bool {
@@ -520,25 +533,37 @@ public struct DeepSeekBalanceSettings: Codable, Equatable, Sendable {
     }
 }
 
+public enum XAIUsageSource: String, Codable, CaseIterable, Sendable {
+    case managementSetup
+    case experimentalOpenCodeBarCLI
+
+    public var isExperimental: Bool {
+        self == .experimentalOpenCodeBarCLI
+    }
+}
+
 public struct XAISettings: Codable, Equatable, Sendable {
     public var teamID: String
     public var managementAPIKeyConfigured: Bool
     public var managementAPILookbackDays: Int
     public var prepaidBalanceAlertsEnabled: Bool
     public var prepaidBalanceAlertThresholdUSD: Decimal
+    public var usageSource: XAIUsageSource
 
     public init(
         teamID: String = "",
         managementAPIKeyConfigured: Bool = false,
         managementAPILookbackDays: Int = 30,
         prepaidBalanceAlertsEnabled: Bool = false,
-        prepaidBalanceAlertThresholdUSD: Decimal = 5
+        prepaidBalanceAlertThresholdUSD: Decimal = 5,
+        usageSource: XAIUsageSource = .managementSetup
     ) {
         self.teamID = teamID.trimmingCharacters(in: .whitespacesAndNewlines)
         self.managementAPIKeyConfigured = managementAPIKeyConfigured
         self.managementAPILookbackDays = min(max(managementAPILookbackDays, 1), 366)
         self.prepaidBalanceAlertsEnabled = prepaidBalanceAlertsEnabled
         self.prepaidBalanceAlertThresholdUSD = max(prepaidBalanceAlertThresholdUSD, 0)
+        self.usageSource = usageSource
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -547,6 +572,7 @@ public struct XAISettings: Codable, Equatable, Sendable {
         case managementAPILookbackDays
         case prepaidBalanceAlertsEnabled
         case prepaidBalanceAlertThresholdUSD
+        case usageSource
     }
 
     public init(from decoder: Decoder) throws {
@@ -556,7 +582,8 @@ public struct XAISettings: Codable, Equatable, Sendable {
             managementAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .managementAPIKeyConfigured) ?? false,
             managementAPILookbackDays: try container.decodeIfPresent(Int.self, forKey: .managementAPILookbackDays) ?? 30,
             prepaidBalanceAlertsEnabled: try container.decodeIfPresent(Bool.self, forKey: .prepaidBalanceAlertsEnabled) ?? false,
-            prepaidBalanceAlertThresholdUSD: try container.decodeIfPresent(Decimal.self, forKey: .prepaidBalanceAlertThresholdUSD) ?? 5
+            prepaidBalanceAlertThresholdUSD: try container.decodeIfPresent(Decimal.self, forKey: .prepaidBalanceAlertThresholdUSD) ?? 5,
+            usageSource: try container.decodeIfPresent(XAIUsageSource.self, forKey: .usageSource) ?? .managementSetup
         )
     }
 }

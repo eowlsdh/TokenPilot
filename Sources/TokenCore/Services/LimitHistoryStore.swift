@@ -323,9 +323,10 @@ public final class LimitHistoryStore: @unchecked Sendable {
 
     private func sortRank(_ window: LimitWindowKind) -> Int {
         switch window {
-        case .weekly: return 0
-        case .fiveHour: return 1
-        case .dailyRequests: return 2
+        case .monthly: return 0
+        case .weekly: return 1
+        case .fiveHour: return 2
+        case .dailyRequests: return 3
         }
     }
 }
