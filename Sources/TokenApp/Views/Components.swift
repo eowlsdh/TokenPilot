@@ -399,72 +399,12 @@ struct ProviderSignatureMark: View {
         }
     }
 
-    @ViewBuilder
     private var providerGlyph: some View {
-        switch provider {
-        case .claude:
-            ZStack {
-                Circle()
-                    .trim(from: 0.12, to: 0.88)
-                    .stroke(palette.accent(for: provider), style: StrokeStyle(lineWidth: size * 0.095, lineCap: .round))
-                    .rotationEffect(.degrees(isRevealed ? 20 : -70))
-                Circle()
-                    .fill(palette.accent(for: provider))
-                    .frame(width: size * 0.16, height: size * 0.16)
-                    .offset(x: size * 0.13, y: -size * 0.10)
-            }
-            .padding(size * 0.24)
-        case .codex:
-            VStack(alignment: .leading, spacing: size * 0.10) {
-                HStack(spacing: size * 0.07) {
-                    Capsule()
-                        .fill(palette.accent(for: provider))
-                        .frame(width: size * 0.24, height: size * 0.07)
-                    Capsule()
-                        .fill(palette.accent(for: provider))
-                        .frame(width: size * 0.13, height: size * 0.07)
-                }
-                Capsule()
-                    .fill(palette.accent(for: provider))
-                    .frame(width: size * 0.40, height: size * 0.07)
-                Capsule()
-                    .fill(palette.text(.secondary))
-                    .frame(width: size * 0.16, height: size * 0.07)
-                    .offset(x: isRevealed ? size * 0.18 : 0)
-            }
-            .padding(size * 0.27)
-        case .gemini:
-            ZStack {
-                Diamond()
-                    .fill(palette.accent(for: provider))
-                    .frame(width: size * 0.36, height: size * 0.36)
-                    .rotationEffect(.degrees(isRevealed ? 45 : 10))
-                Diamond()
-                    .fill(palette.text(.primary))
-                    .frame(width: size * 0.14, height: size * 0.14)
-                    .offset(x: size * 0.17, y: -size * 0.16)
-                    .scaleEffect(isRevealed ? 1 : 0.4)
-            }
-        case .deepseek:
-            ZStack {
-                Circle()
-                    .stroke(palette.accent(for: provider), lineWidth: size * 0.08)
-                    .frame(width: size * 0.42, height: size * 0.42)
-                Text("$")
-                    .font(.system(size: size * 0.36, weight: .heavy, design: .rounded))
-                    .foregroundStyle(palette.accent(for: provider))
-                    .scaleEffect(isRevealed ? 1 : 0.7)
-            }
-            .padding(size * 0.22)
-        case .xai:
-            Text("xAI")
-                .font(.system(size: size * 0.28, weight: .heavy, design: .rounded))
-                .foregroundStyle(palette.accent(for: provider))
-                .lineLimit(1)
-                .minimumScaleFactor(0.70)
-                .scaleEffect(isRevealed ? 1 : 0.72)
-                .frame(width: size * 0.60, height: size * 0.42)
-        }
+        Image(systemName: provider.iconName)
+            .font(.system(size: size * 0.42, weight: .semibold))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(palette.accent(for: provider))
+            .frame(width: size * 0.62, height: size * 0.62)
     }
 }
 
@@ -515,17 +455,6 @@ struct TokenPilotBrandMark: View {
     }
 }
 
-struct Diamond: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
-        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.midY))
-        path.closeSubpath()
-        return path
-    }
-}
 
 private extension Provider {
     var startupDelay: Double {
