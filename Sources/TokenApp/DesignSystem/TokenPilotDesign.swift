@@ -422,6 +422,14 @@ enum TokenPilotDesign {
                 darkHighContrast: rgb(0.440, 0.850, 1.000)
             )
             .color(contrast: contrast)
+        case .xai:
+            return SemanticColorDefinition(
+                light: rgb(0.410, 0.185, 0.760),
+                dark: rgb(0.690, 0.520, 1.000),
+                lightHighContrast: rgb(0.285, 0.095, 0.640),
+                darkHighContrast: rgb(0.790, 0.660, 1.000)
+            )
+            .color(contrast: contrast)
         }
     }
 

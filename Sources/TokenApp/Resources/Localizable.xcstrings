@@ -5321,6 +5321,790 @@
         }
       }
     },
+    "Grok / xAI API": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok / xAI API"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok / xAI API"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok / xAI API"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok / xAI API"
+          }
+        }
+      }
+    },
+    "xAI": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI"
+          }
+        }
+      }
+    },
+    "xAI Management API Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management API Key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management API 키"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management APIキー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management API 密钥"
+          }
+        }
+      }
+    },
+    "xAI Team ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Team ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 팀 ID"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI チーム ID"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 团队 ID"
+          }
+        }
+      }
+    },
+    "Save Management Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Management Key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 저장"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーを保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存 Management 密钥"
+          }
+        }
+      }
+    },
+    "Delete Management Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Management Key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 삭제"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーを削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除 Management 密钥"
+          }
+        }
+      }
+    },
+    "Save Team ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Team ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID 저장"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID を保存"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存团队 ID"
+          }
+        }
+      }
+    },
+    "Delete Team ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Delete Team ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID 삭제"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID を削除"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "删除团队 ID"
+          }
+        }
+      }
+    },
+    "Management API key saved in TokenPilot Keychain item.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API key saved in TokenPilot Keychain item."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 키가 TokenPilot Keychain 항목에 저장되었습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management APIキーを TokenPilot Keychain 項目に保存しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 密钥已保存到 TokenPilot Keychain 项。"
+          }
+        }
+      }
+    },
+    "Saved Management API key hidden": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved Management API key hidden"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 Management API 키는 숨겨짐"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済み Management APIキーは非表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的 Management API 密钥已隐藏"
+          }
+        }
+      }
+    },
+    "Management API key deleted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API key deleted."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 키가 삭제되었습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management APIキーを削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 密钥已删除。"
+          }
+        }
+      }
+    },
+    "No xAI Management API key stored.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No xAI Management API key stored."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 xAI Management API 키가 없습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済み xAI Management APIキーはありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未存储 xAI Management API 密钥。"
+          }
+        }
+      }
+    },
+    "Team ID saved locally": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID saved locally"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID가 로컬에 저장됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID はローカル保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队 ID 已本地保存"
+          }
+        }
+      }
+    },
+    "Saved team ID masked": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved team ID masked"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 팀 ID는 마스킹됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存済みチーム ID はマスク表示"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存的团队 ID 已掩码"
+          }
+        }
+      }
+    },
+    "Team ID deleted.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID deleted."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID가 삭제되었습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID を削除しました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队 ID 已删除。"
+          }
+        }
+      }
+    },
+    "Team ID is stored locally and shown only masked.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID is stored locally and shown only masked."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID는 로컬에 저장되며 마스킹된 값만 표시됩니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID はローカルに保存され、マスク表示のみです。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队 ID 保存在本地且仅以掩码显示。"
+          }
+        }
+      }
+    },
+    "Management authentication unconfirmed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management authentication unconfirmed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 인증 미확인"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 認証未確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 身份验证未确认"
+          }
+        }
+      }
+    },
+    "Official xAI Management authentication docs are ambiguous.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Official xAI Management authentication docs are ambiguous."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공식 xAI Management 인증 문서가 명확하지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公式 xAI Management 認証ドキュメントは曖昧です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "官方 xAI Management 身份验证文档尚不明确。"
+          }
+        }
+      }
+    },
+    "TokenPilot will not send xAI HTTP requests until official Management-key transport is documented.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot will not send xAI HTTP requests until official Management-key transport is documented."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공식 Management 키 전송 방식이 문서화될 때까지 TokenPilot은 xAI HTTP 요청을 보내지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公式の Management キー送信方式が文書化されるまで、TokenPilot は xAI HTTP リクエストを送信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在官方 Management 密钥传输方式形成文档前，TokenPilot 不会发送 xAI HTTP 请求。"
+          }
+        }
+      }
+    },
+    "No xAI HTTP requests are sent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No xAI HTTP requests are sent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP 요청을 보내지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP リクエストは送信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不会发送 xAI HTTP 请求。"
+          }
+        }
+      }
+    },
+    "xAI HTTP disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP disabled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP 비활성화"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP 無効"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI HTTP 已禁用"
+          }
+        }
+      }
+    },
+    "xAI is disabled by default.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI is disabled by default."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI는 기본적으로 비활성화되어 있습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI はデフォルトで無効です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 默认禁用。"
+          }
+        }
+      }
+    },
+    "xAI not configured": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI not configured"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 설정 안 됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 未設定"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 未配置"
+          }
+        }
+      }
+    },
+    "xAI API billing is separate from Grok web subscription limits.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI API billing is separate from Grok web subscription limits."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI API 결제는 Grok 웹 구독 한도와 별개입니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI API 請求は Grok Web サブスクリプションの上限とは別です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI API 计费与 Grok 网页订阅限制相互独立。"
+          }
+        }
+      }
+    },
+    "Grok web subscription limits are not read or displayed.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok web subscription limits are not read or displayed."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 웹 구독 한도는 읽거나 표시하지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Web サブスクリプションの上限は読み取りも表示もしません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不会读取或显示 Grok 网页订阅限制。"
+          }
+        }
+      }
+    },
+    "Future xAI calls require an endpoint allowlist.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Future xAI calls require an endpoint allowlist."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "향후 xAI 호출에는 엔드포인트 allowlist가 필요합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将来の xAI 呼び出しにはエンドポイント allowlist が必要です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未来的 xAI 调用需要端点 allowlist。"
+          }
+        }
+      }
+    },
+    "Management API key stored in Keychain only.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API key stored in Keychain only."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 키는 Keychain에만 저장됩니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management APIキーは Keychain のみに保存されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management API 密钥只保存在 Keychain 中。"
+          }
+        }
+      }
+    },
+    "Keys and team IDs are never exported, logged, or shown in errors.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keys and team IDs are never exported, logged, or shown in errors."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키와 팀 ID는 내보내기, 로그, 오류에 표시하지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーとチーム ID はエクスポート、ログ、エラー表示に含めません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "密钥和团队 ID 不会导出、写入日志或显示在错误中。"
+          }
+        }
+      }
+    },
     "Delete API Key": {
       "localizations": {
         "en": {
@@ -10805,6 +11589,650 @@
           "stringUnit": {
             "state": "translated",
             "value": "手动模式"
+          }
+        }
+      }
+    },
+    "Enable xAI": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable xAI"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 활성화"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI を有効にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用 xAI"
+          }
+        }
+      }
+    },
+    "Management key saved": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management key saved"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 저장됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キー保存済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 密钥已保存"
+          }
+        }
+      }
+    },
+    "No management key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No management key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーなし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无 Management 密钥"
+          }
+        }
+      }
+    },
+    "Team ID set": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID set"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID 설정됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID 設定済み"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队 ID 已设置"
+          }
+        }
+      }
+    },
+    "No team ID": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No team ID"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID なし"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无团队 ID"
+          }
+        }
+      }
+    },
+    "Auth unconfirmed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auth unconfirmed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증 미확인"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証未確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份验证未确认"
+          }
+        }
+      }
+    },
+    "Setup needed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Setup needed"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 필요"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定が必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要设置"
+          }
+        }
+      }
+    },
+    "Management key required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management key required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 필요"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーが必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Management 密钥"
+          }
+        }
+      }
+    },
+    "Team ID required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID 필요"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID が必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要团队 ID"
+          }
+        }
+      }
+    },
+    "xAI is disabled by default. TokenPilot stores setup locally. No xAI HTTP requests are sent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI is disabled by default. TokenPilot stores setup locally. No xAI HTTP requests are sent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI는 기본적으로 비활성화됩니다. TokenPilot은 설정을 로컬에 저장하며 xAI HTTP 요청을 보내지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI はデフォルトで無効です。TokenPilot は設定をローカルに保存し、xAI HTTP リクエストを送信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 默认禁用。TokenPilot 在本地存储设置，不会发送 xAI HTTP 请求。"
+          }
+        }
+      }
+    },
+    "xAI local setup presence": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI local setup presence"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 로컬 설정 여부"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI ローカル設定の有無"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 本地设置状态"
+          }
+        }
+      }
+    },
+    "Team ID is stored locally and masked in summaries. Diagnostics and accessibility labels use presence only.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Team ID is stored locally and masked in summaries. Diagnostics and accessibility labels use presence only."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 ID는 로컬에 저장되고 요약에서 마스킹됩니다. 진단과 손쉬운 사용 라벨에는 설정 여부만 표시됩니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーム ID はローカルに保存され、概要ではマスクされます。診断とアクセシビリティラベルには設定の有無のみ表示します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "团队 ID 保存在本地，并在摘要中掩码。诊断和辅助功能标签仅显示是否已设置。"
+          }
+        }
+      }
+    },
+    "A saved key plus team ID still means authentication unconfirmed. No xAI HTTP requests are sent; verify credentials outside TokenPilot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A saved key plus team ID still means authentication unconfirmed. No xAI HTTP requests are sent; verify credentials outside TokenPilot."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키와 팀 ID를 저장해도 인증은 미확인 상태입니다. xAI HTTP 요청은 보내지 않으므로 자격 증명은 TokenPilot 외부에서 확인하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "キーとチーム ID を保存しても認証は未確認です。xAI HTTP リクエストは送信しないため、認証情報は TokenPilot の外部で確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "即使已保存密钥和团队 ID，身份验证仍未确认。不会发送 xAI HTTP 请求；请在 TokenPilot 外部验证凭据。"
+          }
+        }
+      }
+    },
+    "Replace Management Key": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replace Management Key"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키 교체"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーを置き換える"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换 Management 密钥"
+          }
+        }
+      }
+    },
+    "xAI disabled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI disabled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 비활성화됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 無効"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 已禁用"
+          }
+        }
+      }
+    },
+    "Management key and team ID required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management key and team ID required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키와 팀 ID 필요"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーとチーム ID が必要"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Management 密钥和团队 ID"
+          }
+        }
+      }
+    },
+    "xAI is disabled by default. Enable it only when you want local setup visibility.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI is disabled by default. Enable it only when you want local setup visibility."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI는 기본적으로 비활성화됩니다. 로컬 설정 상태를 확인할 때만 활성화하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI はデフォルトで無効です。ローカル設定を確認する場合のみ有効にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 默认禁用。仅在需要查看本地设置状态时启用。"
+          }
+        }
+      }
+    },
+    "Management key is saved in Keychain and team ID is stored locally. Authentication is unconfirmed. No xAI HTTP requests are sent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management key is saved in Keychain and team ID is stored locally. Authentication is unconfirmed. No xAI HTTP requests are sent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 키는 Keychain에, 팀 ID는 로컬에 저장됩니다. 인증은 미확인 상태이며 xAI HTTP 요청은 보내지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management キーは Keychain に、チーム ID はローカルに保存されます。認証は未確認で、xAI HTTP リクエストは送信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 密钥保存在 Keychain，团队 ID 保存在本地。身份验证未确认，不会发送 xAI HTTP 请求。"
+          }
+        }
+      }
+    },
+    "Save an xAI Management key in Keychain and a local team ID. Check Connection only checks local setup. No xAI HTTP requests are sent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save an xAI Management key in Keychain and a local team ID. Check Connection only checks local setup. No xAI HTTP requests are sent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management 키를 Keychain에 저장하고 로컬 팀 ID를 입력하세요. 연결 확인은 로컬 설정만 검사하며 xAI HTTP 요청은 보내지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI Management キーを Keychain に保存し、ローカルのチーム ID を入力してください。接続確認はローカル設定のみを確認し、xAI HTTP リクエストは送信しません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请将 xAI Management 密钥保存到 Keychain，并输入本地团队 ID。检查连接只检查本地设置，不会发送 xAI HTTP 请求。"
+          }
+        }
+      }
+    },
+    "Enable xAI only when you want local setup visibility.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable xAI only when you want local setup visibility."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 설정 상태를 확인할 때만 xAI를 활성화하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル設定を確認する場合のみ xAI を有効にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅在需要查看本地设置状态时启用 xAI。"
+          }
+        }
+      }
+    },
+    "Authentication is unconfirmed; verify credentials outside TokenPilot.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Authentication is unconfirmed; verify credentials outside TokenPilot."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증은 미확인 상태입니다. 자격 증명은 TokenPilot 외부에서 확인하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証は未確認です。認証情報は TokenPilot の外部で確認してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "身份验证未确认；请在 TokenPilot 外部验证凭据。"
+          }
+        }
+      }
+    },
+    "Enter a local team ID and save a Management key; Check Connection stays local.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter a local team ID and save a Management key; Check Connection stays local."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 팀 ID를 입력하고 Management 키를 저장하세요. 연결 확인은 로컬에서만 동작합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルのチーム ID を入力し、Management キーを保存してください。接続確認はローカルでのみ動作します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请输入本地团队 ID 并保存 Management 密钥；检查连接仅在本地运行。"
+          }
+        }
+      }
+    },
+    "Enter an xAI Management key first.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enter an xAI Management key first."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "먼저 xAI Management 키를 입력하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先に xAI Management キーを入力してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先输入 xAI Management 密钥。"
           }
         }
       }

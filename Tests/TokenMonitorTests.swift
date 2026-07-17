@@ -41,6 +41,16 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(LimitWindow(kind: .dailyRequests, usedPercent: 45).usedPercent, 45)
     }
 
+    func testProviderXAIMetadataIsExplicitNoNetworkFoundation() {
+        XCTAssertTrue(Provider.allCases.contains(.xai))
+        XCTAssertEqual(Provider.xai.rawValue, "xai")
+        XCTAssertEqual(Provider.xai.displayName, "Grok / xAI API")
+        XCTAssertEqual(Provider.xai.shortName, "xAI")
+        XCTAssertEqual(Provider.xai.iconName, "server.rack")
+        XCTAssertEqual(UsageDataSource.officialManagementAPI.label, "official management API (future)")
+        XCTAssertEqual(TokenPilotLocalizer.localized(Provider.xai.displayName, language: .en), "Grok / xAI API")
+    }
+
     func testProviderSnapshotDailyRequestPercent() {
         let snapshot = ProviderSnapshot(
             provider: .gemini,
@@ -211,6 +221,65 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(title, "Co --%")
         XCTAssertFalse(title.contains("100%"))
         XCTAssertFalse(title.contains("0%"))
+    }
+
+    func testMenuBarTreatsXAISetupAsNeutralNoQuotaCandidate() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 99, resetAt: now.addingTimeInterval(3_600)),
+            confidence: .low,
+            dataSource: .manual,
+            statusMessage: "Management authentication unconfirmed"
+        )
+        let liveClaudeSnapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20, resetAt: now.addingTimeInterval(3_600)),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.localization.language = .en
+        settings.xAI.teamID = "configured"
+        settings.xAI.managementAPIKeyConfigured = true
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        let service = MenuBarStatusService()
+
+        XCTAssertEqual(service.title(snapshots: [snapshot], settings: settings, modeLabel: "LIVE", now: now), "TP · LIVE")
+        XCTAssertEqual(service.statusLevel(snapshots: [snapshot], settings: settings), .normal)
+        XCTAssertFalse(service.shouldShowStatusDot(snapshots: [snapshot], settings: settings))
+        XCTAssertNil(service.lowestRemainingSummary(snapshots: [snapshot], settings: settings))
+
+        settings.menuBarDisplayTarget = .xai
+        let targetedTitle = service.title(snapshots: [snapshot], settings: settings, modeLabel: "LIVE", now: now)
+        let accessibility = service.accessibilityLabel(snapshots: [snapshot, liveClaudeSnapshot], settings: settings, modeLabel: "LIVE", now: now)
+
+        XCTAssertEqual(targetedTitle, "xAI · Management authentication unconfirmed")
+        XCTAssertNotEqual(targetedTitle, "xAI · LIVE")
+        XCTAssertFalse(targetedTitle.contains("LIVE"))
+        XCTAssertEqual(accessibility, "TokenPilot, xAI · Management authentication unconfirmed")
+        XCTAssertTrue(accessibility.contains("TokenPilot"))
+        XCTAssertTrue(accessibility.localizedCaseInsensitiveContains("Management authentication unconfirmed"))
+        XCTAssertFalse(accessibility.contains("LIVE"))
+        XCTAssertFalse(accessibility.localizedCaseInsensitiveContains(TokenPilotLocalizer.localized("Live only", language: settings.localization.language)))
+        XCTAssertFalse(accessibility.contains("%"))
+        XCTAssertFalse(accessibility.localizedCaseInsensitiveContains("capacity remaining"))
+
+        var noSetupSettings = AppSettings()
+        noSetupSettings.localization.language = .en
+        XCTAssertTrue(noSetupSettings.setProviderEnabled(.xai, isEnabled: true))
+        noSetupSettings.menuBarDisplayTarget = .xai
+
+        let falseLiveTitle = service.title(
+            snapshots: [liveClaudeSnapshot],
+            settings: noSetupSettings,
+            modeLabel: "LIVE",
+            now: now
+        )
+        XCTAssertEqual(falseLiveTitle, "xAI not configured")
+        XCTAssertNotEqual(falseLiveTitle, "xAI · LIVE")
+        XCTAssertFalse(falseLiveTitle.contains("LIVE"))
     }
 
     func testMenuBarTitleUsesSelectedCodexManualValuesBeforeNextRefresh() {
@@ -555,7 +624,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(componentsSource.contains("@Environment(\\.tokenPilotContrastOverride) private var contrastOverride"))
     }
 
-    func testSettingsDataSourcesUseFourProviderDisclosuresWithPreservedControls() throws {
+    func testSettingsDataSourcesUseFiveProviderDisclosuresWithPreservedControls() throws {
         let source = try Self.tokenMonitorAppSource()
 
         XCTAssertTrue(source.contains("private func providerSetupDisclosure<Content: View>"))
@@ -563,18 +632,20 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .gemini, title: model.t(\"Antigravity CLI\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .deepseek, title: model.t(\"DeepSeek\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .codex, title: model.t(\"Codex\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .xai, title: model.t(\"Grok / xAI API\"))"))
         XCTAssertTrue(source.contains("DisclosureCard(\n            initiallyExpanded: providerDefaultExpanded(provider)"))
         XCTAssertTrue(source.contains("providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)"))
         XCTAssertTrue(source.contains("CompactProviderStatusRow("))
         XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
         XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
         XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
-        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .codex]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex]"))
 
         XCTAssertTrue(source.contains("providerToggle(.claude)"))
         XCTAssertTrue(source.contains("providerToggle(.codex)"))
         XCTAssertTrue(source.contains("providerToggle(.gemini)"))
         XCTAssertTrue(source.contains("providerToggle(.deepseek)"))
+        XCTAssertTrue(source.contains("providerToggle(.xai)"))
         XCTAssertTrue(source.contains("model.chooseClaudeStatusFile()"))
         XCTAssertTrue(source.contains("model.chooseGeminiTelemetrySource()"))
         XCTAssertTrue(source.contains("Toggle(model.t(\"Use Manual DeepSeek Balance\")"))
@@ -1576,6 +1647,54 @@ final class TokenMonitorTests: XCTestCase {
         )
     }
 
+    func testXAIProviderFoundationContainsNoURLSessionOrEndpointByDefault() throws {
+        let servicesSource = try Self.tokenCoreServicesSource()
+        let adapterStart = try XCTUnwrap(servicesSource.range(of: "public struct XAIManagementDiagnosticsAdapter"))
+        let adapterEnd = try XCTUnwrap(
+            servicesSource.range(
+                of: "\npublic enum CapacityObservationFactory",
+                range: adapterStart.upperBound..<servicesSource.endIndex
+            )
+        )
+        let adapterSource = String(servicesSource[adapterStart.lowerBound..<adapterEnd.lowerBound])
+        let classifyXAI = try XCTUnwrap(servicesSource.swiftFunctionBody(named: "classifyXAI"))
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        let saveKeyBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "saveXAIManagementAPIKey"))
+        let updateTeamBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "updateXAITeamID"))
+        let xaiSource = [adapterSource, classifyXAI, saveKeyBody, updateTeamBody].joined(separator: "\n")
+
+        for forbidden in ["URLSession", "URLRequest", "HTTPURLResponse", "https://", "api.x.ai", "x.ai/api", "/v1/"] {
+            XCTAssertFalse(xaiSource.localizedCaseInsensitiveContains(forbidden), "xAI foundation must not contain network endpoint or URLSession marker: \(forbidden)")
+        }
+
+        XCTAssertTrue(adapterSource.contains("capacityObservations: []"))
+        XCTAssertTrue(adapterSource.contains("typedErrors: []"))
+        XCTAssertTrue(adapterSource.contains("Management authentication unconfirmed"))
+        XCTAssertTrue(classifyXAI.contains("detectedPaths: []"))
+        XCTAssertTrue(saveKeyBody.contains("keychain.saveSecret(key, account: Self.xAIManagementAPIKeyAccount)"))
+        XCTAssertTrue(saveKeyBody.contains("No xAI HTTP requests are sent."))
+        XCTAssertTrue(updateTeamBody.contains("trimmedXAITeamID"))
+    }
+
+    func testSettingsXAITeamIDEntryDoesNotBindOrRenderPersistedValue() throws {
+        let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
+
+        XCTAssertTrue(settingsSource.contains("@State private var xAITeamIDInput = \"\""))
+        XCTAssertTrue(settingsSource.contains("SecureField(model.xAITeamIDConfigured ? model.t(\"Saved team ID masked\") : model.t(\"xAI Team ID\"), text: $xAITeamIDInput)"))
+        XCTAssertTrue(settingsSource.contains("Button(model.t(\"Save Team ID\"))"))
+        XCTAssertTrue(settingsSource.contains("Button(model.t(\"Delete Team ID\"), role: .destructive)"))
+        XCTAssertTrue(settingsSource.contains("model.updateXAITeamID(xAITeamIDInput)"))
+        XCTAssertTrue(settingsSource.contains("model.updateXAITeamID(\"\")"))
+        XCTAssertTrue(settingsSource.contains(".disabled(xAITeamIDInputIsEmpty)"))
+        XCTAssertTrue(settingsSource.contains("accessibilityValue(model.xAITeamIDConfigured ? model.t(\"Team ID set\") : model.t(\"No team ID\"))"))
+
+        XCTAssertFalse(settingsSource.contains("TextField(model.t(\"xAI Team ID\"), text: xAITeamIDBinding)"))
+        XCTAssertFalse(settingsSource.contains("private var xAITeamIDBinding"))
+        XCTAssertFalse(settingsSource.contains("model.settings.xAI.teamID"))
+        XCTAssertTrue(settingsSource.contains("guard model.isProviderEnabled(.xai) else { return model.t(\"Disabled\") }"))
+        XCTAssertTrue(settingsSource.contains("provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey"))
+    }
+
     func testSettingsMutationEntryPointsUseDebouncedRefreshOnly() throws {
         let source = try Self.tokenMonitorAppSource()
 
@@ -2244,6 +2363,77 @@ final class TokenMonitorTests: XCTestCase {
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ja), key)
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .zhHans), key)
         }
+    }
+
+    func testXAINoNetworkCriticalStringsHaveRuntimeAndCatalogParity() throws {
+        let criticalKeys = [
+            "Grok / xAI API",
+            "xAI Management API Key",
+            "Management authentication unconfirmed",
+            "Official xAI Management authentication docs are ambiguous.",
+            "TokenPilot will not send xAI HTTP requests until official Management-key transport is documented.",
+            "No xAI HTTP requests are sent.",
+            "xAI is disabled by default.",
+            "xAI API billing is separate from Grok web subscription limits.",
+            "Grok web subscription limits are not read or displayed.",
+            "Future xAI calls require an endpoint allowlist.",
+            "Management API key stored in Keychain only.",
+            "Keys and team IDs are never exported, logged, or shown in errors.",
+            "Enable xAI",
+            "Management key saved",
+            "No management key",
+            "Team ID set",
+            "No team ID",
+            "Auth unconfirmed",
+            "Setup needed",
+            "Management key required",
+            "Team ID required",
+            "xAI is disabled by default. TokenPilot stores setup locally. No xAI HTTP requests are sent.",
+            "xAI local setup presence",
+            "Team ID is stored locally and masked in summaries. Diagnostics and accessibility labels use presence only.",
+            "A saved key plus team ID still means authentication unconfirmed. No xAI HTTP requests are sent; verify credentials outside TokenPilot.",
+            "Replace Management Key",
+            "xAI disabled",
+            "Management key and team ID required",
+            "xAI is disabled by default. Enable it only when you want local setup visibility.",
+            "Management key is saved in Keychain and team ID is stored locally. Authentication is unconfirmed. No xAI HTTP requests are sent.",
+            "Save an xAI Management key in Keychain and a local team ID. Check Connection only checks local setup. No xAI HTTP requests are sent.",
+            "Enable xAI only when you want local setup visibility.",
+            "Authentication is unconfirmed; verify credentials outside TokenPilot.",
+            "Enter a local team ID and save a Management key; Check Connection stays local.",
+            "Enter an xAI Management key first.",
+        ]
+        let languages: [(TokenPilotLanguage, String)] = [
+            (.en, "en"),
+            (.ko, "ko"),
+            (.ja, "ja"),
+            (.zhHans, "zh-Hans")
+        ]
+        let catalogURL = try Self.projectRootURL()
+            .appendingPathComponent("Sources/TokenApp/Resources/Localizable.xcstrings")
+        let catalogData = try Data(contentsOf: catalogURL)
+        let catalogRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let catalogStrings = try XCTUnwrap(catalogRoot["strings"] as? [String: Any])
+
+        for key in criticalKeys {
+            let entry = try XCTUnwrap(catalogStrings[key] as? [String: Any], "Missing catalog key \(key)")
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
+
+            for (language, locale) in languages {
+                let runtimeValue = TokenPilotLocalizer.localized(key, language: language)
+                let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing catalog locale \(locale): \(key)")
+                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing stringUnit \(locale): \(key)")
+                let catalogValue = try XCTUnwrap(stringUnit["value"] as? String, "Missing catalog value \(locale): \(key)")
+
+                XCTAssertFalse(runtimeValue.isEmpty, "Empty runtime xAI string for \(locale): \(key)")
+                XCTAssertFalse(catalogValue.isEmpty, "Empty catalog xAI string for \(locale): \(key)")
+                XCTAssertEqual(catalogValue, runtimeValue, "Runtime/catalog mismatch for \(locale): \(key)")
+            }
+        }
+
+        XCTAssertTrue(TokenPilotLocalizer.localized("No xAI HTTP requests are sent.", language: .en).contains("No xAI HTTP requests"))
+        XCTAssertTrue(TokenPilotLocalizer.localized("TokenPilot will not send xAI HTTP requests until official Management-key transport is documented.", language: .en).contains("will not send xAI HTTP requests"))
+        XCTAssertTrue(TokenPilotLocalizer.localized("xAI API billing is separate from Grok web subscription limits.", language: .en).contains("separate from Grok web subscription limits"))
     }
 
     private func data(_ string: String) -> Data {

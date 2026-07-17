@@ -167,7 +167,7 @@ public extension ProviderDataSource {
         case .connected:
             return .refreshWhenStale
         case .notFound:
-            if provider == .deepseek { return .enterAPIKey }
+            if provider == .deepseek || provider == .xai { return .enterAPIKey }
             return provider == .codex ? .pasteCodexStatus : .chooseLocalSource
         case .permissionDenied:
             return .grantFileAccess
@@ -180,7 +180,7 @@ public extension ProviderDataSource {
         case .disabled:
             return .enableProvider
         case .manual:
-            return provider == .deepseek ? .enterAPIKey : .pasteCodexStatus
+            return provider == .deepseek || provider == .xai ? .enterAPIKey : .pasteCodexStatus
         case .estimated:
             return .reviewManualEstimate
         }
@@ -191,6 +191,7 @@ public extension ProviderDataSource {
         case .connected:
             return "Provider metadata is readable. Raw paths and events stay hidden from diagnostics."
         case .notFound:
+            if provider == .xai { return "xAI management API is not configured. No local files are scanned." }
             return "No readable source was found in the configured/default locations."
         case .permissionDenied:
             return "A candidate source exists but macOS did not allow TokenPilot to read it."
@@ -203,7 +204,9 @@ public extension ProviderDataSource {
         case .disabled:
             return "This provider is disabled and skipped during refresh."
         case .manual:
-            return provider == .deepseek ? "DeepSeek is waiting for an API key saved in TokenPilot Keychain or manual balance fallback." : "Codex is waiting for pasted /status output or manual estimates."
+            if provider == .deepseek { return "DeepSeek is waiting for an API key saved in TokenPilot Keychain or manual balance fallback." }
+            if provider == .xai { return "xAI management API is waiting for a key saved in TokenPilot Keychain and explicit provider enablement." }
+            return "Codex is waiting for pasted /status output or manual estimates."
         case .estimated:
             return "TokenPilot is using manual or unofficial estimate data."
         }
@@ -226,5 +229,115 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
         self.providerModes = providerModes
         self.customPaths = customPaths
         self.scanDisabledProviders = scanDisabledProviders
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case enabledProviders
+        case providerModes
+        case customPaths
+        case scanDisabledProviders
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let defaults = Self()
+        enabledProviders = Self.decodeProviderSet(from: container, forKey: .enabledProviders) ?? defaults.enabledProviders
+        providerModes = Self.decodeProviderMap(ProviderMode.self, from: container, forKey: .providerModes) ?? [:]
+        customPaths = Self.decodeProviderMap(String.self, from: container, forKey: .customPaths) ?? [:]
+        scanDisabledProviders = try container.decodeIfPresent(Bool.self, forKey: .scanDisabledProviders) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabledProviders, forKey: .enabledProviders)
+        try container.encode(providerModes, forKey: .providerModes)
+        try container.encode(customPaths, forKey: .customPaths)
+        try container.encode(scanDisabledProviders, forKey: .scanDisabledProviders)
+    }
+
+    private static func decodeProviderSet(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Set<Provider>? {
+        guard container.contains(key) else { return nil }
+        if let rawValues = try? container.decode([String].self, forKey: key) {
+            return Set(rawValues.compactMap(Provider.init(rawValue:)))
+        }
+        if let providers = try? container.decode([Provider].self, forKey: key) {
+            return Set(providers)
+        }
+        return []
+    }
+
+    private static func decodeProviderMap<Value: Decodable>(
+        _: Value.Type,
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys
+    ) -> [Provider: Value]? {
+        guard container.contains(key) else { return nil }
+        if let decoded = try? container.decode([Provider: Value].self, forKey: key) {
+            return decoded
+        }
+        if let rawKeyed = try? container.decode([String: Value].self, forKey: key) {
+            return rawKeyed.reduce(into: [:]) { result, entry in
+                if let provider = Provider(rawValue: entry.key) {
+                    result[provider] = entry.value
+                }
+            }
+        }
+        guard var unkeyed = try? container.nestedUnkeyedContainer(forKey: key) else { return [:] }
+
+        var result: [Provider: Value] = [:]
+        while !unkeyed.isAtEnd {
+            guard let providerRawValue = try? unkeyed.decode(String.self) else {
+                if (try? unkeyed.decode(IgnoredValue.self)) == nil { break }
+                continue
+            }
+            guard !unkeyed.isAtEnd else { break }
+            if let provider = Provider(rawValue: providerRawValue),
+               let value = try? unkeyed.decode(Value.self) {
+                result[provider] = value
+            } else if (try? unkeyed.decode(IgnoredValue.self)) == nil {
+                break
+            }
+        }
+        return result
+    }
+
+    private struct IgnoredValue: Decodable {
+        init(from decoder: Decoder) throws {
+            if var unkeyed = try? decoder.unkeyedContainer() {
+                while !unkeyed.isAtEnd {
+                    if (try? unkeyed.decode(IgnoredValue.self)) == nil { break }
+                }
+                return
+            }
+
+            if let keyed = try? decoder.container(keyedBy: DynamicCodingKey.self) {
+                for key in keyed.allKeys {
+                    _ = try? keyed.decode(IgnoredValue.self, forKey: key)
+                }
+                return
+            }
+
+            let single = try decoder.singleValueContainer()
+            if single.decodeNil() { return }
+            if (try? single.decode(Bool.self)) != nil { return }
+            if (try? single.decode(Double.self)) != nil { return }
+            if (try? single.decode(String.self)) != nil { return }
+            throw DecodingError.dataCorruptedError(in: single, debugDescription: "Unsupported ignored value.")
+        }
+    }
+
+    private struct DynamicCodingKey: CodingKey {
+        let stringValue: String
+        let intValue: Int?
+
+        init?(stringValue: String) {
+            self.stringValue = stringValue
+            self.intValue = nil
+        }
+
+        init?(intValue: Int) {
+            self.stringValue = String(intValue)
+            self.intValue = intValue
+        }
     }
 }

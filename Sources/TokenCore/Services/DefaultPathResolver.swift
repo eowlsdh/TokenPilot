@@ -37,7 +37,7 @@ public final class DefaultPathResolver: Sendable {
             return resolveCodexPaths()
         case .gemini:
             return resolveGeminiPaths()
-        case .deepseek:
+        case .deepseek, .xai:
             return []
         }
     }

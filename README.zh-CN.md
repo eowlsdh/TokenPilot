@@ -1,10 +1,10 @@
 # TokenPilot — macOS 菜单栏 AI 额度 / 用量监控
 
-**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini CLI fallback）和 DeepSeek balance 信号，让你在 macOS 菜单栏中查看剩余额度和使用历史。
+**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini CLI fallback）、DeepSeek balance 信号，以及默认关闭的 Grok/xAI setup foundation，让你在 macOS 菜单栏中查看剩余额度和使用历史。
 
 > TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie、provider auth 文件或任意 Keychain 项。
 >
-> TokenPilot 不隶属于 OpenAI、Anthropic、Google 或 DeepSeek，也不是官方认证产品。
+> TokenPilot 不隶属于 OpenAI、Anthropic、Google、DeepSeek 或 xAI，也不是官方认证产品。
 
 ![TokenPilot screenshot showing remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
 
@@ -19,7 +19,7 @@
 | **Menu bar** | 以 `5h 18% · W 53% · DS $12.34` 这样的单行形式显示剩余额度和选中的 DeepSeek 余额。 |
 | **Overview** | 显示当前剩余额度、provider rows、DeepSeek topped-up balance、今日 token 和提醒状态。 |
 | **History** | 提供已保存的使用事件、最新 limit signals、默认折叠的最近额度信号和 JSON/CSV export。 |
-| **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
+| **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok/xAI no-network setup、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
 
 ---
 
@@ -29,6 +29,7 @@
 - **剩余额度优先 UI**：优先显示“还剩多少”，而不是“已经用了多少”。
 - **Claude / Codex / Antigravity（旧版 Gemini fallback）/ DeepSeek 集成**：把各 provider 的本地元数据和可选 balance 信号汇总到一个界面。
 - **DeepSeek balance**：保存 API key 后，使用官方 `/user/balance` 的 `topped_up_balance`，并按 native currency 显示。
+- **Grok/xAI setup foundation**：默认关闭。Management key 只保存在 TokenPilot Keychain item 中；Team ID 以本地 / masked / presence-only 状态处理，并从 export 中排除。当前状态是 auth-unconfirmed，没有 xAI HTTP 请求、live balance/usage 或 Grok web subscription tracking。
 - **Manual fallback 与 stale 标记**：没有 API key 或请求失败时，也会清楚标出数据可信度。
 - **低余额提醒**：当 topped-up balance 不高于 $5 时可以触发提醒。
 - **Privacy-first export**：JSON/CSV export 不包含 secret、API key、webhook、chat ID、raw prompt/response 或 local file path。
@@ -61,6 +62,16 @@
 - 显示值为 `balance_infos[].topped_up_balance`。非 USD currency 会按原 currency 显示。
 - API key 保存在 TokenPilot-owned Keychain item 中，不会被 export。
 - 请求失败时显示最后一次成功值的 stale 状态，或显示用户启用的 manual fallback。
+
+### Grok / xAI API
+
+Grok / xAI API 支持目前是 **默认关闭的 setup foundation**，不是 live monitoring。
+
+- 保存 Management key 时，只会存入 TokenPilot-owned Keychain item，不显示也不 export。
+- Team ID 只保存在本地；summary / diagnostics / accessibility 中仅使用 masked 或 presence-only 状态，并从 export 中排除。
+- 即使 key 和 Team ID 都已保存，当前状态仍是 **auth-unconfirmed**；TokenPilot 不验证 xAI credential。
+- Production build 会发送 **0 个 xAI HTTP 请求**。目前没有 live xAI balance/usage、prepaid-balance alert 或 Grok web subscription tracking。
+- Management-key endpoint scope（如 usage、billing、prepaid balance）在 xAI 发布 explicit official Management-key transport documentation 前属于 blocked future work，不是当前能力。
 
 ---
 

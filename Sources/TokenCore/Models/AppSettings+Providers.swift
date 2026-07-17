@@ -8,13 +8,19 @@ extension AppSettings {
         let legacyEnabled = Set(Provider.allCases.filter { isLegacyProviderFlagEnabled($0) })
         let monitoredEnabled = monitoredProviders.enabledProviders
         let effective = monitoredEnabled.isEmpty ? legacyEnabled : legacyEnabled.intersection(monitoredEnabled)
-        var fallback = !effective.isEmpty ? effective : (!legacyEnabled.isEmpty ? legacyEnabled : (!monitoredEnabled.isEmpty ? monitoredEnabled : Set(Provider.allCases)))
+        var fallback = !effective.isEmpty ? effective : (!legacyEnabled.isEmpty ? legacyEnabled : (!monitoredEnabled.isEmpty ? monitoredEnabled : Self.defaultEnabledProviders))
         // Default-on migration for provider sets persisted before DeepSeek existed:
         // old monitoredProviders can contain every legacy provider but not the new case.
         if deepseekEnabled,
            !fallback.contains(.deepseek),
            monitoredEnabled.isSuperset(of: Set([Provider.claude, .codex, .gemini])) {
             fallback.insert(.deepseek)
+        }
+        // xAI requires an explicit local selection and must never arrive through defaults.
+        if xaiEnabled || monitoredEnabled.contains(.xai) {
+            fallback.insert(.xai)
+        } else {
+            fallback.remove(.xai)
         }
         return Provider.allCases.filter { fallback.contains($0) }
     }
@@ -29,7 +35,7 @@ extension AppSettings {
             return claudeStatusFileBookmarkData
         case .gemini:
             return geminiTelemetrySourceBookmarkData
-        case .codex, .deepseek:
+        case .codex, .deepseek, .xai:
             return nil
         }
     }
@@ -40,7 +46,7 @@ extension AppSettings {
             claudeStatusFileBookmarkData = data
         case .gemini:
             geminiTelemetrySourceBookmarkData = data
-        case .codex, .deepseek:
+        case .codex, .deepseek, .xai:
             break
         }
     }
@@ -64,21 +70,28 @@ extension AppSettings {
 
     // MARK: - Private helpers
 
+    private static var defaultEnabledProviders: Set<Provider> {
+        [.claude, .codex, .gemini, .deepseek]
+    }
+
+
     private func isLegacyProviderFlagEnabled(_ provider: Provider) -> Bool {
         switch provider {
         case .claude: return claudeEnabled
         case .codex: return codexEnabled
         case .gemini: return geminiEnabled
         case .deepseek: return deepseekEnabled
+        case .xai: return xaiEnabled
         }
     }
 
     private mutating func applyEnabledProviders(_ providers: Set<Provider>) {
-        let safeProviders = providers.isEmpty ? Set(Provider.allCases) : providers
+        let safeProviders = providers.isEmpty ? Self.defaultEnabledProviders : providers
         claudeEnabled = safeProviders.contains(.claude)
         codexEnabled = safeProviders.contains(.codex)
         geminiEnabled = safeProviders.contains(.gemini)
         deepseekEnabled = safeProviders.contains(.deepseek)
+        xaiEnabled = safeProviders.contains(.xai)
         monitoredProviders.enabledProviders = safeProviders
     }
 }

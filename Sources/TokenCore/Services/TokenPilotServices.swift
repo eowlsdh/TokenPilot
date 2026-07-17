@@ -59,6 +59,9 @@ public struct ProviderRefreshResult: Sendable {
 public enum TokenPilotPrivacyRedactor {
     private static let replacements: [(pattern: String, template: String)] = [
         (#"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"#, "[REDACTED]"),
+        (#"(?i)\b(?:x[-_])?(?:xai[-_])?team(?:[-_\s]?id|id)?\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED_TEAM]"),
+        (#"(?i)\b(?:organization|org)(?:[-_\s]?id|id)?\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED_TEAM]"),
+        (#"(?i)/(?:teams?|organizations?|orgs)/[A-Za-z0-9._~%+-]+"#, "/[REDACTED_TEAM_PATH]"),
         (#"(?i)\b(?:authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|password)\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED]"),
         (#"(?i)\b(?:prompt|response|completion|messages?|content)\s*[:=]\s*["']?[^"\n\r;]+"#, "[REDACTED]"),
         (#"\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"#, "[REDACTED]"),
@@ -119,6 +122,54 @@ public struct LegacyProviderRefreshAdapter: ProviderRefreshAdapter {
             capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: observedAt),
             typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: provider),
             observedAt: observedAt
+        )
+    }
+}
+
+public struct XAIManagementDiagnosticsAdapter: ProviderRefreshAdapter {
+    public let provider: Provider = .xai
+
+    public init() {}
+
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        ProviderRefreshResult(
+            snapshot: Self.snapshot(settings: settings, now: now),
+            capacityObservations: [],
+            typedErrors: [],
+            observedAt: now
+        )
+    }
+
+    private static func snapshot(settings: AppSettings, now: Date) -> ProviderSnapshot {
+        guard settings.xaiEnabled && settings.isProviderEnabled(.xai) else {
+            return ProviderSnapshot(
+                provider: .xai,
+                updatedAt: now,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Disabled"
+            )
+        }
+
+        let hasManagementKey = settings.xAI.managementAPIKeyConfigured
+        let hasTeamID = !settings.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let message: String
+        if hasManagementKey && hasTeamID {
+            message = "Management authentication unconfirmed"
+        } else if hasManagementKey {
+            message = "Setup needed · local team ID required"
+        } else if hasTeamID {
+            message = "Setup needed · management key required in Keychain"
+        } else {
+            message = "Setup needed · save management key in Keychain and local team ID"
+        }
+
+        return ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            confidence: hasManagementKey && hasTeamID ? .low : .manual,
+            dataSource: .manual,
+            statusMessage: message
         )
     }
 }
@@ -277,6 +328,8 @@ public enum CapacityObservationFactory {
                ) {
                 observations.append(observation)
             }
+        case .xai:
+            break
         case .deepseek:
             guard let balance = snapshot.balance else { break }
             let authority: CapacityAuthority = snapshot.dataSource == .officialTelemetry ? .providerReported : .userEntered
@@ -304,6 +357,7 @@ public enum CapacityObservationFactory {
     }
 
     public static func errors(from snapshot: ProviderSnapshot, provider: Provider) -> [CapacityRefreshError] {
+        guard provider != .xai else { return [] }
         guard snapshot.confidence == .low,
               snapshot.events.isEmpty,
               snapshot.primaryUsedPercent == nil,
@@ -339,6 +393,9 @@ public enum TokenPilotRefreshPolicy {
         previous.codexManual != next.codexManual ||
         previous.deepseekAPIKeyConfigured != next.deepseekAPIKeyConfigured ||
         previous.deepSeekBalance != next.deepSeekBalance ||
+        previous.xaiEnabled != next.xaiEnabled ||
+        previous.xAI.managementAPIKeyConfigured != next.xAI.managementAPIKeyConfigured ||
+        previous.xAI != next.xAI ||
         previous.showMockDataWhenDisconnected != next.showMockDataWhenDisconnected
     }
 }
@@ -386,6 +443,7 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.codexManual = CodexStatusParser.safeParse(copy.codexManual.pastedStatusOutput, previous: copy.codexManual)
             copy.codexManual.pastedStatusOutput = ""
         }
+        copy.xAI.teamID = copy.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.normalizeProviderEnablement()
         return copy
     }
@@ -553,7 +611,8 @@ public final class UsageStore: @unchecked Sendable {
             ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
             CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
-            DeepSeekBalanceAdapter()
+            DeepSeekBalanceAdapter(),
+            XAIManagementDiagnosticsAdapter()
         ]
     }
 
@@ -1056,6 +1115,7 @@ private struct SecurityKeychainBackend: KeychainBackend {
 }
 
 public final class KeychainService: @unchecked Sendable {
+    public static let xaiManagementAPIKeyAccount = "xai.managementAPIKey"
     private let service: String
     private let backend: any KeychainBackend
 

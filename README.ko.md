@@ -1,6 +1,6 @@
 # TokenPilot — macOS 메뉴바 AI 한도/사용량 모니터
 
-**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini CLI fallback), DeepSeek balance 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
+**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini CLI fallback), DeepSeek balance 신호, 기본 OFF인 Grok/xAI setup foundation을 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다.
 
 - **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
@@ -9,7 +9,7 @@
 
 > 핵심 원칙: TokenPilot은 사용량 메타데이터 중심으로 동작합니다. 프롬프트/응답 본문, 브라우저 쿠키, provider auth 파일, 임의 Keychain 항목은 읽지 않습니다.
 >
-> TokenPilot은 OpenAI, Anthropic, Google, DeepSeek와 제휴하거나 공식 인증을 받은 제품이 아닙니다.
+> TokenPilot은 OpenAI, Anthropic, Google, DeepSeek, xAI와 제휴하거나 공식 인증을 받은 제품이 아닙니다.
 
 ![TokenPilot 남은 한도 중심 Overview, DeepSeek balance, privacy-first Settings 스크린샷](docs/assets/readme-screenshot.png)
 [English](README.md) · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
@@ -23,7 +23,7 @@
 | **메뉴바** | `5h 18% · W 53%`처럼 5시간/주간 **남은 한도**를 한 줄로 표시합니다. |
 | **개요** | 현재 남은 한도, provider별 수용량 상태, DeepSeek topped-up balance, 오늘 토큰, 알림 상태를 보여주는 capacity-first 화면입니다. |
 | **기록** | 저장된 이벤트와 최신 한도 증거 타임라인을 보여주며, 로컬 활동 집계는 quota가 아닌 export-only JSON/CSV 데이터로만 제공합니다. |
-| **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |
+| **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, Grok/xAI no-network setup, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |
 
 ---
 
@@ -31,12 +31,13 @@
 
 - **macOS 메뉴바 앱**: Dock 아이콘 없는 `MenuBarExtra` 유틸리티.
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
-- **Claude / Codex / Antigravity(레거시 Gemini fallback) / DeepSeek 통합**: 각 provider의 로컬 메타데이터와 선택형 balance 신호를 한 화면에 정리합니다.
+- **Claude / Codex / Antigravity(레거시 Gemini fallback) / DeepSeek / Grok/xAI setup 통합**: 각 provider의 로컬 메타데이터, 선택형 balance 신호, no-network setup 상태를 한 화면에 정리합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
+- **Grok/xAI setup foundation**: 기본 OFF입니다. Management key는 TokenPilot Keychain 항목에만 저장하고, 팀 ID는 로컬/마스킹/presence-only 상태로 다루며 export에서 제외합니다. 현재 상태는 auth-unconfirmed이고 xAI HTTP 요청, live balance/usage, Grok web subscription tracking은 없습니다.
 - **4개 언어**: English, 한국어, 日本語, 简体中文.
 
 ---
@@ -109,6 +110,16 @@ open TokenPilot.xcodeproj
 - API key가 없거나 호출이 실패하면 저장된 성공 값은 stale로 표시하거나, 사용자가 켠 manual fallback 값을 명확히 구분해서 보여줍니다.
 - topped-up balance가 $5 이하이면 low-balance alert를 낼 수 있습니다.
 
+### Grok / xAI API
+
+Grok / xAI API 지원은 **기본 OFF인 setup foundation**이며, live monitoring이 아닙니다.
+
+- Management key를 저장하면 TokenPilot Keychain item에만 저장하며 표시하거나 export하지 않습니다.
+- 팀 ID는 로컬 설정에만 저장하고 summary/diagnostics/accessibility에서는 마스킹 또는 존재 여부만 사용하며 export에서 제외합니다.
+- key와 team ID가 모두 있어도 현재 상태는 **auth-unconfirmed**입니다. TokenPilot은 xAI credential을 검증하지 않습니다.
+- Production build는 **xAI HTTP 요청을 0건** 전송합니다. 현재 live xAI balance/usage, prepaid-balance alert, Grok web subscription tracking은 없습니다.
+- Management-key endpoint 범위(예: usage, billing, prepaid balance)는 xAI의 explicit official Management-key transport documentation이 나오기 전까지 blocked future work이며 현재 기능이 아닙니다.
+
 ---
 
 ## Privacy / Security 경계
@@ -122,6 +133,7 @@ TokenPilot이 읽는 것:
 - 사용자가 직접 저장한 Telegram bot token / Discord webhook의 존재 여부
 - 사용자가 켠 경우 로컬 Codex CLI app-server가 반환하는 한도 힌트
 - 사용자가 저장한 DeepSeek API key로 official `/user/balance`가 반환하는 topped-up balance
+- 사용자가 저장한 xAI Management key의 존재 여부(TokenPilot Keychain item)와 로컬 xAI 팀 ID 상태
 
 TokenPilot이 읽지 않는 것:
 
@@ -131,12 +143,15 @@ TokenPilot이 읽지 않는 것:
 - 프롬프트/응답 본문 표시 목적의 transcript 내용
 - OAuth refresh token 또는 provider 계정 전체 credential store
 - Codex auth 파일 직접 읽기
+- Grok web subscription 또는 xAI account 페이지
+- xAI live balance/usage endpoint response(현재 요청하지 않음)
 
 TokenPilot이 외부로 보내는 것:
 
 - 기본값: 없음
 - Codex Limit Hints Connector ON: 로컬 `codex app-server`에 JSONL app-server RPC `account/rateLimits/read` 요청
 - DeepSeek balance ON + API key 저장: `https://api.deepseek.com/user/balance`에 Bearer 요청
+- Grok/xAI setup ON: 없음. Check Connection도 로컬 setup만 확인하며 xAI HTTP 요청을 보내지 않습니다.
 - Telegram/Discord ON + credential 저장: threshold/reset alert 또는 test message
 
 ---

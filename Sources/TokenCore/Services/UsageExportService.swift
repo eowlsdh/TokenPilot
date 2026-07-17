@@ -170,7 +170,7 @@ public final class UsageExportService {
                 String(event.requestCount),
                 event.estimatedCostUSD.map(decimalString) ?? "",
                 "",
-                event.source,
+                TokenPilotPrivacyRedactor.redactExportField(event.source) ?? "unknown",
                 ""
             ])
         }
@@ -443,7 +443,7 @@ public struct EventExport: Codable, Equatable, Sendable {
         self.toolTokens = event.toolTokens
         self.requestCount = event.requestCount
         self.estimatedCostUSD = event.estimatedCostUSD
-        self.source = event.source
+        self.source = TokenPilotPrivacyRedactor.redactExportField(event.source) ?? "unknown"
         self.durationMS = event.durationMS
         self.totalTokens = event.totalTokens
     }

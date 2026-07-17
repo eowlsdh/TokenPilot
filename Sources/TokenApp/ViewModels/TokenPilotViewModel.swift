@@ -58,9 +58,11 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
+    @Published var xAIManagementAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
+    @Published var hasSavedXAIManagementAPIKey = false
     @Published private var menuBarNow = Date()
     @Published var settings: AppSettings {
         didSet {
@@ -114,6 +116,7 @@ final class TokenPilotViewModel: ObservableObject {
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
         self.hasSavedDeepSeekAPIKey = false
+        self.hasSavedXAIManagementAPIKey = false
 
         if let debugFixture {
             applyDebugFixture(debugFixture)
@@ -127,6 +130,7 @@ final class TokenPilotViewModel: ObservableObject {
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
         self.hasSavedDeepSeekAPIKey = false
+        self.hasSavedXAIManagementAPIKey = false
         startProductionRuntime()
     }
 #endif
@@ -169,9 +173,11 @@ final class TokenPilotViewModel: ObservableObject {
         telegramTokenInput = ""
         discordWebhookInput = ""
         deepSeekAPIKeyInput = ""
+        xAIManagementAPIKeyInput = ""
         hasSavedTelegramToken = fixture.hasSavedTelegramToken
         hasSavedDiscordWebhook = fixture.hasSavedDiscordWebhook
         hasSavedDeepSeekAPIKey = fixture.hasSavedDeepSeekAPIKey
+        hasSavedXAIManagementAPIKey = false
         refreshInProgress = false
         refreshQueued = false
         lastRefreshFinishedAt = fixture.referenceDate
@@ -192,16 +198,27 @@ final class TokenPilotViewModel: ObservableObject {
             hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
             hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
             let hasDeepSeekKey = ((try? keychain.readSecret(account: Self.deepSeekAPIKeyAccount)) ?? nil) != nil
+            let hasXAIManagementKey = ((try? keychain.readSecret(account: Self.xAIManagementAPIKeyAccount)) ?? nil) != nil
             hasSavedDeepSeekAPIKey = hasDeepSeekKey
+            hasSavedXAIManagementAPIKey = hasXAIManagementKey
             if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
                 settings.deepseekAPIKeyConfigured = hasDeepSeekKey
             }
+            if settings.xAI.managementAPIKeyConfigured != hasXAIManagementKey {
+                settings.xAI.managementAPIKeyConfigured = hasXAIManagementKey
+            }
+            let trimmedXAITeamID = Self.trimmedXAITeamID(settings.xAI.teamID)
+            if settings.xAI.teamID != trimmedXAITeamID {
+                settings.xAI.teamID = trimmedXAITeamID
+            }
+            updateXAIDataSourceForCredentialState()
         }
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
+    static let xAIManagementAPIKeyAccount = "xai.managementAPIKey"
 
     var menuBarTitle: String {
         menuBarStatusService.title(
@@ -277,11 +294,13 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var overviewSnapshots: [ProviderSnapshot] {
-        enabledSnapshots.map { snapshot in
-            var displaySnapshot = snapshot
-            displaySnapshot.events = []
-            return displaySnapshot
-        }
+        enabledSnapshots
+            .filter { !Self.isNeutralXAISetupSnapshot($0) }
+            .map { snapshot in
+                var displaySnapshot = snapshot
+                displaySnapshot.events = []
+                return displaySnapshot
+            }
     }
 
     var capacityAlertSummary: CapacityAlertVisibilitySummary {
@@ -533,6 +552,9 @@ final class TokenPilotViewModel: ObservableObject {
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
             settings = next
+            if provider == .xai {
+                updateXAIDataSourceForCredentialState()
+            }
         } else {
             bannerMessage = t("At least one provider must stay enabled.")
         }
@@ -794,6 +816,10 @@ final class TokenPilotViewModel: ObservableObject {
             snapshot.dataSource == .mock
     }
 
+    private nonisolated static func isNeutralXAISetupSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
+        snapshot.provider == .xai && !snapshotHasDataModeEvidence(snapshot)
+    }
+
     private nonisolated static func isOfficialSupportedSnapshot(_ snapshot: ProviderSnapshot) -> Bool {
         guard !snapshot.isStale, !snapshot.isExperimental, snapshot.confidence != .manual else { return false }
         switch (snapshot.provider, snapshot.dataSource) {
@@ -982,6 +1008,11 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        if provider == .xai {
+            updateXAIDataSourceForCredentialState(lastScanAt: Date())
+            bannerMessage = "\(t(provider.displayName)): \(sourceStatusText(provider)). \(t("No xAI HTTP requests are sent."))"
+            return
+        }
         let source = await connectionService.check(settings: settings, provider: provider)
         dataSources[provider] = source
         connectionStatus[provider] = sourceStatusText(source)
@@ -1009,11 +1040,16 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {
-        dataSources = Dictionary(uniqueKeysWithValues: sources.map { ($0.provider, $0) })
-        connectionStatus = Dictionary(uniqueKeysWithValues: sources.map { ($0.provider, sourceStatusText($0)) })
+        var keyedSources = Dictionary(uniqueKeysWithValues: sources.map { ($0.provider, $0) })
+        keyedSources[.xai] = xAIDataSourceForCredentialState(lastScanAt: keyedSources[.xai]?.lastScanAt)
+        dataSources = keyedSources
+        connectionStatus = Dictionary(uniqueKeysWithValues: keyedSources.map { ($0.key, sourceStatusText($0.value)) })
     }
 
     func sourceStatusText(_ provider: Provider) -> String {
+        if provider == .xai {
+            return sourceStatusText(dataSources[provider] ?? xAIDataSourceForCredentialState())
+        }
         guard let source = dataSources[provider] else {
             if provider == .deepseek {
                 return settings.deepseekAPIKeyConfigured ? t("API key saved") : t("API key required")
@@ -1025,6 +1061,9 @@ final class TokenPilotViewModel: ObservableObject {
 
     func sourceStatusText(_ source: ProviderDataSource) -> String {
         let base: String
+        if source.provider == .xai {
+            return xAIStatusText(source)
+        }
         switch source.status {
         case .connected: base = t("Connected")
         case .notFound: base = t("Not found")
@@ -1044,6 +1083,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceDetailText(_ provider: Provider) -> String {
+        if provider == .xai {
+            return xAISourceDetailText()
+        }
         if provider == .deepseek {
             return settings.deepseekAPIKeyConfigured
                 ? t("DeepSeek API key saved in TokenPilot Keychain item.")
@@ -1069,6 +1111,9 @@ final class TokenPilotViewModel: ObservableObject {
 
     var providerDiagnostics: [ProviderConnectionDiagnostic] {
         Provider.allCases.map { provider in
+            if provider == .xai {
+                return xAIDataSourceForCredentialState().connectionDiagnostic()
+            }
             if let source = dataSources[provider] {
                 return source.connectionDiagnostic()
             }
@@ -1091,6 +1136,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func diagnosticStatusText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
+        if diagnostic.provider == .xai {
+            return sourceStatusText(.xai)
+        }
         if diagnostic.provider == .deepseek {
             switch diagnostic.status {
             case .connected:
@@ -1120,11 +1168,17 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func diagnosticNextActionText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
-        t(diagnostic.nextAction.localizationKey)
+        if diagnostic.provider == .xai {
+            return xAINextActionText()
+        }
+        return t(diagnostic.nextAction.localizationKey)
     }
 
     func diagnosticDetailText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
-        t(diagnostic.redactedDetail)
+        if diagnostic.provider == .xai {
+            return xAISourceDetailText()
+        }
+        return t(diagnostic.redactedDetail)
     }
 
     func diagnosticStatusColor(_ diagnostic: ProviderConnectionDiagnostic) -> Color {
@@ -1137,6 +1191,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusColor(_ provider: Provider) -> Color {
+        if provider == .xai {
+            return settings.isProviderEnabled(.xai) ? TokenPilotDesign.warning : TokenPilotDesign.textSecondary
+        }
         guard let status = dataSources[provider]?.status else {
             if provider == .deepseek {
                 return settings.deepseekAPIKeyConfigured ? TokenPilotDesign.calm : TokenPilotDesign.warning
@@ -1221,6 +1278,96 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
 
+    var xAITeamIDConfigured: Bool {
+        !Self.trimmedXAITeamID(settings.xAI.teamID).isEmpty
+    }
+
+    func updateXAITeamID(_ teamID: String) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let trimmed = Self.trimmedXAITeamID(teamID)
+        if settings.xAI.teamID != trimmed {
+            settings.xAI.teamID = trimmed
+        }
+        updateXAIDataSourceForCredentialState()
+    }
+
+    private static func trimmedXAITeamID(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var xAIManagementKeyConfigured: Bool {
+        hasSavedXAIManagementAPIKey || settings.xAI.managementAPIKeyConfigured
+    }
+
+    private var xAISetupInputsComplete: Bool {
+        xAIManagementKeyConfigured && xAITeamIDConfigured
+    }
+
+    private func xAIDataSourceForCredentialState(lastScanAt: Date? = nil) -> ProviderDataSource {
+        let enabled = settings.isProviderEnabled(.xai)
+        let statusMessage: String
+        if !enabled {
+            statusMessage = "xAI disabled"
+        } else if xAISetupInputsComplete {
+            statusMessage = "Management authentication unconfirmed"
+        } else if !xAIManagementKeyConfigured && !xAITeamIDConfigured {
+            statusMessage = "Management key and team ID required"
+        } else if !xAIManagementKeyConfigured {
+            statusMessage = "Management key required"
+        } else {
+            statusMessage = "Team ID required"
+        }
+
+        return ProviderDataSource(
+            provider: .xai,
+            isEnabled: enabled,
+            mode: enabled ? .custom : .disabled,
+            detectedPaths: [],
+            customPath: nil,
+            lastScanAt: lastScanAt,
+            status: enabled ? .manual : .disabled,
+            confidence: xAISetupInputsComplete ? .manual : .low,
+            statusMessage: statusMessage
+        )
+    }
+
+    private func updateXAIDataSourceForCredentialState(lastScanAt: Date? = nil) {
+        let source = xAIDataSourceForCredentialState(lastScanAt: lastScanAt ?? dataSources[.xai]?.lastScanAt)
+        dataSources[.xai] = source
+        connectionStatus[.xai] = sourceStatusText(source)
+    }
+
+    private func xAIStatusText(_ source: ProviderDataSource) -> String {
+        guard source.status != .disabled else { return t("Disabled") }
+        let message = source.statusMessage.map(t) ?? t("Setup needed")
+        if xAISetupInputsComplete {
+            return message
+        }
+        return "\(t("Setup needed")) · \(message)"
+    }
+
+    private func xAISourceDetailText() -> String {
+        guard settings.isProviderEnabled(.xai) else {
+            return t("xAI is disabled by default. Enable it only when you want local setup visibility.")
+        }
+        if xAISetupInputsComplete {
+            return t("Management key is saved in Keychain and team ID is stored locally. Authentication is unconfirmed. No xAI HTTP requests are sent.")
+        }
+        return t("Save an xAI Management key in Keychain and a local team ID. Check Connection only checks local setup. No xAI HTTP requests are sent.")
+    }
+
+    private func xAINextActionText() -> String {
+        guard settings.isProviderEnabled(.xai) else {
+            return t("Enable xAI only when you want local setup visibility.")
+        }
+        if xAISetupInputsComplete {
+            return t("Authentication is unconfirmed; verify credentials outside TokenPilot.")
+        }
+        return t("Enter a local team ID and save a Management key; Check Connection stays local.")
+    }
+
     private func updateDeepSeekDataSourceForCredentialState() {
         let source = ProviderDataSource(
             provider: .deepseek,
@@ -1267,6 +1414,42 @@ final class TokenPilotViewModel: ObservableObject {
             settings.deepseekAPIKeyConfigured = false
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+    func saveXAIManagementAPIKey() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let key = xAIManagementAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            bannerMessage = t("Enter an xAI Management key first.")
+            return
+        }
+        do {
+            try keychain.saveSecret(key, account: Self.xAIManagementAPIKeyAccount)
+            xAIManagementAPIKeyInput = ""
+            hasSavedXAIManagementAPIKey = true
+            settings.xAI.managementAPIKeyConfigured = true
+            updateXAIDataSourceForCredentialState()
+            bannerMessage = "\(t("Management API key saved in TokenPilot Keychain item.")) \(t("No xAI HTTP requests are sent."))"
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func deleteXAIManagementAPIKey() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            try keychain.deleteSecret(account: Self.xAIManagementAPIKeyAccount)
+            xAIManagementAPIKeyInput = ""
+            hasSavedXAIManagementAPIKey = false
+            settings.xAI.managementAPIKeyConfigured = false
+            updateXAIDataSourceForCredentialState()
+            bannerMessage = t("Management API key deleted.")
         } catch {
             bannerMessage = localizedErrorMessage(error)
         }

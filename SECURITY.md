@@ -10,11 +10,14 @@ Do not include real API keys, OAuth tokens, browser cookies, session files, priv
 
 ## Credential Handling Policy
 
-TokenPilot should not read, display, log, export, or store provider access tokens, browser cookies, raw prompts, raw model responses, or arbitrary Keychain items.
+TokenPilot should not read provider credential files, display provider access tokens or API keys, log/export secret values, read browser cookies, store raw prompts or raw model responses, or access arbitrary Keychain items. Explicitly configured TokenPilot-owned secrets must stay in their own Keychain items and remain hidden after save.
 
 Optional Telegram and Discord notification secrets are stored only in TokenPilot-owned Keychain items. They are off by default and are used only when the user explicitly enables those notification channels.
 
 Telegram Bot API endpoints include the bot token in the URL path by design. TokenPilot must not log, export, persist, proxy-debug, or surface full Telegram request URLs. Error messages should stay generic and should not include request URLs or token values.
+Provider Management credentials follow the same boundary. For xAI/Grok setup, the xAI Management API key is stored only in a TokenPilot-owned Keychain item. The optional team ID is stored only as local app metadata, displayed masked, and excluded from exports, logs, and user-facing errors. xAI starts disabled/not-configured and neutral by default; saving setup values must not trigger xAI HTTP requests.
+
+Until official xAI Management authentication documentation clearly defines Management-key transport, production code must not call xAI endpoints. Any future xAI network support must be explicitly enabled and limited to a reviewed endpoint allowlist. xAI API billing is separate from Grok web subscriptions; TokenPilot must not claim live xAI billing or Grok web subscription limit support without a documented, implemented provider contract.
 
 Codex values are intentionally conservative:
 

@@ -456,6 +456,14 @@ struct ProviderSignatureMark: View {
                     .scaleEffect(isRevealed ? 1 : 0.7)
             }
             .padding(size * 0.22)
+        case .xai:
+            Text("xAI")
+                .font(.system(size: size * 0.28, weight: .heavy, design: .rounded))
+                .foregroundStyle(palette.accent(for: provider))
+                .lineLimit(1)
+                .minimumScaleFactor(0.70)
+                .scaleEffect(isRevealed ? 1 : 0.72)
+                .frame(width: size * 0.60, height: size * 0.42)
         }
     }
 }
@@ -526,6 +534,7 @@ private extension Provider {
         case .codex: return 0.10
         case .gemini: return 0.16
         case .deepseek: return 0.22
+        case .xai: return 0.28
         }
     }
 }

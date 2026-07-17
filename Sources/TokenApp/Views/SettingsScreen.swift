@@ -3,6 +3,7 @@ import TokenCore
 
 struct SettingsScreen: View {
     @ObservedObject var model: TokenPilotViewModel
+    @State private var xAITeamIDInput = ""
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -76,6 +77,7 @@ struct SettingsScreen: View {
             claudeProviderSetup
             geminiProviderSetup
             deepSeekProviderSetup
+            xAIProviderSetup
             codexProviderSetup
         }
     }
@@ -123,6 +125,7 @@ struct SettingsScreen: View {
                         providerToggle(.codex)
                         providerToggle(.gemini)
                         providerToggle(.deepseek)
+                        providerToggle(.xai)
                     }
                     Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
                         .font(.caption2)
@@ -290,6 +293,92 @@ struct SettingsScreen: View {
                 in: 0...10_000,
                 step: 1
             )
+        }
+    }
+
+    private var xAIProviderSetup: some View {
+        providerSetupDisclosure(provider: .xai, title: model.t("Grok / xAI API")) {
+            HStack(spacing: 8) {
+                Toggle(
+                    model.t("Enable xAI"),
+                    isOn: Binding(
+                        get: { model.isProviderEnabled(.xai) },
+                        set: { model.setProvider(.xai, isEnabled: $0) }
+                    )
+                )
+                Spacer(minLength: 0)
+                StatusBadge(
+                    label: xAIAuthStatusLabel,
+                    color: xAIAuthStatusColor
+                )
+            }
+
+            Text(model.t("xAI is disabled by default. TokenPilot stores setup locally. No xAI HTTP requests are sent."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                StatusBadge(
+                    label: model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"),
+                    color: model.hasSavedXAIManagementAPIKey ? TokenPilotDesign.calm : TokenPilotDesign.warning
+                )
+                StatusBadge(
+                    label: model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID"),
+                    color: model.xAITeamIDConfigured ? TokenPilotDesign.calm : TokenPilotDesign.warning
+                )
+                Spacer(minLength: 0)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(model.t("xAI local setup presence"))
+            .accessibilityValue(xAIPresenceAccessibilityValue)
+
+            SecureField(model.xAITeamIDConfigured ? model.t("Saved team ID masked") : model.t("xAI Team ID"), text: $xAITeamIDInput)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(model.t("xAI Team ID"))
+                .accessibilityValue(model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID"))
+
+            HStack(spacing: 8) {
+                Button(model.t("Save Team ID")) {
+                    model.updateXAITeamID(xAITeamIDInput)
+                    xAITeamIDInput = ""
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(TokenPilotDesign.calm)
+                .disabled(xAITeamIDInputIsEmpty)
+
+                Button(model.t("Delete Team ID"), role: .destructive) {
+                    model.updateXAITeamID("")
+                    xAITeamIDInput = ""
+                }
+                .buttonStyle(.bordered)
+                .disabled(!model.xAITeamIDConfigured)
+            }
+
+            SecureField(model.hasSavedXAIManagementAPIKey ? model.t("Saved Management API key hidden") : model.t("xAI Management API Key"), text: $model.xAIManagementAPIKeyInput)
+                .textFieldStyle(.roundedBorder)
+                .accessibilityLabel(model.t("xAI Management API Key"))
+                .accessibilityValue(model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"))
+
+            Text(model.t("Team ID is stored locally and masked in summaries. Diagnostics and accessibility labels use presence only."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("A saved key plus team ID still means authentication unconfirmed. No xAI HTTP requests are sent; verify credentials outside TokenPilot."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Button(model.hasSavedXAIManagementAPIKey ? model.t("Replace Management Key") : model.t("Save Management Key")) { model.saveXAIManagementAPIKey() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+                Button(model.t("Delete Management Key"), role: .destructive) { model.deleteXAIManagementAPIKey() }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.hasSavedXAIManagementAPIKey)
+                Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
+                    .buttonStyle(.bordered)
+            }
         }
     }
 
@@ -631,6 +720,17 @@ struct SettingsScreen: View {
                     onCopy: nil
                 )
                 GuideCard(
+                    title: model.t("Grok / xAI API"),
+                    status: model.sourceStatusText(.xai),
+                    statusColor: model.sourceStatusColor(.xai),
+                    detail: model.sourceDetailText(.xai),
+                    explanation: model.t("Optional xAI setup is disabled by default. Check Connection validates local fields only. No xAI HTTP requests are sent."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.xai) } },
+                    onCopy: nil
+                )
+                GuideCard(
                     title: model.t("Add Codex status"),
                     status: model.sourceStatusText(.codex),
                     statusColor: model.sourceStatusColor(.codex),
@@ -694,6 +794,7 @@ struct SettingsScreen: View {
                 privacyLine(model.t("Reads local usage metadata and selected files only."))
                 privacyLine(model.t("Does not read browser cookies or other Keychain items."))
                 privacyLine(model.t("Codex experimental connector is opt-in, local-only, and never reads, displays, stores, or exports Codex access tokens."))
+                privacyLine(model.t("xAI setup is optional, disabled by default, and limited to a Keychain Management key plus local team ID. No xAI HTTP requests are sent."))
                 privacyLine(model.t("Telegram and Discord send only alert messages when enabled."))
             }
         }
@@ -702,7 +803,7 @@ struct SettingsScreen: View {
     private var sourceHealthSummary: some View {
         HStack(spacing: 6) {
             StatusBadge(
-                label: "\(readyProviderCount)/\(Provider.allCases.count) \(model.t("sources ready"))",
+                label: "\(readyProviderCount)/\(sourceHealthProviderCount) \(model.t("sources ready"))",
                 color: readyProviderCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.warning
             )
             StatusBadge(
@@ -794,6 +895,12 @@ struct SettingsScreen: View {
         }.count
     }
 
+    private var sourceHealthProviderCount: Int {
+        model.providerDiagnostics.filter { diagnostic in
+            diagnostic.status != .disabled
+        }.count
+    }
+
     private var attentionProviderCount: Int {
         model.providerDiagnostics.filter { diagnostic in
             diagnostic.status != .connected && diagnostic.status != .disabled
@@ -845,7 +952,7 @@ struct SettingsScreen: View {
         return String(format: model.t("Effective channels: %@"), enabled.joined(separator: " · "))
     }
     private var sourceHealthSummaryText: String {
-        "\(readyProviderCount)/\(Provider.allCases.count) \(model.t("sources ready")) · \(model.capacityRuntimeRecoveryRequired ? model.t("Recovery needed") : model.t("Runtime ready")) · \(attentionProviderCount) \(model.t("needs attention"))"
+        "\(readyProviderCount)/\(sourceHealthProviderCount) \(model.t("sources ready")) · \(model.capacityRuntimeRecoveryRequired ? model.t("Recovery needed") : model.t("Runtime ready")) · \(attentionProviderCount) \(model.t("needs attention"))"
     }
 
     private var sourceHealthStatusLabel: String {
@@ -950,7 +1057,7 @@ struct SettingsScreen: View {
     }
 
     private var setupGuideSummaryText: String {
-        "\(model.t("Connect Claude Code")) · \(model.t("Connect Antigravity CLI")) · \(model.t("DeepSeek")) · \(model.t("Add Codex status"))"
+        "\(model.t("Connect Claude Code")) · \(model.t("Connect Antigravity CLI")) · \(model.t("DeepSeek")) · \(model.t("Grok / xAI API")) · \(model.t("Add Codex status"))"
     }
 
     private var privacyTruthChips: some View {
@@ -1088,7 +1195,7 @@ struct SettingsScreen: View {
     }
 
     private var providerSetupOrder: [Provider] {
-        [.claude, .gemini, .deepseek, .codex]
+        [.claude, .gemini, .deepseek, .xai, .codex]
     }
 
     private var firstAttentionProvider: Provider? {
@@ -1117,6 +1224,9 @@ struct SettingsScreen: View {
         switch provider {
         case .deepseek:
             return model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required")
+        case .xai:
+            guard model.isProviderEnabled(.xai) else { return model.t("Disabled") }
+            return model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("Management key required")
         case .codex:
             return model.t("No Codex token stored")
         case .claude, .gemini:
@@ -1128,11 +1238,17 @@ struct SettingsScreen: View {
         if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
             return TokenPilotDesign.warning
         }
+        if provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey {
+            return TokenPilotDesign.warning
+        }
         return TokenPilotDesign.trust
     }
 
     private func providerSecretSystemImage(_ provider: Provider) -> String {
         if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
+            return "key"
+        }
+        if provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey {
             return "key"
         }
         return "key.slash"
@@ -1157,6 +1273,28 @@ struct SettingsScreen: View {
             get: { model.settings.menuBarDisplayTarget },
             set: { model.setMenuBarDisplayTarget($0) }
         )
+    }
+
+    private var xAITeamIDInputIsEmpty: Bool {
+        xAITeamIDInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var xAIAuthStatusLabel: String {
+        guard model.isProviderEnabled(.xai) else { return model.t("Disabled") }
+        return model.xAITeamIDConfigured && model.hasSavedXAIManagementAPIKey
+            ? model.t("Auth unconfirmed")
+            : model.t("Setup needed")
+    }
+
+    private var xAIAuthStatusColor: Color {
+        model.isProviderEnabled(.xai) ? TokenPilotDesign.warning : TokenPilotDesign.textSecondary
+    }
+
+    private var xAIPresenceAccessibilityValue: String {
+        [
+            model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"),
+            model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID")
+        ].joined(separator: ", ")
     }
 
     private func providerDiagnosticRow(_ diagnostic: ProviderConnectionDiagnostic) -> some View {

@@ -6,38 +6,33 @@ public final class ProviderSelectionService: Sendable {
     private init() {}
 
     public func isProviderEnabled(_ provider: Provider, in settings: AppSettings) -> Bool {
-        settings.monitoredProviders.enabledProviders.contains(provider)
+        settings.isProviderEnabled(provider)
     }
 
     public func enabledProviders(in settings: AppSettings) -> [Provider] {
-        Provider.allCases.filter { isProviderEnabled($0, in: settings) }
+        settings.enabledProviders
     }
 
     public func toggleProvider(_ provider: Provider, in settings: inout AppSettings) {
-        var enabled = settings.monitoredProviders.enabledProviders
-
-        if enabled.contains(provider) {
-            if enabled.count > 1 {
-                enabled.remove(provider)
-            }
-            // Prevent deselecting all
-        } else {
-            enabled.insert(provider)
-        }
-
-        settings.monitoredProviders.enabledProviders = enabled
+        let shouldEnable = !settings.isProviderEnabled(provider)
+        _ = settings.setProviderEnabled(provider, isEnabled: shouldEnable)
     }
 
     public func selectAll(in settings: inout AppSettings) {
-        settings.monitoredProviders.enabledProviders = Set(Provider.allCases)
+        for provider in Provider.allCases {
+            _ = settings.setProviderEnabled(provider, isEnabled: true)
+        }
     }
 
     public func deselectAll(in settings: inout AppSettings) {
         guard let fallback = Provider.allCases.first else { return }
-        settings.monitoredProviders.enabledProviders = [fallback]
+        _ = settings.setProviderEnabled(fallback, isEnabled: true)
+        for provider in Provider.allCases where provider != fallback {
+            _ = settings.setProviderEnabled(provider, isEnabled: false)
+        }
     }
 
     public func canDeselect(_ provider: Provider, in settings: AppSettings) -> Bool {
-        settings.monitoredProviders.enabledProviders.count > 1
+        settings.enabledProviders.count > 1
     }
 }

@@ -5,6 +5,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case codex
     case gemini
     case deepseek
+    case xai
 
     public var id: String { rawValue }
 
@@ -14,6 +15,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return "Codex"
         case .gemini: return "Antigravity CLI"
         case .deepseek: return "DeepSeek"
+        case .xai: return "Grok / xAI API"
         }
     }
 
@@ -23,6 +25,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return "Co"
         case .gemini: return "AG"
         case .deepseek: return "DS"
+        case .xai: return "xAI"
         }
     }
 
@@ -32,6 +35,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .codex: return "terminal"
         case .gemini: return "sparkles"
         case .deepseek: return "dollarsign.circle"
+        case .xai: return "server.rack"
         }
     }
 }
@@ -57,6 +61,7 @@ public enum DataConfidence: String, Codable, CaseIterable, Identifiable, Sendabl
 public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendable {
     case officialStatusline
     case officialTelemetry
+    case officialManagementAPI
     case webUsage
     case localLog
     case manual
@@ -70,6 +75,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
         switch self {
         case .officialStatusline: return "official statusline"
         case .officialTelemetry: return "official telemetry"
+        case .officialManagementAPI: return "official management API (future)"
         case .webUsage: return "limit hints"
         case .localLog: return "local log"
         case .manual: return "manual"
@@ -505,6 +511,47 @@ public struct DeepSeekBalanceSettings: Codable, Equatable, Sendable {
         self.manualCurrency = manualCurrency.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         self.manualCapturedAt = manualCapturedAt
         self.lowBalanceThreshold = max(lowBalanceThreshold, 0)
+    }
+}
+
+public struct XAISettings: Codable, Equatable, Sendable {
+    public var teamID: String
+    public var managementAPIKeyConfigured: Bool
+    public var managementAPILookbackDays: Int
+    public var prepaidBalanceAlertsEnabled: Bool
+    public var prepaidBalanceAlertThresholdUSD: Decimal
+
+    public init(
+        teamID: String = "",
+        managementAPIKeyConfigured: Bool = false,
+        managementAPILookbackDays: Int = 30,
+        prepaidBalanceAlertsEnabled: Bool = false,
+        prepaidBalanceAlertThresholdUSD: Decimal = 5
+    ) {
+        self.teamID = teamID.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.managementAPIKeyConfigured = managementAPIKeyConfigured
+        self.managementAPILookbackDays = min(max(managementAPILookbackDays, 1), 366)
+        self.prepaidBalanceAlertsEnabled = prepaidBalanceAlertsEnabled
+        self.prepaidBalanceAlertThresholdUSD = max(prepaidBalanceAlertThresholdUSD, 0)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case teamID
+        case managementAPIKeyConfigured
+        case managementAPILookbackDays
+        case prepaidBalanceAlertsEnabled
+        case prepaidBalanceAlertThresholdUSD
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            teamID: try container.decodeIfPresent(String.self, forKey: .teamID) ?? "",
+            managementAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .managementAPIKeyConfigured) ?? false,
+            managementAPILookbackDays: try container.decodeIfPresent(Int.self, forKey: .managementAPILookbackDays) ?? 30,
+            prepaidBalanceAlertsEnabled: try container.decodeIfPresent(Bool.self, forKey: .prepaidBalanceAlertsEnabled) ?? false,
+            prepaidBalanceAlertThresholdUSD: try container.decodeIfPresent(Decimal.self, forKey: .prepaidBalanceAlertThresholdUSD) ?? 5
+        )
     }
 }
 
@@ -955,6 +1002,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var codexEnabled: Bool
     public var geminiEnabled: Bool
     public var deepseekEnabled: Bool
+    public var xaiEnabled: Bool
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
@@ -974,6 +1022,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var localization: LocalizationSettings
     public var alertRules: [AlertRule]
     public var deepSeekBalance: DeepSeekBalanceSettings
+    public var xAI: XAISettings
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
 
@@ -985,6 +1034,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         codexEnabled: Bool = true,
         geminiEnabled: Bool = true,
         deepseekEnabled: Bool = true,
+        xaiEnabled: Bool = false,
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
@@ -1002,6 +1052,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         localization: LocalizationSettings = LocalizationSettings(),
         alertRules: [AlertRule] = AppSettings.defaultAlertRules,
         deepSeekBalance: DeepSeekBalanceSettings = DeepSeekBalanceSettings(),
+        xAI: XAISettings = XAISettings(),
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
@@ -1011,6 +1062,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.codexEnabled = codexEnabled
         self.geminiEnabled = geminiEnabled
         self.deepseekEnabled = deepseekEnabled
+        self.xaiEnabled = xaiEnabled
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
@@ -1030,6 +1082,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.localization = localization
         self.alertRules = alertRules
         self.deepSeekBalance = deepSeekBalance
+        self.xAI = xAI
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
     }
@@ -1039,6 +1092,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case codexEnabled
         case geminiEnabled
         case deepseekEnabled
+        case xaiEnabled
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
@@ -1058,6 +1112,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case localization
         case alertRules
         case deepSeekBalance
+        case xAI
         case showMockDataWhenDisconnected
         case challengeTargetTokens
     }
@@ -1069,6 +1124,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             codexEnabled: try container.decodeIfPresent(Bool.self, forKey: .codexEnabled) ?? true,
             geminiEnabled: try container.decodeIfPresent(Bool.self, forKey: .geminiEnabled) ?? true,
             deepseekEnabled: try container.decodeIfPresent(Bool.self, forKey: .deepseekEnabled) ?? true,
+            xaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .xaiEnabled) ?? false,
             deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
@@ -1086,11 +1142,17 @@ public struct AppSettings: Codable, Equatable, Sendable {
             localization: try container.decodeIfPresent(LocalizationSettings.self, forKey: .localization) ?? LocalizationSettings(),
             alertRules: try container.decodeIfPresent([AlertRule].self, forKey: .alertRules) ?? AppSettings.defaultAlertRules,
             deepSeekBalance: try container.decodeIfPresent(DeepSeekBalanceSettings.self, forKey: .deepSeekBalance) ?? DeepSeekBalanceSettings(),
+            xAI: try container.decodeIfPresent(XAISettings.self, forKey: .xAI) ?? XAISettings(),
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
-            menuBarDisplayTarget: try container.decodeIfPresent(Provider.self, forKey: .menuBarDisplayTarget),
+            menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000
         )
+    }
+
+    private static func decodeProviderIfPresent(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Provider? {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return nil }
+        return Provider(rawValue: rawValue)
     }
 
     public static var defaultAlertRules: [AlertRule] {

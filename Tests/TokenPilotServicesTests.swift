@@ -122,6 +122,56 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(decoded.geminiTelemetrySourceBookmarkData, geminiBookmark)
     }
 
+    func testAppSettingsPreXAIAndUnknownProviderDecodeKeepXAIExplicit() throws {
+        let legacyJSON = """
+        {
+          "claudeEnabled": true,
+          "codexEnabled": true,
+          "geminiEnabled": true,
+          "deepseekEnabled": true,
+          "monitoredProviders": {
+            "enabledProviders": ["claude", "codex", "gemini", "deepseek"]
+          }
+        }
+        """
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertFalse(legacy.xaiEnabled)
+        XCTAssertFalse(legacy.xAI.managementAPIKeyConfigured)
+        XCTAssertEqual(legacy.xAI.teamID, "")
+        XCTAssertEqual(legacy.xAI.managementAPILookbackDays, 30)
+        XCTAssertFalse(legacy.xAI.prepaidBalanceAlertsEnabled)
+        XCTAssertEqual(legacy.xAI.prepaidBalanceAlertThresholdUSD, Decimal(5))
+        XCTAssertFalse(legacy.enabledProviders.contains(.xai))
+        XCTAssertFalse(legacy.alertRules.contains { $0.provider == .xai })
+
+        let unknownProviderJSON = """
+        {
+          "menuBarDisplayTarget": "future-provider",
+          "monitoredProviders": {
+            "enabledProviders": ["claude", "future-provider"],
+            "providerModes": {
+              "claude": "auto",
+              "future-provider": "custom"
+            },
+            "customPaths": {
+              "claude": "/tmp/claude",
+              "future-provider": "/tmp/future"
+            }
+          }
+        }
+        """
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(unknownProviderJSON.utf8))
+
+        XCTAssertNil(decoded.menuBarDisplayTarget)
+        XCTAssertEqual(decoded.enabledProviders, [.claude])
+        XCTAssertEqual(decoded.monitoredProviders.enabledProviders, [.claude])
+        XCTAssertEqual(decoded.monitoredProviders.providerModes, [.claude: .auto])
+        XCTAssertEqual(decoded.monitoredProviders.customPaths, [.claude: "/tmp/claude"])
+        XCTAssertFalse(decoded.xaiEnabled)
+        XCTAssertFalse(decoded.enabledProviders.contains(.xai))
+    }
+
     private func abortKeychainTestOnAuthorizationError(_ error: Error) throws {
         #if canImport(Security)
         guard case let KeychainError.unhandledStatus(status) = error,
@@ -153,6 +203,26 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(try service.readSecret(account: account), value)
         try service.deleteSecret(account: account)
         XCTAssertNil(try service.readSecret(account: account))
+    }
+
+    func testXAIManagementKeychainAccountStoresAndDeletesPresenceOnly() throws {
+        let service = KeychainService(service: "com.tokenpilot.tests.\(UUID().uuidString)", backend: InMemoryKeychainBackend())
+        let account = KeychainService.xaiManagementAPIKeyAccount
+
+        XCTAssertEqual(account, "xai.managementAPIKey")
+        XCTAssertNil(try service.readSecret(account: account))
+
+        try service.saveSecret("fixture-management-value", account: account)
+
+        XCTAssertEqual(try service.readSecret(account: account), "fixture-management-value")
+        XCTAssertTrue(try service.readSecret(account: account) != nil)
+
+        try service.deleteSecret(account: account)
+
+        XCTAssertNil(try service.readSecret(account: account))
+        XCTAssertThrowsError(try service.deleteSecret(account: account)) { error in
+            XCTAssertEqual(error as? KeychainError, .itemNotFound)
+        }
     }
 
     func testSecurityScopedBookmarkServiceResolvesReadOnlyBookmark() throws {
@@ -2847,6 +2917,70 @@ final class TokenPilotServicesTests: XCTestCase {
 
     // MARK: - Usage history
 
+    func testUsageHistoryStoreRetainsCostOnlySnapshotsWithZeroTokensAndRequestsForExport() throws {
+        let suite = "TokenPilotCostOnlyHistoryTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = UsageHistoryStore(defaults: defaults, key: "history")
+        let now = Date()
+        let cost = Decimal(string: "1.23")!
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            todayTokens: 0,
+            todayCostUSD: cost,
+            confidence: .high,
+            dataSource: .officialStatusline,
+            model: "Claude Cost"
+        )
+
+        let retained = store.record(snapshots: [snapshot], enabledProviders: [.claude])
+        let event = try XCTUnwrap(retained.first)
+
+        XCTAssertEqual(retained.count, 1)
+        XCTAssertEqual(event.provider, .claude)
+        XCTAssertEqual(event.totalTokens, 0)
+        XCTAssertEqual(event.inputTokens, 0)
+        XCTAssertEqual(event.outputTokens, 0)
+        XCTAssertEqual(event.requestCount, 0)
+        XCTAssertEqual(event.estimatedCostUSD, cost)
+        XCTAssertEqual(event.source, "snapshot-daily-total")
+
+        let historySnapshots = store.snapshotsForHistory(
+            currentSnapshots: [ProviderSnapshot(provider: .claude, dataSource: .officialStatusline)],
+            events: store.loadEvents(),
+            enabledProviders: [.claude],
+            referenceDate: now
+        )
+        let historySnapshot = try XCTUnwrap(historySnapshots.first)
+        let usage = AggregationService().aggregate(snapshots: historySnapshots, period: .today)
+
+        XCTAssertEqual(historySnapshot.todayTokens, 0)
+        XCTAssertEqual(historySnapshot.todayCostUSD, cost)
+        XCTAssertEqual(usage.metrics.totalTokens, 0)
+        XCTAssertEqual(usage.metrics.requestCount, 0)
+        XCTAssertEqual(usage.metrics.estimatedCostUSD, cost)
+
+        let data = try UsageExportService().makeJSONData(
+            usage: usage,
+            snapshots: historySnapshots,
+            dataMode: "LIVE",
+            generatedAt: now
+        )
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payload = try decoder.decode(UsageExportPayload.self, from: data)
+
+        XCTAssertEqual(payload.metrics.totalTokens, 0)
+        XCTAssertEqual(payload.metrics.requestCount, 0)
+        XCTAssertEqual(payload.metrics.estimatedCostUSD, cost)
+        XCTAssertEqual(payload.events.first?.totalTokens, 0)
+        XCTAssertEqual(payload.events.first?.requestCount, 0)
+        XCTAssertEqual(payload.events.first?.estimatedCostUSD, cost)
+        XCTAssertEqual(payload.snapshots.first?.todayTokens, 0)
+        XCTAssertEqual(payload.snapshots.first?.todayCostUSD, cost)
+    }
+
     func testUsageHistoryStoreDefaultKeyIgnoresLegacyV1AndV2Blobs() {
         let suite = "TokenPilotTests-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -3094,6 +3228,215 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     // MARK: - Provider visibility and menu bar selection
+
+    func testXAIProviderEnablementRequiresExplicitSelection() {
+        var settings = AppSettings()
+
+        XCTAssertFalse(settings.xaiEnabled)
+        XCTAssertFalse(settings.isProviderEnabled(.xai))
+        XCTAssertFalse(settings.enabledProviders.contains(.xai))
+
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        XCTAssertTrue(settings.xaiEnabled)
+        XCTAssertTrue(settings.isProviderEnabled(.xai))
+        XCTAssertTrue(settings.monitoredProviders.enabledProviders.contains(.xai))
+
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: false))
+        XCTAssertFalse(settings.xaiEnabled)
+        XCTAssertFalse(settings.isProviderEnabled(.xai))
+        XCTAssertFalse(settings.monitoredProviders.enabledProviders.contains(.xai))
+
+        let monitoredOnly = AppSettings(
+            xaiEnabled: false,
+            monitoredProviders: MonitoredProviderSettings(enabledProviders: [.claude, .xai])
+        )
+
+        XCTAssertFalse(monitoredOnly.xaiEnabled)
+        XCTAssertEqual(monitoredOnly.enabledProviders, [.claude, .xai])
+        XCTAssertTrue(monitoredOnly.isProviderEnabled(.xai))
+    }
+
+    func testXAIDisabledDefaultsAreNeutralAndSkippedByUsageStore() async {
+        let settings = AppSettings()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let adapter = XAIManagementDiagnosticsAdapter()
+
+        let direct = await adapter.refresh(settings: settings, now: now)
+        XCTAssertEqual(direct.snapshot.provider, .xai)
+        XCTAssertEqual(direct.snapshot.updatedAt, now)
+        XCTAssertEqual(direct.snapshot.confidence, .low)
+        XCTAssertEqual(direct.snapshot.dataSource, .unknown)
+        XCTAssertEqual(direct.snapshot.statusMessage, "Disabled")
+        XCTAssertEqual(direct.snapshot.todayTokens, 0)
+        XCTAssertTrue(direct.snapshot.events.isEmpty)
+        XCTAssertTrue(direct.capacityObservations.isEmpty)
+        XCTAssertTrue(direct.typedErrors.isEmpty)
+
+        let skipped = await UsageStore(refreshAdapters: [adapter]).refresh(settings: settings)
+
+        XCTAssertTrue(skipped.snapshots.isEmpty)
+        XCTAssertFalse(skipped.hasConnectedData)
+        XCTAssertTrue(skipped.capacityObservations.isEmpty)
+        XCTAssertTrue(skipped.capacityErrors.isEmpty)
+    }
+
+    func testXAIConnectionDiagnosticsStayLocalAndAuthenticationUnconfirmed() async throws {
+        let home = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotXAITests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: home) }
+        let resolver = DefaultPathResolver(environment: ["HOME": home.path], currentHomeDirectory: home, additionalHomeDirectories: [])
+        let service = DataSourceConnectionService(pathResolver: resolver)
+
+        XCTAssertEqual(resolver.resolveDefaultPaths(for: .xai), [])
+
+        let disabled = await service.check(settings: AppSettings(), provider: .xai)
+        XCTAssertEqual(disabled.provider, .xai)
+        XCTAssertFalse(disabled.isEnabled)
+        XCTAssertEqual(disabled.mode, .disabled)
+        XCTAssertEqual(disabled.detectedPaths, [])
+        XCTAssertNil(disabled.customPath)
+        XCTAssertEqual(disabled.status, .disabled)
+        XCTAssertEqual(disabled.confidence, .low)
+        XCTAssertEqual(disabled.statusMessage, "Disabled")
+
+        var setupNeeded = AppSettings()
+        XCTAssertTrue(setupNeeded.setProviderEnabled(.xai, isEnabled: true))
+        let setupSource = await service.check(settings: setupNeeded, provider: .xai)
+        XCTAssertTrue(setupSource.isEnabled)
+        XCTAssertEqual(setupSource.mode, .custom)
+        XCTAssertEqual(setupSource.detectedPaths, [])
+        XCTAssertEqual(setupSource.status, .manual)
+        XCTAssertEqual(setupSource.confidence, .manual)
+        XCTAssertEqual(setupSource.statusMessage, "Setup needed · save management key in Keychain and local team ID")
+        XCTAssertEqual(setupSource.connectionDiagnostic().nextAction, .enterAPIKey)
+
+        var keyOnly = setupNeeded
+        keyOnly.xAI = XAISettings(managementAPIKeyConfigured: true)
+        let keyOnlySource = await service.check(settings: keyOnly, provider: .xai)
+        XCTAssertEqual(keyOnlySource.statusMessage, "Setup needed · local team ID required")
+
+        var teamOnly = setupNeeded
+        teamOnly.xAI = XAISettings(teamID: " team-local-123 ")
+        let teamOnlySource = await service.check(settings: teamOnly, provider: .xai)
+        XCTAssertEqual(teamOnlySource.statusMessage, "Setup needed · management key required in Keychain")
+
+        var complete = setupNeeded
+        complete.xAI = XAISettings(teamID: " team-local-123 ", managementAPIKeyConfigured: true)
+        let completeSource = await service.check(settings: complete, provider: .xai)
+        let diagnostic = completeSource.connectionDiagnostic()
+
+        XCTAssertEqual(complete.xAI.teamID, "team-local-123")
+        XCTAssertEqual(completeSource.status, .manual)
+        XCTAssertEqual(completeSource.confidence, .manual)
+        XCTAssertEqual(completeSource.statusMessage, "Management authentication unconfirmed")
+        XCTAssertEqual(diagnostic.status, .manual)
+        XCTAssertEqual(diagnostic.nextAction, .enterAPIKey)
+        XCTAssertFalse(diagnostic.redactedDetail.contains("team-local-123"))
+        XCTAssertFalse(diagnostic.redactedDetail.contains("/Users/"))
+        XCTAssertFalse(diagnostic.redactedDetail.localizedCaseInsensitiveContains("api.x.ai"))
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let refresh = await XAIManagementDiagnosticsAdapter().refresh(settings: complete, now: now)
+
+        XCTAssertEqual(refresh.snapshot.provider, .xai)
+        XCTAssertEqual(refresh.snapshot.updatedAt, now)
+        XCTAssertEqual(refresh.snapshot.confidence, .low)
+        XCTAssertEqual(refresh.snapshot.dataSource, .manual)
+        XCTAssertEqual(refresh.snapshot.statusMessage, "Management authentication unconfirmed")
+        XCTAssertEqual(refresh.snapshot.todayTokens, 0)
+        XCTAssertNil(refresh.snapshot.primaryUsedPercent)
+        XCTAssertNil(refresh.snapshot.balance)
+        XCTAssertTrue(refresh.snapshot.events.isEmpty)
+        XCTAssertTrue(refresh.capacityObservations.isEmpty)
+        XCTAssertTrue(refresh.typedErrors.isEmpty)
+    }
+
+    func testXAINoDefaultAlertsOrCapacityEvidence() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.xAI = XAISettings(teamID: "team-local-123", managementAPIKeyConfigured: true)
+        let snapshot = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 90),
+            todayTokens: 123,
+            confidence: .low,
+            dataSource: .manual,
+            statusMessage: "Management authentication unconfirmed"
+        )
+
+        XCTAssertFalse(AppSettings.defaultAlertRules.contains { $0.provider == .xai })
+        XCTAssertEqual(CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now), [])
+        XCTAssertEqual(CapacityObservationFactory.errors(from: snapshot, provider: .xai), [])
+
+        let suite = "TokenPilotXAINotificationTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let notifications = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults))
+            .evaluate(snapshots: [snapshot], settings: AppSettings())
+
+        XCTAssertTrue(notifications.isEmpty)
+    }
+
+    func testXAITeamIDTrimmingRedactionAndExportExclusion() throws {
+        let teamID = "team-secret-123"
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.xAI = XAISettings(teamID: "  \(teamID)\n", managementAPIKeyConfigured: true)
+
+        XCTAssertEqual(settings.xAI.teamID, teamID)
+
+        let suite = "TokenPilotXAISettingsTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TokenPilotSettingsStore(defaults: defaults)
+        store.save(settings)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.xAI.teamID, teamID)
+        XCTAssertTrue(loaded.xAI.managementAPIKeyConfigured)
+        XCTAssertTrue(loaded.isProviderEnabled(.xai))
+
+        let redacted = TokenPilotPrivacyRedactor.redact(
+            "xai team id=\(teamID) org id=org-secret-456 /teams/\(teamID) api_key=management-secret-value-1234567890"
+        )
+
+        XCTAssertFalse(redacted.contains(teamID))
+        XCTAssertFalse(redacted.contains("org-secret-456"))
+        XCTAssertFalse(redacted.contains("management-secret-value-1234567890"))
+        XCTAssertTrue(redacted.contains("[REDACTED_TEAM]"))
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            todayTokens: 0,
+            confidence: .manual,
+            dataSource: .manual,
+            statusMessage: "xai team id=\(teamID) api_key=management-secret-value-1234567890",
+            model: teamID
+        )
+        let data = try UsageExportService().makeJSONData(
+            usage: AggregatedUsage(period: .today),
+            snapshots: [snapshot],
+            dataMode: "LIVE",
+            generatedAt: now
+        )
+        let raw = try XCTUnwrap(String(data: data, encoding: .utf8))
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let payload = try decoder.decode(UsageExportPayload.self, from: data)
+
+        XCTAssertEqual(payload.snapshots.first?.provider, .xai)
+        XCTAssertEqual(payload.snapshots.first?.todayTokens, 0)
+        XCTAssertTrue(payload.events.isEmpty)
+        XCTAssertFalse(raw.contains(teamID))
+        XCTAssertFalse(raw.contains("management-secret-value-1234567890"))
+        XCTAssertFalse(raw.localizedCaseInsensitiveContains("teamID"))
+        XCTAssertFalse(raw.localizedCaseInsensitiveContains("team id"))
+        XCTAssertFalse(raw.localizedCaseInsensitiveContains("statusMessage"))
+    }
 
     func testProviderEnablementKeepsLegacyFlagsAndMonitoredSetInSync() {
         var settings = AppSettings()

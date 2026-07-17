@@ -92,7 +92,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         if let target = settings.menuBarDisplayTarget,
            settings.isProviderEnabled(target),
            !candidates.contains(where: { $0.snapshot.provider == target }) {
-            return target == .codex ? "\(target.shortName) --%" : "\(target.shortName) · \(modeLabel)"
+            return targetedFallbackTitle(for: target, settings: settings, modeLabel: modeLabel)
         }
         guard let candidate = selectedCandidate(from: candidates, settings: settings, now: now) else {
             return "TP · \(modeLabel)"
@@ -160,6 +160,10 @@ public final class MenuBarStatusService: @unchecked Sendable {
         now: Date = Date()
     ) -> String {
         let language = settings.localization.language
+        if settings.menuBarDisplayTarget == .xai, settings.isProviderEnabled(.xai) {
+            return "TokenPilot, \(targetedXAIStatusTitle(settings: settings, language: language))"
+        }
+
         let visualTitle = accessibilityTitle(
             title(snapshots: snapshots, settings: settings, modeLabel: modeLabel, now: now),
             modeLabel: modeLabel,
@@ -190,6 +194,29 @@ public final class MenuBarStatusService: @unchecked Sendable {
 
     private func localized(_ key: String, language: TokenPilotLanguage) -> String {
         TokenPilotLocalizer.localized(key, language: language)
+    }
+
+    private func targetedFallbackTitle(for target: Provider, settings: AppSettings, modeLabel: String) -> String {
+        switch target {
+        case .codex:
+            return "\(target.shortName) --%"
+        case .xai:
+            return targetedXAIStatusTitle(settings: settings, language: settings.localization.language)
+        case .claude, .gemini, .deepseek:
+            return "\(target.shortName) · \(modeLabel)"
+        }
+    }
+
+    private func targetedXAIStatusTitle(settings: AppSettings, language: TokenPilotLanguage) -> String {
+        if xAIManagementSetupConfigured(settings) {
+            return "\(Provider.xai.shortName) · \(localized("Management authentication unconfirmed", language: language))"
+        }
+        return localized("xAI not configured", language: language)
+    }
+
+    private func xAIManagementSetupConfigured(_ settings: AppSettings) -> Bool {
+        settings.xAI.managementAPIKeyConfigured &&
+            !settings.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func localizedRemaining(_ remaining: Int, language: TokenPilotLanguage) -> String {
@@ -401,6 +428,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
 
     private func candidates(for snapshot: ProviderSnapshot) -> [Candidate] {
         guard snapshot.dataSource != .mock else { return [] }
+        if snapshot.provider == .xai {
+            return []
+        }
         var candidates: [Candidate] = []
 
         if let balance = snapshot.balance {

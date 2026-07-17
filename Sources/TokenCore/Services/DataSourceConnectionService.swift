@@ -28,6 +28,9 @@ public final class DataSourceConnectionService: @unchecked Sendable {
     }
 
     public func check(settings: AppSettings, provider: Provider) async -> ProviderDataSource {
+        if provider == .xai {
+            return classifyXAI(settings: settings)
+        }
         let candidates = pathCandidates(settings: settings, provider: provider)
         guard settings.isProviderEnabled(provider) else {
             return ProviderDataSource(
@@ -73,6 +76,8 @@ public final class DataSourceConnectionService: @unchecked Sendable {
             return classifyCodex(settings: settings, candidates: candidates, snapshot: snapshot)
         case .deepseek:
             return classifyDeepSeek(settings: settings)
+        case .xai:
+            return classifyXAI(settings: settings)
         }
     }
 
@@ -82,7 +87,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .claude: preferredKinds = ["statusline", "projects", "config_projects"]
         case .gemini: preferredKinds = ["antigravity_statusline"]
         case .codex: preferredKinds = ["sessions", "archived_sessions", "history", "root"]
-        case .deepseek: preferredKinds = []
+        case .deepseek, .xai: preferredKinds = []
         }
 
         return source.detectedPaths.first {
@@ -112,8 +117,8 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                     next.geminiTelemetrySourceBookmarkData = nil
                     adopted.append(.gemini)
                 }
-            case .codex, .deepseek:
-                // Codex uses default session roots directly; DeepSeek uses Keychain/API instead of local token paths.
+            case .codex, .deepseek, .xai:
+                // Codex uses default session roots directly; DeepSeek/xAI use Keychain/local setup instead of token paths.
                 continue
             }
         }
@@ -274,6 +279,48 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         )
     }
 
+    private func classifyXAI(settings: AppSettings) -> ProviderDataSource {
+        let now = Date()
+        guard settings.xaiEnabled && settings.isProviderEnabled(.xai) else {
+            return ProviderDataSource(
+                provider: .xai,
+                isEnabled: false,
+                mode: .disabled,
+                detectedPaths: [],
+                customPath: nil,
+                lastScanAt: now,
+                status: .disabled,
+                confidence: .low,
+                statusMessage: "Disabled"
+            )
+        }
+
+        let hasManagementKey = settings.xAI.managementAPIKeyConfigured
+        let hasTeamID = !settings.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let message: String
+        if hasManagementKey && hasTeamID {
+            message = "Management authentication unconfirmed"
+        } else if hasManagementKey {
+            message = "Setup needed · local team ID required"
+        } else if hasTeamID {
+            message = "Setup needed · management key required in Keychain"
+        } else {
+            message = "Setup needed · save management key in Keychain and local team ID"
+        }
+
+        return ProviderDataSource(
+            provider: .xai,
+            isEnabled: true,
+            mode: .custom,
+            detectedPaths: [],
+            customPath: nil,
+            lastScanAt: now,
+            status: .manual,
+            confidence: .manual,
+            statusMessage: message
+        )
+    }
+
     private func codexSessionRoots(from candidates: [ProviderPathCandidate]) -> [URL] {
         candidates
             .filter { ["sessions", "archived_sessions"].contains($0.kind) && $0.exists && $0.readable }
@@ -358,7 +405,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .gemini:
             let path = settings.geminiTelemetryLogPath.trimmingCharacters(in: .whitespacesAndNewlines)
             return path.isEmpty ? nil : path
-        case .codex, .deepseek:
+        case .codex, .deepseek, .xai:
             return nil
         }
     }
@@ -377,7 +424,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .gemini:
             let name = URL(fileURLWithPath: resolvedPath).lastPathComponent.lowercased()
             kind = name == "antigravity-statusline.json" || resolvedPath.lowercased().contains("/antigravity-statusline") ? "antigravity_statusline" : "telemetry"
-        case .codex, .deepseek:
+        case .codex, .deepseek, .xai:
             kind = "manual"
         }
         return ProviderPathCandidate(

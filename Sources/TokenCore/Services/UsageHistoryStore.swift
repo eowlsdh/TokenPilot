@@ -30,12 +30,12 @@ public final class UsageHistoryStore: @unchecked Sendable {
                 .filter { enabledProviders.contains($0.provider) }
                 .flatMap { snapshot -> [UsageEvent] in
                     let explicitEvents = snapshot.events.filter { event in
-                        enabledProviders.contains(event.provider) && (event.totalTokens > 0 || event.requestCount > 0)
+                        enabledProviders.contains(event.provider) && (event.totalTokens > 0 || event.requestCount > 0 || event.estimatedCostUSD != nil)
                     }
                     if !explicitEvents.isEmpty { return explicitEvents }
                     guard snapshot.isWebQuotaComparable else { return [] }
-                    guard snapshot.todayTokens > 0 else { return [] }
-                    // Synthetic fallback: no per-field breakdown available, total placed in inputTokens.
+                    guard snapshot.todayTokens > 0 || snapshot.todayCostUSD != nil else { return [] }
+                    // Synthetic fallback: no per-field breakdown available; totals stay in their token/cost fields.
                     // Mark as estimated to distinguish from explicit adapter events.
                     return [UsageEvent(
                         provider: snapshot.provider,
@@ -48,7 +48,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
                         reasoningTokens: 0,
                         toolTokens: 0,
                         requestCount: max(snapshot.dailyRequestsUsed ?? 0, 0),
-                        estimatedCostUSD: nil,
+                        estimatedCostUSD: snapshot.todayCostUSD,
                         source: "snapshot-daily-total",
                         dataSource: snapshot.dataSource,
                         isEstimated: true,
@@ -95,6 +95,9 @@ public final class UsageHistoryStore: @unchecked Sendable {
             let providerEvents = eventsByProvider[snapshot.provider] ?? []
             copy.events = providerEvents
             copy.todayTokens = todayTokens(in: providerEvents, referenceDate: referenceDate)
+            if let todayCostUSD = todayCostUSD(in: providerEvents, referenceDate: referenceDate) {
+                copy.todayCostUSD = todayCostUSD
+            }
             return copy
             }
     }
@@ -141,6 +144,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
         }
 
         let bucket = Int(event.timestamp.timeIntervalSince1970.rounded())
+        let cost = event.estimatedCostUSD.map { NSDecimalNumber(decimal: $0).stringValue } ?? ""
         return [
             event.provider.rawValue,
             event.source,
@@ -153,7 +157,8 @@ public final class UsageHistoryStore: @unchecked Sendable {
             String(event.reasoningTokens),
             String(event.toolTokens),
             String(event.requestCount),
-            String(event.totalTokens)
+            String(event.totalTokens),
+            cost
         ].joined(separator: "|")
     }
 
@@ -162,6 +167,15 @@ public final class UsageHistoryStore: @unchecked Sendable {
         return events
             .filter { calendar.isDate($0.timestamp, inSameDayAs: referenceDate) }
             .reduce(0) { $0 + $1.totalTokens }
+    }
+
+    private func todayCostUSD(in events: [UsageEvent], referenceDate: Date) -> Decimal? {
+        let calendar = Calendar.current
+        let costs = events
+            .filter { calendar.isDate($0.timestamp, inSameDayAs: referenceDate) }
+            .compactMap(\.estimatedCostUSD)
+        guard !costs.isEmpty else { return nil }
+        return costs.reduce(Decimal(0), +)
     }
 
     private static let dayKeyFormatter: DateFormatter = {
