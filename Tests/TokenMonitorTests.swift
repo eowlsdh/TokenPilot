@@ -356,15 +356,15 @@ final class TokenMonitorTests: XCTestCase {
         )
 
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
-        XCTAssertEqual(segments.count, 2)
-        XCTAssertEqual(segments.map(\.provider), [.xai, .claude])
+        XCTAssertEqual(segments.count, Provider.allCases.count)
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek])
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("unofficial") == true)
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("monthly") == true)
 
         let staleSegments = service.providerMetricsSegments(snapshots: [staleExperimental, claude], settings: settings, now: now)
-        XCTAssertEqual(staleSegments.count, 2)
+        XCTAssertEqual(staleSegments.count, Provider.allCases.count)
         XCTAssertEqual(staleSegments.first?.displayValue, "58%·ES")
         XCTAssertTrue(staleSegments.first?.accessibilityLabel.localizedCaseInsensitiveContains("stale") == true)
 
@@ -385,9 +385,9 @@ final class TokenMonitorTests: XCTestCase {
 
         settings.xAI.usageSource = .managementSetup
         let optedOutSegments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
-        XCTAssertEqual(optedOutSegments.count, 2)
+        XCTAssertEqual(optedOutSegments.count, Provider.allCases.count)
         XCTAssertEqual(optedOutSegments.first?.provider, .xai)
-        XCTAssertEqual(optedOutSegments.first?.displayValue, "Unavailable")
+        XCTAssertEqual(optedOutSegments.first?.displayValue, "—")
         XCTAssertFalse(optedOutSegments.first?.displayValue.contains("%") == true)
         XCTAssertFalse(service.accessibilityLabel(snapshots: [experimental, claude], settings: settings, modeLabel: "LIVE", now: now).contains("58%"))
     }

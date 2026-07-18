@@ -51,16 +51,19 @@ struct TokenMonitorApp: App {
     @ViewBuilder
     private func productionMenuBarLabel(model: TokenPilotViewModel) -> some View {
         if model.settings.menuBarDisplayStyle == .providerMetrics {
-            HStack(alignment: .center, spacing: 5) {
+            HStack(alignment: .center, spacing: 6) {
                 ForEach(Array(model.menuBarMetricSegments.enumerated()), id: \.offset) { _, segment in
-                    VStack(alignment: .leading, spacing: -2) {
+                    VStack(alignment: .center, spacing: -2) {
                         Text(segment.providerShortLabel)
                             .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
                         Text(segment.displayValue)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .monospacedDigit()
+                            .foregroundStyle(menuBarMetricColor(segment.displayValue))
                     }
                     .lineLimit(1)
+                    .frame(minWidth: 28, alignment: .center)
                     .fixedSize(horizontal: true, vertical: false)
                 }
             }
@@ -78,6 +81,16 @@ struct TokenMonitorApp: App {
                 .help(model.menuBarAccessibilityLabel)
                 .accessibilityLabel(model.menuBarAccessibilityLabel)
         }
+    }
+
+    private func menuBarMetricColor(_ value: String) -> Color {
+        guard let percentText = value.split(separator: "%").first,
+              let percent = Int(percentText.filter(\.isNumber)) else {
+            return TokenPilotDesign.textSecondary
+        }
+        if percent <= 20 { return TokenPilotDesign.danger }
+        if percent <= 50 { return TokenPilotDesign.warning }
+        return TokenPilotDesign.calm
     }
 }
 

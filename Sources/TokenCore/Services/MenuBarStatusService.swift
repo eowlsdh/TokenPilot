@@ -128,24 +128,16 @@ public final class MenuBarStatusService: @unchecked Sendable {
     ) -> [MenuBarProviderMetricSegment] {
         let candidates = providerMetricsCandidates(from: snapshots, settings: settings)
         let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
-        let primaryCandidate = compactPrimaryCandidate(
-            from: candidates,
-            selectedTarget: selectedTarget,
-            settings: settings,
-            now: now
-        )
-        let primaryProvider = selectedTarget ?? primaryCandidate?.snapshot.provider
-        var segments = [providerMetricSegment(provider: primaryProvider, candidate: primaryCandidate, settings: settings)]
-
-        if settings.menuBarShowsSecondaryProvider,
-           let secondary = settings.menuBarSecondaryDisplayTarget,
-           settings.isProviderEnabled(secondary),
-           secondary != primaryProvider {
-            let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
-            segments.append(providerMetricSegment(provider: secondary, candidate: secondaryCandidate, settings: settings))
+        var providers = Provider.allCases.filter { settings.isProviderEnabled($0) }
+        if let selectedTarget, let index = providers.firstIndex(of: selectedTarget) {
+            providers.remove(at: index)
+            providers.insert(selectedTarget, at: 0)
         }
 
-        return Array(segments.prefix(2))
+        return providers.map { provider in
+            let candidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == provider })
+            return providerMetricSegment(provider: provider, candidate: candidate, settings: settings)
+        }
     }
 
     private func detailedTitle(
@@ -257,13 +249,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return MenuBarProviderMetricSegment(
                 provider: provider,
                 providerShortLabel: provider.shortName,
-                displayValue: marker,
+                displayValue: "—",
                 accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
             )
         }
 
         guard let candidate else {
-            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: provider.shortName, displayValue: "Setup", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
+            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: provider.shortName, displayValue: "—", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {

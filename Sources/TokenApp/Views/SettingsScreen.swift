@@ -139,7 +139,11 @@ struct SettingsScreen: View {
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                             Spacer(minLength: 0)
-                            Text(model.t("Up to two providers can be shown"))
+                            Text(
+                                model.settings.menuBarDisplayStyle == .providerMetrics
+                                    ? model.t("Providers")
+                                    : model.t("Up to two providers can be shown")
+                            )
                                 .font(.caption2)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
@@ -164,7 +168,8 @@ struct SettingsScreen: View {
                         .pickerStyle(.menu)
                         .accessibilityLabel(model.t("Primary provider"))
 
-                        if model.settings.menuBarDisplayStyle != .iconOnly {
+                        if model.settings.menuBarDisplayStyle != .iconOnly &&
+                            model.settings.menuBarDisplayStyle != .providerMetrics {
                             Toggle(model.t("Show secondary provider"), isOn: menuBarShowsSecondaryBinding)
                                 .disabled(!hasAvailableSecondaryProvider)
 
@@ -187,7 +192,9 @@ struct SettingsScreen: View {
 
                         VStack(alignment: .leading, spacing: 2) {
                             Text(model.t("Menu bar reflects saved source data and does not refresh providers."))
-                            Text(model.t("Provider metrics matches simple provider/value blocks."))
+                            if model.settings.menuBarDisplayStyle == .providerMetrics {
+                                Text(model.t("Provider metrics matches simple provider/value blocks."))
+                            }
                         }
                         .font(.caption2)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
