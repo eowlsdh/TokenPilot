@@ -16,6 +16,7 @@ Optional Telegram and Discord notification secrets are stored only in TokenPilot
 
 Telegram Bot API endpoints include the bot token in the URL path by design. TokenPilot must not log, export, persist, proxy-debug, or surface full Telegram request URLs. Error messages should stay generic and should not include request URLs or token values.
 Grok Build local context metadata is limited to remaining-context information in files named `signals.json` below `~/.grok/sessions/`. TokenPilot rejects symlinks, reads no more than 120 files per scan, and rejects any file larger than 256 KiB. It parses only numeric context fields; it does not ingest prompts, responses, credentials, or other session content. This local context metadata is not provider quota, subscription quota, or API billing data and must not be presented as comparable to those values.
+TokenPilot never reads `~/.grok/auth.json`, OAuth tokens, or any other Grok credential file.
 
 Gemini ingestion accepts only the exact filenames `antigravity-statusline.json` and `telemetry.log`; chat/session JSON is rejected before reading. The same credential, export, and error-reporting boundaries apply to all provider metadata.
 

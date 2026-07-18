@@ -910,7 +910,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .gemini, title: model.t(\"Antigravity CLI\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .deepseek, title: model.t(\"DeepSeek\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .codex, title: model.t(\"Codex\"))"))
-        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .xai, title: model.t(\"Grok / xAI API\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .xai, title: model.t(\"Grok Build\"))"))
         XCTAssertTrue(source.contains("DisclosureCard(\n            initiallyExpanded: providerDefaultExpanded(provider)"))
         XCTAssertTrue(source.contains("providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)"))
         XCTAssertTrue(source.contains("CompactProviderStatusRow("))
@@ -1097,7 +1097,7 @@ final class TokenMonitorTests: XCTestCase {
         let viewModelSource = try String(contentsOf: rootURL.appendingPathComponent("Sources/TokenApp/ViewModels/TokenPilotViewModel.swift"))
 
         XCTAssertTrue(appSource.contains("TokenPilotRootView(model: model)"))
-        XCTAssertTrue(appSource.contains("productionMenuBarLabel(model: model)"))
+        XCTAssertTrue(appSource.contains("ProviderMetricsMenuBarNSView"))
         XCTAssertTrue(appSource.contains("TokenPilotDebugFixture.resolve()"))
         XCTAssertTrue(appSource.contains("TokenPilotViewModel(debugFixture: debugFixture)"))
         XCTAssertFalse(appSource.contains("TokenPilotDebugFixtureView"))
@@ -1387,7 +1387,7 @@ final class TokenMonitorTests: XCTestCase {
             XCTAssertFalse(appSource.contains(forbidden), "DEBUG accessibility profiles must be app-scoped and non-persistent: \(forbidden)")
         }
 
-        XCTAssertTrue(releaseSource.contains("_model = StateObject(wrappedValue: TokenPilotViewModel())"))
+        XCTAssertTrue(releaseSource.contains("model = TokenPilotViewModel()"))
         XCTAssertTrue(releaseSource.contains("TokenPilotRootView(model: model)"))
         XCTAssertFalse(releaseSource.contains("TOKENPILOT_DEBUG_ACCESSIBILITY_PROFILE"))
         XCTAssertFalse(releaseSource.contains("debugAccessibilityProfile"))
@@ -1925,54 +1925,49 @@ final class TokenMonitorTests: XCTestCase {
         )
     }
 
-    func testXAIProviderFoundationContainsNoURLSessionOrEndpointByDefault() throws {
+    func testGrokLocalSignalsAdapterIsBoundedLocalAndCredentialFree() throws {
         let servicesSource = try Self.tokenCoreServicesSource()
-        let adapterStart = try XCTUnwrap(servicesSource.range(of: "public struct XAIManagementDiagnosticsAdapter"))
+        let adapterStart = try XCTUnwrap(servicesSource.range(of: "public struct GrokLocalSignalsAdapter"))
         let adapterEnd = try XCTUnwrap(
             servicesSource.range(
-                of: "\npublic enum CapacityObservationFactory",
+                of: "\npublic struct XAIOpenCodeBarAdapter",
                 range: adapterStart.upperBound..<servicesSource.endIndex
             )
         )
         let adapterSource = String(servicesSource[adapterStart.lowerBound..<adapterEnd.lowerBound])
-        let classifyXAI = try XCTUnwrap(servicesSource.swiftFunctionBody(named: "classifyXAI"))
         let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
-        let saveKeyBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "saveXAIManagementAPIKey"))
-        let updateTeamBody = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "updateXAITeamID"))
-        let xaiSource = [adapterSource, classifyXAI, saveKeyBody, updateTeamBody].joined(separator: "\n")
 
-        for forbidden in ["URLSession", "URLRequest", "HTTPURLResponse", "https://", "api.x.ai", "x.ai/api", "/v1/"] {
-            XCTAssertFalse(xaiSource.localizedCaseInsensitiveContains(forbidden), "xAI foundation must not contain network endpoint or URLSession marker: \(forbidden)")
+        for forbidden in ["URLSession", "URLRequest", "HTTPURLResponse", "https://", "api.x.ai", "auth.json", "OAuth", "prompt", "response"] {
+            XCTAssertFalse(adapterSource.localizedCaseInsensitiveContains(forbidden), "Grok local-signals ingestion must not contain credential or network marker: \(forbidden)")
         }
 
+        XCTAssertTrue(adapterSource.contains("maximumFileBytes = 256 * 1_024"))
+        XCTAssertTrue(adapterSource.contains("maximumDiscoveredFiles = 120"))
+        XCTAssertTrue(adapterSource.contains("url.lastPathComponent == \"signals.json\""))
+        XCTAssertTrue(adapterSource.contains("!isSymbolicLink(root)"))
+        XCTAssertTrue(adapterSource.contains("!isSymbolicLink(url)"))
         XCTAssertTrue(adapterSource.contains("capacityObservations: []"))
         XCTAssertTrue(adapterSource.contains("typedErrors: []"))
-        XCTAssertTrue(adapterSource.contains("Management authentication unconfirmed"))
-        XCTAssertTrue(classifyXAI.contains("detectedPaths: []"))
-        XCTAssertTrue(saveKeyBody.contains("keychain.saveSecret(key, account: Self.xAIManagementAPIKeyAccount)"))
-        XCTAssertTrue(saveKeyBody.contains("No xAI HTTP requests are sent."))
-        XCTAssertTrue(updateTeamBody.contains("trimmedXAITeamID"))
+        XCTAssertTrue(adapterSource.contains("dataSource: .localLog"))
+        XCTAssertTrue(adapterSource.contains("contextWindowUsedPercent: usedPercent"))
+        XCTAssertFalse(viewModelSource.contains("saveXAIManagementAPIKey"))
+        XCTAssertFalse(viewModelSource.contains("updateXAITeamID"))
     }
 
-    func testSettingsXAITeamIDEntryDoesNotBindOrRenderPersistedValue() throws {
+    func testSettingsGrokSourceShowsLocalSignalsWithoutCredentialControls() throws {
         let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
 
-        XCTAssertTrue(settingsSource.contains("@State private var xAITeamIDInput = \"\""))
-        XCTAssertTrue(settingsSource.contains("SecureField(model.xAITeamIDConfigured ? model.t(\"Saved team ID masked\") : model.t(\"xAI Team ID\"), text: $xAITeamIDInput)"))
-        XCTAssertTrue(settingsSource.contains("Button(model.t(\"Save Team ID\"))"))
-        XCTAssertTrue(settingsSource.contains("Button(model.t(\"Delete Team ID\"), role: .destructive)"))
-        XCTAssertTrue(settingsSource.contains("model.updateXAITeamID(xAITeamIDInput)"))
-        XCTAssertTrue(settingsSource.contains("model.updateXAITeamID(\"\")"))
-        XCTAssertTrue(settingsSource.contains(".disabled(xAITeamIDInputIsEmpty)"))
-        XCTAssertTrue(settingsSource.contains("accessibilityValue(model.xAITeamIDConfigured ? model.t(\"Team ID set\") : model.t(\"No team ID\"))"))
-
-        XCTAssertFalse(settingsSource.contains("TextField(model.t(\"xAI Team ID\"), text: xAITeamIDBinding)"))
-        XCTAssertFalse(settingsSource.contains("private var xAITeamIDBinding"))
-        XCTAssertFalse(settingsSource.contains("model.settings.xAI.teamID"))
-        XCTAssertTrue(settingsSource.contains("guard model.isProviderEnabled(.xai) else { return model.t(\"Disabled\") }"))
-        XCTAssertTrue(settingsSource.contains("model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI"))
-        XCTAssertTrue(settingsSource.contains("return model.t(\"TokenPilot stores no bridge secret.\")"))
-        XCTAssertTrue(settingsSource.contains("OAuth ·"))
+        XCTAssertTrue(settingsSource.contains("providerSetupDisclosure(provider: .xai, title: model.t(\"Grok Build\"))"))
+        XCTAssertTrue(settingsSource.contains("model.t(\"Enable Grok Build\")"))
+        XCTAssertTrue(settingsSource.contains("model.t(\"Grok Build source\")"))
+        XCTAssertTrue(settingsSource.contains("model.t(\"Local context metadata\")"))
+        XCTAssertTrue(settingsSource.contains("~/.grok/sessions/**/signals.json"))
+        XCTAssertTrue(settingsSource.contains("auth.json, OAuth tokens, prompts, or responses"))
+        XCTAssertFalse(settingsSource.contains("xAITeamIDInput"))
+        XCTAssertFalse(settingsSource.contains("Save Team ID"))
+        XCTAssertFalse(settingsSource.contains("Delete Team ID"))
+        XCTAssertFalse(settingsSource.contains("Save Management Key"))
+        XCTAssertFalse(settingsSource.contains("experimentalOpenCodeBarCLI"))
     }
 
     func testSettingsMutationEntryPointsUseDebouncedRefreshOnly() throws {
@@ -2010,7 +2005,7 @@ final class TokenMonitorTests: XCTestCase {
             "Popover onAppear should not launch an unthrottled full refresh; use the lightweight stale-check path instead."
         )
         XCTAssertTrue(
-            sourceCollapsed.contains("Task { await model.refreshAfterPopoverOpen() }"),
+            sourceCollapsed.contains("Task { await self.model.refreshAfterPopoverOpen() }"),
             "Popover onAppear should use refreshAfterPopoverOpen so view lifecycle work stays lightweight."
         )
 

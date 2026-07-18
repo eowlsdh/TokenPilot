@@ -41,6 +41,7 @@ TokenPilot stores app preferences locally on the Mac. TokenPilot-owned notificat
 The default product promise is local-first. Network use is limited to features that the user explicitly enables, such as optional external notifications or an opt-in local connector. Any external submission, account login, or credential-based provider access must be clearly labeled.
 
 Grok Build ingestion is local-only: TokenPilot considers only files named `signals.json` beneath `~/.grok/sessions/`, rejects symlinks, reads at most 120 files per scan, and rejects files larger than 256 KiB. It parses only numeric context fields. These values describe local context remaining and are not subscription quota, provider quota, or API billing; they must not be compared with or represented as any of those measures.
+TokenPilot never reads `~/.grok/auth.json`, OAuth tokens, prompts, responses, or other Grok credential/session content.
 
 Gemini ingestion accepts only the exact `antigravity-statusline.json` and `telemetry.log` filenames. Chat/session JSON is rejected before it is read.
 
