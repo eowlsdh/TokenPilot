@@ -232,7 +232,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
                let remaining = candidate.remainingPercent {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
-                    providerShortLabel: provider.shortName,
+                    providerShortLabel: providerMetricLabel(provider),
                     displayValue: "\(remaining)%·\(candidate.freshness == "stale" ? "ES" : "E")",
                     accessibilityLabel: [
                         localized(provider.displayName, language: settings.localization.language),
@@ -248,21 +248,21 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 (xAIManagementSetupConfigured(settings) ? "Setup" : "Unavailable")
             return MenuBarProviderMetricSegment(
                 provider: provider,
-                providerShortLabel: provider.shortName,
+                providerShortLabel: providerMetricLabel(provider),
                 displayValue: "—",
                 accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
             )
         }
 
         guard let candidate else {
-            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: provider.shortName, displayValue: "—", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
+            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: providerMetricLabel(provider), displayValue: "—", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
             let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
             return MenuBarProviderMetricSegment(
                 provider: provider,
-                providerShortLabel: provider.shortName,
+                providerShortLabel: providerMetricLabel(provider),
                 displayValue: "\(remaining)%\(suffix)",
                 accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localizedRemaining(remaining, language: settings.localization.language)), \(localizedAuthority(candidate.authority, language: settings.localization.language)), \(localizedFreshness(candidate.freshness, language: settings.localization.language))"
             )
@@ -271,7 +271,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             let value = DeepSeekBalanceFormatter.display(balance)
             return MenuBarProviderMetricSegment(
                 provider: provider,
-                providerShortLabel: provider.shortName,
+                providerShortLabel: providerMetricLabel(provider),
                 displayValue: "\(value)\(candidate.suffix.isEmpty ? "" : " \(candidate.suffix)")",
                 accessibilityLabel: [
                     localized(provider.displayName, language: settings.localization.language),
@@ -293,10 +293,20 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
         return MenuBarProviderMetricSegment(
             provider: provider,
-            providerShortLabel: provider.shortName,
+            providerShortLabel: providerMetricLabel(provider),
             displayValue: marker,
             accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
         )
+    }
+
+    private func providerMetricLabel(_ provider: Provider) -> String {
+        switch provider {
+        case .claude: return "CLAUDE"
+        case .codex: return "CODEX"
+        case .gemini: return "ANTIGRAVITY"
+        case .deepseek: return "DEEPSEEK"
+        case .xai: return "GROK"
+        }
     }
 
 

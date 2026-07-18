@@ -358,6 +358,10 @@ final class TokenMonitorTests: XCTestCase {
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(segments.count, Provider.allCases.count)
         XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek])
+        XCTAssertEqual(
+            segments.map(\.providerShortLabel),
+            ["GROK", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK"]
+        )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("unofficial") == true)

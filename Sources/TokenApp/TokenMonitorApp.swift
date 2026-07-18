@@ -53,17 +53,17 @@ struct TokenMonitorApp: App {
         if model.settings.menuBarDisplayStyle == .providerMetrics {
             HStack(alignment: .center, spacing: 6) {
                 ForEach(Array(model.menuBarMetricSegments.enumerated()), id: \.offset) { _, segment in
-                    VStack(alignment: .center, spacing: -2) {
+                    VStack(alignment: .center, spacing: -3) {
                         Text(segment.providerShortLabel)
-                            .font(.system(size: 8, weight: .medium, design: .monospaced))
+                            .font(.system(size: 7.5, weight: .medium, design: .monospaced))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                         Text(segment.displayValue)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
+                            .font(.system(size: 11.5, weight: .bold, design: .monospaced))
                             .monospacedDigit()
                             .foregroundStyle(menuBarMetricColor(segment.displayValue))
                     }
                     .lineLimit(1)
-                    .frame(minWidth: 28, alignment: .center)
+                    .frame(minWidth: 34, alignment: .center)
                     .fixedSize(horizontal: true, vertical: false)
                 }
             }
