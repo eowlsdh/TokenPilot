@@ -1,6 +1,6 @@
 # TokenPilot — macOS 菜单栏 AI 额度 / 用量监控
 
-**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini telemetry）、DeepSeek balance 信号和 Grok 的本地 context 信号，让你在 macOS 菜单栏中查看剩余额度和使用历史。Grok/xAI 只读取数值本地 context 元数据。
+**TokenPilot** 是一款 local-first macOS 工具，用最简洁的方式在菜单栏查看 AI coding provider 的剩余百分比：上方显示 provider 名称，下方显示剩余百分比。选中的 provider 可以注册为独立菜单栏项目，也可以合并为一个项目。
 
 > TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie、provider auth 文件或任意 Keychain 项。
 >
@@ -16,7 +16,7 @@
 
 | 界面 | 作用 |
 |---|---|
-| **Menu bar** | 以 `5h 18% · W 53% · DS $12.34` 这样的单行形式显示剩余额度和选中的 DeepSeek 余额。 |
+| **Menu bar** | 上方显示 provider 名称，下方显示剩余百分比；可按 provider 选择显示，并使用**独立项目**或**合并项目**布局。 |
 | **Overview** | 显示当前剩余额度、provider rows、DeepSeek topped-up balance、今日 token 和提醒状态。 |
 | **History** | 提供已保存的使用事件、最新 limit signals、默认折叠的最近额度信号和 JSON/CSV export。 |
 | **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok 本地 context diagnostics、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
@@ -25,7 +25,7 @@
 
 ## 主要功能
 
-- **macOS 菜单栏应用**：使用 AppKit `NSStatusItem` 和 `NSPopover`、无 Dock 图标的工具。
+- **简洁的 provider 百分比**：通过双行 `NSStatusItem` 随时查看所选 AI 的剩余比例，并可独立排列或合并显示。
 - **剩余额度优先 UI**：优先显示“还剩多少”，而不是“已经用了多少”。
 - **Claude / Codex / Antigravity（旧版 Gemini telemetry）/ DeepSeek / Grok/xAI 集成**：把各 provider 的本地元数据、可选 balance 信号和 Grok 本地 context 元数据汇总到一个界面。
 - **DeepSeek balance**：保存 API key 后，使用官方 `/user/balance` 的 `topped_up_balance`，并按 native currency 显示。

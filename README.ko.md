@@ -1,6 +1,6 @@
 # TokenPilot — macOS 메뉴바 AI 한도/사용량 모니터
 
-**TokenPilot**은 Claude Code, Codex, Antigravity CLI(레거시 Gemini telemetry), DeepSeek balance 신호와 Grok의 로컬 context 신호를 local-first 방식으로 모아 macOS 메뉴바에서 남은 한도와 사용 기록을 빠르게 확인하는 유틸리티입니다. Grok/xAI는 숫자로 된 로컬 context 메타데이터만 읽습니다.
+**TokenPilot**은 AI coding provider의 남은 비율을 macOS 메뉴바에서 가장 단순하게 확인하는 local-first 유틸리티입니다. 핵심 화면은 위에 provider 이름, 아래에 남은 퍼센트를 표시하는 2단 지표이며, 선택한 provider를 각각 독립 메뉴바 항목으로 올리거나 하나로 합칠 수 있습니다.
 
 - **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
@@ -20,7 +20,7 @@
 
 | 화면 | 역할 |
 |---|---|
-| **메뉴바** | `5h 18% · W 53%`처럼 5시간/주간 **남은 한도**를 한 줄로 표시합니다. |
+| **메뉴바** | 위에는 provider 이름, 아래에는 남은 퍼센트를 표시합니다. provider별 표시 여부를 선택하고 **개별 항목** 또는 **통합 항목**으로 배치할 수 있습니다. |
 | **개요** | 현재 남은 한도, provider별 수용량 상태, DeepSeek topped-up balance, 오늘 토큰, 알림 상태를 보여주는 capacity-first 화면입니다. |
 | **기록** | 저장된 이벤트와 최신 한도 증거 타임라인을 보여주며, 로컬 활동 집계는 quota가 아닌 export-only JSON/CSV 데이터로만 제공합니다. |
 | **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, Grok 로컬 context diagnostics, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |
@@ -29,7 +29,7 @@
 
 ## 주요 기능
 
-- **macOS 메뉴바 앱**: Dock 아이콘 없이 AppKit `NSStatusItem`과 `NSPopover`를 사용하는 유틸리티.
+- **심플한 provider 퍼센트**: 선택한 AI별 남은 비율을 2단 `NSStatusItem`으로 항상 확인하며, 각 항목을 독립 배치하거나 하나로 합칠 수 있습니다.
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
 - **Claude / Codex / Antigravity(레거시 Gemini telemetry) / DeepSeek / Grok/xAI 통합**: 각 provider의 로컬 메타데이터, 선택형 balance 신호, Grok 로컬 context 메타데이터를 한 화면에 정리합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.

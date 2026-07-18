@@ -1,6 +1,6 @@
 # TokenPilot — macOS メニューバー AI クォータ / 使用量モニター
 
-**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini telemetry）、DeepSeek balance シグナル、Grok のローカル context シグナルを local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。Grok/xAI では数値のローカル context メタデータだけを読みます。
+**TokenPilot** は AI coding provider の残り割合を macOS メニューバーで最もシンプルに確認する local-first ユーティリティです。上段に provider 名、下段に残りパーセントを表示し、選択した provider を独立したメニューバー項目として並べることも、1つにまとめることもできます。
 
 > TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、provider auth ファイル、任意の Keychain 項目は読みません。
 >
@@ -16,7 +16,7 @@
 
 | 画面 | 役割 |
 |---|---|
-| **Menu bar** | `5h 18% · W 53% · DS $12.34` のように残りクォータと選択した DeepSeek 残高を1行で表示します。 |
+| **Menu bar** | 上段に provider 名、下段に残りパーセントを表示します。provider ごとに表示を選択し、**個別項目**または**統合項目**として配置できます。 |
 | **Overview** | 現在の残りクォータ、provider rows、DeepSeek topped-up balance、今日のトークン、アラート状態を表示します。 |
 | **History** | 保存済みの使用イベント、最新 limit signals、折りたたみ式の最近の制限、JSON/CSV export を提供します。 |
 | **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok ローカル context diagnostics、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
@@ -25,7 +25,7 @@
 
 ## 主な機能
 
-- **macOS メニューバーアプリ**: Dock アイコンなしの AppKit `NSStatusItem` と `NSPopover` を使うユーティリティ。
+- **シンプルな provider パーセント**: 選択した AI の残り割合を2段の `NSStatusItem` で常時確認し、各項目を個別配置または統合できます。
 - **残りクォータ優先 UI**: 使用済みではなく「どれだけ残っているか」を優先表示します。
 - **Claude / Codex / Antigravity（従来の Gemini telemetry）/ DeepSeek / Grok/xAI 統合**: 各 provider のローカルメタデータ、任意の balance シグナル、Grok ローカル context メタデータを1つの画面に集約します。
 - **DeepSeek balance**: API key を Keychain に保存した場合、公式 `/user/balance` の `topped_up_balance` を native currency で表示します。

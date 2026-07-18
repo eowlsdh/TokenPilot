@@ -5,8 +5,8 @@
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
-> **A local-first macOS menu bar monitor for AI coding quota and local context usage.**
-> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, and Grok local-context signals visible without a cloud dashboard, browser tab, or provider-token collector. Grok/xAI reads only numeric local context metadata.
+> **A local-first macOS menu bar monitor that keeps AI capacity visible as simple provider percentages.**
+> TokenPilot's signature view is a compact two-row menu metric—provider name above, remaining percentage below. Show selected providers as independent macOS status items or combine them into one item, without opening a dashboard or collecting provider tokens.
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, or xAI.
 
@@ -18,13 +18,14 @@
 
 ## Why TokenPilot?
 
-AI coding tools expose signals in different places: Claude statusline JSON, Antigravity `statusLine` JSON, Gemini telemetry, manual `/status` output, official balance APIs, or local context metadata. TokenPilot turns those local signals into one compact macOS menu bar readout:
+AI coding tools expose signals in different places. TokenPilot turns supported quota and local-context signals into glanceable menu bar blocks:
 
 ```text
-5h 18% · W 53%
+CODEX   GROK
+ 77%     80%
 ```
 
-The numbers are **remaining quota percentages** where provider quota is available. Grok shows remaining local context, which is not comparable to provider quota.
+Select exactly which providers appear. Use **Separate items** so macOS can place and reorder each provider independently, or **Combined item** for one compact status item. Percentages mean remaining provider quota where authoritative quota evidence exists; Grok is explicitly remaining local context and is not comparable to provider quota.
 
 ---
 
@@ -32,7 +33,7 @@ The numbers are **remaining quota percentages** where provider quota is availabl
 
 | Surface | What changed / what it shows |
 |---|---|
-| **Menu bar** | Single-line remaining quota or local-context label: `5h`, weekly, and estimated/manual suffixes when needed. |
+| **Menu bar** | Signature two-row provider/percentage blocks, with per-provider visibility and separate or combined native status items. |
 | **Overview** | Capacity-first current evidence card, provider capacity rows, refresh/recovery notes, and alert status. No local activity analytics cards. |
 | **History** | Capacity evidence timeline plus usage event summary and JSON/CSV export. Local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota or visible dashboard surfaces. |
 | **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, local Grok context diagnostics, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
@@ -43,7 +44,7 @@ The numbers are **remaining quota percentages** where provider quota is availabl
 
 | Feature | Description |
 |---------|-------------|
-| 🍎 **Native menu bar utility** | AppKit `NSStatusItem` with an `NSPopover`, compact display, and no Dock icon. |
+| 🍎 **Glanceable provider percentages** | Native two-row `NSStatusItem` blocks keep each selected provider's remaining percentage visible; show them separately or combined. |
 | 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, and local Grok context metadata in one place. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
@@ -134,25 +135,25 @@ The bridge stores only allowlisted token metadata such as model id/display name,
 
 ### Menu bar display
 
+The recommended **Provider metrics** layout uses a small two-row block per selected provider:
+
 ```text
-5h 18% · W 53%          # remaining 5-hour and weekly quota
-5h 8% · W 31% ⚠️        # low remaining quota / warning state
-5h 74% · W 80% est.     # estimated/manual Codex values
-Co 12.3Ktok             # fallback when only local activity exists
-Grok 42% ctx             # remaining local context, not provider quota
-DS $12.34                # selected DeepSeek topped-up balance
+CODEX   GROK
+ 77%     80%
 ```
+
+Choose **Separate items** for independently registered `NSStatusItem`s, or **Combined item** to keep every selected provider in one status item. Detailed, compact, and icon-only layouts remain available for users who prefer window labels, local-activity fallback text, or a minimal icon.
 
 ---
 
-## Screenshots
+## Screenshot
 
-The README screenshot is a release-facing composite of shipped app surfaces:
+The current privacy-safe screenshot combines two shipped surfaces from the same local build:
 
-- Menu bar: compact remaining quota plus selected DeepSeek balance (`DS $12.34`).
-- Overview: capacity-first evidence card, provider capacity rows, refresh/recovery notes, and alert status.
-- History: capacity evidence timeline and usage-event export controls; local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota, and not visible dashboard surfaces.
-- Settings: provider diagnostics, Antigravity statusLine bridge, Codex limit hints, DeepSeek Keychain setup, Grok local-context diagnostics, and privacy boundaries.
+- the real two-row Codex status item in the macOS menu bar;
+- Provider metrics settings with Codex and Grok selected as separate items.
+
+The crop excludes the desktop, usernames, local paths, notifications, credentials, and unrelated application content.
 
 ---
 
