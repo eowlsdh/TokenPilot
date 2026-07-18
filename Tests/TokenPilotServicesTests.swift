@@ -3551,7 +3551,10 @@ final class TokenPilotServicesTests: XCTestCase {
         let segment = MenuBarStatusService().providerMetricsSegments(snapshots: [snapshot], settings: settings).first
 
         XCTAssertEqual(segment?.displayValue, "37%")
-        XCTAssertEqual(segment?.accessibilityLabel, "Grok, Local context remaining 37%, used 63%")
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Grok / xAI API") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Grok Build context window") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Remaining 37%") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Used 63%") == true)
         XCTAssertFalse(segment?.accessibilityLabel.contains("provider-reported") == true)
         XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("quota") == true)
         XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("capacity") == true)

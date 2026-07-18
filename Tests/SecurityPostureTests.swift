@@ -32,7 +32,7 @@ final class SecurityPostureTests: XCTestCase {
         XCTAssertTrue(privacy.contains("never be logged, exported, proxied for debugging, or shown"))
     }
 
-    func testXAINoNetworkFoundationDocsStayTruthfulAndEndpointFree() throws {
+    func testGrokLocalSignalsDocsStayTruthfulAndCredentialFree() throws {
         let root = Self.projectRootURL()
         let documentationPaths = [
             "README.md",
@@ -62,38 +62,31 @@ final class SecurityPostureTests: XCTestCase {
             for claim in forbiddenClaims {
                 XCTAssertFalse(document.localizedCaseInsensitiveContains(claim), "\(path) should not claim a live xAI endpoint or capability: \(claim)")
             }
-        }
-
-        for path in documentationPaths {
-            let document = try String(contentsOf: root.appendingPathComponent(path))
-            XCTAssertTrue(document.localizedCaseInsensitiveContains("team id"), "\(path) should document the xAI team-ID privacy boundary.")
-            XCTAssertTrue(
-                document.localizedCaseInsensitiveContains("masked") ||
-                    document.localizedCaseInsensitiveContains("presence-only") ||
-                    document.contains("마스킹"),
-                "\(path) should promise masked or presence-only xAI team-ID display."
-            )
+            XCTAssertTrue(document.localizedCaseInsensitiveContains("signals.json"), "\(path) should document the bounded Grok local-signals source.")
+            XCTAssertTrue(document.localizedCaseInsensitiveContains("auth.json"), "\(path) should state that Grok authentication files are excluded.")
         }
 
         for path in ["README.md", "README.ko.md", "README.ja.md", "README.zh-CN.md"] {
             let readme = try String(contentsOf: root.appendingPathComponent(path))
-            XCTAssertTrue(readme.localizedCaseInsensitiveContains("grok"), "\(path) should document Grok/xAI setup.")
-            XCTAssertTrue(readme.localizedCaseInsensitiveContains("xai"), "\(path) should document xAI setup.")
-            XCTAssertTrue(readme.localizedCaseInsensitiveContains("auth-unconfirmed"), "\(path) should keep Management authentication unconfirmed.")
-            XCTAssertTrue(readme.localizedCaseInsensitiveContains("xai http"), "\(path) should document the no-network xAI policy.")
-            XCTAssertTrue(readme.contains("0") || readme.localizedCaseInsensitiveContains("zero"), "\(path) should state zero xAI HTTP requests.")
+            XCTAssertTrue(readme.localizedCaseInsensitiveContains("grok"), "\(path) should document Grok local context.")
+            XCTAssertTrue(readme.localizedCaseInsensitiveContains("xai"), "\(path) should identify the xAI provider.")
+            XCTAssertTrue(readme.localizedCaseInsensitiveContains("oauth"), "\(path) should state that OAuth tokens are excluded.")
+            XCTAssertTrue(readme.localizedCaseInsensitiveContains("contextWindowUsage"), "\(path) should identify the numeric local-context basis.")
             XCTAssertFalse(readme.localizedCaseInsensitiveContains("live xAI billing is supported"))
             XCTAssertFalse(readme.localizedCaseInsensitiveContains("Grok web subscription tracking is supported"))
         }
 
+        let settings = try String(contentsOf: root.appendingPathComponent("SETTINGS_GUIDE.md"))
         let security = try String(contentsOf: root.appendingPathComponent("SECURITY.md"))
         let privacy = try String(contentsOf: root.appendingPathComponent("docs/PRIVACY.md"))
 
-        XCTAssertTrue(security.contains("saving setup values must not trigger xAI HTTP requests"))
-        XCTAssertTrue(security.contains("production code must not call xAI endpoints"))
-        XCTAssertTrue(security.contains("must not claim live xAI billing or Grok web subscription limit support"))
-        XCTAssertTrue(privacy.contains("sends no xAI HTTP requests in production"))
-        XCTAssertTrue(privacy.contains("does not claim live xAI billing support"))
+        XCTAssertTrue(settings.contains("파일명은 정확히 `signals.json`이어야 합니다"))
+        XCTAssertTrue(settings.contains("symlink는 거부합니다"))
+        XCTAssertTrue(settings.contains("최대 256 KiB"))
+        XCTAssertTrue(security.contains("it does not ingest prompts, responses, credentials, or other session content"))
+        XCTAssertTrue(security.contains("not provider quota, subscription quota, or API billing data"))
+        XCTAssertTrue(privacy.contains("rejects symlinks"))
+        XCTAssertTrue(privacy.contains("parses only numeric context fields"))
     }
 
     func testGitignoreRejectsXAILocalCredentialsAndResponses() throws {
