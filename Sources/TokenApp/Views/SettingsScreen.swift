@@ -155,6 +155,39 @@ struct SettingsScreen: View {
                         }
                         .pickerStyle(.menu)
                         .accessibilityLabel(model.t("Menu bar layout"))
+                        if model.settings.menuBarDisplayStyle == .providerMetrics {
+                            Picker(model.t("Menu bar providers"), selection: menuBarProviderGroupingBinding) {
+                                Text(model.t("Combined item")).tag(MenuBarProviderGrouping.combined)
+                                Text(model.t("Separate items")).tag(MenuBarProviderGrouping.separate)
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityLabel(model.t("Menu bar providers"))
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text(model.t("Menu bar providers"))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                                ForEach(Provider.allCases) { provider in
+                                    Toggle(isOn: menuBarMetricProviderBinding(for: provider)) {
+                                        HStack {
+                                            Text(model.providerDisplayName(provider))
+                                            Spacer(minLength: 0)
+                                            Text(model.t("Show in menu bar"))
+                                                .font(.caption2)
+                                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                        }
+                                    }
+                                    .disabled(!model.isProviderEnabled(provider))
+                                }
+                            }
+
+                            if model.settings.menuBarProviderGrouping == .separate {
+                                Text(model.t("Each selected provider gets its own menu bar item."))
+                                    .font(.caption2)
+                                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
 
                         Picker(model.t("Primary provider"), selection: menuBarTargetBinding) {
                             Text(model.t("Highest risk")).tag(Optional<Provider>.none)
@@ -1270,6 +1303,19 @@ struct SettingsScreen: View {
         Binding(
             get: { model.settings.menuBarDisplayStyle },
             set: { model.setMenuBarDisplayStyle($0) }
+        )
+    }
+    private var menuBarProviderGroupingBinding: Binding<MenuBarProviderGrouping> {
+        Binding(
+            get: { model.settings.menuBarProviderGrouping },
+            set: { model.setMenuBarProviderGrouping($0) }
+        )
+    }
+
+    private func menuBarMetricProviderBinding(for provider: Provider) -> Binding<Bool> {
+        Binding(
+            get: { model.settings.menuBarMetricProviders.contains(provider) },
+            set: { model.setMenuBarMetricProvider(provider, isVisible: $0) }
         )
     }
 

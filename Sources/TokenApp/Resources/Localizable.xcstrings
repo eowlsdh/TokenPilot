@@ -9189,6 +9189,46 @@
         "ja": { "stringUnit": { "state": "translated", "value": "プロバイダ指標" } }
       }
     },
+    "Menu bar providers": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대 제공자" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Menu bar providers" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏提供方" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーのプロバイダ" } }
+      }
+    },
+    "Combined item": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "통합 항목" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Combined item" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并项目" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "統合項目" } }
+      }
+    },
+    "Separate items": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "개별 항목" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Separate items" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "独立项目" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "個別項目" } }
+      }
+    },
+    "Each selected provider gets its own menu bar item.": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "선택한 각 제공자가 자체 메뉴 막대 항목으로 표시됩니다." } },
+        "en": { "stringUnit": { "state": "translated", "value": "Each selected provider gets its own menu bar item." } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "每个选定的提供方都会显示自己的菜单栏项目。" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "選択した各プロバイダに専用のメニューバー項目が表示されます。" } }
+      }
+    },
+    "Show in menu bar": {
+      "localizations": {
+        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대에 표시" } },
+        "en": { "stringUnit": { "state": "translated", "value": "Show in menu bar" } },
+        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在菜单栏中显示" } },
+        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーに表示" } }
+      }
+    },
     "Provider metrics matches simple provider/value blocks.": {
       "localizations": {
         "ko": { "stringUnit": { "state": "translated", "value": "제공자 지표는 간단한 제공자/값 블록 형식과 일치합니다." } },

@@ -127,12 +127,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         now: Date = Date()
     ) -> [MenuBarProviderMetricSegment] {
         let candidates = providerMetricsCandidates(from: snapshots, settings: settings)
-        let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
-        var providers = Provider.allCases.filter { settings.isProviderEnabled($0) }
-        if let selectedTarget, let index = providers.firstIndex(of: selectedTarget) {
-            providers.remove(at: index)
-            providers.insert(selectedTarget, at: 0)
-        }
+        let providers = settings.effectiveMenuBarMetricProviders
 
         return providers.map { provider in
             let candidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == provider })

@@ -558,6 +558,28 @@ final class TokenPilotViewModel: ObservableObject {
     func setMenuBarDisplayStyle(_ style: MenuBarDisplayStyle) {
         settings.menuBarDisplayStyle = style
     }
+    func setMenuBarProviderGrouping(_ grouping: MenuBarProviderGrouping) {
+        settings.menuBarProviderGrouping = grouping
+    }
+
+    func setMenuBarMetricProvider(_ provider: Provider, isVisible: Bool) {
+        var next = settings
+        guard !isVisible || next.isProviderEnabled(provider) else { return }
+
+        if isVisible {
+            next.menuBarMetricProviders.insert(provider)
+        } else {
+            let remainingVisibleProviders = next.menuBarMetricProviders
+                .subtracting([provider])
+                .filter { next.isProviderEnabled($0) }
+            guard !remainingVisibleProviders.isEmpty else {
+                bannerMessage = t("At least one provider must stay visible in the menu bar.")
+                return
+            }
+            next.menuBarMetricProviders.remove(provider)
+        }
+        settings = next
+    }
 
     func setMenuBarShowsSecondaryProvider(_ showsSecondary: Bool) {
         var next = settings

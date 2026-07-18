@@ -46,6 +46,11 @@ public enum MenuBarDisplayStyle: String, Codable, CaseIterable, Sendable {
     case iconOnly = "Icon Only"
     case providerMetrics = "Provider Metrics"
 }
+public enum MenuBarProviderGrouping: String, Codable, CaseIterable, Sendable {
+    case combined = "Combined"
+    case separate = "Separate"
+}
+
 
 public enum DataConfidence: String, Codable, CaseIterable, Identifiable, Sendable {
     case high
@@ -1039,6 +1044,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
+    public var menuBarProviderGrouping: MenuBarProviderGrouping
+    public var menuBarMetricProviders: Set<Provider>
     public var menuBarDisplayStyle: MenuBarDisplayStyle
     public var menuBarSecondaryDisplayTarget: Provider?
     public var menuBarShowsSecondaryProvider: Bool
@@ -1092,6 +1099,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
+        menuBarProviderGrouping: MenuBarProviderGrouping = .separate,
+        menuBarMetricProviders: Set<Provider> = Set(Provider.allCases),
         menuBarDisplayStyle: MenuBarDisplayStyle = .detailed,
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
@@ -1105,6 +1114,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
+        self.menuBarProviderGrouping = menuBarProviderGrouping
+        self.menuBarMetricProviders = menuBarMetricProviders
         self.menuBarDisplayStyle = menuBarDisplayStyle
         self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
@@ -1133,15 +1144,42 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarDisplayTarget = nil
         }
 
-        guard let secondary = menuBarSecondaryDisplayTarget,
-              isProviderEnabled(secondary),
-              secondary != menuBarDisplayTarget else {
+        let hasValidSecondary = menuBarSecondaryDisplayTarget.map {
+            isProviderEnabled($0) && $0 != menuBarDisplayTarget
+        } ?? false
+        if !hasValidSecondary {
             menuBarSecondaryDisplayTarget = nil
             menuBarShowsSecondaryProvider = false
-            return
+        }
+
+        let enabledProviders = Set(self.enabledProviders)
+        menuBarMetricProviders = menuBarMetricProviders.intersection(enabledProviders)
+        if menuBarMetricProviders.isEmpty,
+           let fallback = Provider.allCases.first(where: { enabledProviders.contains($0) }) {
+            menuBarMetricProviders.insert(fallback)
         }
     }
 
+
+    public var effectiveMenuBarMetricProviders: [Provider] {
+        let enabledProviders = Set(self.enabledProviders)
+        var providers = Provider.allCases.filter {
+            enabledProviders.contains($0) && menuBarMetricProviders.contains($0)
+        }
+
+        if providers.isEmpty,
+           let fallback = Provider.allCases.first(where: { enabledProviders.contains($0) }) {
+            providers = [fallback]
+        }
+
+        if let target = menuBarDisplayTarget,
+           let targetIndex = providers.firstIndex(of: target) {
+            providers.remove(at: targetIndex)
+            providers.insert(target, at: 0)
+        }
+
+        return providers
+    }
 
     private enum CodingKeys: String, CodingKey {
         case claudeEnabled
@@ -1152,6 +1190,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
+        case menuBarProviderGrouping
+        case menuBarMetricProviders
         case menuBarDisplayStyle
         case menuBarSecondaryDisplayTarget
         case menuBarShowsSecondaryProvider
@@ -1205,6 +1245,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
+            menuBarProviderGrouping: Self.decodeMenuBarProviderGrouping(from: container),
+            menuBarMetricProviders: Self.decodeMenuBarMetricProviders(from: container),
             menuBarDisplayStyle: Self.decodeMenuBarDisplayStyle(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
@@ -1222,6 +1264,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
             return .detailed
         }
         return MenuBarDisplayStyle(rawValue: rawValue) ?? .detailed
+    }
+    private static func decodeMenuBarProviderGrouping(from container: KeyedDecodingContainer<CodingKeys>) -> MenuBarProviderGrouping {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .menuBarProviderGrouping) else {
+            return .separate
+        }
+        return MenuBarProviderGrouping(rawValue: rawValue) ?? .separate
+    }
+
+    private static func decodeMenuBarMetricProviders(from container: KeyedDecodingContainer<CodingKeys>) -> Set<Provider> {
+        guard let rawValues = try? container.decodeIfPresent([String].self, forKey: .menuBarMetricProviders) else {
+            return Set(Provider.allCases)
+        }
+        return Set(rawValues.compactMap(Provider.init(rawValue:)))
     }
 
     public static var defaultAlertRules: [AlertRule] {

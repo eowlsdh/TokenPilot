@@ -18,9 +18,10 @@ struct TokenMonitorApp: App {
 private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private let model: TokenPilotViewModel
     private let popover = NSPopover()
-    private var statusItem: NSStatusItem?
+    private var standardStatusItem: NSStatusItem?
+    private var combinedMetricsView: ProviderMetricsMenuBarNSView?
+    private var separateMetricItems: [Provider: MetricStatusItem] = [:]
     private var modelObservation: AnyCancellable?
-    private var metricsView: ProviderMetricsMenuBarNSView?
 #if DEBUG
     private let debugAccessibilityProfile: TokenPilotDebugAccessibilityProfile?
 #endif
@@ -67,57 +68,132 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        guard let button = statusItem?.button else { return }
-        button.target = self
-        button.action = #selector(togglePopover)
-        button.sendAction(on: [.leftMouseUp])
         updateStatusItem()
     }
 
     private func updateStatusItem() {
-        guard let statusItem, let button = statusItem.button else { return }
-        button.toolTip = model.menuBarAccessibilityLabel
-        button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
+        let segments = model.menuBarMetricSegments
+        guard model.settings.menuBarDisplayStyle == .providerMetrics else {
+            removeSeparateMetricItems()
+            updateStandardStatusItem()
+            return
+        }
 
-        if model.settings.menuBarDisplayStyle == .providerMetrics {
-            button.title = ""
-            let view: ProviderMetricsMenuBarNSView
-            if let metricsView {
-                view = metricsView
-                view.update(segments: model.menuBarMetricSegments, accessibilityLabel: model.menuBarAccessibilityLabel)
-            } else {
-                view = ProviderMetricsMenuBarNSView(
-                    segments: model.menuBarMetricSegments,
-                    accessibilityLabel: model.menuBarAccessibilityLabel
-                )
-                view.translatesAutoresizingMaskIntoConstraints = false
-                button.addSubview(view)
-                NSLayoutConstraint.activate([
-                    view.centerXAnchor.constraint(equalTo: button.centerXAnchor),
-                    view.centerYAnchor.constraint(equalTo: button.centerYAnchor),
-                    view.heightAnchor.constraint(equalToConstant: view.intrinsicContentSize.height),
-                    view.widthAnchor.constraint(equalToConstant: view.intrinsicContentSize.width)
-                ])
-                metricsView = view
-            }
-            statusItem.length = view.intrinsicContentSize.width + 8
-        } else {
-            metricsView?.removeFromSuperview()
-            metricsView = nil
-            button.attributedTitle = NSAttributedString(
-                string: model.menuBarTitle,
-                attributes: [
-                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
-                    .foregroundColor: NSColor.labelColor
-                ]
-            )
-            statusItem.length = NSStatusItem.variableLength
+        switch model.settings.menuBarProviderGrouping {
+        case .combined:
+            removeSeparateMetricItems()
+            updateCombinedMetricsStatusItem(segments: segments)
+        case .separate:
+            reconcileSeparateMetricItems(segments: segments)
         }
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem?.button else { return }
+    private func updateStandardStatusItem() {
+        let statusItem = standardStatusItem ?? makeStatusItem()
+        standardStatusItem = statusItem
+        guard let button = statusItem.button else { return }
+
+        combinedMetricsView?.removeFromSuperview()
+        combinedMetricsView = nil
+        button.title = ""
+        button.attributedTitle = NSAttributedString(
+            string: model.menuBarTitle,
+            attributes: [
+                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor
+            ]
+        )
+        button.toolTip = model.menuBarAccessibilityLabel
+        button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
+        statusItem.length = NSStatusItem.variableLength
+    }
+
+    private func updateCombinedMetricsStatusItem(segments: [MenuBarProviderMetricSegment]) {
+        let statusItem = standardStatusItem ?? makeStatusItem()
+        standardStatusItem = statusItem
+        guard let button = statusItem.button else { return }
+
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        button.toolTip = model.menuBarAccessibilityLabel
+        button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
+
+        let view: ProviderMetricsMenuBarNSView
+        if let combinedMetricsView {
+            view = combinedMetricsView
+            view.update(segments: segments, accessibilityLabel: model.menuBarAccessibilityLabel)
+        } else {
+            view = ProviderMetricsMenuBarNSView(
+                segments: segments,
+                accessibilityLabel: model.menuBarAccessibilityLabel
+            )
+            view.translatesAutoresizingMaskIntoConstraints = false
+            button.addSubview(view)
+            NSLayoutConstraint.activate([
+                view.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+                view.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+            ])
+            combinedMetricsView = view
+        }
+        statusItem.length = view.intrinsicContentSize.width + 8
+    }
+
+    private func reconcileSeparateMetricItems(segments: [MenuBarProviderMetricSegment]) {
+        let providers = Set(segments.compactMap(\.provider))
+        for provider in Array(separateMetricItems.keys) where !providers.contains(provider) {
+            removeSeparateMetricItem(for: provider)
+        }
+
+        for segment in segments {
+            guard let provider = segment.provider else { continue }
+            if let metricItem = separateMetricItems[provider] {
+                metricItem.update(segment: segment)
+            } else {
+                separateMetricItems[provider] = MetricStatusItem(
+                    statusItem: makeStatusItem(),
+                    segment: segment
+                )
+            }
+        }
+
+        if separateMetricItems.isEmpty {
+            updateStandardStatusItem()
+        } else {
+            removeStandardStatusItem()
+        }
+    }
+
+    private func makeStatusItem() -> NSStatusItem {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        guard let button = statusItem.button else { return statusItem }
+        button.target = self
+        button.action = #selector(togglePopover(_:))
+        button.sendAction(on: [.leftMouseUp])
+        return statusItem
+    }
+
+    private func removeStandardStatusItem() {
+        combinedMetricsView?.removeFromSuperview()
+        combinedMetricsView = nil
+        guard let standardStatusItem else { return }
+        NSStatusBar.system.removeStatusItem(standardStatusItem)
+        self.standardStatusItem = nil
+    }
+
+    private func removeSeparateMetricItems() {
+        for provider in Array(separateMetricItems.keys) {
+            removeSeparateMetricItem(for: provider)
+        }
+    }
+
+    private func removeSeparateMetricItem(for provider: Provider) {
+        guard let metricItem = separateMetricItems.removeValue(forKey: provider) else { return }
+        metricItem.remove()
+        NSStatusBar.system.removeStatusItem(metricItem.statusItem)
+    }
+
+    @objc private func togglePopover(_ sender: Any?) {
+        guard let button = sender as? NSStatusBarButton else { return }
         if popover.isShown {
             popover.performClose(nil)
         } else {
@@ -126,12 +202,50 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+@MainActor
+private final class MetricStatusItem {
+    let statusItem: NSStatusItem
+    private let metricsView: ProviderMetricsMenuBarNSView
+
+    init(statusItem: NSStatusItem, segment: MenuBarProviderMetricSegment) {
+        self.statusItem = statusItem
+        metricsView = ProviderMetricsMenuBarNSView(
+            segments: [segment],
+            accessibilityLabel: segment.accessibilityLabel
+        )
+        guard let button = statusItem.button else { return }
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        button.toolTip = segment.accessibilityLabel
+        button.setAccessibilityLabel(segment.accessibilityLabel)
+        metricsView.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(metricsView)
+        NSLayoutConstraint.activate([
+            metricsView.centerXAnchor.constraint(equalTo: button.centerXAnchor),
+            metricsView.centerYAnchor.constraint(equalTo: button.centerYAnchor)
+        ])
+        statusItem.length = metricsView.intrinsicContentSize.width + 8
+    }
+
+    func update(segment: MenuBarProviderMetricSegment) {
+        metricsView.update(segments: [segment], accessibilityLabel: segment.accessibilityLabel)
+        statusItem.button?.toolTip = segment.accessibilityLabel
+        statusItem.button?.setAccessibilityLabel(segment.accessibilityLabel)
+        statusItem.length = metricsView.intrinsicContentSize.width + 8
+    }
+
+    func remove() {
+        metricsView.removeFromSuperview()
+    }
+}
 private final class ProviderMetricsMenuBarNSView: NSView {
     private static let titleFont = NSFont.monospacedSystemFont(ofSize: 7, weight: .medium)
     private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .bold)
     private static let horizontalPadding: CGFloat = 3
     private static let segmentSpacing: CGFloat = 5
-    private static let viewHeight: CGFloat = 18
+    private static let titleRowHeight = ceil(titleFont.ascender - titleFont.descender + titleFont.leading)
+    private static let valueRowHeight = ceil(valueFont.ascender - valueFont.descender + valueFont.leading)
+    private static let viewHeight = titleRowHeight + valueRowHeight
 
     private var segments: [MenuBarProviderMetricSegment]
     private var spokenLabel: String
@@ -140,9 +254,7 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         self.segments = segments
         spokenLabel = accessibilityLabel
         super.init(frame: .zero)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.staticText)
-        setAccessibilityLabel(accessibilityLabel)
+        setAccessibilityElement(false)
         frame.size = intrinsicContentSize
     }
 
@@ -168,7 +280,6 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         guard self.segments != segments || spokenLabel != accessibilityLabel else { return }
         self.segments = segments
         spokenLabel = accessibilityLabel
-        setAccessibilityLabel(accessibilityLabel)
         invalidateIntrinsicContentSize()
         frame.size = intrinsicContentSize
         needsDisplay = true
@@ -181,13 +292,18 @@ private final class ProviderMetricsMenuBarNSView: NSView {
             let width = segmentWidth(segment)
             draw(
                 segment.providerShortLabel,
-                in: NSRect(x: x, y: 0, width: width, height: 8),
+                in: NSRect(x: x, y: 0, width: width, height: Self.titleRowHeight),
                 font: Self.titleFont,
                 color: .secondaryLabelColor
             )
             draw(
                 segment.displayValue,
-                in: NSRect(x: x, y: 8, width: width, height: 10),
+                in: NSRect(
+                    x: x,
+                    y: Self.titleRowHeight,
+                    width: width,
+                    height: Self.valueRowHeight
+                ),
                 font: Self.valueFont,
                 color: valueColor(segment.displayValue)
             )

@@ -1091,6 +1091,34 @@ final class TokenMonitorTests: XCTestCase {
             "Remaining badges belong inside the popover, not in the menu bar label."
         )
     }
+    func testProviderMetricMenuBarGroupingSourceContractsPreserveIndependentItemsAndPrivacy() throws {
+        let appSource = try Self.tokenAppSourceFile("TokenMonitorApp.swift")
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
+        let coreModelsSource = try Self.tokenCoreModelsSource()
+
+        XCTAssertTrue(appSource.contains("switch model.settings.menuBarProviderGrouping"))
+        XCTAssertTrue(appSource.contains("reconcileSeparateMetricItems(segments: segments)"))
+        XCTAssertTrue(appSource.contains("removeSeparateMetricItem(for: provider)"))
+        XCTAssertTrue(appSource.contains("segments: [segment]"))
+        XCTAssertTrue(appSource.contains("#selector(togglePopover(_:))"))
+        XCTAssertTrue(appSource.contains("guard let button = sender as? NSStatusBarButton else { return }"))
+        XCTAssertTrue(appSource.contains("if separateMetricItems.isEmpty"))
+
+        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Combined item\"))"))
+        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Separate items\"))"))
+        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Each selected provider gets its own menu bar item.\"))"))
+        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Show in menu bar\"))"))
+        XCTAssertTrue(settingsSource.contains(".disabled(!model.isProviderEnabled(provider))"))
+        XCTAssertTrue(coreModelsSource.contains("menuBarProviderGrouping: MenuBarProviderGrouping = .separate"))
+        XCTAssertTrue(coreModelsSource.contains("menuBarMetricProviders: Set<Provider> = Set(Provider.allCases)"))
+
+        let visibilitySetter = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "setMenuBarMetricProvider"))
+        XCTAssertTrue(visibilitySetter.contains("remainingVisibleProviders"))
+        XCTAssertTrue(visibilitySetter.contains("next.isProviderEnabled(provider)"))
+        XCTAssertFalse(visibilitySetter.contains("keychain"))
+        XCTAssertFalse(visibilitySetter.contains("refresh("))
+    }
     func testDebugScenarioFixturesInjectProductionViewModelOnlyInDebugAndStayPrivacySafe() throws {
         let rootURL = try Self.projectRootURL()
         let appSource = try String(contentsOf: rootURL.appendingPathComponent("Sources/TokenApp/TokenMonitorApp.swift"))

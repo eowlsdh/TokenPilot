@@ -235,6 +235,55 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(decoded.menuBarSecondaryDisplayTarget, .deepseek)
         XCTAssertTrue(decoded.menuBarShowsSecondaryProvider)
     }
+    func testMenuBarProviderMetricSettingsRoundTripAndLegacyDefaults() throws {
+        var settings = AppSettings()
+        settings.menuBarProviderGrouping = .combined
+        settings.menuBarMetricProviders = [.claude, .gemini]
+
+        let roundTrip = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(roundTrip.menuBarProviderGrouping, .combined)
+        XCTAssertEqual(roundTrip.menuBarMetricProviders, [.claude, .gemini])
+
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        XCTAssertEqual(legacy.menuBarProviderGrouping, .separate)
+        XCTAssertEqual(legacy.menuBarMetricProviders, Set(legacy.enabledProviders))
+    }
+
+    func testMenuBarProviderMetricSettingsDropUnknownValues() throws {
+        let json = """
+        {
+          "menuBarProviderGrouping": "Future grouping",
+          "menuBarMetricProviders": ["claude", "future-provider"]
+        }
+        """
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded.menuBarProviderGrouping, .separate)
+        XCTAssertEqual(decoded.menuBarMetricProviders, [.claude])
+    }
+
+    func testProviderMetricsSegmentsFilterAndOrderSelectedProviders() {
+        var settings = AppSettings()
+        settings.menuBarMetricProviders = [.claude, .gemini]
+        settings.menuBarDisplayTarget = .gemini
+
+        let segments = MenuBarStatusService().providerMetricsSegments(snapshots: [], settings: settings)
+
+        XCTAssertEqual(segments.map(\.provider), [.gemini, .claude])
+    }
+
+    func testProviderMetricsSegmentsFallBackToFirstEnabledProvider() {
+        var settings = AppSettings()
+        settings.menuBarMetricProviders = [.codex]
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
+        settings.normalizeMenuBarComposition()
+        XCTAssertEqual(settings.menuBarMetricProviders, [.claude])
+
+        let segments = MenuBarStatusService().providerMetricsSegments(snapshots: [], settings: settings)
+
+        XCTAssertEqual(segments.map(\.provider), [.claude])
+    }
+
 
     func testMenuBarCompositionSettingsUnknownStyleAndProviderDecodeSafely() throws {
         let json = """
@@ -3535,6 +3584,19 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window unavailable")
     }
 
+    func testMenuBarProviderMetricsUsesOnlySelectedEnabledProviders() {
+        var settings = AppSettings()
+        settings.menuBarMetricProviders = [.claude, .codex]
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
+        let snapshots = [
+            ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 20)),
+            ProviderSnapshot(provider: .codex, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 80))
+        ]
+
+        let segments = MenuBarStatusService().providerMetricsSegments(snapshots: snapshots, settings: settings)
+
+        XCTAssertEqual(segments.map(\.provider), [.claude])
+    }
     func testMenuBarShowsGrokLocalContextAsLocalRemainingOnly() {
         var settings = AppSettings()
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
