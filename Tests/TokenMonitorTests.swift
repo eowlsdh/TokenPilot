@@ -387,12 +387,27 @@ final class TokenMonitorTests: XCTestCase {
             XCTAssertTrue(accessibility.contains(String(format: TokenPilotLocalizer.localized("Capacity remaining %d%%", language: language), 58)))
         }
 
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+            settings.localization.language = language
+            let unavailable = try! XCTUnwrap(
+                service.providerMetricsSegments(snapshots: [claude], settings: settings, now: now).first
+            )
+            XCTAssertEqual(unavailable.displayValue, "—·E")
+            XCTAssertFalse(unavailable.displayValue.contains("%"))
+            XCTAssertTrue(unavailable.accessibilityLabel.contains(TokenPilotLocalizer.localized("Experimental connector", language: language)))
+            XCTAssertTrue(unavailable.accessibilityLabel.contains(TokenPilotLocalizer.localized("Unofficial", language: language)))
+            XCTAssertTrue(unavailable.accessibilityLabel.contains(TokenPilotLocalizer.localized("Unavailable", language: language)))
+        }
+
+        settings.localization.language = .en
         settings.xAI.usageSource = .managementSetup
         let optedOutSegments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(optedOutSegments.count, Provider.allCases.count)
         XCTAssertEqual(optedOutSegments.first?.provider, .xai)
         XCTAssertEqual(optedOutSegments.first?.displayValue, "—")
         XCTAssertFalse(optedOutSegments.first?.displayValue.contains("%") == true)
+        XCTAssertFalse(optedOutSegments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
+        XCTAssertFalse(optedOutSegments.first?.accessibilityLabel.localizedCaseInsensitiveContains("unofficial") == true)
         XCTAssertFalse(service.accessibilityLabel(snapshots: [experimental, claude], settings: settings, modeLabel: "LIVE", now: now).contains("58%"))
     }
 

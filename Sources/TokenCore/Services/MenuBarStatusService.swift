@@ -244,8 +244,20 @@ public final class MenuBarStatusService: @unchecked Sendable {
                     ].joined(separator: ", ")
                 )
             }
-            let marker = settings.xAI.usageSource == .experimentalOpenCodeBarCLI ? "Experimental" :
-                (xAIManagementSetupConfigured(settings) ? "Setup" : "Unavailable")
+            if settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
+                return MenuBarProviderMetricSegment(
+                    provider: provider,
+                    providerShortLabel: providerMetricLabel(provider),
+                    displayValue: "—·E",
+                    accessibilityLabel: [
+                        localized(provider.displayName, language: settings.localization.language),
+                        localized("Experimental connector", language: settings.localization.language),
+                        localized("Unofficial", language: settings.localization.language),
+                        localized("Unavailable", language: settings.localization.language)
+                    ].joined(separator: ", ")
+                )
+            }
+            let marker = xAIManagementSetupConfigured(settings) ? "Setup" : "Unavailable"
             return MenuBarProviderMetricSegment(
                 provider: provider,
                 providerShortLabel: providerMetricLabel(provider),
