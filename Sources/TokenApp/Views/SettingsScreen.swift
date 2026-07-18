@@ -363,7 +363,7 @@ struct SettingsScreen: View {
 
             Picker(model.t("xAI usage source"), selection: $model.settings.xAI.usageSource) {
                 Text(model.t("Management setup only")).tag(XAIUsageSource.managementSetup)
-                Text(model.t("OpenCode Bar CLI (Experimental)")).tag(XAIUsageSource.experimentalOpenCodeBarCLI)
+                Text("OAuth · \(model.t("OpenCode Bar CLI (Experimental)"))").tag(XAIUsageSource.experimentalOpenCodeBarCLI)
             }
             .pickerStyle(.menu)
             .accessibilityLabel(model.t("xAI usage source"))
@@ -378,7 +378,7 @@ struct SettingsScreen: View {
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
+                Button(model.t("Refresh")) { Task { await model.checkConnection(.xai) } }
                     .buttonStyle(.bordered)
             } else {
                 Text(model.t("xAI is disabled by default. Management setup stays local: no usage lookup and no network requests."))
@@ -1303,6 +1303,9 @@ struct SettingsScreen: View {
             return model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required")
         case .xai:
             guard model.isProviderEnabled(.xai) else { return model.t("Disabled") }
+            if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
+                return model.t("TokenPilot stores no bridge secret.")
+            }
             return model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("Management key required")
         case .codex:
             return model.t("No Codex token stored")
@@ -1315,7 +1318,10 @@ struct SettingsScreen: View {
         if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
             return TokenPilotDesign.warning
         }
-        if provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey {
+        if provider == .xai &&
+            model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI &&
+            model.isProviderEnabled(.xai) &&
+            !model.hasSavedXAIManagementAPIKey {
             return TokenPilotDesign.warning
         }
         return TokenPilotDesign.trust
@@ -1325,7 +1331,10 @@ struct SettingsScreen: View {
         if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
             return "key"
         }
-        if provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey {
+        if provider == .xai &&
+            model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI &&
+            model.isProviderEnabled(.xai) &&
+            !model.hasSavedXAIManagementAPIKey {
             return "key"
         }
         return "key.slash"
@@ -1394,7 +1403,13 @@ struct SettingsScreen: View {
     }
 
     private var xAIAuthStatusColor: Color {
-        model.isProviderEnabled(.xai) ? TokenPilotDesign.warning : TokenPilotDesign.textSecondary
+        guard model.isProviderEnabled(.xai) else { return TokenPilotDesign.textSecondary }
+        if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
+            return model.xAIOpenCodeBarOAuthConnected && !model.xAIOpenCodeBarOAuthStale
+                ? TokenPilotDesign.calm
+                : TokenPilotDesign.warning
+        }
+        return TokenPilotDesign.warning
     }
 
     private var xAIPresenceAccessibilityValue: String {

@@ -235,6 +235,26 @@ final class TokenPilotViewModel: ObservableObject {
             now: menuBarNow
         )
     }
+    var xAIOpenCodeBarUsageSnapshot: ProviderSnapshot? {
+        guard settings.isProviderEnabled(.xai),
+              settings.xAI.usageSource == .experimentalOpenCodeBarCLI else {
+            return nil
+        }
+        return snapshots.first {
+            $0.provider == .xai &&
+                $0.dataSource == .experimentalCLI &&
+                $0.isExperimental &&
+                $0.monthly?.usedPercent != nil
+        }
+    }
+
+    var xAIOpenCodeBarOAuthConnected: Bool {
+        xAIOpenCodeBarUsageSnapshot != nil
+    }
+
+    var xAIOpenCodeBarOAuthStale: Bool {
+        xAIOpenCodeBarUsageSnapshot?.isStale == true
+    }
 
     var menuBarStatusLevel: MenuBarStatusLevel {
         menuBarStatusService.statusLevel(snapshots: snapshots, settings: settings)
@@ -1415,14 +1435,11 @@ final class TokenPilotViewModel: ObservableObject {
     private func xAIStatusText(_ source: ProviderDataSource) -> String {
         guard source.status != .disabled else { return t("Disabled") }
         if usesExperimentalOpenCodeBar {
-            if let snapshot = snapshots.first(where: {
-                $0.provider == .xai &&
-                    $0.statusMessage?.contains("OpenCode Bar") == true &&
-                    Self.snapshotHasDataModeEvidence($0)
-            }), let status = snapshot.statusMessage {
-                return t(status)
+            if xAIOpenCodeBarOAuthConnected {
+                let freshness = xAIOpenCodeBarOAuthStale ? t("Stale") : t("Connected")
+                return "OAuth · \(freshness) · \(t("Experimental"))"
             }
-            return t("EXPERIMENTAL / UNOFFICIAL · OpenCode Bar CLI")
+            return "OAuth · \(t("Authentication required")) · \(t("Experimental"))"
         }
         let message = source.statusMessage.map(t) ?? t("Setup needed")
         if xAISetupInputsComplete {

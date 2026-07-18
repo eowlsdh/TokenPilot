@@ -1955,7 +1955,9 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(settingsSource.contains("private var xAITeamIDBinding"))
         XCTAssertFalse(settingsSource.contains("model.settings.xAI.teamID"))
         XCTAssertTrue(settingsSource.contains("guard model.isProviderEnabled(.xai) else { return model.t(\"Disabled\") }"))
-        XCTAssertTrue(settingsSource.contains("provider == .xai && model.isProviderEnabled(.xai) && !model.hasSavedXAIManagementAPIKey"))
+        XCTAssertTrue(settingsSource.contains("model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI"))
+        XCTAssertTrue(settingsSource.contains("return model.t(\"TokenPilot stores no bridge secret.\")"))
+        XCTAssertTrue(settingsSource.contains("OAuth ·"))
     }
 
     func testSettingsMutationEntryPointsUseDebouncedRefreshOnly() throws {
