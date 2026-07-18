@@ -12,7 +12,7 @@
 
 [한국어 README](README.ko.md) · [日本語 README](README.ja.md) · [简体中文 README](README.zh-CN.md)
 
-![TokenPilot screenshot showing Antigravity CLI statusLine diagnostics, remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
+![TokenPilot settings showing separate Codex and Grok menu bar metrics with per-provider visibility controls](docs/assets/readme-screenshot.png)
 
 ---
 

@@ -6,7 +6,7 @@
 >
 > TokenPilot 不隶属于 OpenAI、Anthropic、Google、DeepSeek 或 xAI，也不是官方认证产品。
 
-![TokenPilot screenshot showing remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
+![将 Codex 和 Grok 菜单栏指标设为独立项目的 TokenPilot 设置界面](docs/assets/readme-screenshot.png)
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 

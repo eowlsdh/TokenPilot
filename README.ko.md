@@ -11,7 +11,7 @@
 >
 > TokenPilot은 OpenAI, Anthropic, Google, DeepSeek, xAI와 제휴하거나 공식 인증을 받은 제품이 아닙니다.
 
-![TokenPilot 남은 한도 중심 Overview, DeepSeek balance, privacy-first Settings 스크린샷](docs/assets/readme-screenshot.png)
+![Codex와 Grok 메뉴 막대 지표를 개별 항목으로 선택하는 TokenPilot 설정 화면](docs/assets/readme-screenshot.png)
 [English](README.md) · [日本語](README.ja.md) · [简体中文](README.zh-CN.md)
 
 ---

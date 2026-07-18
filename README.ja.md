@@ -6,7 +6,7 @@
 >
 > TokenPilot は OpenAI、Anthropic、Google、DeepSeek、xAI と提携しておらず、公式認証製品でもありません。
 
-![TokenPilot screenshot showing remaining quota overview, DeepSeek balance, and privacy-first settings](docs/assets/readme-screenshot.png)
+![Codex と Grok のメニューバー指標を個別項目として選択する TokenPilot 設定画面](docs/assets/readme-screenshot.png)
 
 [English](README.md) · [한국어](README.ko.md) · [简体中文](README.zh-CN.md)
 
