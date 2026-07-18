@@ -58,11 +58,9 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
-    @Published var xAIManagementAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
-    @Published var hasSavedXAIManagementAPIKey = false
     @Published private var menuBarNow = Date()
     @Published var settings: AppSettings {
         didSet {
@@ -116,7 +114,6 @@ final class TokenPilotViewModel: ObservableObject {
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
         self.hasSavedDeepSeekAPIKey = false
-        self.hasSavedXAIManagementAPIKey = false
 
         if let debugFixture {
             applyDebugFixture(debugFixture)
@@ -130,7 +127,6 @@ final class TokenPilotViewModel: ObservableObject {
         self.hasSavedTelegramToken = false
         self.hasSavedDiscordWebhook = false
         self.hasSavedDeepSeekAPIKey = false
-        self.hasSavedXAIManagementAPIKey = false
         startProductionRuntime()
     }
 #endif
@@ -173,11 +169,9 @@ final class TokenPilotViewModel: ObservableObject {
         telegramTokenInput = ""
         discordWebhookInput = ""
         deepSeekAPIKeyInput = ""
-        xAIManagementAPIKeyInput = ""
         hasSavedTelegramToken = fixture.hasSavedTelegramToken
         hasSavedDiscordWebhook = fixture.hasSavedDiscordWebhook
         hasSavedDeepSeekAPIKey = fixture.hasSavedDeepSeekAPIKey
-        hasSavedXAIManagementAPIKey = false
         refreshInProgress = false
         refreshQueued = false
         lastRefreshFinishedAt = fixture.referenceDate
@@ -198,27 +192,16 @@ final class TokenPilotViewModel: ObservableObject {
             hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
             hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
             let hasDeepSeekKey = ((try? keychain.readSecret(account: Self.deepSeekAPIKeyAccount)) ?? nil) != nil
-            let hasXAIManagementKey = ((try? keychain.readSecret(account: Self.xAIManagementAPIKeyAccount)) ?? nil) != nil
             hasSavedDeepSeekAPIKey = hasDeepSeekKey
-            hasSavedXAIManagementAPIKey = hasXAIManagementKey
             if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
                 settings.deepseekAPIKeyConfigured = hasDeepSeekKey
             }
-            if settings.xAI.managementAPIKeyConfigured != hasXAIManagementKey {
-                settings.xAI.managementAPIKeyConfigured = hasXAIManagementKey
-            }
-            let trimmedXAITeamID = Self.trimmedXAITeamID(settings.xAI.teamID)
-            if settings.xAI.teamID != trimmedXAITeamID {
-                settings.xAI.teamID = trimmedXAITeamID
-            }
-            updateXAIDataSourceForCredentialState()
         }
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
-    static let xAIManagementAPIKeyAccount = "xai.managementAPIKey"
 
     var menuBarTitle: String {
         menuBarStatusService.title(
@@ -234,26 +217,6 @@ final class TokenPilotViewModel: ObservableObject {
             settings: settings,
             now: menuBarNow
         )
-    }
-    var xAIOpenCodeBarUsageSnapshot: ProviderSnapshot? {
-        guard settings.isProviderEnabled(.xai),
-              settings.xAI.usageSource == .experimentalOpenCodeBarCLI else {
-            return nil
-        }
-        return snapshots.first {
-            $0.provider == .xai &&
-                $0.dataSource == .experimentalCLI &&
-                $0.isExperimental &&
-                $0.monthly?.usedPercent != nil
-        }
-    }
-
-    var xAIOpenCodeBarOAuthConnected: Bool {
-        xAIOpenCodeBarUsageSnapshot != nil
-    }
-
-    var xAIOpenCodeBarOAuthStale: Bool {
-        xAIOpenCodeBarUsageSnapshot?.isStale == true
     }
 
     var menuBarStatusLevel: MenuBarStatusLevel {
@@ -580,9 +543,6 @@ final class TokenPilotViewModel: ObservableObject {
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
             next.normalizeMenuBarComposition()
             settings = next
-            if provider == .xai {
-                updateXAIDataSourceForCredentialState()
-            }
         } else {
             bannerMessage = t("At least one provider must stay enabled.")
         }
@@ -645,10 +605,13 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    func providerDisplayName(_ provider: Provider) -> String {
+        provider == .xai ? t("Grok Build") : t(provider.displayName)
+    }
 
     func menuBarDisplayTargetLabel(for provider: Provider?) -> String {
         guard let provider else { return t("Highest risk") }
-        return t(provider.displayName)
+        return providerDisplayName(provider)
     }
 
     func startAutoRefresh() {
@@ -746,13 +709,14 @@ final class TokenPilotViewModel: ObservableObject {
 
         repeat {
             refreshQueued = false
-            await performRefreshPass()
+            await performRefreshPass(reason: reason)
         } while refreshQueued
     }
 
-    private func performRefreshPass() async {
+    private func performRefreshPass(reason: RefreshReason) async {
         let settingsAtStart = settings
         let result = await usageStore.refresh(settings: settingsAtStart)
+
         snapshots = result.snapshots
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
@@ -1090,14 +1054,11 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         if provider == .xai {
-            if settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-                await refresh(reason: .manual)
-                let status = snapshots.first(where: { $0.provider == .xai })?.statusMessage ?? t("Unavailable")
-                bannerMessage = "\(t(provider.displayName)): \(status)"
-            } else {
-                updateXAIDataSourceForCredentialState(lastScanAt: Date())
-                bannerMessage = "\(t(provider.displayName)): \(sourceStatusText(provider)). \(t("No xAI HTTP requests are sent."))"
-            }
+            await refresh(reason: .manual)
+            let source = await connectionService.check(settings: settings, provider: provider)
+            dataSources[provider] = source
+            connectionStatus[provider] = sourceStatusText(source)
+            bannerMessage = "\(t("Grok Build")): \(sourceStatusText(provider))"
             return
         }
         let source = await connectionService.check(settings: settings, provider: provider)
@@ -1127,15 +1088,20 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {
-        var keyedSources = Dictionary(uniqueKeysWithValues: sources.map { ($0.provider, $0) })
-        keyedSources[.xai] = xAIDataSourceForCredentialState(lastScanAt: keyedSources[.xai]?.lastScanAt)
+        let keyedSources = Dictionary(uniqueKeysWithValues: sources.map { ($0.provider, $0) })
         dataSources = keyedSources
         connectionStatus = Dictionary(uniqueKeysWithValues: keyedSources.map { ($0.key, sourceStatusText($0.value)) })
     }
 
     func sourceStatusText(_ provider: Provider) -> String {
         if provider == .xai {
-            return sourceStatusText(dataSources[provider] ?? xAIDataSourceForCredentialState())
+            if grokBuildSnapshot != nil {
+                return t("LOCAL · Grok Build context window")
+            }
+            guard let source = dataSources[provider] else {
+                return settings.isProviderEnabled(.xai) ? t("Grok Build signals not found") : t("Disabled")
+            }
+            return sourceStatusText(source)
         }
         guard let source = dataSources[provider] else {
             if provider == .deepseek {
@@ -1198,9 +1164,6 @@ final class TokenPilotViewModel: ObservableObject {
 
     var providerDiagnostics: [ProviderConnectionDiagnostic] {
         Provider.allCases.map { provider in
-            if provider == .xai {
-                return xAIDataSourceForCredentialState().connectionDiagnostic()
-            }
             if let source = dataSources[provider] {
                 return source.connectionDiagnostic()
             }
@@ -1278,8 +1241,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusColor(_ provider: Provider) -> Color {
-        if provider == .xai {
-            return settings.isProviderEnabled(.xai) ? TokenPilotDesign.warning : TokenPilotDesign.textSecondary
+        if provider == .xai,
+           grokBuildSnapshot != nil {
+            return TokenPilotDesign.calm
         }
         guard let status = dataSources[provider]?.status else {
             if provider == .deepseek {
@@ -1365,119 +1329,35 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
 
-    var xAITeamIDConfigured: Bool {
-        !Self.trimmedXAITeamID(settings.xAI.teamID).isEmpty
-    }
-
-    func updateXAITeamID(_ teamID: String) {
-#if DEBUG
-        guard !blockDebugFixtureExternalAction() else { return }
-#endif
-        let trimmed = Self.trimmedXAITeamID(teamID)
-        if settings.xAI.teamID != trimmed {
-            settings.xAI.teamID = trimmed
+    private var grokBuildSnapshot: ProviderSnapshot? {
+        snapshots.first {
+            $0.provider == .xai &&
+                $0.dataSource == .localLog &&
+                $0.model == "Grok Build" &&
+                $0.contextWindowUsedPercent != nil
         }
-        updateXAIDataSourceForCredentialState()
-    }
-
-    private static func trimmedXAITeamID(_ value: String) -> String {
-        value.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private var xAIManagementKeyConfigured: Bool {
-        hasSavedXAIManagementAPIKey || settings.xAI.managementAPIKeyConfigured
-    }
-
-    private var xAISetupInputsComplete: Bool {
-        xAIManagementKeyConfigured && xAITeamIDConfigured
-    }
-
-    private var usesExperimentalOpenCodeBar: Bool {
-        settings.xAI.usageSource == .experimentalOpenCodeBarCLI
-    }
-
-    private func xAIDataSourceForCredentialState(lastScanAt: Date? = nil) -> ProviderDataSource {
-        let enabled = settings.isProviderEnabled(.xai)
-        let statusMessage: String
-        if !enabled {
-            statusMessage = "xAI disabled"
-        } else if usesExperimentalOpenCodeBar {
-            statusMessage = "EXPERIMENTAL / UNOFFICIAL · OpenCode Bar CLI"
-        } else if xAISetupInputsComplete {
-            statusMessage = "Management authentication unconfirmed"
-        } else if !xAIManagementKeyConfigured && !xAITeamIDConfigured {
-            statusMessage = "Management key and team ID required"
-        } else if !xAIManagementKeyConfigured {
-            statusMessage = "Management key required"
-        } else {
-            statusMessage = "Team ID required"
-        }
-
-        return ProviderDataSource(
-            provider: .xai,
-            isEnabled: enabled,
-            mode: enabled ? .custom : .disabled,
-            detectedPaths: [],
-            customPath: nil,
-            lastScanAt: lastScanAt,
-            status: enabled ? .manual : .disabled,
-            confidence: usesExperimentalOpenCodeBar ? .manual : (xAISetupInputsComplete ? .manual : .low),
-            statusMessage: statusMessage
-        )
-    }
-
-    private func updateXAIDataSourceForCredentialState(lastScanAt: Date? = nil) {
-        let source = xAIDataSourceForCredentialState(lastScanAt: lastScanAt ?? dataSources[.xai]?.lastScanAt)
-        dataSources[.xai] = source
-        connectionStatus[.xai] = sourceStatusText(source)
     }
 
     private func xAIStatusText(_ source: ProviderDataSource) -> String {
         guard source.status != .disabled else { return t("Disabled") }
-        if usesExperimentalOpenCodeBar {
-            if xAIOpenCodeBarOAuthConnected {
-                let freshness = xAIOpenCodeBarOAuthStale ? t("Stale") : t("Connected")
-                return "OAuth · \(freshness) · \(t("Experimental"))"
-            }
-            return "OAuth · \(t("Authentication required")) · \(t("Experimental"))"
-        }
-        let message = source.statusMessage.map(t) ?? t("Setup needed")
-        if xAISetupInputsComplete {
-            return message
-        }
-        return "\(t("Setup needed")) · \(message)"
+        return grokBuildSnapshot != nil
+            ? t("LOCAL · Grok Build context window")
+            : t("Grok Build signals not found")
     }
 
     private func xAISourceDetailText() -> String {
-        if usesExperimentalOpenCodeBar {
-            return "\(t("EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values.")) \(t("TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota."))"
-        }
         guard settings.isProviderEnabled(.xai) else {
-            return t("xAI is disabled by default. Enable it only when you want local setup visibility.")
+            return t("Enable Grok Build to read local context metadata.")
         }
-        if xAISetupInputsComplete {
-            return t("Management key is saved in Keychain and team ID is stored locally. Authentication is unconfirmed. No xAI HTTP requests are sent.")
-        }
-        return t("Save an xAI Management key in Keychain and a local team ID. Check Connection only checks local setup. No xAI HTTP requests are sent.")
+        return grokBuildSnapshot != nil
+            ? t("Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses.")
+            : t("No Grok Build signals found. Start a Grok Build session, then run Check Connection.")
     }
 
     private func xAINextActionText() -> String {
-        if usesExperimentalOpenCodeBar {
-            return settings.isProviderEnabled(.xai)
-                ? "\(t("OpenCode Bar CLI (Experimental)")) · \(t("Check Connection"))"
-                : "\(t("Enable xAI")) · \(t("OpenCode Bar CLI (Experimental)"))"
-        }
-        guard settings.isProviderEnabled(.xai) else {
-            return t("Enable xAI only when you want local setup visibility.")
-        }
-        if xAISetupInputsComplete {
-            return t("Authentication is unconfirmed; verify credentials outside TokenPilot.")
-        }
-        return t("Enter a local team ID and save a Management key; Check Connection stays local.")
-    }
-
-    var xAIExperimentalGuideText: String {
-        "\(xAISourceDetailText()) \(xAINextActionText())"
+        settings.isProviderEnabled(.xai)
+            ? t("Run Check Connection to refresh local Grok Build context metadata.")
+            : t("Enable Grok Build to read local context metadata.")
     }
 
     private func updateDeepSeekDataSourceForCredentialState() {
@@ -1526,42 +1406,6 @@ final class TokenPilotViewModel: ObservableObject {
             settings.deepseekAPIKeyConfigured = false
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
-        } catch {
-            bannerMessage = localizedErrorMessage(error)
-        }
-    }
-    func saveXAIManagementAPIKey() {
-#if DEBUG
-        guard !blockDebugFixtureExternalAction() else { return }
-#endif
-        let key = xAIManagementAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !key.isEmpty else {
-            bannerMessage = t("Enter an xAI Management key first.")
-            return
-        }
-        do {
-            try keychain.saveSecret(key, account: Self.xAIManagementAPIKeyAccount)
-            xAIManagementAPIKeyInput = ""
-            hasSavedXAIManagementAPIKey = true
-            settings.xAI.managementAPIKeyConfigured = true
-            updateXAIDataSourceForCredentialState()
-            bannerMessage = "\(t("Management API key saved in TokenPilot Keychain item.")) \(t("No xAI HTTP requests are sent."))"
-        } catch {
-            bannerMessage = localizedErrorMessage(error)
-        }
-    }
-
-    func deleteXAIManagementAPIKey() {
-#if DEBUG
-        guard !blockDebugFixtureExternalAction() else { return }
-#endif
-        do {
-            try keychain.deleteSecret(account: Self.xAIManagementAPIKeyAccount)
-            xAIManagementAPIKeyInput = ""
-            hasSavedXAIManagementAPIKey = false
-            settings.xAI.managementAPIKeyConfigured = false
-            updateXAIDataSourceForCredentialState()
-            bannerMessage = t("Management API key deleted.")
         } catch {
             bannerMessage = localizedErrorMessage(error)
         }

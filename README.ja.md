@@ -1,6 +1,6 @@
 # TokenPilot — macOS メニューバー AI クォータ / 使用量モニター
 
-**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini CLI fallback）、DeepSeek balance シグナル、デフォルト OFF の Grok/xAI を local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。Management setup は no-network のままで、OpenCode Bar Grok bridge は別途明示的に opt-in する EXPERIMENTAL 機能です。
+**TokenPilot** は Claude Code、Codex、Antigravity CLI（従来の Gemini telemetry）、DeepSeek balance シグナル、Grok のローカル context シグナルを local-first で集約し、macOS メニューバーから残りクォータと使用履歴を確認できるユーティリティです。Grok/xAI では数値のローカル context メタデータだけを読みます。
 
 > TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、provider auth ファイル、任意の Keychain 項目は読みません。
 >
@@ -19,17 +19,17 @@
 | **Menu bar** | `5h 18% · W 53% · DS $12.34` のように残りクォータと選択した DeepSeek 残高を1行で表示します。 |
 | **Overview** | 現在の残りクォータ、provider rows、DeepSeek topped-up balance、今日のトークン、アラート状態を表示します。 |
 | **History** | 保存済みの使用イベント、最新 limit signals、折りたたみ式の最近の制限、JSON/CSV export を提供します。 |
-| **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok/xAI Management no-network setup、任意の OpenCode Bar Grok bridge、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
+| **Settings** | Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok ローカル context diagnostics、manual fallback、通知、Telegram/Discord、言語、privacy 境界を設定します。 |
 
 ---
 
 ## 主な機能
 
-- **macOS メニューバーアプリ**: Dock アイコンなしの `MenuBarExtra` ユーティリティ。
+- **macOS メニューバーアプリ**: Dock アイコンなしの AppKit `NSStatusItem` と `NSPopover` を使うユーティリティ。
 - **残りクォータ優先 UI**: 使用済みではなく「どれだけ残っているか」を優先表示します。
-- **Claude / Codex / Antigravity（従来の Gemini fallback）/ DeepSeek / Grok/xAI 統合**: 各 provider のローカルメタデータ、任意の balance シグナル、no-network Management setup、任意の experimental Grok bridge を1つの画面に集約します。
+- **Claude / Codex / Antigravity（従来の Gemini telemetry）/ DeepSeek / Grok/xAI 統合**: 各 provider のローカルメタデータ、任意の balance シグナル、Grok ローカル context メタデータを1つの画面に集約します。
 - **DeepSeek balance**: API key を Keychain に保存した場合、公式 `/user/balance` の `topped_up_balance` を native currency で表示します。
-- **Grok/xAI sources**: デフォルト OFF です。Management key は TokenPilot Keychain item のみに保存し、Team ID はローカル / マスク / presence-only として扱い export から除外します。別途明示的に ON にした OpenCode Bar bridge は percentage/reset のみを取り込み、EXPERIMENTAL / UNOFFICIAL です。
+- **Grok/xAI source**: `~/.grok/sessions/**/signals.json` にある数値のローカル context メタデータだけを読みます。`auth.json`、OAuth token、prompt、response は読みません。メニューバーには subscription quota や API billing ではなく、残りローカル context（`100 - contextWindowUsage`）を表示します。
 - **手動 fallback と stale 表示**: API key がない、または取得に失敗した場合でも値の信頼度を明示します。
 - **低残高アラート**: topped-up balance が $5 以下になった場合に通知できます。
 - **Privacy-first export**: JSON/CSV export には secret、API key、webhook、chat ID、raw prompt/response、local file path を含めません。
@@ -49,12 +49,12 @@
 2. **Manual Limit Snapshot / `/status` parse**: ユーザー入力値から 5h / weekly を推定します。
 3. **Local Activity Beta**: local session JSONL の token_count 系 row を実験的に読みます。
 
-### Antigravity CLI / 従来の Gemini fallback
+### Antigravity CLI / 従来の Gemini telemetry
 
 - 既定では `~/Library/Application Support/TokenPilot/antigravity-statusline.json` の Antigravity `statusLine` bridge output を読みます。
 - Settings → Setup Guide → **Connect Antigravity CLI** で bridge をインストールし、Antigravity CLI を再起動して任意の prompt を実行すると JSON が更新されます。
 - 保存されるのは model、context-window input/output total、current usage token count、percentage などの allowlist metadata だけです。prompt/response、email、cwd/workspace、provider auth material は保存しません。
-- 従来の `~/.gemini` telemetry log と session JSON/JSONL token object は fallback として引き続きサポートします。
+- 従来の Gemini source としては `~/.gemini/telemetry.log` だけを引き続きサポートします。
 
 ### DeepSeek
 
@@ -63,14 +63,15 @@
 - API key は TokenPilot-owned Keychain item に保存され、export されません。
 - 接続失敗時は最後に成功した値を stale として表示するか、manual fallback を明示して表示します。
 
-### Grok / xAI sources
+### Grok / xAI source
 
-Grok Settings → Usage が公式 source of truth です。TokenPilot にはデフォルト OFF の2経路があります。
+TokenPilot は次のファイルから数値のローカル context メタデータだけを読みます。
 
-- **Management setup (no network)**: Management key は TokenPilot-owned Keychain item のみに保存され、表示 / export されません。Team ID はローカルにだけ保存され、summary / diagnostics / accessibility ではマスクまたは presence-only として扱い、export から除外します。key と Team ID が揃っても **auth-unconfirmed** であり、TokenPilot は xAI credential を検証せず、xAI endpoint を呼びません。従来の「xAI HTTP request 0 件」は TokenPilot 自体についての説明です。
-- **任意の OpenCode Bar Grok bridge**: OpenCode Bar をインストールし、そのドキュメントに従って Grok CLI setup を完了してから、TokenPilot でこの source を明示的に ON にします。TokenPilot が実行するのは固定の `opencodebar provider grok --json` だけで、percentage/reset のみを取り込みます。source を OFF にすると subprocess 呼び出しも停止します。
-- この bridge は **EXPERIMENTAL / UNOFFICIAL** です。OpenCode Bar は自身の Grok CLI auth を読み、undocumented endpoint を呼ぶ場合があるため、結果は壊れる可能性があり、official API billing や Grok web-subscription entitlement を保証しません。
-- Management-key endpoint scope（usage、billing、prepaid balance など）は、xAI が explicit official Management-key transport documentation を公開するまで blocked future work であり、現在の capability ではありません。
+```text
+~/.grok/sessions/**/signals.json
+```
+
+`auth.json`、OAuth token、prompt、response、provider billing/subscription データは読みません。Grok のメニューバー値は残りローカル context（`100 - contextWindowUsage`）であり、provider quota ではないため、provider quota や API billing と比較できません。
 
 ---
 

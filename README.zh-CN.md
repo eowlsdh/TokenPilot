@@ -1,6 +1,6 @@
 # TokenPilot — macOS 菜单栏 AI 额度 / 用量监控
 
-**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini CLI fallback）、DeepSeek balance 信号和默认关闭的 Grok/xAI，让你在 macOS 菜单栏中查看剩余额度和使用历史。Management setup 保持 no-network；OpenCode Bar Grok bridge 是单独明确 opt-in 的 EXPERIMENTAL 功能。
+**TokenPilot** 以 local-first 方式汇总 Claude Code、Codex、Antigravity CLI（旧版 Gemini telemetry）、DeepSeek balance 信号和 Grok 的本地 context 信号，让你在 macOS 菜单栏中查看剩余额度和使用历史。Grok/xAI 只读取数值本地 context 元数据。
 
 > TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie、provider auth 文件或任意 Keychain 项。
 >
@@ -19,17 +19,17 @@
 | **Menu bar** | 以 `5h 18% · W 53% · DS $12.34` 这样的单行形式显示剩余额度和选中的 DeepSeek 余额。 |
 | **Overview** | 显示当前剩余额度、provider rows、DeepSeek topped-up balance、今日 token 和提醒状态。 |
 | **History** | 提供已保存的使用事件、最新 limit signals、默认折叠的最近额度信号和 JSON/CSV export。 |
-| **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok/xAI Management no-network setup、可选 OpenCode Bar Grok bridge、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
+| **Settings** | 配置 Provider Diagnostics、Codex Limit Hints Connector、DeepSeek balance/API key setup、Grok 本地 context diagnostics、manual fallback、通知、Telegram/Discord、语言和 privacy 边界。 |
 
 ---
 
 ## 主要功能
 
-- **macOS 菜单栏应用**：无 Dock 图标的 `MenuBarExtra` 工具。
+- **macOS 菜单栏应用**：使用 AppKit `NSStatusItem` 和 `NSPopover`、无 Dock 图标的工具。
 - **剩余额度优先 UI**：优先显示“还剩多少”，而不是“已经用了多少”。
-- **Claude / Codex / Antigravity（旧版 Gemini fallback）/ DeepSeek / Grok/xAI 集成**：把各 provider 的本地元数据、可选 balance 信号、no-network Management setup 和可选 experimental Grok bridge 汇总到一个界面。
+- **Claude / Codex / Antigravity（旧版 Gemini telemetry）/ DeepSeek / Grok/xAI 集成**：把各 provider 的本地元数据、可选 balance 信号和 Grok 本地 context 元数据汇总到一个界面。
 - **DeepSeek balance**：保存 API key 后，使用官方 `/user/balance` 的 `topped_up_balance`，并按 native currency 显示。
-- **Grok/xAI sources**：默认关闭。Management key 只保存在 TokenPilot Keychain item 中；Team ID 以本地 / masked / presence-only 状态处理，并从 export 中排除。单独明确开启的 OpenCode Bar bridge 只导入 percentage/reset，属于 EXPERIMENTAL / UNOFFICIAL。
+- **Grok/xAI source**：只读取 `~/.grok/sessions/**/signals.json` 中的数值本地 context 元数据；不会读取 `auth.json`、OAuth token、prompt 或 response。菜单栏显示剩余本地 context（`100 - contextWindowUsage`），不是 subscription quota 或 API billing。
 - **Manual fallback 与 stale 标记**：没有 API key 或请求失败时，也会清楚标出数据可信度。
 - **低余额提醒**：当 topped-up balance 不高于 $5 时可以触发提醒。
 - **Privacy-first export**：JSON/CSV export 不包含 secret、API key、webhook、chat ID、raw prompt/response 或 local file path。
@@ -49,12 +49,12 @@
 2. **Manual Limit Snapshot / `/status` parse**：根据用户输入推算 5h / weekly 值。
 3. **Local Activity Beta**：实验性读取 local session JSONL 中的 token_count 类 row。
 
-### Antigravity CLI / 旧版 Gemini fallback
+### Antigravity CLI / 旧版 Gemini telemetry
 
 - 默认读取 `~/Library/Application Support/TokenPilot/antigravity-statusline.json` 中的 Antigravity `statusLine` bridge output。
 - 在 Settings → Setup Guide → **Connect Antigravity CLI** 安装 bridge，重启或重新打开 Antigravity CLI 后运行任意 prompt，JSON 就会更新。
 - 保存的只有 model、context-window input/output total、current usage token count、percentage 等 allowlist metadata。不会保存 prompt/response、email、cwd/workspace 或 provider auth material。
-- 旧版 `~/.gemini` telemetry log 与 session JSON/JSONL token object 仍作为 fallback 支持。
+- 旧版 Gemini source 只继续支持 `~/.gemini/telemetry.log`。
 
 ### DeepSeek
 
@@ -63,14 +63,15 @@
 - API key 保存在 TokenPilot-owned Keychain item 中，不会被 export。
 - 请求失败时显示最后一次成功值的 stale 状态，或显示用户启用的 manual fallback。
 
-### Grok / xAI sources
+### Grok / xAI source
 
-Grok Settings → Usage 是官方 source of truth。TokenPilot 有两个默认关闭的路径：
+TokenPilot 只从以下文件读取数值本地 context 元数据：
 
-- **Management setup (no network)**：Management key 只保存在 TokenPilot-owned Keychain item 中，不显示也不 export。Team ID 只保存在本地；summary / diagnostics / accessibility 中仅使用 masked 或 presence-only 状态，并从 export 中排除。即使 key 和 Team ID 都已保存，状态仍是 **auth-unconfirmed**；TokenPilot 不验证 xAI credential，也不会调用 xAI endpoint。此前“0 个 xAI HTTP 请求”仅适用于 TokenPilot 本身。
-- **可选 OpenCode Bar Grok bridge**：安装 OpenCode Bar，并按其文档完成 Grok CLI setup 后，才在 TokenPilot 中明确开启该 source。TokenPilot 只运行固定命令 `opencodebar provider grok --json`，只导入 percentage/reset；关闭 source 后会停止 subprocess 调用。
-- 此 bridge 是 **EXPERIMENTAL / UNOFFICIAL**。OpenCode Bar 可能读取自己的 Grok CLI auth 并调用 undocumented endpoint，因此结果可能失效，也不保证 official API billing 或 Grok web-subscription entitlement。
-- Management-key endpoint scope（如 usage、billing、prepaid balance）在 xAI 发布 explicit official Management-key transport documentation 前属于 blocked future work，不是当前能力。
+```text
+~/.grok/sessions/**/signals.json
+```
+
+不会读取 `auth.json`、OAuth token、prompt、response 或 provider billing/subscription 数据。Grok 菜单栏值为剩余本地 context（`100 - contextWindowUsage`），不是 provider quota，因此不可与 provider quota 或 API billing 比较。
 
 ---
 

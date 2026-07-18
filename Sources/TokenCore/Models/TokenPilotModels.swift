@@ -583,7 +583,7 @@ public struct XAISettings: Codable, Equatable, Sendable {
             managementAPILookbackDays: try container.decodeIfPresent(Int.self, forKey: .managementAPILookbackDays) ?? 30,
             prepaidBalanceAlertsEnabled: try container.decodeIfPresent(Bool.self, forKey: .prepaidBalanceAlertsEnabled) ?? false,
             prepaidBalanceAlertThresholdUSD: try container.decodeIfPresent(Decimal.self, forKey: .prepaidBalanceAlertThresholdUSD) ?? 5,
-            usageSource: try container.decodeIfPresent(XAIUsageSource.self, forKey: .usageSource) ?? .managementSetup
+            usageSource: .managementSetup
         )
     }
 }

@@ -5,8 +5,8 @@
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
 [![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
 
-> **A local-first macOS menu bar monitor for AI coding quota and usage.**
-> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini CLI fallback, and DeepSeek balance signals visible without a cloud dashboard, browser tab, or provider-token collector. Grok/xAI is disabled by default: Management setup remains no-network, and an optional EXPERIMENTAL OpenCode Bar bridge is separately opt-in.
+> **A local-first macOS menu bar monitor for AI coding quota and local context usage.**
+> TokenPilot keeps Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, and Grok local-context signals visible without a cloud dashboard, browser tab, or provider-token collector. Grok/xAI reads only numeric local context metadata.
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, or xAI.
 
@@ -18,13 +18,13 @@
 
 ## Why TokenPilot?
 
-AI coding tools expose usage signals in different places: Claude statusline JSON, Antigravity `statusLine` JSON, local session logs, telemetry logs, manual `/status` output, or unofficial limit-hint APIs. TokenPilot turns those scattered local signals into one compact macOS menu bar readout:
+AI coding tools expose signals in different places: Claude statusline JSON, Antigravity `statusLine` JSON, Gemini telemetry, manual `/status` output, official balance APIs, or local context metadata. TokenPilot turns those local signals into one compact macOS menu bar readout:
 
 ```text
 5h 18% · W 53%
 ```
 
-The numbers are **remaining quota percentages**. When confidence is estimated or unofficial, TokenPilot says so.
+The numbers are **remaining quota percentages** where provider quota is available. Grok shows remaining local context, which is not comparable to provider quota.
 
 ---
 
@@ -32,10 +32,10 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 
 | Surface | What changed / what it shows |
 |---|---|
-| **Menu bar** | Single-line remaining quota label: `5h`, weekly, and estimated/manual suffixes when needed. |
+| **Menu bar** | Single-line remaining quota or local-context label: `5h`, weekly, and estimated/manual suffixes when needed. |
 | **Overview** | Capacity-first current evidence card, provider capacity rows, refresh/recovery notes, and alert status. No local activity analytics cards. |
 | **History** | Capacity evidence timeline plus usage event summary and JSON/CSV export. Local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota or visible dashboard surfaces. |
-| **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, no-network Grok/xAI Management setup, optional OpenCode Bar Grok bridge, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
+| **Settings** | Provider Diagnostics, Codex limit hints connector, DeepSeek balance/API key setup, local Grok context diagnostics, manual fallback, notifications, Telegram/Discord, language, setup, and privacy boundaries. |
 
 ---
 
@@ -43,14 +43,14 @@ The numbers are **remaining quota percentages**. When confidence is estimated or
 
 | Feature | Description |
 |---------|-------------|
-| 🍎 **Native menu bar utility** | `MenuBarExtra` app with compact quota display and no Dock icon. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini fallback, DeepSeek balance, no-network Grok/xAI Management setup, and an optional experimental Grok bridge in one place. |
+| 🍎 **Native menu bar utility** | AppKit `NSStatusItem` with an `NSPopover`, compact display, and no Dock icon. |
+| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, and local Grok context metadata in one place. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
 | 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
 | 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
-| 🧰 **Grok/xAI sources** | Default-disabled Management setup remains auth-unconfirmed and no-network. An explicit opt-in OpenCode Bar bridge imports only Grok usage percentage/reset and is experimental/unofficial. |
+| 🧰 **Grok/xAI source** | Reads only numeric local context metadata from `~/.grok/sessions/**/signals.json`; it never reads `auth.json`, OAuth tokens, prompts, or responses. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
@@ -94,9 +94,9 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 |----------|-------------|-------------|
 | **Claude Code** | Statusline JSON + local project JSONL fallback | High when statusline/rate-limit fields are present. |
 | **Codex** | Opt-in Codex CLI limit hints, manual `/status` / manual estimates, local activity JSONL | Medium/estimated/unofficial unless Codex exposes stable official quota metadata. |
-| **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini telemetry/session paths remain fallback-only | High for Antigravity statusLine and legacy telemetry metadata; local session JSON remains local/metadata-only. |
+| **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini `~/.gemini/telemetry.log` remains supported | High for Antigravity statusLine and Gemini telemetry metadata. |
 | **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
-| **Grok / xAI** | Disabled-by-default Management setup: Management key presence in TokenPilot Keychain + local team ID presence. Optional EXPERIMENTAL OpenCode Bar bridge runs only `opencodebar provider grok --json` when explicitly enabled and imports only percentage/reset. | Grok Settings → Usage remains the official source of truth. The bridge is unofficial, may break, and is not official API billing or web-subscription entitlement evidence. |
+| **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json` only | The menu bar shows remaining local context (`100 - contextWindowUsage`), not subscription quota or API billing. |
 
 ### Provider diagnostics
 
@@ -106,16 +106,17 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - Diagnostics summarize local metadata availability without showing raw paths, prompts, responses, cookies, tokens, or raw events.
 - Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
-- Grok/xAI state is explicit: disabled Management setup, auth-unconfirmed Management setup, or optional experimental OpenCode Bar bridge. The Management Check Connection is local-only; disabling the bridge stops TokenPilot subprocess invocation.
+- Grok/xAI diagnostics report only local signal availability and remaining local context; TokenPilot has no credentials, account identifiers, OAuth, or provider-quota claims.
 
-### Grok / xAI sources
+### Grok / xAI source
 
-Grok Settings → Usage remains the official source of truth. TokenPilot offers two separate, disabled-by-default paths:
+TokenPilot reads only numeric local context metadata from:
 
-- **Management setup (no network):** Saving a Management key stores it only in TokenPilot's Keychain item; it is never displayed or exported. The team ID stays local, is masked or represented as presence-only in summaries/diagnostics/accessibility, and is excluded from exports. Even with both values saved, status remains **auth-unconfirmed**. TokenPilot does not validate xAI credentials or call xAI endpoints; the prior “zero xAI HTTP requests” claim applies to TokenPilot itself.
-- **Optional OpenCode Bar Grok bridge:** Install OpenCode Bar and complete its Grok CLI setup according to its documentation, then explicitly enable this source in TokenPilot. TokenPilot runs only the fixed command `opencodebar provider grok --json`, imports only percentage and reset data, and stops invoking the subprocess when the source is disabled.
-- The bridge is **EXPERIMENTAL** and **UNOFFICIAL**. OpenCode Bar may read its own Grok CLI authentication and call undocumented endpoints, so its results may break and are not guarantees of official API billing or Grok web-subscription entitlement.
-- Future TokenPilot Management-key endpoint scope (for example usage, billing, or prepaid balance) remains blocked until xAI publishes explicit Management-key transport documentation; it is not current capability.
+```text
+~/.grok/sessions/**/signals.json
+```
+
+It never reads `auth.json`, OAuth tokens, prompts, responses, or provider billing/subscription data. Grok's menu-bar value is remaining local context (`100 - contextWindowUsage`); it is not provider quota and must not be compared with provider quota or API billing.
 
 ### Antigravity CLI setup
 
@@ -129,7 +130,7 @@ The Gemini-facing provider slot now defaults to **Antigravity CLI**:
    ~/Library/Application Support/TokenPilot/antigravity-statusline.json
    ```
 
-The bridge stores only allowlisted token metadata such as model id/display name, context-window input/output totals, current usage token counts, and percentages. It does **not** store prompt text, response text, email, cwd/workspace path, provider auth material, or arbitrary Keychain data. Existing `~/.gemini/telemetry.log`, `~/.gemini/tmp`, and `~/.gemini/history` sources remain supported only as legacy fallbacks.
+The bridge stores only allowlisted token metadata such as model id/display name, context-window input/output totals, current usage token counts, and percentages. It does **not** store prompt text, response text, email, cwd/workspace path, provider auth material, or arbitrary Keychain data. Existing `~/.gemini/telemetry.log` remains supported as the only legacy Gemini source.
 
 ### Menu bar display
 
@@ -138,6 +139,7 @@ The bridge stores only allowlisted token metadata such as model id/display name,
 5h 8% · W 31% ⚠️        # low remaining quota / warning state
 5h 74% · W 80% est.     # estimated/manual Codex values
 Co 12.3Ktok             # fallback when only local activity exists
+Grok 42% ctx             # remaining local context, not provider quota
 DS $12.34                # selected DeepSeek topped-up balance
 ```
 
@@ -150,7 +152,7 @@ The README screenshot is a release-facing composite of shipped app surfaces:
 - Menu bar: compact remaining quota plus selected DeepSeek balance (`DS $12.34`).
 - Overview: capacity-first evidence card, provider capacity rows, refresh/recovery notes, and alert status.
 - History: capacity evidence timeline and usage-event export controls; local activity seven-day/provider-share summaries are export-only compatibility data, not provider quota, and not visible dashboard surfaces.
-- Settings: provider diagnostics, Antigravity statusLine bridge, Codex limit hints, DeepSeek Keychain setup, Grok/xAI no-network setup, and privacy boundaries.
+- Settings: provider diagnostics, Antigravity statusLine bridge, Codex limit hints, DeepSeek Keychain setup, Grok local-context diagnostics, and privacy boundaries.
 
 ---
 
@@ -160,7 +162,7 @@ TokenPilot is positioned as a **local-first AI coding usage meter for the macOS 
 
 - **No cloud dashboard**: usage stays on-device.
 - **No account required**: no TokenPilot account or provider login flow.
-- **No provider token collection**: Codex/Telegram/Discord/DeepSeek/xAI secrets are stored only when explicitly configured, never shown or exported.
+- **No provider token collection**: Codex/Telegram/Discord/DeepSeek secrets are stored only when explicitly configured, never shown or exported; Grok auth material is never read.
 - **Honest confidence labels**: official, local, manual, estimated, experimental, and limit-hint sources are visibly distinct.
 - **Release artifacts**: `make bundle` produces `build/TokenPilot.app` and `build/TokenPilot.zip`.
 
@@ -175,15 +177,14 @@ TokenPilot is designed as a **local-first** utility:
 | ✅ Reads | ❌ Never reads |
 |----------|---------------|
 | Claude statusline JSON | Browser cookies |
-| Antigravity statusLine JSON bridge output / legacy Gemini telemetry log | Provider auth files |
+| Antigravity statusLine JSON bridge / Gemini `telemetry.log` | Provider auth files |
 | User-entered Codex values | Raw prompts/responses |
 | User-saved DeepSeek API key in TokenPilot Keychain item | Exported secrets |
-| User-saved xAI Management key in TokenPilot Keychain item | Grok web subscription tracking |
-| Local xAI team ID (masked/presence-only in summaries) | xAI live balance/usage endpoint responses |
-| Local session JSONL metadata | Arbitrary Keychain items |
+| Grok numeric local context metadata from `~/.grok/sessions/**/signals.json` | `auth.json` and OAuth tokens |
+| Local session JSONL metadata (where supported) | Grok prompts/responses |
 | TokenPilot-owned notification credentials | Other apps' Keychain items |
 
-External notifications (Telegram/Discord) are **off by default** and require explicit user configuration. Codex Limit Hints Connector is also off by default and talks to the local Codex CLI app-server rather than reading Codex auth files directly. DeepSeek balance is opt-in and uses a TokenPilot-owned Keychain item for the API key; exports omit secrets. Grok/xAI setup is also off by default: the Management key stays only in TokenPilot Keychain, the team ID stays local/masked/excluded, and production sends no xAI HTTP requests until official Management-key transport documentation is explicit.
+External notifications (Telegram/Discord) are **off by default** and require explicit user configuration. Codex Limit Hints Connector is also off by default and talks to the local Codex CLI app-server rather than reading Codex auth files directly. DeepSeek balance is opt-in and uses a TokenPilot-owned Keychain item for the API key; exports omit secrets. Grok/xAI reads only numeric local context metadata from `~/.grok/sessions/**/signals.json`; it does not read `auth.json`, OAuth tokens, prompts, responses, subscription quota, or API billing.
 
 See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 
@@ -193,8 +194,8 @@ See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 
 ```text
 Sources/
-├── TokenApp/                         # SwiftUI app shell, views, ViewModel
-│   ├── TokenMonitorApp.swift          # App entry and MenuBarExtra
+├── TokenApp/                         # AppKit app shell, views, ViewModel
+│   ├── TokenMonitorApp.swift          # App entry, NSStatusItem, and NSPopover
 │   ├── Views/                         # Overview, History, Settings, components
 │   └── Resources/Localizable.xcstrings
 └── TokenCore/                         # Business logic, adapters, models

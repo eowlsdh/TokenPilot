@@ -8,11 +8,10 @@ External notifications are optional and off by default.
 
 - AI tool usage metadata such as token counts, request counts, limit window percentages, reset hints, timestamps, and model labels.
 - User-selected local file or folder paths for supported metadata sources.
-- Security-scoped bookmark data for user-selected Claude, Antigravity, or legacy Gemini source files or folders, so the app can attempt to read those sources again after relaunch.
+- Security-scoped bookmark data for user-selected Claude, Antigravity, or exact Gemini metadata files, so the app can attempt to read those sources again after relaunch.
 - App preferences such as enabled providers, language, alert thresholds, and display settings.
 - Optional manually entered Codex limit hints.
-- Optional xAI/Grok setup metadata: whether a Management API key exists in TokenPilot Keychain and an optional local team ID shown only masked.
-- When explicitly enabled, only percentage/reset data returned by the fixed OpenCode Bar command `opencodebar provider grok --json`.
+- Grok Build local context metadata from files named `signals.json` below `~/.grok/sessions/`. Only numeric context fields are parsed.
 
 ## Data TokenPilot Should Not Collect
 
@@ -23,7 +22,7 @@ External notifications are optional and off by default.
 - Arbitrary Keychain items.
 - Telegram bot tokens or Discord webhook URLs in exported usage files.
 - Chat IDs, webhook URLs, or local file paths in exported usage files.
-- xAI Management API keys, team IDs, billing identifiers, provider credentials, OAuth files, browser cookies, or authentication databases in exported usage files, logs, or user-facing errors.
+- Provider credentials, browser cookies, authentication databases, prompts, responses, or other session content in exported usage files, logs, or user-facing errors.
 
 ## External Notifications
 
@@ -35,17 +34,15 @@ Telegram's Bot API places the bot token in the request URL path. TokenPilot trea
 
 ## Storage
 
-TokenPilot stores app preferences locally on the Mac. TokenPilot-owned notification secrets, if configured, are stored in TokenPilot's own Keychain items and hidden after saving. xAI Management API keys, if configured, follow the same Keychain-only rule. Optional xAI team IDs stay in local preferences, are shown only masked, and are not exported. TokenPilot does not read OpenCode Bar's authentication material.
+TokenPilot stores app preferences locally on the Mac. TokenPilot-owned notification secrets, if configured, are stored in TokenPilot's own Keychain items and hidden after saving. Provider credentials are not read from local provider files or stored by TokenPilot.
 
 ## Network Use
 
 The default product promise is local-first. Network use is limited to features that the user explicitly enables, such as optional external notifications or an opt-in local connector. Any external submission, account login, or credential-based provider access must be clearly labeled.
 
-The xAI/Grok Management foundation is disabled/not-configured by default and sends no xAI HTTP requests in production. TokenPilot will not call xAI Management endpoints until official documentation clarifies Management-key transport; any future TokenPilot Management network feature must be opt-in and constrained to an explicit endpoint allowlist.
+Grok Build ingestion is local-only: TokenPilot considers only files named `signals.json` beneath `~/.grok/sessions/`, rejects symlinks, reads at most 120 files per scan, and rejects files larger than 256 KiB. It parses only numeric context fields. These values describe local context remaining and are not subscription quota, provider quota, or API billing; they must not be compared with or represented as any of those measures.
 
-The optional OpenCode Bar Grok bridge is a separate, explicit opt-in. After OpenCode Bar is installed and its Grok CLI setup is completed according to its documentation, TokenPilot runs only `opencodebar provider grok --json`, imports only percentage/reset data, and stops subprocess invocation when disabled. The prior “zero xAI HTTP requests” statement applies to TokenPilot itself: OpenCode Bar may read its own Grok CLI authentication and call undocumented endpoints. This **EXPERIMENTAL / UNOFFICIAL** output may break; Grok Settings → Usage remains the official source of truth and bridge output is not official API billing or Grok web-subscription entitlement evidence.
-
-xAI API billing is separate from Grok web subscription limits. TokenPilot does not read or display Grok web subscription limits and does not claim live xAI billing support.
+Gemini ingestion accepts only the exact `antigravity-statusline.json` and `telemetry.log` filenames. Chat/session JSON is rejected before it is read.
 
 ## macOS Sandbox
 

@@ -189,7 +189,7 @@ final class TokenPilotServicesTests: XCTestCase {
         var experimental = AppSettings()
         experimental.xAI = XAISettings(usageSource: .experimentalOpenCodeBarCLI)
         let experimentalRoundTrip = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(experimental))
-        XCTAssertEqual(experimentalRoundTrip.xAI.usageSource, .experimentalOpenCodeBarCLI)
+        XCTAssertEqual(experimentalRoundTrip.xAI.usageSource, .managementSetup)
 
         let unknownProviderJSON = """
         {
@@ -1212,7 +1212,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
 
-    func testUsageStoreUsesDetectedGeminiSessionFolderWhenDefaultTelemetryLogMissing() async throws {
+    func testUsageStoreIgnoresDetectedGeminiSessionFolderWhenDefaultTelemetryLogMissing() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let geminiTmp = home.appendingPathComponent(".gemini/tmp", isDirectory: true)
         try FileManager.default.createDirectory(at: geminiTmp, withIntermediateDirectories: true)
@@ -1220,10 +1220,10 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let sessionURL = geminiTmp.appendingPathComponent("session-tokenpilot.json")
         let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = """
-        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro"}}
+        let content = """
+        {"timestamp":"\(timestamp)","prompt":"raw user prompt","response":"raw model response","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro"}}
         """
-        try line.write(to: sessionURL, atomically: true, encoding: .utf8)
+        try content.write(to: sessionURL, atomically: true, encoding: .utf8)
 
         let resolver = DefaultPathResolver(environment: [:], currentHomeDirectory: home, additionalHomeDirectories: [])
         let store = UsageStore(pathResolver: resolver)
@@ -1234,9 +1234,9 @@ final class TokenPilotServicesTests: XCTestCase {
         let result = await store.refresh(settings: settings)
         let snapshot = try XCTUnwrap(result.snapshots.first { $0.provider == .gemini })
 
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.todayTokens, 90)
-        XCTAssertEqual(snapshot.model, "gemini-2.5-pro")
+        XCTAssertTrue(snapshot.events.isEmpty)
+        XCTAssertEqual(snapshot.todayTokens, 0)
+        XCTAssertEqual(snapshot.confidence, .low)
     }
     func testUsageStoreUsesDetectedAntigravityStatuslineWhenDefaultPathMissingInInjectedHome() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -1276,7 +1276,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertNil(snapshot.dailyRequestsUsed)
     }
 
-    func testUsageStoreDeduplicatesGeminiEventAcrossDetectedTelemetryAndSessionFiles() async throws {
+    func testUsageStoreUsesApprovedGeminiTelemetryAndIgnoresSiblingSessionFile() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let geminiRoot = home.appendingPathComponent(".gemini", isDirectory: true)
         let geminiTmp = geminiRoot.appendingPathComponent("tmp", isDirectory: true)
@@ -1284,11 +1284,14 @@ final class TokenPilotServicesTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: home) }
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = """
+        let telemetryLine = """
         {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro","auth_type":"oauth","duration_ms":123}}
         """
-        try line.write(to: geminiRoot.appendingPathComponent("telemetry.log"), atomically: true, encoding: .utf8)
-        try line.write(to: geminiTmp.appendingPathComponent("session-tokenpilot.json"), atomically: true, encoding: .utf8)
+        let sessionLine = """
+        {"timestamp":"\(timestamp)","prompt":"raw user prompt","response":"raw model response","name":"gemini_cli.api_response","metadata":{"input_token_count":600,"output_token_count":300,"total_token_count":900,"model":"gemini-2.5-pro","auth_type":"oauth","duration_ms":123}}
+        """
+        try telemetryLine.write(to: geminiRoot.appendingPathComponent("telemetry.log"), atomically: true, encoding: .utf8)
+        try sessionLine.write(to: geminiTmp.appendingPathComponent("session-tokenpilot.json"), atomically: true, encoding: .utf8)
 
         let resolver = DefaultPathResolver(environment: [:], currentHomeDirectory: home, additionalHomeDirectories: [])
         let store = UsageStore(pathResolver: resolver)
@@ -2792,217 +2795,62 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.statusMessage, "EXPERIMENTAL · local Codex log · not web quota")
     }
 
-    func testGeminiAdapterParsesSessionJsonlTokenObjectsFromDirectory() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let jsonlURL = directory.appendingPathComponent("session-1.jsonl")
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let line = """
-        {"timestamp":"\(timestamp)","type":"message","model":"gemini-2.5-pro","tokens":{"input":100,"output":20,"cached":5,"thoughts":7,"tool":3,"total":135}}
-        """
-        try line.write(to: jsonlURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.dataSource, .localLog)
-        XCTAssertEqual(snapshot.todayTokens, 135)
-        XCTAssertEqual(snapshot.events[0].model, "gemini-2.5-pro")
-        XCTAssertEqual(snapshot.events[0].toolTokens, 3)
-        XCTAssertEqual(snapshot.events[0].reasoningTokens, 7)
-    }
-
-    func testGeminiAdapterParsesPrettySessionJsonMessagesFromChatsFolder() async throws {
+    func testGeminiAdapterDirectoryIgnoresSessionAndChatFilesWhileAcceptingTelemetry() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let chats = directory.appendingPathComponent("project-a/chats", isDirectory: true)
         try FileManager.default.createDirectory(at: chats, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
-        let jsonURL = chats.appendingPathComponent("conversation.json")
-        let content = """
-        {
-          "sessionId": "gemini-session-a",
-          "startTime": "\(timestamp)",
-          "messages": [
-            {
-              "id": "message-a",
-              "timestamp": "\(timestamp)",
-              "type": "gemini",
-              "model": "gemini-2.5-flash",
-              "tokens": {
-                "input": 120,
-                "output": 30,
-                "cached": 20,
-                "thoughts": 5,
-                "tool": 2,
-                "total": 177
-              }
-            }
-          ]
+        let telemetryURL = directory.appendingPathComponent("TELEMETRY.LOG")
+        let unsafeURLs = [
+            directory.appendingPathComponent("session-1.json"),
+            directory.appendingPathComponent("session-1.jsonl"),
+            chats.appendingPathComponent("conversation.json")
+        ]
+        try """
+        {"timestamp":"\(timestamp)","name":"gemini_cli.api_response","metadata":{"input_token_count":60,"output_token_count":30,"total_token_count":90,"model":"gemini-2.5-pro"}}
+        """.write(to: telemetryURL, atomically: true, encoding: .utf8)
+        for unsafeURL in unsafeURLs {
+            try """
+            {"timestamp":"\(timestamp)","prompt":"raw user prompt","response":"raw model response","name":"gemini_cli.api_response","metadata":{"input_token_count":600,"output_token_count":300,"total_token_count":900,"model":"gemini-2.5-pro"}}
+            """.write(to: unsafeURL, atomically: true, encoding: .utf8)
         }
-        """
-        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
 
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.geminiTelemetryLogPath = directory.path
         let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.dataSource, .localLog)
-        XCTAssertEqual(snapshot.todayTokens, 177)
-        XCTAssertEqual(snapshot.events[0].model, "gemini-2.5-flash")
-        XCTAssertEqual(snapshot.events[0].toolTokens, 2)
-        XCTAssertEqual(snapshot.events[0].reasoningTokens, 5)
+        XCTAssertEqual(snapshot.todayTokens, 90)
+        XCTAssertEqual(snapshot.dataSource, .officialTelemetry)
     }
 
-    func testGeminiAdapterDoesNotDoubleCountMessagesAndAggregateStats() async throws {
+    func testGeminiAdapterDirectSelectionRejectsSessionAndChatFiles() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let chats = directory.appendingPathComponent("project-a/chats", isDirectory: true)
         try FileManager.default.createDirectory(at: chats, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
-        let jsonURL = chats.appendingPathComponent("conversation-with-stats.json")
-        let content = """
-        {
-          "sessionId": "gemini-session-with-stats",
-          "startTime": "\(timestamp)",
-          "messages": [
-            {
-              "id": "message-a",
-              "timestamp": "\(timestamp)",
-              "type": "gemini",
-              "model": "gemini-2.5-flash",
-              "tokens": {"input": 80, "output": 20, "total": 100}
-            }
-          ],
-          "stats": {
-            "tokens": {"prompt": 80, "candidates": 20, "total_tokens": 100}
-          }
+        let unsafeURLs = [
+            directory.appendingPathComponent("session-1.json"),
+            directory.appendingPathComponent("session-1.jsonl"),
+            chats.appendingPathComponent("conversation.json")
+        ]
+        for unsafeURL in unsafeURLs {
+            try """
+            {"timestamp":"\(timestamp)","prompt":"raw user prompt","response":"raw model response","name":"gemini_cli.api_response","metadata":{"input_token_count":600,"output_token_count":300,"total_token_count":900,"model":"gemini-2.5-pro"}}
+            """.write(to: unsafeURL, atomically: true, encoding: .utf8)
+
+            var settings = AppSettings(showMockDataWhenDisconnected: false)
+            settings.geminiTelemetryLogPath = unsafeURL.path
+            let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
+
+            XCTAssertTrue(snapshot.events.isEmpty)
+            XCTAssertEqual(snapshot.todayTokens, 0)
+            XCTAssertEqual(snapshot.confidence, .low)
         }
-        """
-        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.todayTokens, 100)
-        XCTAssertEqual(snapshot.events[0].totalTokens, 100)
-    }
-
-    func testGeminiAdapterParsesStatsModelsTokenObjects() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let jsonURL = directory.appendingPathComponent("session-stats.json")
-        let content = """
-        {
-          "session_id": "gemini-session-stats",
-          "timestamp": "\(timestamp)",
-          "stats": {
-            "models": {
-              "gemini-2.5-pro": {
-                "tokens": {
-                  "prompt": 80,
-                  "candidates": 20,
-                  "cached_tokens": 10,
-                  "reasoning_tokens": 7,
-                  "tool_tokens": 3,
-                  "total_tokens": 120
-                }
-              }
-            }
-          }
-        }
-        """
-        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.events[0].model, "gemini-2.5-pro")
-        XCTAssertEqual(snapshot.events[0].totalTokens, 120)
-        XCTAssertEqual(snapshot.events[0].cacheReadTokens, 10)
-        XCTAssertEqual(snapshot.events[0].reasoningTokens, 7)
-    }
-
-    func testGeminiAdapterPrefersPerModelStatsOverAggregateStatsToAvoidDoubleCounting() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let jsonURL = directory.appendingPathComponent("session-stats.json")
-        let content = """
-        {
-          "timestamp": "\(timestamp)",
-          "stats": {
-            "tokens": {"prompt": 80, "candidates": 20, "total_tokens": 100},
-            "models": {
-              "gemini-2.5-pro": {"tokens": {"prompt": 80, "candidates": 20, "total_tokens": 100}}
-            }
-          }
-        }
-        """
-        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.todayTokens, 100)
-        XCTAssertEqual(snapshot.events[0].model, "gemini-2.5-pro")
-    }
-
-    func testGeminiAdapterIgnoresLowerLocalTotalWhenComponentsAreRicher() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let timestamp = ISO8601DateFormatter().string(from: Date())
-        let jsonlURL = directory.appendingPathComponent("session-1.jsonl")
-        let line = "{\"timestamp\":\"\(timestamp)\",\"model\":\"gemini-2.5-pro\",\"tokens\":{\"input\":100,\"output\":50,\"total\":120}}"
-        try line.write(to: jsonlURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.events[0].totalTokens, 150)
-        XCTAssertEqual(snapshot.todayTokens, 150)
-    }
-
-    func testGeminiAdapterUsesRootStartTimeForMessagesWithoutOwnTimestamp() async throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let chats = directory.appendingPathComponent("project-a/chats", isDirectory: true)
-        try FileManager.default.createDirectory(at: chats, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date().addingTimeInterval(-86_400)
-        let timestamp = ISO8601DateFormatter().string(from: yesterday)
-        let jsonURL = chats.appendingPathComponent("conversation.json")
-        let content = """
-        {
-          "startTime": "\(timestamp)",
-          "messages": [
-            {"model": "gemini-2.5-flash", "tokens": {"input": 40, "output": 10, "total": 50}}
-          ]
-        }
-        """
-        try content.write(to: jsonURL, atomically: true, encoding: .utf8)
-
-        var settings = AppSettings(showMockDataWhenDisconnected: false)
-        settings.geminiTelemetryLogPath = directory.path
-        let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-
-        XCTAssertEqual(snapshot.events.count, 1)
-        XCTAssertEqual(snapshot.events[0].timestamp.timeIntervalSince1970, yesterday.timeIntervalSince1970, accuracy: 1)
-        XCTAssertEqual(snapshot.todayTokens, 0)
     }
 
     // MARK: - Discord notifications
@@ -3549,7 +3397,7 @@ final class TokenPilotServicesTests: XCTestCase {
         {
           "grok": {
             "usagePercentage": "37.4",
-            "primaryReset": "2027-01-01T00:00:00Z",
+            "monthlyResetsAt": "2027-01-01T00:00:00Z",
             "email": "person@example.com",
             "accountId": "account-123",
             "oauthToken": "oauth-secret",
@@ -3615,6 +3463,98 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(failed.snapshot.statusMessage?.contains("raw stderr") == true)
         XCTAssertFalse(failed.snapshot.statusMessage?.contains("oauth-secret") == true)
         XCTAssertFalse(failed.snapshot.statusMessage?.contains("person@example.com") == true)
+    }
+    func testGrokLocalSignalsAdapterUsesNewestValidSignalsFile() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokSignals-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let older = root.appendingPathComponent("older", isDirectory: true).appendingPathComponent("signals.json")
+        let newer = root.appendingPathComponent("newer", isDirectory: true).appendingPathComponent("signals.json")
+        try FileManager.default.createDirectory(at: older.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newer.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"contextWindowUsage":12}"#.utf8).write(to: older)
+        try Data(#"{"contextTokensUsed":640,"contextWindowTokens":800}"#.utf8).write(to: newer)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_100)], ofItemAtPath: older.path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_200)], ofItemAtPath: newer.path)
+
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let result = await GrokLocalSignalsAdapter(sessionRoots: [root]).refresh(settings: AppSettings(), now: now)
+
+        XCTAssertEqual(result.snapshot.provider, .xai)
+        XCTAssertEqual(result.snapshot.updatedAt, now)
+        XCTAssertEqual(result.snapshot.dataSource, .localLog)
+        XCTAssertEqual(result.snapshot.model, "Grok Build")
+        XCTAssertEqual(result.snapshot.contextWindowUsedPercent, 80)
+        XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window")
+        XCTAssertNil(result.snapshot.fiveHour)
+        XCTAssertNil(result.snapshot.weekly)
+        XCTAssertNil(result.snapshot.monthly)
+        XCTAssertEqual(result.snapshot.todayTokens, 0)
+        XCTAssertTrue(result.snapshot.events.isEmpty)
+        XCTAssertTrue(result.capacityObservations.isEmpty)
+    }
+
+    func testGrokLocalSignalsAdapterRejectsAuthSymlinkOversizedAndNonSignalsFiles() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokSignals-\(UUID().uuidString)", isDirectory: true)
+        let outside = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokOutside-\(UUID().uuidString).json")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            try? FileManager.default.removeItem(at: outside)
+        }
+        try Data(#"{"contextWindowUsage":99}"#.utf8).write(to: root.appendingPathComponent("auth.json"))
+        try Data(#"{"contextWindowUsage":90}"#.utf8).write(to: root.appendingPathComponent("other.json"))
+        try Data(repeating: 0x20, count: 256 * 1_024 + 1).write(to: root.appendingPathComponent("signals.json"))
+        try Data(#"{"contextWindowUsage":85}"#.utf8).write(to: outside)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("linked", isDirectory: true), withDestinationURL: outside.deletingLastPathComponent())
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("session", isDirectory: true), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("session", isDirectory: true).appendingPathComponent("signals.json"), withDestinationURL: outside)
+
+        let result = await GrokLocalSignalsAdapter(sessionRoots: [root]).refresh(settings: AppSettings(), now: Date(timeIntervalSince1970: 1_800_000_000))
+
+        XCTAssertEqual(result.snapshot.dataSource, .localLog)
+        XCTAssertNil(result.snapshot.contextWindowUsedPercent)
+        XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window unavailable")
+        XCTAssertTrue(result.snapshot.events.isEmpty)
+    }
+
+    func testGrokLocalSignalsAdapterReturnsNeutralLocalUnavailableWhenMissing() async {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokSignals-\(UUID().uuidString)", isDirectory: true)
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let result = await GrokLocalSignalsAdapter(sessionRoots: [root]).refresh(settings: AppSettings(), now: now)
+
+        XCTAssertEqual(result.snapshot.provider, .xai)
+        XCTAssertEqual(result.snapshot.updatedAt, now)
+        XCTAssertEqual(result.snapshot.dataSource, .localLog)
+        XCTAssertEqual(result.snapshot.model, "Grok Build")
+        XCTAssertNil(result.snapshot.contextWindowUsedPercent)
+        XCTAssertNil(result.snapshot.primaryUsedPercent)
+        XCTAssertEqual(result.snapshot.todayTokens, 0)
+        XCTAssertTrue(result.snapshot.events.isEmpty)
+        XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window unavailable")
+    }
+
+    func testMenuBarShowsGrokLocalContextAsLocalRemainingOnly() {
+        var settings = AppSettings()
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarDisplayTarget = .xai
+        let snapshot = ProviderSnapshot(
+            provider: .xai,
+            dataSource: .localLog,
+            statusMessage: "LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: 63
+        )
+
+        let segment = MenuBarStatusService().providerMetricsSegments(snapshots: [snapshot], settings: settings).first
+
+        XCTAssertEqual(segment?.displayValue, "37%")
+        XCTAssertEqual(segment?.accessibilityLabel, "Grok, Local context remaining 37%, used 63%")
+        XCTAssertFalse(segment?.accessibilityLabel.contains("provider-reported") == true)
+        XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("quota") == true)
+        XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("capacity") == true)
     }
     func testMenuBarDisplaysOpenCodeBarAsUnofficialMonthlyOnlyWhenOptedIn() {
         var settings = AppSettings()

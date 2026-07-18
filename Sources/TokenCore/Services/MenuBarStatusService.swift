@@ -228,6 +228,22 @@ public final class MenuBarStatusService: @unchecked Sendable {
 
         if provider == .xai {
             if let candidate,
+               candidate.authority == "local-context",
+               let remaining = candidate.remainingPercent,
+               let used = candidate.usedPercent {
+                return MenuBarProviderMetricSegment(
+                    provider: provider,
+                    providerShortLabel: providerMetricLabel(provider),
+                    displayValue: "\(remaining)%",
+                    accessibilityLabel: [
+                        localized(provider.displayName, language: settings.localization.language),
+                        localized("LOCAL · Grok Build context window", language: settings.localization.language),
+                        "\(localized("Remaining", language: settings.localization.language)) \(remaining)%",
+                        "\(localized("Used", language: settings.localization.language)) \(used)%"
+                    ].joined(separator: ", ")
+                )
+            }
+            if let candidate,
                isExperimentalOpenCodeBarPercentage(candidate),
                let remaining = candidate.remainingPercent {
                 return MenuBarProviderMetricSegment(
@@ -271,12 +287,17 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
-            let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
             return MenuBarProviderMetricSegment(
                 provider: provider,
                 providerShortLabel: providerMetricLabel(provider),
-                displayValue: "\(remaining)%\(suffix)",
-                accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localizedRemaining(remaining, language: settings.localization.language)), \(localizedAuthority(candidate.authority, language: settings.localization.language)), \(localizedFreshness(candidate.freshness, language: settings.localization.language))"
+                displayValue: "\(remaining)%",
+                accessibilityLabel: [
+                    localized(provider.displayName, language: settings.localization.language),
+                    localizedRemaining(remaining, language: settings.localization.language),
+                    localizedAuthority(candidate.authority, language: settings.localization.language),
+                    localizedStability(candidate.stability, language: settings.localization.language),
+                    localizedFreshness(candidate.freshness, language: settings.localization.language)
+                ].joined(separator: ", ")
             )
         }
         if candidate.kind == .money, let balance = candidate.snapshot.balance {
@@ -732,11 +753,37 @@ public final class MenuBarStatusService: @unchecked Sendable {
         presentationSnapshots(from: snapshots, settings: settings)
             .flatMap { snapshot -> [Candidate] in
                 if snapshot.provider == .xai {
+                    if let localCandidate = localGrokContextCandidate(for: snapshot) {
+                        return [localCandidate]
+                    }
                     guard settings.xAI.usageSource == .experimentalOpenCodeBarCLI else { return [] }
                     return experimentalOpenCodeBarCandidate(for: snapshot).map { [$0] } ?? []
                 }
                 return candidates(for: snapshot)
             }
+    }
+
+    private func localGrokContextCandidate(for snapshot: ProviderSnapshot) -> Candidate? {
+        guard snapshot.provider == .xai,
+              snapshot.dataSource == .localLog,
+              let used = snapshot.contextWindowUsedPercent else {
+            return nil
+        }
+        return Candidate(
+            snapshot: snapshot,
+            kind: .percent,
+            rank: 12,
+            usedPercent: used,
+            remainingPercent: min(max(100 - used, 0), 100),
+            resetAt: nil,
+            durationMinutes: nil,
+            seriesID: "\(snapshot.provider.rawValue)/local-context",
+            suffix: "",
+            authority: "local-context",
+            stability: "local",
+            freshness: snapshot.isStale ? "stale" : "fresh",
+            action: "openProviderDiagnostics"
+        )
     }
 
     private func experimentalOpenCodeBarCandidate(for snapshot: ProviderSnapshot) -> Candidate? {

@@ -140,3 +140,35 @@ archived_sessions/
 codex-sessions/
 gemini-sessions/
 claude-projects/
+
+# Provider OAuth stores and copied home-directory metadata
+**/.claude/
+**/.codex/
+**/.gemini/
+**/.grok/
+**/.config/opencode/
+oauth_creds.json
+antigravity-accounts.json
+openai-codex-accounts.json
+grok-auth.json
+*-oauth.json
+oauth-*.json
+refresh-token*
+access-token*
+telegram-bot-token*
+discord-webhook*
+*.webhook
+
+# Browser and credential databases
+Cookies
+Cookies-journal
+Login Data
+Login Data-journal
+Web Data
+Web Data-journal
+Local State
+*.keychain-db
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm

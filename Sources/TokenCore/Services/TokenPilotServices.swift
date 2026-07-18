@@ -176,6 +176,134 @@ public struct XAIManagementDiagnosticsAdapter: ProviderRefreshAdapter {
         )
     }
 }
+public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
+    public let provider: Provider = .xai
+
+    private static let maximumFileBytes = 256 * 1_024
+    private static let maximumDiscoveredFiles = 120
+    private let sessionRoots: [URL]
+
+    public init(sessionRoots: [URL]? = nil) {
+        self.sessionRoots = sessionRoots ?? [
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".grok", isDirectory: true)
+                .appendingPathComponent("sessions", isDirectory: true)
+        ]
+    }
+
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        let snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+        return ProviderRefreshResult(
+            snapshot: snapshot,
+            capacityObservations: [],
+            typedErrors: [],
+            observedAt: now
+        )
+    }
+
+    private static func newestSnapshot(in roots: [URL], now: Date) -> ProviderSnapshot? {
+        var candidates: [(url: URL, modifiedAt: Date)] = []
+        for root in roots where candidates.count < maximumDiscoveredFiles {
+            candidates.append(contentsOf: discoverSignalsFiles(in: root).prefix(maximumDiscoveredFiles - candidates.count))
+        }
+        let snapshots = candidates.compactMap { candidate -> (snapshot: ProviderSnapshot, modifiedAt: Date, path: String)? in
+            guard let snapshot = snapshot(from: candidate.url, now: now) else {
+                return nil
+            }
+            return (snapshot, candidate.modifiedAt, candidate.url.path)
+        }
+        return snapshots.max { lhs, rhs in
+            if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt < rhs.modifiedAt }
+            return lhs.path < rhs.path
+        }?.snapshot
+    }
+
+    private static func discoverSignalsFiles(in root: URL) -> [(url: URL, modifiedAt: Date)] {
+        guard !isSymbolicLink(root),
+              let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+
+        var files: [(url: URL, modifiedAt: Date)] = []
+        for case let url as URL in enumerator {
+            guard url.lastPathComponent == "signals.json",
+                  !isSymbolicLink(url),
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey, .fileSizeKey]),
+                  values.isRegularFile == true,
+                  let size = values.fileSize,
+                  size <= maximumFileBytes,
+                  let modifiedAt = values.contentModificationDate else {
+                continue
+            }
+            files.append((url, modifiedAt))
+            if files.count == maximumDiscoveredFiles { break }
+        }
+        return files
+    }
+
+    private static func snapshot(from url: URL, now: Date) -> ProviderSnapshot? {
+        guard !isSymbolicLink(url),
+              let data = try? Data(contentsOf: url),
+              data.count <= maximumFileBytes,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let usedPercent = usedPercent(from: json) else {
+            return nil
+        }
+        return ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            confidence: .low,
+            dataSource: .localLog,
+            statusMessage: "LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: usedPercent,
+            events: []
+        )
+    }
+
+    private static func usedPercent(from json: [String: Any]) -> Int? {
+        if let used = finiteNumber(json["contextTokensUsed"]),
+           let window = finiteNumber(json["contextWindowTokens"]),
+           window > 0 {
+            return clampedPercent(used / window * 100)
+        }
+        guard let usage = finiteNumber(json["contextWindowUsage"]) else { return nil }
+        return clampedPercent(usage <= 1 ? usage * 100 : usage)
+    }
+
+    private static func finiteNumber(_ value: Any?) -> Double? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              number.doubleValue.isFinite else {
+            return nil
+        }
+        return number.doubleValue
+    }
+
+    private static func clampedPercent(_ value: Double) -> Int {
+        min(max(Int(value.rounded()), 0), 100)
+    }
+
+    private static func isSymbolicLink(_ url: URL) -> Bool {
+        (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
+    }
+
+    private static func unavailableSnapshot(now: Date) -> ProviderSnapshot {
+        ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            confidence: .low,
+            dataSource: .localLog,
+            statusMessage: "LOCAL · Grok Build context window unavailable",
+            model: "Grok Build",
+            events: []
+        )
+    }
+}
 public struct XAIOpenCodeBarAdapter: ProviderRefreshAdapter {
     public let provider: Provider = .xai
 
@@ -388,7 +516,7 @@ public struct XAIOpenCodeBarAdapter: ProviderRefreshAdapter {
             throw data.count > maximumOutputBytes ? OpenCodeBarError.outputTooLarge : OpenCodeBarError.malformed
         }
 
-        let resetAt = date(from: grok["primaryReset"])
+        let resetAt = date(from: grok["monthlyResetsAt"]) ?? date(from: grok["primaryReset"])
         let quota = LimitWindow(
             kind: .monthly,
             name: "Grok monthly usage",
@@ -1010,7 +1138,7 @@ public final class UsageStore: @unchecked Sendable {
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
             CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
             DeepSeekBalanceAdapter(),
-            XAIOpenCodeBarAdapter()
+            GrokLocalSignalsAdapter()
         ]
     }
 
@@ -1037,7 +1165,7 @@ public final class UsageStore: @unchecked Sendable {
             }
         }
 
-        let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil || $0.balance != nil }
+        let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil || $0.contextWindowUsedPercent != nil || $0.balance != nil }
         let ordered = snapshots.sorted { $0.provider.rawValue < $1.provider.rawValue }
 
         if settings.showMockDataWhenDisconnected && !hasConnectedData {

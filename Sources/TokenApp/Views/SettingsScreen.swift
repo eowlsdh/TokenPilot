@@ -3,7 +3,6 @@ import TokenCore
 
 struct SettingsScreen: View {
     @ObservedObject var model: TokenPilotViewModel
-    @State private var xAITeamIDInput = ""
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -160,7 +159,7 @@ struct SettingsScreen: View {
                         Picker(model.t("Primary provider"), selection: menuBarTargetBinding) {
                             Text(model.t("Highest risk")).tag(Optional<Provider>.none)
                             ForEach(Provider.allCases) { provider in
-                                Text(model.t(provider.displayName))
+                                Text(model.providerDisplayName(provider))
                                     .tag(Optional(provider))
                                     .disabled(!model.isProviderEnabled(provider))
                             }
@@ -177,7 +176,7 @@ struct SettingsScreen: View {
                                 Picker(model.t("Secondary provider"), selection: menuBarSecondaryTargetBinding) {
                                     Text(model.t("Select provider")).tag(Optional<Provider>.none)
                                     ForEach(Provider.allCases) { provider in
-                                        Text(model.t(provider.displayName))
+                                        Text(model.providerDisplayName(provider))
                                             .tag(Optional(provider))
                                             .disabled(
                                                 provider == model.settings.menuBarDisplayTarget ||
@@ -345,10 +344,10 @@ struct SettingsScreen: View {
     }
 
     private var xAIProviderSetup: some View {
-        providerSetupDisclosure(provider: .xai, title: model.t("Grok / xAI API")) {
+        providerSetupDisclosure(provider: .xai, title: model.t("Grok Build")) {
             HStack(spacing: 8) {
                 Toggle(
-                    model.t("Enable xAI"),
+                    model.t("Enable Grok Build"),
                     isOn: Binding(
                         get: { model.isProviderEnabled(.xai) },
                         set: { model.setProvider(.xai, isEnabled: $0) }
@@ -356,98 +355,33 @@ struct SettingsScreen: View {
                 )
                 Spacer(minLength: 0)
                 StatusBadge(
-                    label: xAIAuthStatusLabel,
-                    color: xAIAuthStatusColor
+                    label: model.sourceStatusText(.xai),
+                    color: model.sourceStatusColor(.xai)
                 )
             }
 
-            Picker(model.t("xAI usage source"), selection: $model.settings.xAI.usageSource) {
-                Text(model.t("Management setup only")).tag(XAIUsageSource.managementSetup)
-                Text("OAuth · \(model.t("OpenCode Bar CLI (Experimental)"))").tag(XAIUsageSource.experimentalOpenCodeBarCLI)
+            HStack {
+                Text(model.t("Grok Build source"))
+                Spacer(minLength: 0)
+                Text(model.t("Local context metadata"))
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
             }
-            .pickerStyle(.menu)
-            .accessibilityLabel(model.t("xAI usage source"))
-            .accessibilityValue(model.sourceStatusText(.xai))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(model.t("Grok Build source"))
+            .accessibilityValue(model.t("Local context metadata"))
 
-            if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-                Text(model.sourceDetailText(.xai))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(model.t("TokenPilot stores no bridge secret."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button(model.t("Refresh")) { Task { await model.checkConnection(.xai) } }
-                    .buttonStyle(.bordered)
-            } else {
-                Text(model.t("xAI is disabled by default. Management setup stays local: no usage lookup and no network requests."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: 6) {
-                    StatusBadge(
-                        label: model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"),
-                        color: model.hasSavedXAIManagementAPIKey ? TokenPilotDesign.calm : TokenPilotDesign.warning
-                    )
-                    StatusBadge(
-                        label: model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID"),
-                        color: model.xAITeamIDConfigured ? TokenPilotDesign.calm : TokenPilotDesign.warning
-                    )
-                    Spacer(minLength: 0)
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(model.t("xAI local setup presence"))
-                .accessibilityValue(xAIPresenceAccessibilityValue)
+            Text(model.sourceDetailText(.xai))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
 
-                SecureField(model.xAITeamIDConfigured ? model.t("Saved team ID masked") : model.t("xAI Team ID"), text: $xAITeamIDInput)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(model.t("xAI Team ID"))
-                    .accessibilityValue(model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID"))
-
-                HStack(spacing: 8) {
-                    Button(model.t("Save Team ID")) {
-                        model.updateXAITeamID(xAITeamIDInput)
-                        xAITeamIDInput = ""
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(TokenPilotDesign.calm)
-                    .disabled(xAITeamIDInputIsEmpty)
-
-                    Button(model.t("Delete Team ID"), role: .destructive) {
-                        model.updateXAITeamID("")
-                        xAITeamIDInput = ""
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!model.xAITeamIDConfigured)
-                }
-
-                SecureField(model.hasSavedXAIManagementAPIKey ? model.t("Saved Management API key hidden") : model.t("xAI Management API Key"), text: $model.xAIManagementAPIKeyInput)
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel(model.t("xAI Management API Key"))
-                    .accessibilityValue(model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"))
-
-                Text(model.t("Team ID is stored locally and masked in summaries. Diagnostics and accessibility labels use presence only."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(model.t("A saved key plus team ID still means authentication unconfirmed. No xAI HTTP requests are sent; verify credentials outside TokenPilot."))
-                    .font(.caption2)
-                    .foregroundStyle(TokenPilotDesign.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Button(model.hasSavedXAIManagementAPIKey ? model.t("Replace Management Key") : model.t("Save Management Key")) { model.saveXAIManagementAPIKey() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(TokenPilotDesign.calm)
-                    Button(model.t("Delete Management Key"), role: .destructive) { model.deleteXAIManagementAPIKey() }
-                        .buttonStyle(.bordered)
-                        .disabled(!model.hasSavedXAIManagementAPIKey)
-                    Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
-                        .buttonStyle(.bordered)
-                }
-            }
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
+                .buttonStyle(.bordered)
         }
     }
 
@@ -789,13 +723,11 @@ struct SettingsScreen: View {
                     onCopy: nil
                 )
                 GuideCard(
-                    title: model.t("Grok / xAI API"),
+                    title: model.t("Grok Build"),
                     status: model.sourceStatusText(.xai),
                     statusColor: model.sourceStatusColor(.xai),
                     detail: model.sourceDetailText(.xai),
-                    explanation: model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI
-                        ? model.xAIExperimentalGuideText
-                        : model.t("Optional xAI setup is disabled by default. Check Connection validates local fields only. No xAI HTTP requests are sent."),
+                    explanation: model.t("Reads local context metadata only. This is not subscription quota."),
                     primaryAction: model.t("Check Connection"),
                     copyText: nil,
                     onPrimary: { Task { await model.checkConnection(.xai) } },
@@ -865,11 +797,7 @@ struct SettingsScreen: View {
                 privacyLine(model.t("Reads local usage metadata and selected files only."))
                 privacyLine(model.t("Does not read browser cookies or other Keychain items."))
                 privacyLine(model.t("Codex experimental connector is opt-in, local-only, and never reads, displays, stores, or exports Codex access tokens."))
-                privacyLine(
-                    model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI
-                        ? model.xAIExperimentalGuideText
-                        : model.t("xAI setup is optional, disabled by default, and limited to a Keychain Management key plus local team ID. No xAI HTTP requests are sent.")
-                )
+                privacyLine(model.t("Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses."))
                 privacyLine(model.t("Telegram and Discord send only alert messages when enabled."))
             }
         }
@@ -929,7 +857,7 @@ struct SettingsScreen: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             ForEach(Array(model.capacityRefreshErrors.prefix(3))) { error in
-                Text("\(model.t(error.provider.displayName)): \(model.localizedStatus(error.redactedMessage))")
+                Text("\(model.providerDisplayName(error.provider)): \(model.localizedStatus(error.redactedMessage))")
                     .font(.caption2)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .lineLimit(2)
@@ -1066,9 +994,7 @@ struct SettingsScreen: View {
     }
 
     private var privacySummaryText: String {
-        model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI
-            ? model.xAIExperimentalGuideText
-            : model.t("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded.")
+        model.t("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded.")
     }
 
     private var privacyDetailsDefaultExpanded: Bool {
@@ -1134,7 +1060,7 @@ struct SettingsScreen: View {
     }
 
     private var setupGuideSummaryText: String {
-        "\(model.t("Connect Claude Code")) · \(model.t("Connect Antigravity CLI")) · \(model.t("DeepSeek")) · \(model.t("Grok / xAI API")) · \(model.t("Add Codex status"))"
+        "\(model.t("Connect Claude Code")) · \(model.t("Connect Antigravity CLI")) · \(model.t("DeepSeek")) · \(model.t("Grok Build")) · \(model.t("Add Codex status"))"
     }
 
     private var privacyTruthChips: some View {
@@ -1302,11 +1228,7 @@ struct SettingsScreen: View {
         case .deepseek:
             return model.hasSavedDeepSeekAPIKey ? model.t("API key saved") : model.t("API key required")
         case .xai:
-            guard model.isProviderEnabled(.xai) else { return model.t("Disabled") }
-            if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-                return model.t("TokenPilot stores no bridge secret.")
-            }
-            return model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("Management key required")
+            return model.t("No secret required")
         case .codex:
             return model.t("No Codex token stored")
         case .claude, .gemini:
@@ -1315,29 +1237,13 @@ struct SettingsScreen: View {
     }
 
     private func providerSecretColor(_ provider: Provider) -> Color {
-        if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
-            return TokenPilotDesign.warning
-        }
-        if provider == .xai &&
-            model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI &&
-            model.isProviderEnabled(.xai) &&
-            !model.hasSavedXAIManagementAPIKey {
-            return TokenPilotDesign.warning
-        }
-        return TokenPilotDesign.trust
+        provider == .deepseek && !model.hasSavedDeepSeekAPIKey
+            ? TokenPilotDesign.warning
+            : TokenPilotDesign.trust
     }
 
     private func providerSecretSystemImage(_ provider: Provider) -> String {
-        if provider == .deepseek && !model.hasSavedDeepSeekAPIKey {
-            return "key"
-        }
-        if provider == .xai &&
-            model.settings.xAI.usageSource != .experimentalOpenCodeBarCLI &&
-            model.isProviderEnabled(.xai) &&
-            !model.hasSavedXAIManagementAPIKey {
-            return "key"
-        }
-        return "key.slash"
+        provider == .deepseek && !model.hasSavedDeepSeekAPIKey ? "key" : "key.slash"
     }
 
     private func statusIndicatesError(_ status: String) -> Bool {
@@ -1388,45 +1294,12 @@ struct SettingsScreen: View {
         )
     }
 
-    private var xAITeamIDInputIsEmpty: Bool {
-        xAITeamIDInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var xAIAuthStatusLabel: String {
-        guard model.isProviderEnabled(.xai) else { return model.t("Disabled") }
-        if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-            return model.sourceStatusText(.xai)
-        }
-        return model.xAITeamIDConfigured && model.hasSavedXAIManagementAPIKey
-            ? model.t("Auth unconfirmed")
-            : model.t("Setup needed")
-    }
-
-    private var xAIAuthStatusColor: Color {
-        guard model.isProviderEnabled(.xai) else { return TokenPilotDesign.textSecondary }
-        if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-            return model.xAIOpenCodeBarOAuthConnected && !model.xAIOpenCodeBarOAuthStale
-                ? TokenPilotDesign.calm
-                : TokenPilotDesign.warning
-        }
-        return TokenPilotDesign.warning
-    }
-
-    private var xAIPresenceAccessibilityValue: String {
-        if model.settings.xAI.usageSource == .experimentalOpenCodeBarCLI {
-            return "\(model.sourceStatusText(.xai)), \(model.t("TokenPilot stores no bridge secret."))"
-        }
-        return [
-            model.hasSavedXAIManagementAPIKey ? model.t("Management key saved") : model.t("No management key"),
-            model.xAITeamIDConfigured ? model.t("Team ID set") : model.t("No team ID")
-        ].joined(separator: ", ")
-    }
 
     private func providerDiagnosticRow(_ diagnostic: ProviderConnectionDiagnostic) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(model.t(diagnostic.provider.displayName))
+                    Text(model.providerDisplayName(diagnostic.provider))
                         .font(.caption.weight(.bold))
                     Text("\(model.t("Last checked")): \(model.diagnosticLastCheckedText(diagnostic))")
                         .font(.caption2)
@@ -1458,7 +1331,7 @@ struct SettingsScreen: View {
     }
     private func providerToggle(_ provider: Provider) -> some View {
         Toggle(
-            model.t(provider.displayName),
+            model.providerDisplayName(provider),
             isOn: Binding(
                 get: { model.isProviderEnabled(provider) },
                 set: { model.setProvider(provider, isEnabled: $0) }

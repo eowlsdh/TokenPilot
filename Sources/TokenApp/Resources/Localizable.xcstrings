@@ -12424,7 +12424,343 @@
           }
         }
       }
-    }
+    },
+      "Grok Build": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build"
+            }
+          }
+        }
+      },
+      "Enable Grok Build": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Enable Grok Build"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 활성화"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build を有効にする"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "启用 Grok Build"
+            }
+          }
+        }
+      },
+      "Grok Build source": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build source"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 소스"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build ソース"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 来源"
+            }
+          }
+        }
+      },
+      "Local context metadata": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Local context metadata"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "로컬 컨텍스트 메타데이터"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "ローカルコンテキストのメタデータ"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "本地上下文元数据"
+            }
+          }
+        }
+      },
+      "LOCAL · Grok Build context window": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "LOCAL · Grok Build context window"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "로컬 · Grok Build 컨텍스트 창"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "ローカル · Grok Build コンテキストウィンドウ"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "本地 · Grok Build 上下文窗口"
+            }
+          }
+        }
+      },
+      "Grok Build signals not found": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build signals not found"
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 신호를 찾을 수 없음"
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build のシグナルが見つかりません"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "未找到 Grok Build 信号"
+            }
+          }
+        }
+      },
+      "Enable Grok Build to read local context metadata.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Enable Grok Build to read local context metadata."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "로컬 컨텍스트 메타데이터를 읽으려면 Grok Build를 활성화하세요."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "ローカルコンテキストのメタデータを読むには Grok Build を有効にしてください。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "启用 Grok Build 以读取本地上下文元数据。"
+            }
+          }
+        }
+      },
+      "Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "~/.grok/sessions/**/signals.json의 로컬 컨텍스트 메타데이터만 읽습니다. auth.json, OAuth 토큰, 프롬프트 또는 응답은 절대 읽지 않습니다."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "~/.grok/sessions/**/signals.json のローカルコンテキストメタデータだけを読み取ります。auth.json、OAuth トークン、プロンプト、応答は一切読み取りません。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "仅读取 ~/.grok/sessions/**/signals.json 中的本地上下文元数据。绝不读取 auth.json、OAuth 令牌、提示词或响应。"
+            }
+          }
+        }
+      },
+      "No Grok Build signals found. Start a Grok Build session, then run Check Connection.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "No Grok Build signals found. Start a Grok Build session, then run Check Connection."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 신호를 찾을 수 없습니다. Grok Build 세션을 시작한 다음 연결 확인을 실행하세요."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build のシグナルが見つかりません。Grok Build セッションを開始してから「接続を確認」を実行してください。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "未找到 Grok Build 信号。请启动 Grok Build 会话，然后运行检查连接。"
+            }
+          }
+        }
+      },
+      "Run Check Connection to refresh local Grok Build context metadata.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Run Check Connection to refresh local Grok Build context metadata."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "로컬 Grok Build 컨텍스트 메타데이터를 새로 고치려면 연결 확인을 실행하세요."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "ローカルの Grok Build コンテキストメタデータを更新するには「接続を確認」を実行してください。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "运行检查连接以刷新本地 Grok Build 上下文元数据。"
+            }
+          }
+        }
+      },
+      "Reads local context metadata only. This is not subscription quota.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Reads local context metadata only. This is not subscription quota."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "로컬 컨텍스트 메타데이터만 읽습니다. 구독 할당량이 아닙니다."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "ローカルコンテキストのメタデータだけを読み取ります。サブスクリプションのクォータではありません。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "仅读取本地上下文元数据。这不是订阅配额。"
+            }
+          }
+        }
+      },
+      "Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses.": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses."
+            }
+          },
+          "ko": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build는 signals.json의 로컬 컨텍스트 메타데이터만 읽으며 auth.json, OAuth 토큰, 프롬프트 또는 응답은 절대 읽지 않습니다."
+            }
+          },
+          "ja": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build は signals.json のローカルコンテキストメタデータだけを読み取り、auth.json、OAuth トークン、プロンプト、応答は一切読み取りません。"
+            }
+          },
+          "zh-Hans": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Grok Build 仅从 signals.json 读取本地上下文元数据，绝不读取 auth.json、OAuth 令牌、提示词或响应。"
+            }
+          }
+        }
+      }
   },
   "version": "1.0"
 }

@@ -1004,18 +1004,19 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
     private func geminiInputFiles(from url: URL) -> [URL] {
         guard !isForbiddenCredentialPath(url) else { return [] }
         if isDirectory(url) {
-            return candidateFiles(in: [url], allowedExtensions: ["jsonl", "json", "log"], maxFiles: 120)
-                .filter { file in
-                    let name = file.lastPathComponent.lowercased()
-                    let path = file.path.lowercased()
-                    return name.hasPrefix("session-")
-                        || name.contains("telemetry")
-                        || name.hasSuffix(".log")
-                        || path.contains("/chats/")
-                        || name.hasSuffix(".jsonl")
-                }
+            return candidateFiles(in: [url], allowedExtensions: ["json", "log"], maxFiles: 120)
+                .filter(isApprovedGeminiInputFile)
         }
-        return [url]
+        return isApprovedGeminiInputFile(url) ? [url] : []
+    }
+
+    private func isApprovedGeminiInputFile(_ url: URL) -> Bool {
+        switch url.lastPathComponent.lowercased() {
+        case "antigravity-statusline.json", "telemetry.log":
+            return true
+        default:
+            return false
+        }
     }
 
     private func parseEvents(from content: String, fileURL: URL) -> [UsageEvent] {
