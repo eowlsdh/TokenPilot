@@ -1938,7 +1938,9 @@ final class TokenMonitorTests: XCTestCase {
     }
 
     func testCodexLimitHintsSourceDoesNotContainLegacyAuthFileDirectHTTPReader() throws {
-        let source = try Self.tokenCoreServicesSource()
+        let sourceURL = try Self.projectRootURL()
+            .appendingPathComponent("Sources/TokenCore/Services/DataSourceAdapters.swift")
+        let source = try String(contentsOf: sourceURL)
 
         XCTAssertFalse(
             source.contains("readAccessToken"),

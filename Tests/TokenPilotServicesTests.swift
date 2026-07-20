@@ -5712,6 +5712,17 @@ final class GrokOAuthWeeklyUsageTests: XCTestCase {
             XAIProvenancedSnapshot(standard: standard),
             XAIProvenancedSnapshot(experimentalOAuthWeekly: oauthWeekly, capability: .owned)
         ]
+        let baseline = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now.addingTimeInterval(-60),
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 70, resetAt: now.addingTimeInterval(3_600), confidence: .high),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        _ = service.evaluate(
+            snapshots: [XAIProvenancedSnapshot(standard: baseline)],
+            settings: settings
+        )
 
         let evaluation = service.evaluate(snapshots: envelopes, settings: settings)
 
