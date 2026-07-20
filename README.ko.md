@@ -7,7 +7,7 @@
 - **Swift Package / 실행 타깃 이름**: `TokenMonitor`
 - **앱 번들 산출물**: `build/TokenPilot.app`, `build/TokenPilot.zip`
 
-> 핵심 원칙: TokenPilot은 사용량 메타데이터 중심으로 동작합니다. 프롬프트/응답 본문, 브라우저 쿠키, provider auth 파일, 임의 Keychain 항목은 읽지 않습니다.
+> 핵심 원칙: TokenPilot은 사용량 메타데이터 중심으로 동작합니다. 프롬프트/응답 본문, 브라우저 쿠키, 임의 Keychain 항목은 읽지 않습니다. Provider auth 자료는 기본적으로 수집하지 않으며, 유일한 예외는 아래에 설명하는 기본 OFF EXPERIMENTAL/UNOFFICIAL Grok OAuth 주간 기능입니다.
 >
 > TokenPilot은 OpenAI, Anthropic, Google, DeepSeek, xAI와 제휴하거나 공식 인증을 받은 제품이 아닙니다.
 
@@ -37,7 +37,7 @@
 - **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
-- **Grok/xAI source**: `~/.grok/sessions/**/signals.json`의 숫자로 된 로컬 context 메타데이터만 읽습니다. `auth.json`, OAuth token, prompt, response는 읽지 않습니다. 메뉴바에는 subscription quota나 API billing이 아니라 남은 로컬 context(`100 - contextWindowUsage`)를 표시합니다.
+- **Grok/xAI source**: 로컬 context는 `~/.grok/sessions/**/signals.json`의 숫자 메타데이터만 읽습니다(`auth.json`/token/prompt/response는 읽지 않음). 별도로 기본 OFF인 EXPERIMENTAL/UNOFFICIAL OAuth 주간 기능은 명시적 동의 후에만 고정 경로 `~/.grok/auth.json`에서 선택된 access token과 만료 시각만 읽어 1회 billing 요청에 쓰고, token은 메모리에만 두며 표시·로그·저장·진단·export하지 않습니다. 수동 주간 값이 우선합니다.
 - **4개 언어**: English, 한국어, 日本語, 简体中文.
 
 ---
@@ -112,13 +112,15 @@ open TokenPilot.xcodeproj
 
 ### Grok / xAI source
 
-TokenPilot은 다음 파일에서 숫자로 된 로컬 context 메타데이터만 읽습니다.
+TokenPilot의 **로컬 context** 경로는 다음 파일에서 숫자로 된 로컬 context 메타데이터만 읽습니다.
 
 ```text
 ~/.grok/sessions/**/signals.json
 ```
 
-`auth.json`, OAuth token, prompt, response, provider billing/subscription 데이터는 읽지 않습니다. Grok 메뉴바 값은 남은 로컬 context(`100 - contextWindowUsage`)이며 provider quota가 아니므로 provider quota나 API billing과 비교할 수 없습니다.
+이 로컬 context 기능은 `auth.json`, OAuth token, prompt, response, provider billing/subscription 데이터를 읽지 않습니다. Grok 메뉴바 로컬 값은 남은 context(`100 - contextWindowUsage`)이며 provider quota가 아니므로 provider quota나 API billing과 비교할 수 없습니다.
+
+**별도**로 기본 OFF인 **EXPERIMENTAL / UNOFFICIAL** OAuth 주간 기능은 명시적 동의 후에만 고정 경로 `~/.grok/auth.json`에서 선택된 access token과 만료 시각을 읽고, 고정된 주간 billing 요청을 1회 수행하며, token은 메모리에만 두고 표시·로그·저장·진단·export하지 않습니다. 수동 주간 값이 experimental OAuth 표시보다 우선합니다.
 
 ---
 
@@ -134,6 +136,7 @@ TokenPilot이 읽는 것:
 - 사용자가 켠 경우 로컬 Codex CLI app-server가 반환하는 한도 힌트
 - 사용자가 저장한 DeepSeek API key로 official `/user/balance`가 반환하는 topped-up balance
 - `~/.grok/sessions/**/signals.json`의 숫자로 된 Grok 로컬 context 메타데이터
+- 명시적 동의 후 기본 OFF experimental OAuth 주간 경로: 고정 `~/.grok/auth.json`에서 선택된 access token과 만료 시각만 (메모리 전용)
 
 TokenPilot이 읽지 않는 것:
 
@@ -141,17 +144,18 @@ TokenPilot이 읽지 않는 것:
 - 브라우저 세션 저장소
 - TokenPilot 외부의 임의 Keychain 항목
 - 프롬프트/응답 본문 표시 목적의 transcript 내용
-- `auth.json`, OAuth refresh token, provider 계정 전체 credential store
+- 로컬 context 경로의 `auth.json` 및 기타 Grok credential/session 본문; experimental OAuth 경로 외의 OAuth refresh token·provider 계정 전체 credential store
 - Codex auth 파일 직접 읽기
 - Grok prompt/response
-- Grok subscription quota 또는 xAI API billing 데이터
+- 공식 Grok subscription quota 또는 xAI API billing을 주장하는 데이터 (experimental OAuth 주간 표시는 presentation-only이며 깨질 수 있음)
 
 TokenPilot이 외부로 보내는 것:
 
 - 기본값: 없음
 - Codex Limit Hints Connector ON: 로컬 `codex app-server`에 JSONL app-server RPC `account/rateLimits/read` 요청
 - DeepSeek balance ON + API key 저장: `https://api.deepseek.com/user/balance`에 Bearer 요청
-- Grok/xAI: 외부 요청 없음. `~/.grok/sessions/**/signals.json`의 숫자로 된 로컬 context 메타데이터만 읽습니다.
+- Grok/xAI 로컬 context: 외부 요청 없음. `~/.grok/sessions/**/signals.json`의 숫자 메타데이터만 읽습니다.
+- Grok experimental OAuth 주간(기본 OFF, 명시 동의 후): 고정 `~/.grok/auth.json`의 선택 access token으로 1회 고정 billing 요청; token은 메모리 전용이며 표시·로그·저장·진단·export하지 않습니다.
 - Telegram/Discord ON + credential 저장: threshold/reset alert 또는 test message
 
 ---

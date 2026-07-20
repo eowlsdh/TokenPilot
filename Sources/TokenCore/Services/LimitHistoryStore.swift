@@ -106,6 +106,34 @@ public final class LimitHistoryStore: @unchecked Sendable {
     }
 
     @discardableResult
+    public func record(
+        snapshots: [XAIProvenancedSnapshot],
+        enabledProviders: Set<Provider>,
+        referenceDate: Date = Date()
+    ) -> LimitHistoryRecordResult {
+        recordWithRecoveryStatus(snapshots: snapshots, enabledProviders: enabledProviders, referenceDate: referenceDate)
+    }
+
+    @discardableResult
+    public func recordWithRecoveryStatus(
+        snapshots: [XAIProvenancedSnapshot],
+        enabledProviders: Set<Provider>,
+        referenceDate: Date = Date()
+    ) -> LimitHistoryRecordResult {
+        let admission = XAISinkAdmission.admitSnapshots(snapshots, sink: .limitHistory)
+        let samplesResult = recordWithRecoveryStatus(
+            snapshots: admission.accepted,
+            enabledProviders: enabledProviders,
+            referenceDate: referenceDate
+        )
+        return LimitHistoryRecordResult(
+            samples: samplesResult.samples,
+            recoveryStatus: samplesResult.recoveryStatus,
+            exclusions: admission.exclusions
+        )
+    }
+
+    @discardableResult
     public func recordWithRecoveryStatus(
         snapshots: [ProviderSnapshot],
         enabledProviders: Set<Provider>,

@@ -324,6 +324,7 @@ final class TokenMonitorTests: XCTestCase {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let service = MenuBarStatusService()
         var settings = AppSettings()
+        settings.localization.language = .en
         settings.menuBarDisplayStyle = .providerMetrics
         settings.menuBarDisplayTarget = .xai
         settings.menuBarSecondaryDisplayTarget = .claude
@@ -360,7 +361,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
-            ["GROK", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK"]
+            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK"]
         )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
@@ -1977,7 +1978,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(adapterSource.contains("capacityObservations: []"))
         XCTAssertTrue(adapterSource.contains("typedErrors: []"))
         XCTAssertTrue(adapterSource.contains("dataSource: .localLog"))
-        XCTAssertTrue(adapterSource.contains("contextWindowUsedPercent: usedPercent"))
+        XCTAssertTrue(
+            adapterSource.contains("contextWindowUsedPercent: newestSignal.usedPercent") ||
+            adapterSource.contains("contextWindowUsedPercent: usedPercent")
+        )
         XCTAssertFalse(viewModelSource.contains("saveXAIManagementAPIKey"))
         XCTAssertFalse(viewModelSource.contains("updateXAITeamID"))
     }

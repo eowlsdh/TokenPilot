@@ -21,6 +21,7 @@
 		36CE93F3F5E1B59C3E696343 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 2AC77B7F87E55856E05E3D67 /* Assets.xcassets */; };
 		3AC78E62884727A8316B3762 /* JSONValueExtractors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 597D13137D2CF349E61013AD /* JSONValueExtractors.swift */; };
 		4495EB2C19FE2ACFD8F5D3F5 /* TokenMonitorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF85435D216D4CCE4759C5D /* TokenMonitorApp.swift */; };
+		47A593E59AE01612E3CFEAAB /* GrokOAuthWeeklyUsageAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */; };
 		4B1738998CA4BFC1D592F863 /* CodexStatusParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A087E3AFC24BF561B671B /* CodexStatusParser.swift */; };
 		4D6450BAFB9C2CA19D33AA27 /* ProviderSelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05472E429144F9DCC9A7A7F1 /* ProviderSelectionService.swift */; };
 		55BE3DC64E9BCA41F31C1A18 /* DataSourceAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3855DCDF95929B71178DF5D3 /* DataSourceAdapters.swift */; };
@@ -71,6 +72,7 @@
 		05472E429144F9DCC9A7A7F1 /* ProviderSelectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionService.swift; sourceTree = "<group>"; };
 		0922767665B5AD16E3641F13 /* TokenPilotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotViewModel.swift; sourceTree = "<group>"; };
 		0D9BF8AEB4219BBD6B6CFF6B /* HistoryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryScreen.swift; sourceTree = "<group>"; };
+		0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokOAuthWeeklyUsageAdapter.swift; sourceTree = "<group>"; };
 		18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPathResolver.swift; sourceTree = "<group>"; };
 		1BFCE519B2DB43F132E85C4A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2886D1113E8AD1729D15F8F8 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
@@ -223,6 +225,7 @@
 				3855DCDF95929B71178DF5D3 /* DataSourceAdapters.swift */,
 				7A74A389CD470FD21491DE89 /* DataSourceConnectionService.swift */,
 				18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */,
+				0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */,
 				597D13137D2CF349E61013AD /* JSONValueExtractors.swift */,
 				5ED5A520C2ED990829B6A7B2 /* LimitHistoryStore.swift */,
 				A08643DBAE00B01030C05D93 /* MenuBarStatusService.swift */,
@@ -344,6 +347,7 @@
 				55BE3DC64E9BCA41F31C1A18 /* DataSourceAdapters.swift in Sources */,
 				91E9190FFF31916478903D7D /* DataSourceConnectionService.swift in Sources */,
 				0DEE98AFC80FF3884539AFF3 /* DefaultPathResolver.swift in Sources */,
+				47A593E59AE01612E3CFEAAB /* GrokOAuthWeeklyUsageAdapter.swift in Sources */,
 				3AC78E62884727A8316B3762 /* JSONValueExtractors.swift in Sources */,
 				14B3591DE152D573B0F90726 /* LimitHistoryStore.swift in Sources */,
 				35826ABF56D3D699934ADFD6 /* MenuBarStatusService.swift in Sources */,

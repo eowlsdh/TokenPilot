@@ -548,12 +548,23 @@ public enum XAIUsageSource: String, Codable, CaseIterable, Sendable {
 }
 
 public struct XAISettings: Codable, Equatable, Sendable {
+    public static let experimentalOAuthWeeklyConsentVersionCurrent = 1
+
     public var teamID: String
     public var managementAPIKeyConfigured: Bool
     public var managementAPILookbackDays: Int
     public var prepaidBalanceAlertsEnabled: Bool
     public var prepaidBalanceAlertThresholdUSD: Decimal
     public var usageSource: XAIUsageSource
+    /// Opt-in manual weekly remaining percentage observed from Grok UI
+    /// (for example "Weekly limit: 64%"). TokenPilot never reads Grok
+    /// auth/session files to auto-fetch this value.
+    public var weeklySnapshotEnabled: Bool
+    public var weeklyRemainingPercent: Int
+    public var weeklyResetText: String
+    public var weeklySnapshotCapturedAt: Date?
+    /// Explicit experimental OAuth weekly consent. Default-off; only integer `1` is retained.
+    public var experimentalOAuthWeeklyConsentVersion: Int?
 
     public init(
         teamID: String = "",
@@ -561,7 +572,12 @@ public struct XAISettings: Codable, Equatable, Sendable {
         managementAPILookbackDays: Int = 30,
         prepaidBalanceAlertsEnabled: Bool = false,
         prepaidBalanceAlertThresholdUSD: Decimal = 5,
-        usageSource: XAIUsageSource = .managementSetup
+        usageSource: XAIUsageSource = .managementSetup,
+        weeklySnapshotEnabled: Bool = false,
+        weeklyRemainingPercent: Int = 0,
+        weeklyResetText: String = "",
+        weeklySnapshotCapturedAt: Date? = nil,
+        experimentalOAuthWeeklyConsentVersion: Int? = nil
     ) {
         self.teamID = teamID.trimmingCharacters(in: .whitespacesAndNewlines)
         self.managementAPIKeyConfigured = managementAPIKeyConfigured
@@ -569,6 +585,14 @@ public struct XAISettings: Codable, Equatable, Sendable {
         self.prepaidBalanceAlertsEnabled = prepaidBalanceAlertsEnabled
         self.prepaidBalanceAlertThresholdUSD = max(prepaidBalanceAlertThresholdUSD, 0)
         self.usageSource = usageSource
+        self.weeklySnapshotEnabled = weeklySnapshotEnabled
+        self.weeklyRemainingPercent = min(max(weeklyRemainingPercent, 0), 100)
+        self.weeklyResetText = weeklyResetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.weeklySnapshotCapturedAt = weeklySnapshotCapturedAt
+        self.experimentalOAuthWeeklyConsentVersion =
+            experimentalOAuthWeeklyConsentVersion == Self.experimentalOAuthWeeklyConsentVersionCurrent
+            ? Self.experimentalOAuthWeeklyConsentVersionCurrent
+            : nil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -578,6 +602,12 @@ public struct XAISettings: Codable, Equatable, Sendable {
         case prepaidBalanceAlertsEnabled
         case prepaidBalanceAlertThresholdUSD
         case usageSource
+        case weeklySnapshotEnabled
+        case weeklyRemainingPercent
+        case weeklyUsedPercent
+        case weeklyResetText
+        case weeklySnapshotCapturedAt
+        case experimentalOAuthWeeklyConsentVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -588,8 +618,43 @@ public struct XAISettings: Codable, Equatable, Sendable {
             managementAPILookbackDays: try container.decodeIfPresent(Int.self, forKey: .managementAPILookbackDays) ?? 30,
             prepaidBalanceAlertsEnabled: try container.decodeIfPresent(Bool.self, forKey: .prepaidBalanceAlertsEnabled) ?? false,
             prepaidBalanceAlertThresholdUSD: try container.decodeIfPresent(Decimal.self, forKey: .prepaidBalanceAlertThresholdUSD) ?? 5,
-            usageSource: .managementSetup
+            // Legacy experimental OpenCode Bar payloads stay normalized to the safe local setup path.
+            usageSource: .managementSetup,
+            weeklySnapshotEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklySnapshotEnabled) ?? false,
+            weeklyRemainingPercent: try container.decodeIfPresent(Int.self, forKey: .weeklyRemainingPercent)
+                ?? container.decodeIfPresent(Int.self, forKey: .weeklyUsedPercent)
+                ?? 0,
+            weeklyResetText: try container.decodeIfPresent(String.self, forKey: .weeklyResetText) ?? "",
+            weeklySnapshotCapturedAt: try container.decodeIfPresent(Date.self, forKey: .weeklySnapshotCapturedAt),
+            experimentalOAuthWeeklyConsentVersion: Self.decodeConsentLossily(from: container)
         )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(teamID, forKey: .teamID)
+        try container.encode(managementAPIKeyConfigured, forKey: .managementAPIKeyConfigured)
+        try container.encode(managementAPILookbackDays, forKey: .managementAPILookbackDays)
+        try container.encode(prepaidBalanceAlertsEnabled, forKey: .prepaidBalanceAlertsEnabled)
+        try container.encode(prepaidBalanceAlertThresholdUSD, forKey: .prepaidBalanceAlertThresholdUSD)
+        try container.encode(usageSource, forKey: .usageSource)
+        try container.encode(weeklySnapshotEnabled, forKey: .weeklySnapshotEnabled)
+        try container.encode(weeklyRemainingPercent, forKey: .weeklyRemainingPercent)
+        try container.encode(weeklyResetText, forKey: .weeklyResetText)
+        try container.encodeIfPresent(weeklySnapshotCapturedAt, forKey: .weeklySnapshotCapturedAt)
+        if experimentalOAuthWeeklyConsentVersion == Self.experimentalOAuthWeeklyConsentVersionCurrent {
+            try container.encode(Self.experimentalOAuthWeeklyConsentVersionCurrent, forKey: .experimentalOAuthWeeklyConsentVersion)
+        }
+    }
+    /// Missing/null/non-integer/unsupported consent fails closed to nil without throwing or affecting sibling fields.
+    private static func decodeConsentLossily(
+        from container: KeyedDecodingContainer<CodingKeys>
+    ) -> Int? {
+        guard container.contains(.experimentalOAuthWeeklyConsentVersion) else { return nil }
+        guard let value = try? container.decode(Int.self, forKey: .experimentalOAuthWeeklyConsentVersion) else {
+            return nil
+        }
+        return value == experimentalOAuthWeeklyConsentVersionCurrent ? value : nil
     }
 }
 
@@ -2358,5 +2423,423 @@ public extension CapacityAlertDeliveryKey {
         self.ruleID = rule.id
         self.conditionRevision = rule.conditionRevision
         self.channel = channel
+    }
+}
+
+// MARK: - Experimental Grok OAuth weekly usage (transient, non-Codable)
+
+public enum XAIProvenance: Sendable, Equatable {
+    case standard
+    case experimentalOAuthWeekly
+}
+
+/// Unforgeable provenance envelope. Experimental storage is module-internal only.
+public struct XAIProvenancedSnapshot: @unchecked Sendable {
+    internal let storage: ProviderSnapshot
+    public let provenance: XAIProvenance
+
+    public init(standard snapshot: ProviderSnapshot) {
+        self.storage = snapshot
+        self.provenance = .standard
+    }
+
+    internal init(
+        experimentalOAuthWeekly snapshot: ProviderSnapshot,
+        capability: XAIExperimentalProvenanceCapability
+    ) {
+        _ = capability
+        self.storage = snapshot
+        self.provenance = .experimentalOAuthWeekly
+    }
+}
+
+public struct XAIProvenancedObservation: @unchecked Sendable {
+    internal let storage: CapacityObservation
+    public let provenance: XAIProvenance
+
+    public init(standard observation: CapacityObservation) {
+        self.storage = observation
+        self.provenance = .standard
+    }
+
+    internal init(
+        experimentalOAuthWeekly observation: CapacityObservation,
+        capability: XAIExperimentalProvenanceCapability
+    ) {
+        _ = capability
+        self.storage = observation
+        self.provenance = .experimentalOAuthWeekly
+    }
+}
+
+public struct XAIProvenancedAssessment: @unchecked Sendable {
+    internal let storage: CapacityAssessment
+    public let provenance: XAIProvenance
+
+    public init(standard assessment: CapacityAssessment) {
+        self.storage = assessment
+        self.provenance = .standard
+    }
+
+    internal init(
+        experimentalOAuthWeekly assessment: CapacityAssessment,
+        capability: XAIExperimentalProvenanceCapability
+    ) {
+        _ = capability
+        self.storage = assessment
+        self.provenance = .experimentalOAuthWeekly
+    }
+}
+
+/// Capability token that only Core experimental construction owns.
+internal struct XAIExperimentalProvenanceCapability: Sendable {
+    fileprivate init() {}
+
+    static let owned = XAIExperimentalProvenanceCapability()
+}
+
+public enum UsageRefreshIntent: Sendable, Equatable {
+    case startup
+    case automaticTimer
+    case settingsChanged
+    case manual
+    case connectionCheck
+}
+
+public enum XAISelectedOutcome: Sendable, Equatable {
+    case oauthWeekly
+    case manualWeekly
+    case localSignals
+    case neutral
+}
+
+public enum XAIRefreshCompletion: Sendable, Equatable {
+    case completed
+    case cancelledOrdinarily
+}
+
+public enum XAIResultOrigin: Sendable, Equatable {
+    case fresh
+    case successCache
+    case failureBackoff
+    case manualCooldown
+    case shutdownFallback
+}
+
+public enum XAIUnavailableReason: Error, Equatable, Sendable {
+    case consentNotGranted
+    case appSandboxed
+    case settingsPersistenceFailed
+    case descriptorNotFound
+    case descriptorPermissionDenied
+    case descriptorUnsafe
+    case descriptorRace
+    case descriptorTooLarge
+    case descriptorMalformed
+    case selectedScopeMissing
+    case selectedScopeDuplicate
+    case selectedFieldDuplicate
+    case selectedFieldWrongType
+    case selectedAuthContractMismatch
+    case credentialExpired
+    case billingHTTP401
+    case billingHTTP403
+    case billingHTTP429
+    case billingHTTPOther
+    case billingTimeout
+    case billingNetwork
+    case billingCancelled
+    case billingResponseTooLarge
+    case billingDTOInvalid
+    case staleResult
+}
+
+public struct XAIRefreshTicket: Sendable, Equatable {
+    fileprivate let generation: UInt64
+
+    internal init(generation: UInt64) {
+        self.generation = generation
+    }
+}
+
+/// Transient presentation-only OAuth weekly result. Never Codable; barred from standard sinks.
+public struct XAIRefreshResult: Sendable {
+    public let selectedOutcome: XAISelectedOutcome
+    public let selectedSnapshot: XAIProvenancedSnapshot
+    public let oauthFailure: XAIUnavailableReason?
+    public let statusKey: String
+    public let actionKey: String
+    public let fetchedAt: Date?
+    public let resolvedAt: Date
+    public let origin: XAIResultOrigin
+    public let completion: XAIRefreshCompletion
+
+    public init(
+        selectedOutcome: XAISelectedOutcome,
+        selectedSnapshot: XAIProvenancedSnapshot,
+        oauthFailure: XAIUnavailableReason?,
+        statusKey: String,
+        actionKey: String,
+        fetchedAt: Date?,
+        resolvedAt: Date,
+        origin: XAIResultOrigin,
+        completion: XAIRefreshCompletion
+    ) {
+        self.selectedOutcome = selectedOutcome
+        self.selectedSnapshot = selectedSnapshot
+        self.oauthFailure = oauthFailure
+        self.statusKey = statusKey
+        self.actionKey = actionKey
+        self.fetchedAt = fetchedAt
+        self.resolvedAt = resolvedAt
+        self.origin = origin
+        self.completion = completion
+    }
+}
+
+public enum XAIWaiterResolution: Sendable {
+    case result(XAIRefreshResult)
+    case cancelledOrdinarily
+}
+
+public struct XAIExperimentalWeeklyInput: Sendable {
+    public let settings: AppSettings
+    public let intent: UsageRefreshIntent
+    public let ticket: XAIRefreshTicket
+    public let now: Date
+
+    public init(settings: AppSettings, intent: UsageRefreshIntent, ticket: XAIRefreshTicket, now: Date) {
+        self.settings = settings
+        self.intent = intent
+        self.ticket = ticket
+        self.now = now
+    }
+}
+
+public struct XAIExperimentalWeeklyPresentation: Sendable, Equatable {
+    public let sourceKey: String
+    public let statusKey: String
+    public let actionKey: String
+    public let isExperimental: Bool
+    public let isAvailable: Bool
+    public let resetText: String?
+
+    public init(
+        sourceKey: String,
+        statusKey: String,
+        actionKey: String,
+        isExperimental: Bool,
+        isAvailable: Bool,
+        resetText: String?
+    ) {
+        self.sourceKey = sourceKey
+        self.statusKey = statusKey
+        self.actionKey = actionKey
+        self.isExperimental = isExperimental
+        self.isAvailable = isAvailable
+        self.resetText = resetText
+    }
+}
+
+public enum XAISink: String, Sendable {
+    case usageHistory
+    case limitHistory
+    case export
+    case snapshotExport
+    case capacityEvidence
+    case capacityAssessment
+    case capacityPresentation
+    case capacityRuntime
+    case capacityAlert
+    case capacityForecast
+    case notification
+    case capacityExportSection
+    case capacityObservationExport
+}
+
+public enum XAISinkExclusion: Equatable, Sendable {
+    case excludedExperimentalOAuthWeekly(provider: Provider, sink: XAISink)
+}
+
+public struct XAIAdmission<T: Sendable>: Sendable {
+    public let accepted: [T]
+    public let exclusions: [XAISinkExclusion]
+
+    public init(accepted: [T], exclusions: [XAISinkExclusion]) {
+        self.accepted = accepted
+        self.exclusions = exclusions
+    }
+}
+
+public enum XAIAdmissionOne<T: Sendable>: Sendable {
+    case accepted(T)
+    case excluded(XAISinkExclusion)
+}
+
+public enum XAISinkAdmission {
+    /// Element-filter experimental OAuth weekly envelopes before durable snapshot sinks.
+    public static func admitSnapshots(
+        _ snapshots: [XAIProvenancedSnapshot],
+        sink: XAISink
+    ) -> XAIAdmission<ProviderSnapshot> {
+        var accepted: [ProviderSnapshot] = []
+        var exclusions: [XAISinkExclusion] = []
+        accepted.reserveCapacity(snapshots.count)
+        for envelope in snapshots {
+            switch envelope.provenance {
+            case .standard:
+                accepted.append(envelope.storage)
+            case .experimentalOAuthWeekly:
+                exclusions.append(.excludedExperimentalOAuthWeekly(provider: envelope.storage.provider, sink: sink))
+            }
+        }
+        return XAIAdmission(accepted: accepted, exclusions: exclusions)
+    }
+
+    /// Element-filter experimental OAuth weekly envelopes before capacity observation sinks.
+    public static func admitObservations(
+        _ observations: [XAIProvenancedObservation],
+        sink: XAISink
+    ) -> XAIAdmission<CapacityObservation> {
+        var accepted: [CapacityObservation] = []
+        var exclusions: [XAISinkExclusion] = []
+        accepted.reserveCapacity(observations.count)
+        for envelope in observations {
+            switch envelope.provenance {
+            case .standard:
+                accepted.append(envelope.storage)
+            case .experimentalOAuthWeekly:
+                exclusions.append(.excludedExperimentalOAuthWeekly(provider: envelope.storage.seriesID.provider, sink: sink))
+            }
+        }
+        return XAIAdmission(accepted: accepted, exclusions: exclusions)
+    }
+}
+
+public struct LimitHistoryRecordResult: Equatable, Sendable {
+    public let samples: [ProviderLimitSample]
+    public let recoveryStatus: CapacityPersistenceStatus
+    public let exclusions: [XAISinkExclusion]
+
+    public init(
+        samples: [ProviderLimitSample],
+        recoveryStatus: CapacityPersistenceStatus,
+        exclusions: [XAISinkExclusion] = []
+    ) {
+        self.samples = samples
+        self.recoveryStatus = recoveryStatus
+        self.exclusions = exclusions
+    }
+}
+
+public struct NotificationRuleEvaluation: Equatable, Sendable {
+    public let events: [AlertEvent]
+    public let exclusions: [XAISinkExclusion]
+
+    public init(events: [AlertEvent], exclusions: [XAISinkExclusion] = []) {
+        self.events = events
+        self.exclusions = exclusions
+    }
+}
+
+public struct XAIExecutionCapability: Sendable, Equatable {
+    public let isSandboxed: Bool
+
+    public init(isSandboxed: Bool) {
+        self.isSandboxed = isSandboxed
+    }
+
+    public static let current = XAIExecutionCapability(
+        isSandboxed: XAIExecutionCapability.readAppSandboxEntitlementFailClosed()
+    )
+
+    /// Fail-closed: missing/unavailable entitlement yields sandboxed == true.
+    public static func readAppSandboxEntitlementFailClosed() -> Bool {
+        #if canImport(Security) && os(macOS)
+        guard let task = SecTaskCreateFromSelf(nil) else { return true }
+        var error: Unmanaged<CFError>?
+        let value = SecTaskCopyValueForEntitlement(task, "com.apple.security.app-sandbox" as CFString, &error)
+        if error != nil { return true }
+        guard let value else { return false }
+        if CFGetTypeID(value) != CFBooleanGetTypeID() { return true }
+        return CFBooleanGetValue((value as! CFBoolean))
+        #else
+        return true
+        #endif
+    }
+}
+
+public protocol XAIClock: Sendable {
+    func wallNow() -> Date
+    func monotonicNow() -> ContinuousClock.Instant
+}
+
+public struct XAISystemClock: XAIClock {
+    public init() {}
+
+    public func wallNow() -> Date { Date() }
+
+    public func monotonicNow() -> ContinuousClock.Instant { ContinuousClock.now }
+}
+
+public protocol XAIRefreshValidity: Sendable {
+    func isCurrent(_ ticket: XAIRefreshTicket) -> Bool
+}
+
+public protocol XAIExperimentalWeeklyService: Sendable {
+    func refresh(_ input: XAIExperimentalWeeklyInput) async -> XAIRefreshResult
+    func revoke(ticket: XAIRefreshTicket?) async
+    func shutdown() async
+}
+
+public protocol XAIExperimentalWeeklySource: Sendable {
+    func makeService() -> any XAIExperimentalWeeklyService
+}
+
+public protocol TokenPilotLocalizing: Sendable {
+    func string(_ key: String, language: TokenPilotLanguage) -> String
+}
+
+public protocol XAIWeeklyResetFormatting: Sendable {
+    func string(for end: Date, now: Date, language: TokenPilotLanguage) -> String
+}
+
+public protocol XAIExperimentalWeeklyPresenting: Sendable {
+    func present(
+        _ result: XAIRefreshResult?,
+        settings: AppSettings,
+        now: Date
+    ) -> XAIExperimentalWeeklyPresentation
+}
+
+public enum TokenPilotSettingsPersistenceResult: Sendable, Equatable {
+    case persisted
+    case rejected(XAIUnavailableReason)
+}
+
+public protocol TokenPilotSettingsPersisting: Sendable {
+    func persist(_ settings: AppSettings) -> TokenPilotSettingsPersistenceResult
+}
+
+public protocol TokenPilotSettingsPersistenceBackend: Sendable {
+    func loadData() -> Data?
+    func storeTransaction(_ data: Data) -> Bool
+}
+
+/// Atomic consent metadata stored beside AppSettings (V19 wire format).
+public struct XAIOAuthConsentRecord: Equatable, Sendable {
+    public var grantedVersion: Int
+    public var grantEpoch: Int
+    public var revocationEpoch: Int
+
+    public init(grantedVersion: Int, grantEpoch: Int, revocationEpoch: Int) {
+        self.grantedVersion = grantedVersion
+        self.grantEpoch = grantEpoch
+        self.revocationEpoch = revocationEpoch
+    }
+
+    public var isEligible: Bool {
+        grantedVersion == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
+            && grantEpoch > revocationEpoch
     }
 }

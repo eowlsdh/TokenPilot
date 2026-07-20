@@ -5351,66 +5351,226 @@
     },
     "xAI usage source": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "xAI usage source" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "xAI 사용량 소스" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "xAI 使用量ソース" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "xAI 用量来源" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI usage source"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 사용량 소스"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 使用量ソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 用量来源"
+          }
+        }
       }
     },
     "Management setup only": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Management setup only" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "Management 설정만" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "Management 設定のみ" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅 Management 设置" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management setup only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 설정만"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Management 設定のみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅 Management 设置"
+          }
+        }
       }
     },
     "OpenCode Bar CLI (Experimental)": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI (Experimental)" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI(실험적)" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI（実験的）" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "OpenCode Bar CLI（实验性）" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode Bar CLI (Experimental)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode Bar CLI(실험적)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode Bar CLI（実験的）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OpenCode Bar CLI（实验性）"
+          }
+        }
       }
     },
     "xAI is disabled by default. Management setup stays local: no usage lookup and no network requests.": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "xAI is disabled by default. Management setup stays local: no usage lookup and no network requests." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "xAI는 기본적으로 비활성화됩니다. Management 설정은 로컬에만 유지되며 사용량 조회나 네트워크 요청을 하지 않습니다." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "xAI はデフォルトで無効です。Management 設定はローカルに留まり、使用量の照会やネットワーク要求は行いません。" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "xAI 默认禁用。Management 设置仅保留在本地：不查询用量，也不发出网络请求。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI is disabled by default. Management setup stays local: no usage lookup and no network requests."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI는 기본적으로 비활성화됩니다. Management 설정은 로컬에만 유지되며 사용량 조회나 네트워크 요청을 하지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI はデフォルトで無効です。Management 設定はローカルに留まり、使用量の照会やネットワーク要求は行いません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "xAI 默认禁用。Management 设置仅保留在本地：不查询用量，也不发出网络请求。"
+          }
+        }
       }
     },
     "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values.": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "실험적 / 비공식: TokenPilot은 고정 명령 `opencodebar provider grok --json`을 실행하고 백분율 및 재설정 값만 가져옵니다." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "実験的 / 非公式: TokenPilot は固定コマンド `opencodebar provider grok --json` を実行し、割合とリセット値のみを取り込みます。" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "实验性 / 非官方：TokenPilot 运行固定命令 `opencodebar provider grok --json`，且只导入百分比和重置值。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 / 비공식: TokenPilot은 고정 명령 `opencodebar provider grok --json`을 실행하고 백분율 및 재설정 값만 가져옵니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 / 非公式: TokenPilot は固定コマンド `opencodebar provider grok --json` を実行し、割合とリセット値のみを取り込みます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性 / 非官方：TokenPilot 运行固定命令 `opencodebar provider grok --json`，且只导入百分比和重置值。"
+          }
+        }
       }
     },
     "Monthly": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Monthly" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "월간" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "月間" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "每月" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Monthly"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "월간"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "月間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每月"
+          }
+        }
       }
     },
     "Unofficial": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Unofficial" } },
-        "ko": { "stringUnit": { "state": "translated", "value": "비공식" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "非公式" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "非官方" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unofficial"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "비공식"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非公式"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "非官方"
+          }
+        }
       }
     },
     "TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota.": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota." } },
-        "ko": { "stringUnit": { "state": "translated", "value": "TokenPilot은 OAuth 파일이나 브라우저 쿠키를 읽지 않습니다. OpenCode Bar는 자체 Grok CLI 인증에 접근하고 문서화되지 않은 엔드포인트로 외부 요청을 보낼 수 있습니다. 이 타사 통합은 작동하지 않을 수 있으며 공식 한도가 아닙니다." } },
-        "ja": { "stringUnit": { "state": "translated", "value": "TokenPilot は OAuth ファイルやブラウザ Cookie を読み取りません。OpenCode Bar は独自の Grok CLI 認証にアクセスし、文書化されていないエンドポイントへ外部リクエストを送る場合があります。このサードパーティ統合は動作しなくなる可能性があり、公式クォータではありません。" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "TokenPilot 不读取 OAuth 文件或浏览器 Cookie。OpenCode Bar 可能访问其自身的 Grok CLI 身份验证，并向未公开文档的端点发出外部请求。此第三方集成可能会失效，且不代表官方额度。" } }
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot does not read OAuth files or browser cookies. OpenCode Bar may access its own Grok CLI authentication and make outbound requests to undocumented endpoints. This third-party integration may break and is not official quota."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot은 OAuth 파일이나 브라우저 쿠키를 읽지 않습니다. OpenCode Bar는 자체 Grok CLI 인증에 접근하고 문서화되지 않은 엔드포인트로 외부 요청을 보낼 수 있습니다. 이 타사 통합은 작동하지 않을 수 있으며 공식 한도가 아닙니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot は OAuth ファイルやブラウザ Cookie を読み取りません。OpenCode Bar は独自の Grok CLI 認証にアクセスし、文書化されていないエンドポイントへ外部リクエストを送る場合があります。このサードパーティ統合は動作しなくなる可能性があり、公式クォータではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot 不读取 OAuth 文件或浏览器 Cookie。OpenCode Bar 可能访问其自身的 Grok CLI 身份验证，并向未公开文档的端点发出外部请求。此第三方集成可能会失效，且不代表官方额度。"
+          }
+        }
       }
     },
     "xAI": {
@@ -9167,138 +9327,478 @@
     },
     "Menu bar layout": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대 레이아웃" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Menu bar layout" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏布局" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーのレイアウト" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대 레이아웃"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu bar layout"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏布局"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーのレイアウト"
+          }
+        }
       }
     },
     "Detailed": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "상세" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Detailed" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "详细" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "詳細" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상세"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detailed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "详细"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "詳細"
+          }
+        }
       }
     },
     "Provider metrics": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "제공자 지표" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Provider metrics" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提供方指标" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダ指標" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자 지표"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provider metrics"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供方指标"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダ指標"
+          }
+        }
       }
     },
     "Menu bar providers": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대 제공자" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Menu bar providers" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーのプロバイダ" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대 제공자"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu bar providers"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーのプロバイダ"
+          }
+        }
       }
     },
     "Combined item": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "통합 항목" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Combined item" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "合并项目" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "統合項目" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "통합 항목"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Combined item"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "合并项目"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "統合項目"
+          }
+        }
       }
     },
     "Separate items": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "개별 항목" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Separate items" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "独立项目" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "個別項目" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개별 항목"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Separate items"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "独立项目"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "個別項目"
+          }
+        }
       }
     },
     "Each selected provider gets its own menu bar item.": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "선택한 각 제공자가 자체 메뉴 막대 항목으로 표시됩니다." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Each selected provider gets its own menu bar item." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "每个选定的提供方都会显示自己的菜单栏项目。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "選択した各プロバイダに専用のメニューバー項目が表示されます。" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택한 각 제공자가 자체 메뉴 막대 항목으로 표시됩니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Each selected provider gets its own menu bar item."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每个选定的提供方都会显示自己的菜单栏项目。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択した各プロバイダに専用のメニューバー項目が表示されます。"
+          }
+        }
       }
     },
     "Show in menu bar": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대에 표시" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Show in menu bar" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "在菜单栏中显示" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーに表示" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대에 표시"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in menu bar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在菜单栏中显示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーに表示"
+          }
+        }
       }
     },
     "Provider metrics matches simple provider/value blocks.": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "제공자 지표는 간단한 제공자/값 블록 형식과 일치합니다." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Provider metrics matches simple provider/value blocks." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "提供方指标与简单的提供方/数值块布局一致。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダ指標はシンプルなプロバイダ/値ブロックに対応します。" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자 지표는 간단한 제공자/값 블록 형식과 일치합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Provider metrics matches simple provider/value blocks."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提供方指标与简单的提供方/数值块布局一致。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダ指標はシンプルなプロバイダ/値ブロックに対応します。"
+          }
+        }
       }
     },
     "Compact": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "간략" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Compact" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "紧凑" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "コンパクト" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "간략"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compact"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "紧凑"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "コンパクト"
+          }
+        }
       }
     },
     "Icon only": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "아이콘만" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Icon only" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "仅图标" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "アイコンのみ" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아이콘만"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Icon only"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅图标"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイコンのみ"
+          }
+        }
       }
     },
     "Primary provider": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "기본 제공자" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Primary provider" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "主要提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "主なプロバイダ" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 제공자"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Primary provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主要提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "主なプロバイダ"
+          }
+        }
       }
     },
     "Show secondary provider": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "보조 제공자 표시" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Show secondary provider" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "显示次要提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "2番目のプロバイダを表示" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보조 제공자 표시"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show secondary provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "显示次要提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2番目のプロバイダを表示"
+          }
+        }
       }
     },
     "Secondary provider": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "보조 제공자" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Secondary provider" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "次要提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "2番目のプロバイダ" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "보조 제공자"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secondary provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次要提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "2番目のプロバイダ"
+          }
+        }
       }
     },
     "Up to two providers can be shown": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "최대 두 제공자를 표시할 수 있습니다" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Up to two providers can be shown" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "最多可显示两个提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "最大2つのプロバイダを表示できます" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최대 두 제공자를 표시할 수 있습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Up to two providers can be shown"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最多可显示两个提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最大2つのプロバイダを表示できます"
+          }
+        }
       }
     },
     "Select provider": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "제공자 선택" } },
-        "en": { "stringUnit": { "state": "translated", "value": "Select provider" } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "选择提供方" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "プロバイダを選択" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자 선택"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择提供方"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダを選択"
+          }
+        }
       }
     },
     "Menu bar reflects saved source data and does not refresh providers.": {
       "localizations": {
-        "ko": { "stringUnit": { "state": "translated", "value": "메뉴 막대는 저장된 소스 데이터를 표시하며 제공자를 새로 고치지 않습니다." } },
-        "en": { "stringUnit": { "state": "translated", "value": "Menu bar reflects saved source data and does not refresh providers." } },
-        "zh-Hans": { "stringUnit": { "state": "translated", "value": "菜单栏反映已保存的数据源数据，不会刷新提供方。" } },
-        "ja": { "stringUnit": { "state": "translated", "value": "メニューバーは保存済みのソースデータを表示し、プロバイダを更新しません。" } }
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대는 저장된 소스 데이터를 표시하며 제공자를 새로 고치지 않습니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu bar reflects saved source data and does not refresh providers."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏反映已保存的数据源数据，不会刷新提供方。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーは保存済みのソースデータを表示し、プロバイダを更新しません。"
+          }
+        }
       }
     },
     "Highest risk": {
@@ -12465,342 +12965,1602 @@
         }
       }
     },
-      "Grok Build": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build"
-            }
+    "Grok Build": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build"
           }
-        }
-      },
-      "Enable Grok Build": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Enable Grok Build"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 활성화"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build を有効にする"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "启用 Grok Build"
-            }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build"
           }
-        }
-      },
-      "Grok Build source": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build source"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 소스"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build ソース"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 来源"
-            }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build"
           }
-        }
-      },
-      "Local context metadata": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Local context metadata"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "로컬 컨텍스트 메타데이터"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "ローカルコンテキストのメタデータ"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "本地上下文元数据"
-            }
-          }
-        }
-      },
-      "LOCAL · Grok Build context window": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "LOCAL · Grok Build context window"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "로컬 · Grok Build 컨텍스트 창"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "ローカル · Grok Build コンテキストウィンドウ"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "本地 · Grok Build 上下文窗口"
-            }
-          }
-        }
-      },
-      "Grok Build signals not found": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build signals not found"
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 신호를 찾을 수 없음"
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build のシグナルが見つかりません"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "未找到 Grok Build 信号"
-            }
-          }
-        }
-      },
-      "Enable Grok Build to read local context metadata.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Enable Grok Build to read local context metadata."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "로컬 컨텍스트 메타데이터를 읽으려면 Grok Build를 활성화하세요."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "ローカルコンテキストのメタデータを読むには Grok Build を有効にしてください。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "启用 Grok Build 以读取本地上下文元数据。"
-            }
-          }
-        }
-      },
-      "Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "~/.grok/sessions/**/signals.json의 로컬 컨텍스트 메타데이터만 읽습니다. auth.json, OAuth 토큰, 프롬프트 또는 응답은 절대 읽지 않습니다."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "~/.grok/sessions/**/signals.json のローカルコンテキストメタデータだけを読み取ります。auth.json、OAuth トークン、プロンプト、応答は一切読み取りません。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "仅读取 ~/.grok/sessions/**/signals.json 中的本地上下文元数据。绝不读取 auth.json、OAuth 令牌、提示词或响应。"
-            }
-          }
-        }
-      },
-      "No Grok Build signals found. Start a Grok Build session, then run Check Connection.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "No Grok Build signals found. Start a Grok Build session, then run Check Connection."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 신호를 찾을 수 없습니다. Grok Build 세션을 시작한 다음 연결 확인을 실행하세요."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build のシグナルが見つかりません。Grok Build セッションを開始してから「接続を確認」を実行してください。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "未找到 Grok Build 信号。请启动 Grok Build 会话，然后运行检查连接。"
-            }
-          }
-        }
-      },
-      "Run Check Connection to refresh local Grok Build context metadata.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Run Check Connection to refresh local Grok Build context metadata."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "로컬 Grok Build 컨텍스트 메타데이터를 새로 고치려면 연결 확인을 실행하세요."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "ローカルの Grok Build コンテキストメタデータを更新するには「接続を確認」を実行してください。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "运行检查连接以刷新本地 Grok Build 上下文元数据。"
-            }
-          }
-        }
-      },
-      "Reads local context metadata only. This is not subscription quota.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Reads local context metadata only. This is not subscription quota."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "로컬 컨텍스트 메타데이터만 읽습니다. 구독 할당량이 아닙니다."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "ローカルコンテキストのメタデータだけを読み取ります。サブスクリプションのクォータではありません。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "仅读取本地上下文元数据。这不是订阅配额。"
-            }
-          }
-        }
-      },
-      "Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses.": {
-        "localizations": {
-          "en": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses."
-            }
-          },
-          "ko": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build는 signals.json의 로컬 컨텍스트 메타데이터만 읽으며 auth.json, OAuth 토큰, 프롬프트 또는 응답은 절대 읽지 않습니다."
-            }
-          },
-          "ja": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build は signals.json のローカルコンテキストメタデータだけを読み取り、auth.json、OAuth トークン、プロンプト、応答は一切読み取りません。"
-            }
-          },
-          "zh-Hans": {
-            "stringUnit": {
-              "state": "translated",
-              "value": "Grok Build 仅从 signals.json 读取本地上下文元数据，绝不读取 auth.json、OAuth 令牌、提示词或响应。"
-            }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build"
           }
         }
       }
+    },
+    "Enable Grok Build": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Grok Build"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build 활성화"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build を有効にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用 Grok Build"
+          }
+        }
+      }
+    },
+    "Grok Build source": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build source"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build 소스"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build ソース"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build 来源"
+          }
+        }
+      }
+    },
+    "Local context metadata": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local context metadata"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 컨텍스트 메타데이터"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルコンテキストのメタデータ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地上下文元数据"
+          }
+        }
+      }
+    },
+    "LOCAL · Grok Build context window": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "LOCAL · Grok Build context window"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 · Grok Build 컨텍스트 창"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル · Grok Build コンテキストウィンドウ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地 · Grok Build 上下文窗口"
+          }
+        }
+      }
+    },
+    "Grok Build signals not found": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build signals not found"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build 신호를 찾을 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build のシグナルが見つかりません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到 Grok Build 信号"
+          }
+        }
+      }
+    },
+    "Enable Grok Build to read local context metadata.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable Grok Build to read local context metadata."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 컨텍스트 메타데이터를 읽으려면 Grok Build를 활성화하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルコンテキストのメタデータを読むには Grok Build を有効にしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用 Grok Build 以读取本地上下文元数据。"
+          }
+        }
+      }
+    },
+    "The local context source reads only ~/.grok/sessions/**/signals.json metadata. It never reads auth.json, OAuth tokens, prompts, or responses.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The local context source reads only ~/.grok/sessions/**/signals.json metadata. It never reads auth.json, OAuth tokens, prompts, or responses."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 컨텍스트 소스는 ~/.grok/sessions/**/signals.json 메타데이터만 읽으며 auth.json, OAuth 토큰, 프롬프트 또는 응답은 읽지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルコンテキストソースは ~/.grok/sessions/**/signals.json のメタデータだけを読み取り、auth.json、OAuth トークン、プロンプト、応答は読み取りません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地上下文源仅读取 ~/.grok/sessions/**/signals.json 元数据，不读取 auth.json、OAuth 令牌、提示词或响应。"
+          }
+        }
+      }
+    },
+    "No Grok Build signals found. Start a Grok Build session, then run Check Connection.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No Grok Build signals found. Start a Grok Build session, then run Check Connection."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build 신호를 찾을 수 없습니다. Grok Build 세션을 시작한 다음 연결 확인을 실행하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok Build のシグナルが見つかりません。Grok Build セッションを開始してから「接続を確認」を実行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到 Grok Build 信号。请启动 Grok Build 会话，然后运行检查连接。"
+          }
+        }
+      }
+    },
+    "Run Check Connection to refresh local Grok Build context metadata.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Check Connection to refresh local Grok Build context metadata."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 Grok Build 컨텍스트 메타데이터를 새로 고치려면 연결 확인을 실행하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの Grok Build コンテキストメタデータを更新するには「接続を確認」を実行してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行检查连接以刷新本地 Grok Build 上下文元数据。"
+          }
+        }
+      }
+    },
+    "Reads local context metadata only. This is not subscription quota.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reads local context metadata only. This is not subscription quota."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 컨텍스트 메타데이터만 읽습니다. 구독 할당량이 아닙니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルコンテキストのメタデータだけを読み取ります。サブスクリプションのクォータではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅读取本地上下文元数据。这不是订阅配额。"
+          }
+        }
+      }
+    },
+    "Grok local context reads only signals.json metadata. The separate experimental OAuth weekly feature is default-off and reads the fixed auth descriptor only after explicit consent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok local context reads only signals.json metadata. The separate experimental OAuth weekly feature is default-off and reads the fixed auth descriptor only after explicit consent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 로컬 컨텍스트는 signals.json 메타데이터만 읽습니다. 별도의 실험적 OAuth 주간 기능은 기본적으로 꺼져 있으며 명시적 동의 후에만 고정 인증 디스크립터를 읽습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok のローカルコンテキストは signals.json メタデータだけを読み取ります。別の試験的 OAuth 週次機能はデフォルトでオフで、明示的な同意後にのみ固定認証記述子を読み取ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 本地上下文仅读取 signals.json 元数据。独立的实验性 OAuth 每周功能默认关闭，仅在明确同意后读取固定认证描述文件。"
+          }
+        }
+      }
+    },
+    "STALE · LOCAL · Grok Build context window": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "STALE · LOCAL · Grok Build context window"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "오래됨 · 로컬 · Grok Build 컨텍스트 창"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "古い · ローカル · Grok Build コンテキストウィンドウ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过期 · 本地 · Grok Build 上下文窗口"
+          }
+        }
+      }
+    },
+    "Not subscription quota": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not subscription quota"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "구독 할당량 아님"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サブスクリプションのクォータではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是订阅配额"
+          }
+        }
+      }
+    },
+    "A newer Grok Build session has no signals.json yet. Local remaining percent is hidden until context metadata appears.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A newer Grok Build session has no signals.json yet. Local remaining percent is hidden until context metadata appears."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "더 최근 Grok Build 세션에 아직 signals.json이 없습니다. 컨텍스트 메타데이터가 나타날 때까지 로컬 잔여 퍼센트는 숨깁니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "より新しい Grok Build セッションにはまだ signals.json がありません。コンテキストメタデータが現れるまでローカル残量パーセントは非表示です。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "较新的 Grok Build 会话尚无 signals.json。在出现上下文元数据之前，本地剩余百分比会被隐藏。"
+          }
+        }
+      }
+    },
+    "Local Grok Build context metadata is stale. Start or continue a Grok Build session so signals.json updates. This is not subscription quota.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local Grok Build context metadata is stale. Start or continue a Grok Build session so signals.json updates. This is not subscription quota."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 Grok Build 컨텍스트 메타데이터가 오래되었습니다. signals.json이 갱신되도록 Grok Build 세션을 시작하거나 이어가세요. 구독 할당량이 아닙니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルの Grok Build コンテキストメタデータが古くなっています。signals.json が更新されるよう Grok Build セッションを開始または継続してください。サブスクリプションのクォータではありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地 Grok Build 上下文元数据已过期。请启动或继续 Grok Build 会话以更新 signals.json。这不是订阅配额。"
+          }
+        }
+      }
+    },
+    "Continue a Grok Build session to refresh local context metadata.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue a Grok Build session to refresh local context metadata."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 컨텍스트 메타데이터를 새로 고치려면 Grok Build 세션을 이어가세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカルコンテキストメタデータを更新するには Grok Build セッションを継続してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "继续 Grok Build 会话以刷新本地上下文元数据。"
+          }
+        }
+      }
+    },
+    "Manual weekly limit": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manual weekly limit"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수동 주간 한도"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動の週次上限"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手动每周限额"
+          }
+        }
+      }
+    },
+    "Not automatic Orca-style session import": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not automatic Orca-style session import"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orca식 자동 세션 가져오기 아님"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Orca 方式の自動セッション取り込みではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不是 Orca 式自动会话导入"
+          }
+        }
+      }
+    },
+    "Use Manual Weekly Limit Snapshot": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use Manual Weekly Limit Snapshot"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수동 주간 한도 스냅샷 사용"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動の週次上限スナップショットを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用手动每周限额快照"
+          }
+        }
+      }
+    },
+    "Reset note": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset note"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "리셋 메모"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセットメモ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重置备注"
+          }
+        }
+      }
+    },
+    "Mark Weekly Snapshot Now": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mark Weekly Snapshot Now"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 주간 스냅샷 표시"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "週次スナップショットを今マーク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "立即标记每周快照"
+          }
+        }
+      }
+    },
+    "Grok weekly limit snapshot marked as current.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok weekly limit snapshot marked as current."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 주간 한도 스냅샷을 현재로 표시했습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok の週次上限スナップショットを現在としてマークしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已将 Grok 每周限额快照标记为当前。"
+          }
+        }
+      }
+    },
+    "Grok has no public weekly-limit API and TokenPilot never reuses Grok login sessions the way Orca does for Claude/Codex. Enter the Weekly limit value you see in Grok (for example 64%). Menu bar shows that exact remaining percentage with a MANUAL marker.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok has no public weekly-limit API and TokenPilot never reuses Grok login sessions the way Orca does for Claude/Codex. Enter the Weekly limit value you see in Grok (for example 64%). Menu bar shows that exact remaining percentage with a MANUAL marker."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok에는 공개 주간 한도 API가 없고, TokenPilot은 Orca가 Claude/Codex에 하는 것처럼 Grok 로그인 세션을 재사용하지 않습니다. Grok에 보이는 Weekly limit 값(예: 64%)을 입력하세요. 메뉴바는 MANUAL 표시와 함께 입력한 잔여 퍼센트를 그대로 보여 줍니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok には公開の週次上限 API がなく、TokenPilot は Orca が Claude/Codex で行うような Grok ログインセッションの再利用をしません。Grok に表示される Weekly limit の値（例: 64%）を入力してください。メニューバーには入力した残量が MANUAL 表示とともにそのまま表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 没有公开的每周限额 API，TokenPilot 也不会像 Orca 对 Claude/Codex 那样复用 Grok 登录会话。请输入 Grok 中显示的 Weekly limit 值（例如 64%）。菜单栏会用 MANUAL 标记原样显示输入的剩余百分比。"
+          }
+        }
+      }
+    },
+    "Weekly remaining: %d%%": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly remaining: %d%%"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주간 잔여: %d%%"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "週次残量: %d%%"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每周剩余: %d%%"
+          }
+        }
+      }
+    },
+    "When enabled, menu bar prefers this weekly remaining value over local context usage (GROK CTX).": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "When enabled, menu bar prefers this weekly remaining value over local context usage (GROK CTX)."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "켜면 메뉴바가 로컬 컨텍스트 사용률(GROK CTX)보다 이 주간 잔여 값을 우선합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有効にすると、メニューバーはローカルコンテキスト使用率（GROK CTX）よりこの週次残量を優先します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用后，菜单栏会优先使用此每周剩余值，而不是本地上下文使用率（GROK CTX）。"
+          }
+        }
+      }
+    },
+    "Experimental OAuth weekly usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 OAuth 주간 사용량"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 OAuth 週次使用量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性 OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "Use experimental Grok OAuth weekly usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use experimental Grok OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 Grok OAuth 주간 사용량 사용"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 Grok OAuth 週次使用量を使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用实验性 Grok OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "Default off. Reads the fixed local Grok CLI auth descriptor only after explicit consent.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default off. Reads the fixed local Grok CLI auth descriptor only after explicit consent."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 꺼짐. 명시적 동의 후에만 고정된 로컬 Grok CLI 인증 디스크립터를 읽습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトはオフ。明示的な同意後にのみ固定されたローカル Grok CLI 認証記述子を読み取ります。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认关闭。仅在明确同意后读取固定的本地 Grok CLI 认证描述文件。"
+          }
+        }
+      }
+    },
+    "EXPERIMENTAL / UNOFFICIAL: After explicit consent, reads only the selected access token and expiry from ~/.grok/auth.json for one weekly billing request. The token stays in memory and is never displayed, logged, stored, diagnosed, or exported.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "EXPERIMENTAL / UNOFFICIAL: After explicit consent, reads only the selected access token and expiry from ~/.grok/auth.json for one weekly billing request. The token stays in memory and is never displayed, logged, stored, diagnosed, or exported."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 / 비공식: 명시적 동의 후 ~/.grok/auth.json에서 선택된 액세스 토큰과 만료 시각만 읽어 한 번의 주간 결제 요청에 사용합니다. 토큰은 메모리에만 유지되며 표시, 로그, 저장, 진단 또는 내보내기되지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "試験的 / 非公式: 明示的な同意後、~/.grok/auth.json から選択されたアクセストークンと有効期限だけを読み取り、1 回の週次請求リクエストに使用します。トークンはメモリ内だけに保持され、表示、ログ、保存、診断、エクスポートされません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性 / 非官方：明确同意后，仅从 ~/.grok/auth.json 读取所选访问令牌和过期时间，用于一次每周计费请求。令牌仅保留在内存中，绝不显示、记录、存储、诊断或导出。"
+          }
+        }
+      }
+    },
+    "Refresh OAuth weekly usage": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量を更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新 OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.consent_off": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental OAuth weekly usage is off"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 OAuth 주간 사용량이 꺼져 있음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 OAuth 週次使用量はオフです"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性 OAuth 每周用量已关闭"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.sandbox_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unavailable in App Store sandbox builds"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store 샌드박스 빌드에서는 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store サンドボックスビルドでは利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 App Store 沙盒构建中不可用"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량을 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量を利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量不可用"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.descriptor_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI session descriptor not found"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 세션 디스크립터를 찾을 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI セッション記述子が見つかりません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未找到 Grok CLI 会话描述符"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.descriptor_permission": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permission denied reading Grok CLI session descriptor"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 세션 디스크립터 읽기 권한 거부됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI セッション記述子の読み取りが拒否されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取 Grok CLI 会话描述符时权限被拒绝"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.descriptor_unsafe": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI session descriptor path is unsafe"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 세션 디스크립터 경로가 안전하지 않음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI セッション記述子のパスが安全ではありません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 会话描述符路径不安全"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.descriptor_changed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI session descriptor changed during read"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "읽기 중 Grok CLI 세션 디스크립터가 변경됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "読み取り中に Grok CLI セッション記述子が変更されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取期间 Grok CLI 会话描述符已更改"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.descriptor_invalid": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI session descriptor is invalid"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 세션 디스크립터가 유효하지 않음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI セッション記述子が無効です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 会话描述符无效"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.schema_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI session schema unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 세션 스키마를 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI セッションスキーマを利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 会话架构不可用"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.login_required": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok login required"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok 로그인 필요"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok ログインが必要です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要 Grok 登录"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.rate_limited": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage rate limited"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 요청이 제한됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量がレート制限されました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量请求已限流"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.request_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage request unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 요청을 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量の要求を利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量请求不可用"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.network_timeout": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage network timeout"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 네트워크 시간 초과"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量のネットワークタイムアウト"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量网络超时"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.network_unavailable": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage network unavailable"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 네트워크를 사용할 수 없음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量のネットワークを利用できません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量网络不可用"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.cancelled": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage request cancelled"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 요청이 취소됨"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量の要求がキャンセルされました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量请求已取消"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.response_invalid": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth weekly usage response invalid"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 응답이 유효하지 않음"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量の応答が無効です"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 每周用量响应无效"
+          }
+        }
+      }
+    },
+    "xai.oauth.status.experimental_weekly": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Experimental OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 OAuth 주간 사용량"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 OAuth 週次使用量"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "实验性 OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.enable_consent": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enable experimental OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 OAuth 주간 사용량 사용 설정"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 OAuth 週次使用量を有効にする"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "启用实验性 OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.use_manual_or_local": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use manual weekly limit or local Grok Build context"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수동 주간 한도 또는 로컬 Grok Build 컨텍스트 사용"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "手動の週次上限またはローカル Grok Build コンテキストを使う"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用手动每周限额或本地 Grok Build 上下文"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refresh OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 주간 사용량 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "OAuth 週次使用量を更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "刷新 OAuth 每周用量"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.review_local_permissions": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review local Grok CLI permissions"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 Grok CLI 권한 확인"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル Grok CLI の権限を確認"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查本地 Grok CLI 权限"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.run_grok_login": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run Grok CLI login, then refresh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI 로그인 후 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grok CLI にログインしてから更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "运行 Grok CLI 登录后刷新"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.wait_and_refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Wait, then refresh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기다린 후 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "待ってから更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待后刷新"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.refresh_later": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Try refreshing later"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "나중에 다시 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "後でもう一度更新してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "稍后重试刷新"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.check_network_and_refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check network, then refresh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "네트워크 확인 후 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ネットワークを確認してから更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查网络后刷新"
+          }
+        }
+      }
+    },
+    "xai.oauth.action.disable_or_refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Disable or refresh experimental OAuth weekly usage"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "실험적 OAuth 주간 사용량 끄기 또는 새로 고침"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "実験的 OAuth 週次使用量を無効化または更新"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "关闭或刷新实验性 OAuth 每周用量"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }

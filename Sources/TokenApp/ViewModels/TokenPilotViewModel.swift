@@ -61,6 +61,8 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
+    /// Transient presentation-only experimental OAuth weekly result. Never persisted or sunk.
+    @Published private(set) var xaiOAuthResult: XAIRefreshResult?
     @Published private var menuBarNow = Date()
     @Published var settings: AppSettings {
         didSet {
@@ -72,7 +74,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private let settingsStore = TokenPilotSettingsStore()
-    private let usageStore = UsageStore()
+    private let usageStore = UsageStore(
+        makeExperimentalWeeklyService: { GrokOAuthWeeklyUsageAdapter() }
+    )
     private let usageHistoryStore = UsageHistoryStore()
     private let limitHistoryStore = LimitHistoryStore()
     private let aggregationService = AggregationService()
@@ -102,6 +106,7 @@ final class TokenPilotViewModel: ObservableObject {
     private var lastRefreshFinishedAt: Date?
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRefreshTask: Task<Void, Never>?
+    private var experimentalShutdownTask: Task<Void, Never>?
 #if DEBUG
     private let debugFixtureMode: Bool
 #endif
@@ -202,25 +207,41 @@ final class TokenPilotViewModel: ObservableObject {
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
+    private var menuBarOAuthResult: XAIRefreshResult? {
+        guard let result = xaiOAuthResult,
+              result.selectedOutcome == .oauthWeekly,
+              result.completion == .completed,
+              result.oauthFailure == nil else {
+            return nil
+        }
+        return result
+    }
+
 
     var menuBarTitle: String {
         menuBarStatusService.title(
             snapshots: snapshots,
             settings: settings,
             modeLabel: dataSourceMode.displayLabel,
-            now: menuBarNow
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
         )
     }
     var menuBarMetricSegments: [MenuBarProviderMetricSegment] {
         menuBarStatusService.providerMetricsSegments(
             snapshots: snapshots,
             settings: settings,
-            now: menuBarNow
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
         )
     }
 
     var menuBarStatusLevel: MenuBarStatusLevel {
-        menuBarStatusService.statusLevel(snapshots: snapshots, settings: settings)
+        menuBarStatusService.statusLevel(
+            snapshots: snapshots,
+            settings: settings,
+            xaiOAuthResult: menuBarOAuthResult
+        )
     }
 
     var menuBarStatusColor: Color {
@@ -236,12 +257,17 @@ final class TokenPilotViewModel: ObservableObject {
             snapshots: snapshots,
             settings: settings,
             modeLabel: dataSourceMode.displayLabel,
-            now: menuBarNow
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
         )
     }
 
     var menuBarSnapshot: ProviderSnapshot? {
-        menuBarStatusService.selectedSnapshot(from: snapshots, settings: settings)
+        menuBarStatusService.selectedSnapshot(
+            from: snapshots,
+            settings: settings,
+            xaiOAuthResult: menuBarOAuthResult
+        )
     }
 
     var menuBarDisplayWindow: LimitWindow? {
@@ -249,14 +275,22 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var menuBarSystemImage: String {
-        guard let snapshot = menuBarStatusService.selectedSnapshot(from: snapshots, settings: settings) else {
+        guard let snapshot = menuBarStatusService.selectedSnapshot(
+            from: snapshots,
+            settings: settings,
+            xaiOAuthResult: menuBarOAuthResult
+        ) else {
             return "chart.bar.xaxis"
         }
         return snapshot.provider.iconName
     }
 
     var lowestRemainingSummary: MenuBarLowestRemainingSummary? {
-        menuBarStatusService.lowestRemainingSummary(snapshots: snapshots, settings: settings)
+        menuBarStatusService.lowestRemainingSummary(
+            snapshots: snapshots,
+            settings: settings,
+            xaiOAuthResult: menuBarOAuthResult
+        )
     }
 
     var nearestReset: Date? {
@@ -539,6 +573,9 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func setProvider(_ provider: Provider, isEnabled: Bool) {
+        if provider == .xai, !isEnabled, isExperimentalOAuthWeeklyConsentEnabled {
+            Task { await setExperimentalOAuthWeeklyConsent(false) }
+        }
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
             next.normalizeMenuBarComposition()
@@ -546,6 +583,69 @@ final class TokenPilotViewModel: ObservableObject {
         } else {
             bannerMessage = t("At least one provider must stay enabled.")
         }
+    }
+
+    var isExperimentalOAuthWeeklyConsentEnabled: Bool {
+        settings.xAI.experimentalOAuthWeeklyConsentVersion
+            == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
+    }
+
+    func setExperimentalOAuthWeeklyConsent(_ enabled: Bool) async {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        if enabled {
+            guard !isExperimentalOAuthWeeklyConsentEnabled else { return }
+            var next = settings
+            next.xAI.experimentalOAuthWeeklyConsentVersion =
+                XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
+            settings = next
+            await refresh(reason: .settings)
+            return
+        }
+
+        await usageStore.revokeXAIExperimentalWeekly()
+        xaiOAuthResult = nil
+        guard isExperimentalOAuthWeeklyConsentEnabled else { return }
+        var next = settings
+        next.xAI.experimentalOAuthWeeklyConsentVersion = nil
+        settings = next
+    }
+
+    var experimentalOAuthWeeklyStatusText: String {
+        guard isExperimentalOAuthWeeklyConsentEnabled else {
+            return t("xai.oauth.status.consent_off")
+        }
+        if let result = xaiOAuthResult {
+            return t(result.statusKey)
+        }
+        return t("xai.oauth.status.unavailable")
+    }
+
+    var experimentalOAuthWeeklyActionText: String {
+        guard isExperimentalOAuthWeeklyConsentEnabled else {
+            return t("xai.oauth.action.enable_consent")
+        }
+        if let result = xaiOAuthResult {
+            return t(result.actionKey)
+        }
+        return t("xai.oauth.action.refresh")
+    }
+
+    func shutdownExperimentalOAuthWeekly() {
+        experimentalShutdownTask?.cancel()
+        experimentalShutdownTask = Task { [usageStore] in
+            await usageStore.shutdownXAIExperimentalWeekly()
+        }
+        // Keep the termination path lifecycle-safe: cancel/start the shutdown task and
+        // give it a short bounded window before process exit continues.
+        let deadline = Date().addingTimeInterval(0.25)
+        while Date() < deadline, experimentalShutdownTask?.isCancelled == false {
+            if experimentalShutdownTask == nil { break }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            if experimentalShutdownTask?.isCancelled == true { break }
+        }
+        xaiOAuthResult = nil
     }
 
     func setMenuBarDisplayTarget(_ provider: Provider?) {
@@ -737,15 +837,50 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func performRefreshPass(reason: RefreshReason) async {
         let settingsAtStart = settings
-        let result = await usageStore.refresh(settings: settingsAtStart)
+        let intent = usageRefreshIntent(for: reason)
+        let result = await usageStore.refresh(settings: settingsAtStart, intent: intent)
 
         snapshots = result.snapshots
+        // Presentation-only: never merge into snapshots/capacity/history/export/alerts.
+        // Drop late OAuth publication when consent/provider eligibility was revoked mid-flight.
+        xaiOAuthResult = Self.publishableOAuthResult(
+            result.xaiOAuthResult,
+            settings: settings
+        )
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {
             scheduleSettingsDrivenRefresh()
+        }
+    }
+
+    /// Consent/provider-off/termination must not surface a late OAuth weekly success.
+    private static func publishableOAuthResult(
+        _ result: XAIRefreshResult?,
+        settings: AppSettings
+    ) -> XAIRefreshResult? {
+        guard let result else { return nil }
+        guard settings.xaiEnabled, settings.isProviderEnabled(.xai) else { return nil }
+        guard settings.xAI.experimentalOAuthWeeklyConsentVersion
+            == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent else {
+            return nil
+        }
+        if result.completion == .cancelledOrdinarily || result.oauthFailure == .staleResult {
+            return nil
+        }
+        return result
+    }
+
+    private func usageRefreshIntent(for reason: RefreshReason) -> UsageRefreshIntent {
+        switch reason {
+        case .manual:
+            return .manual
+        case .automaticTimer:
+            return .automaticTimer
+        case .settings:
+            return .settingsChanged
         }
     }
     private func processCapacity(result: UsageStore.Result, settingsAtStart: AppSettings) async {
@@ -1340,6 +1475,18 @@ final class TokenPilotViewModel: ObservableObject {
         settings = next
         bannerMessage = t("Codex web snapshot marked as current.")
     }
+    func markGrokWeeklySnapshotNow() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        var next = settings
+        next.xAI.weeklySnapshotEnabled = true
+        next.xAI.weeklySnapshotCapturedAt = Date()
+        next.xAI.weeklyRemainingPercent = min(max(next.xAI.weeklyRemainingPercent, 0), 100)
+        next.xAI.weeklyResetText = next.xAI.weeklyResetText.trimmingCharacters(in: .whitespacesAndNewlines)
+        settings = next
+        bannerMessage = t("Grok weekly limit snapshot marked as current.")
+    }
 
     func copyToClipboard(_ text: String) {
 #if DEBUG
@@ -1362,24 +1509,43 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func xAIStatusText(_ source: ProviderDataSource) -> String {
         guard source.status != .disabled else { return t("Disabled") }
-        return grokBuildSnapshot != nil
-            ? t("LOCAL · Grok Build context window")
-            : t("Grok Build signals not found")
+        guard let snapshot = grokBuildSnapshot else {
+            return t("Grok Build signals not found")
+        }
+        if snapshot.isStale {
+            return t("STALE · LOCAL · Grok Build context window")
+        }
+        return t("LOCAL · Grok Build context window")
     }
 
     private func xAISourceDetailText() -> String {
         guard settings.isProviderEnabled(.xai) else {
             return t("Enable Grok Build to read local context metadata.")
         }
-        return grokBuildSnapshot != nil
-            ? t("Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses.")
-            : t("No Grok Build signals found. Start a Grok Build session, then run Check Connection.")
+        guard let snapshot = grokBuildSnapshot else {
+            if snapshots.contains(where: {
+                $0.provider == .xai &&
+                    $0.dataSource == .localLog &&
+                    $0.statusMessage?.contains("newer session has no signals") == true
+            }) {
+                return t("A newer Grok Build session has no signals.json yet. Local remaining percent is hidden until context metadata appears.")
+            }
+            return t("No Grok Build signals found. Start a Grok Build session, then run Check Connection.")
+        }
+        if snapshot.isStale {
+            return t("Local Grok Build context metadata is stale. Start or continue a Grok Build session so signals.json updates. This is not subscription quota.")
+        }
+        return t("Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses.")
     }
 
     private func xAINextActionText() -> String {
-        settings.isProviderEnabled(.xai)
-            ? t("Run Check Connection to refresh local Grok Build context metadata.")
-            : t("Enable Grok Build to read local context metadata.")
+        guard settings.isProviderEnabled(.xai) else {
+            return t("Enable Grok Build to read local context metadata.")
+        }
+        if grokBuildSnapshot?.isStale == true {
+            return t("Continue a Grok Build session to refresh local context metadata.")
+        }
+        return t("Run Check Connection to refresh local Grok Build context metadata.")
     }
 
     private func updateDeepSeekDataSourceForCredentialState() {

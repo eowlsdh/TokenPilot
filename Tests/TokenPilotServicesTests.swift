@@ -3523,17 +3523,25 @@ final class TokenPilotServicesTests: XCTestCase {
         try FileManager.default.createDirectory(at: newer.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data(#"{"contextWindowUsage":12}"#.utf8).write(to: older)
         try Data(#"{"contextTokensUsed":640,"contextWindowTokens":800}"#.utf8).write(to: newer)
-        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_100)], ofItemAtPath: older.path)
-        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_200)], ofItemAtPath: newer.path)
+        let olderDate = Date(timeIntervalSince1970: 1_700_000_100)
+        let newerDate = Date(timeIntervalSince1970: 1_700_000_200)
+        try FileManager.default.setAttributes([.modificationDate: olderDate], ofItemAtPath: older.path)
+        try FileManager.default.setAttributes([.modificationDate: newerDate], ofItemAtPath: newer.path)
+        // Keep the parent session directories discoverable via summary markers.
+        try Data(#"{"updated_at":"2023-11-14T22:16:40Z"}"#.utf8).write(to: older.deletingLastPathComponent().appendingPathComponent("summary.json"))
+        try Data(#"{"updated_at":"2023-11-14T22:16:40Z"}"#.utf8).write(to: newer.deletingLastPathComponent().appendingPathComponent("summary.json"))
+        try FileManager.default.setAttributes([.modificationDate: olderDate], ofItemAtPath: older.deletingLastPathComponent().appendingPathComponent("summary.json").path)
+        try FileManager.default.setAttributes([.modificationDate: newerDate], ofItemAtPath: newer.deletingLastPathComponent().appendingPathComponent("summary.json").path)
 
-        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let now = newerDate.addingTimeInterval(60)
         let result = await GrokLocalSignalsAdapter(sessionRoots: [root]).refresh(settings: AppSettings(), now: now)
 
         XCTAssertEqual(result.snapshot.provider, .xai)
-        XCTAssertEqual(result.snapshot.updatedAt, now)
+        XCTAssertEqual(result.snapshot.updatedAt, newerDate)
         XCTAssertEqual(result.snapshot.dataSource, .localLog)
         XCTAssertEqual(result.snapshot.model, "Grok Build")
         XCTAssertEqual(result.snapshot.contextWindowUsedPercent, 80)
+        XCTAssertFalse(result.snapshot.isStale)
         XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window")
         XCTAssertNil(result.snapshot.fiveHour)
         XCTAssertNil(result.snapshot.weekly)
@@ -3583,6 +3591,52 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(result.snapshot.events.isEmpty)
         XCTAssertEqual(result.snapshot.statusMessage, "LOCAL · Grok Build context window unavailable")
     }
+    func testGrokLocalSignalsAdapterMarksStaleSignalsAndHidesWhenNewerSessionHasNoSignals() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokSignals-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let oldSession = root.appendingPathComponent("old-session", isDirectory: true)
+        let newSession = root.appendingPathComponent("new-session", isDirectory: true)
+        try FileManager.default.createDirectory(at: oldSession, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: newSession, withIntermediateDirectories: true)
+
+        let signals = oldSession.appendingPathComponent("signals.json")
+        try Data(#"{"contextWindowUsage":20}"#.utf8).write(to: signals)
+        try Data(#"{"updated_at":"2023-11-14T22:00:00Z"}"#.utf8).write(to: oldSession.appendingPathComponent("summary.json"))
+        try Data(#"{"updated_at":"2023-11-14T23:00:00Z"}"#.utf8).write(to: newSession.appendingPathComponent("summary.json"))
+        try Data("".utf8).write(to: newSession.appendingPathComponent("chat_history.jsonl"))
+
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_700_003_600)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: signals.path)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: oldSession.appendingPathComponent("summary.json").path)
+        try FileManager.default.setAttributes([.modificationDate: newDate], ofItemAtPath: newSession.appendingPathComponent("summary.json").path)
+        try FileManager.default.setAttributes([.modificationDate: newDate], ofItemAtPath: newSession.appendingPathComponent("chat_history.jsonl").path)
+
+        let staleOnlyRoot = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotGrokSignalsStale-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: staleOnlyRoot, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: staleOnlyRoot) }
+        let staleSession = staleOnlyRoot.appendingPathComponent("only", isDirectory: true)
+        try FileManager.default.createDirectory(at: staleSession, withIntermediateDirectories: true)
+        let staleSignals = staleSession.appendingPathComponent("signals.json")
+        try Data(#"{"contextWindowUsage":20}"#.utf8).write(to: staleSignals)
+        try Data(#"{"updated_at":"2023-11-14T22:00:00Z"}"#.utf8).write(to: staleSession.appendingPathComponent("summary.json"))
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: staleSignals.path)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: staleSession.appendingPathComponent("summary.json").path)
+
+        let staleNow = oldDate.addingTimeInterval(20 * 60)
+        let staleResult = await GrokLocalSignalsAdapter(sessionRoots: [staleOnlyRoot]).refresh(settings: AppSettings(), now: staleNow)
+        XCTAssertEqual(staleResult.snapshot.contextWindowUsedPercent, 20)
+        XCTAssertTrue(staleResult.snapshot.isStale)
+        XCTAssertEqual(staleResult.snapshot.updatedAt, oldDate)
+        XCTAssertEqual(staleResult.snapshot.statusMessage, "STALE · LOCAL · Grok Build context window")
+
+        let hiddenResult = await GrokLocalSignalsAdapter(sessionRoots: [root]).refresh(settings: AppSettings(), now: newDate.addingTimeInterval(30))
+        XCTAssertNil(hiddenResult.snapshot.contextWindowUsedPercent)
+        XCTAssertEqual(hiddenResult.snapshot.statusMessage, "LOCAL · Grok Build context window unavailable · newer session has no signals")
+        XCTAssertTrue(hiddenResult.snapshot.events.isEmpty)
+    }
 
     func testMenuBarProviderMetricsUsesOnlySelectedEnabledProviders() {
         var settings = AppSettings()
@@ -3599,6 +3653,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
     func testMenuBarShowsGrokLocalContextAsLocalRemainingOnly() {
         var settings = AppSettings()
+        settings.localization.language = .en
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
         settings.menuBarDisplayStyle = .providerMetrics
         settings.menuBarDisplayTarget = .xai
@@ -3609,20 +3664,76 @@ final class TokenPilotServicesTests: XCTestCase {
             model: "Grok Build",
             contextWindowUsedPercent: 63
         )
+        let staleSnapshot = ProviderSnapshot(
+            provider: .xai,
+            dataSource: .localLog,
+            isStale: true,
+            statusMessage: "STALE · LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: 20
+        )
 
         let segment = MenuBarStatusService().providerMetricsSegments(snapshots: [snapshot], settings: settings).first
+        let staleSegment = MenuBarStatusService().providerMetricsSegments(snapshots: [staleSnapshot], settings: settings).first
+        let unavailable = MenuBarStatusService().providerMetricsSegments(
+            snapshots: [
+                ProviderSnapshot(
+                    provider: .xai,
+                    dataSource: .localLog,
+                    statusMessage: "LOCAL · Grok Build context window unavailable · newer session has no signals",
+                    model: "Grok Build"
+                )
+            ],
+            settings: settings
+        ).first
 
+        XCTAssertEqual(segment?.providerShortLabel, "GROK CTX")
         XCTAssertEqual(segment?.displayValue, "37%")
         XCTAssertTrue(segment?.accessibilityLabel.contains("Grok / xAI API") == true)
         XCTAssertTrue(segment?.accessibilityLabel.contains("Grok Build context window") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Not subscription quota") == true)
         XCTAssertTrue(segment?.accessibilityLabel.contains("Remaining 37%") == true)
         XCTAssertTrue(segment?.accessibilityLabel.contains("Used 63%") == true)
         XCTAssertFalse(segment?.accessibilityLabel.contains("provider-reported") == true)
-        XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("quota") == true)
         XCTAssertFalse(segment?.accessibilityLabel.localizedCaseInsensitiveContains("capacity") == true)
+
+        XCTAssertEqual(staleSegment?.displayValue, "80%·S")
+        XCTAssertTrue(staleSegment?.accessibilityLabel.contains("Stale") == true)
+        XCTAssertTrue(staleSegment?.accessibilityLabel.contains("Not subscription quota") == true)
+        XCTAssertEqual(unavailable?.displayValue, "—")
+    }
+
+    func testMenuBarPrefersManualGrokWeeklyLimitOverLocalContext() {
+        var settings = AppSettings()
+        settings.localization.language = .en
+        XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarMetricProviders = [.xai]
+        settings.xAI.weeklySnapshotEnabled = true
+        settings.xAI.weeklyRemainingPercent = 64
+        settings.xAI.weeklySnapshotCapturedAt = Date()
+
+        let local = ProviderSnapshot(
+            provider: .xai,
+            dataSource: .localLog,
+            statusMessage: "LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: 20
+        )
+        let segment = MenuBarStatusService().providerMetricsSegments(snapshots: [local], settings: settings)
+            .first { $0.provider == .xai }
+
+        XCTAssertEqual(segment?.providerShortLabel, "GROK")
+        XCTAssertEqual(segment?.displayValue, "64%·M")
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Manual weekly limit") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Remaining 64%") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Used 36%") == true)
+        XCTAssertTrue(segment?.accessibilityLabel.contains("Not automatic Orca-style session import") == true)
+        XCTAssertFalse(segment?.accessibilityLabel.contains("Grok Build context window") == true)
     }
     func testMenuBarDisplaysOpenCodeBarAsUnofficialMonthlyOnlyWhenOptedIn() {
         var settings = AppSettings()
+        settings.localization.language = .en
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
         settings.menuBarDisplayStyle = .providerMetrics
         settings.menuBarDisplayTarget = .xai
@@ -5306,5 +5417,694 @@ private actor RecordingCodexWebUsageHTTPClient: CodexWebUsageHTTPClient {
 
     func requestURL() -> URL? {
         recordedRequest?.url
+    }
+}
+
+private final class StubGrokOAuthDescriptorLoader: GrokOAuthDescriptorLoading, @unchecked Sendable {
+    private let result: Result<Data, XAIUnavailableReason>
+
+    init(result: Result<Data, XAIUnavailableReason>) {
+        self.result = result
+    }
+
+    func loadDescriptorBytes() -> Result<Data, XAIUnavailableReason> {
+        result
+    }
+}
+
+private final class StubGrokOAuthBillingTransport: GrokOAuthBillingTransporting, @unchecked Sendable {
+    private let result: Result<(statusCode: Int, body: Data), XAIUnavailableReason>
+    private let lock = NSLock()
+    private var calls = 0
+
+    init(result: Result<(statusCode: Int, body: Data), XAIUnavailableReason>) {
+        self.result = result
+    }
+
+    func fetchWeeklyBilling(accessToken: String) async -> Result<(statusCode: Int, body: Data), XAIUnavailableReason> {
+        XCTAssertEqual(accessToken, "synthetic-access")
+        lock.lock()
+        calls += 1
+        lock.unlock()
+        return result
+    }
+
+    func callCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
+    }
+}
+
+private final class GrokOAuthFactoryCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func current() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+}
+
+final class GrokOAuthWeeklyUsageTests: XCTestCase {
+    func testDisabledConsentDoesNotConstructSensitiveDependencies() async {
+        let counter = GrokOAuthFactoryCounter()
+        let adapter = GrokOAuthWeeklyUsageAdapter(
+            executionCapability: XAIExecutionCapability(isSandboxed: false),
+            makeDescriptorLoader: {
+                counter.increment()
+                return StubGrokOAuthDescriptorLoader(result: .failure(.descriptorNotFound))
+            },
+            makeTransport: {
+                counter.increment()
+                return StubGrokOAuthBillingTransport(result: .failure(.billingNetwork))
+            }
+        )
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.xAI.experimentalOAuthWeeklyConsentVersion = nil
+
+        let result = await adapter.refresh(
+            XAIExperimentalWeeklyInput(
+                settings: settings,
+                intent: .manual,
+                ticket: XAIRefreshTicket(generation: 1),
+                now: Date(timeIntervalSince1970: 1_900_000_000)
+            )
+        )
+
+        XCTAssertEqual(result.oauthFailure, .consentNotGranted)
+        XCTAssertEqual(counter.current(), 0)
+    }
+
+    func testSandboxDoesNotConstructSensitiveDependencies() async {
+        let counter = GrokOAuthFactoryCounter()
+        let adapter = GrokOAuthWeeklyUsageAdapter(
+            executionCapability: XAIExecutionCapability(isSandboxed: true),
+            makeDescriptorLoader: {
+                counter.increment()
+                return StubGrokOAuthDescriptorLoader(result: .failure(.descriptorNotFound))
+            },
+            makeTransport: {
+                counter.increment()
+                return StubGrokOAuthBillingTransport(result: .failure(.billingNetwork))
+            }
+        )
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.xAI.experimentalOAuthWeeklyConsentVersion = 1
+
+        let result = await adapter.refresh(
+            XAIExperimentalWeeklyInput(
+                settings: settings,
+                intent: .manual,
+                ticket: XAIRefreshTicket(generation: 1),
+                now: Date(timeIntervalSince1970: 1_900_000_000)
+            )
+        )
+
+        XCTAssertEqual(result.oauthFailure, .appSandboxed)
+        XCTAssertEqual(counter.current(), 0)
+    }
+
+    func testInjectedOAuthSuccessReturnsTransientWeeklyResultOnce() async throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let expiry = formatter.string(from: now.addingTimeInterval(86_400))
+        let start = formatter.string(from: now.addingTimeInterval(-86_400))
+        let end = formatter.string(from: now.addingTimeInterval((6 * 86_400)))
+        let descriptor = try JSONSerialization.data(withJSONObject: [
+            GrokOAuthWeeklyUsageAdapter.selectedScopeKey: [
+                "access_token": "synthetic-access",
+                "expires_at": expiry,
+                "auth_mode": "oidc",
+                "oidc_issuer": "https://auth.x.ai",
+                "oidc_client_id": "b1a00492-073a-47ea-816f-4c329264a828"
+            ]
+        ])
+        let billing = try JSONSerialization.data(withJSONObject: [
+            "config": ["isUnifiedBillingUser": true],
+            "currentPeriod": [
+                "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                "start": start,
+                "end": end
+            ],
+            "creditUsagePercent": 36
+        ])
+        let transport = StubGrokOAuthBillingTransport(result: .success((200, billing)))
+        let adapter = GrokOAuthWeeklyUsageAdapter(
+            executionCapability: XAIExecutionCapability(isSandboxed: false),
+            makeDescriptorLoader: { StubGrokOAuthDescriptorLoader(result: .success(descriptor)) },
+            makeTransport: { transport }
+        )
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.xAI.experimentalOAuthWeeklyConsentVersion = 1
+
+        let result = await adapter.refresh(
+            XAIExperimentalWeeklyInput(
+                settings: settings,
+                intent: .manual,
+                ticket: XAIRefreshTicket(generation: 1),
+                now: now
+            )
+        )
+
+        XCTAssertEqual(result.selectedOutcome, .oauthWeekly)
+        XCTAssertNil(result.oauthFailure)
+        XCTAssertEqual(result.selectedSnapshot.provenance, .experimentalOAuthWeekly)
+        XCTAssertEqual(result.selectedSnapshot.storage.weekly?.usedPercent, 36)
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testMalformedConsentDecodesFailClosedWithoutLosingOtherSettings() throws {
+        let data = Data(#"{"xaiEnabled":true,"xAI":{"experimentalOAuthWeeklyConsentVersion":"1","weeklyRemainingPercent":73}}"#.utf8)
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: data)
+        XCTAssertNil(decoded.xAI.experimentalOAuthWeeklyConsentVersion)
+        XCTAssertEqual(decoded.xAI.weeklyRemainingPercent, 73)
+    }
+
+    func testLimitHistoryAdmissionExcludesExperimentalOAuthWeeklyAndAcceptsStandard() {
+        let suite = "TokenPilotOAuthLimitAdmission-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let key = "limit-samples"
+        defaults.removeObject(forKey: key)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = LimitHistoryStore(defaults: defaults, key: key)
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let standard = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 40, confidence: .high),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        let oauthWeekly = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            weekly: LimitWindow(kind: .weekly, usedPercent: 36, confidence: .low),
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true
+        )
+        let envelopes = [
+            XAIProvenancedSnapshot(standard: standard),
+            XAIProvenancedSnapshot(experimentalOAuthWeekly: oauthWeekly, capability: .owned)
+        ]
+
+        let result = store.record(
+            snapshots: envelopes,
+            enabledProviders: [.claude, .xai],
+            referenceDate: now
+        )
+
+        XCTAssertEqual(result.exclusions, [.excludedExperimentalOAuthWeekly(provider: .xai, sink: .limitHistory)])
+        XCTAssertEqual(result.samples.map(\.provider), [.claude])
+        XCTAssertFalse(result.samples.contains(where: { $0.provider == .xai }))
+        XCTAssertEqual(store.loadSamples().map(\.provider), [.claude])
+    }
+
+    func testCapacityEvidenceAdmissionExcludesExperimentalOAuthWeeklyAndAcceptsStandard() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("TokenPilotOAuthCapacityAdmission-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let store = CapacityEvidenceStore(directory: directory, clock: FixedCapacityClock(now: now))
+        let series = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent)
+        let standardObservation = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 42),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        // Valid series identity used only as payload; provenance, not series, drives exclusion.
+        let oauthSeries = try CapacitySeriesID(provider: .codex, providerWindowID: "rolling", kind: .rolling, unit: .percent, durationMinutes: 300)
+        let oauthObservation = try CapacityObservation(
+            seriesID: oauthSeries,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(86_400),
+            value: try CapacityValue(usedPercent: 36),
+            authority: .providerReported,
+            stability: .experimentalTransport,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let envelopes = [
+            XAIProvenancedObservation(standard: standardObservation),
+            XAIProvenancedObservation(experimentalOAuthWeekly: oauthObservation, capability: .owned)
+        ]
+
+        let result = await store.record(envelopes)
+        let snapshot = await store.loadSnapshot()
+
+        XCTAssertEqual(result.exclusions, [.excludedExperimentalOAuthWeekly(provider: .codex, sink: .capacityEvidence)])
+        XCTAssertEqual(result.acceptedCount, 1)
+        XCTAssertEqual(snapshot.records.map(\.seriesID.provider), [.claude])
+        XCTAssertFalse(snapshot.records.contains(where: { $0.seriesID.provider == .codex }))
+    }
+
+    func testNotificationAdmissionExcludesExperimentalOAuthWeeklyAndAcceptsStandard() {
+        let suite = "TokenPilotOAuthNotificationAdmission-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults, key: "state"))
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.alertRules = [
+            AlertRule(provider: .claude, window: .fiveHour, eightyEnabled: true),
+            AlertRule(provider: .xai, window: .weekly, eightyEnabled: true)
+        ]
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let standard = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 85, resetAt: now.addingTimeInterval(3_600), confidence: .high),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        let oauthWeekly = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            weekly: LimitWindow(kind: .weekly, usedPercent: 90, resetAt: now.addingTimeInterval(86_400), confidence: .low),
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true
+        )
+        let envelopes = [
+            XAIProvenancedSnapshot(standard: standard),
+            XAIProvenancedSnapshot(experimentalOAuthWeekly: oauthWeekly, capability: .owned)
+        ]
+
+        let evaluation = service.evaluate(snapshots: envelopes, settings: settings)
+
+        XCTAssertEqual(evaluation.exclusions, [.excludedExperimentalOAuthWeekly(provider: .xai, sink: .notification)])
+        XCTAssertEqual(evaluation.events.map(\.provider), [.claude])
+        XCTAssertEqual(evaluation.events.map(\.threshold), [.eighty])
+        XCTAssertFalse(evaluation.events.contains(where: { $0.provider == .xai }))
+    }
+
+    func testSinkAdmissionHelperRejectsOnlyExperimentalOAuthWeekly() {
+        let standard = ProviderSnapshot(provider: .claude, fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 10), confidence: .high, dataSource: .officialStatusline)
+        let oauth = ProviderSnapshot(
+            provider: .xai,
+            weekly: LimitWindow(kind: .weekly, usedPercent: 36, confidence: .low),
+            confidence: .low,
+            dataSource: .experimentalCLI,
+            isExperimental: true
+        )
+        let admission = XAISinkAdmission.admitSnapshots(
+            [
+                XAIProvenancedSnapshot(standard: standard),
+                XAIProvenancedSnapshot(experimentalOAuthWeekly: oauth, capability: .owned)
+            ],
+            sink: .limitHistory
+        )
+        XCTAssertEqual(admission.accepted.map(\.provider), [.claude])
+        XCTAssertEqual(admission.exclusions, [.excludedExperimentalOAuthWeekly(provider: .xai, sink: .limitHistory)])
+    }
+}
+final class GrokOAuthRaceFallbackTests: XCTestCase {
+    private let fixedNow = Date(timeIntervalSince1970: 1_900_000_000)
+
+    func testCredentialExpiredDoesNotCallBillingTransport() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .failure(.billingNetwork))
+        let adapter = try makeEligibleAdapter(
+            descriptor: expiredDescriptor(),
+            transport: transport
+        )
+        let result = await adapter.refresh(input())
+        XCTAssertEqual(result.oauthFailure, .credentialExpired)
+        XCTAssertEqual(result.selectedOutcome, .neutral)
+        XCTAssertEqual(transport.callCount(), 0)
+    }
+
+    func testWrongScopeMissingDoesNotCallBillingTransport() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .failure(.billingNetwork))
+        let descriptor = try JSONSerialization.data(withJSONObject: [
+            "https://auth.x.ai::wrong-scope": [
+                "access_token": "synthetic-access",
+                "expires_at": futureExpiry()
+            ]
+        ])
+        let adapter = try makeEligibleAdapter(descriptor: descriptor, transport: transport)
+        let result = await adapter.refresh(input())
+        XCTAssertEqual(result.oauthFailure, .selectedScopeMissing)
+        XCTAssertEqual(transport.callCount(), 0)
+    }
+
+    func testBillingHTTP401IsSingleRequestWithLoginRequired() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .success((401, Data())))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        var settings = eligibleSettings()
+        settings.xAI.weeklySnapshotEnabled = true
+        settings.xAI.weeklyRemainingPercent = 40
+        let result = await adapter.refresh(input(settings: settings))
+        XCTAssertEqual(result.oauthFailure, .billingHTTP401)
+        XCTAssertEqual(result.statusKey, "xai.oauth.status.login_required")
+        XCTAssertEqual(result.selectedOutcome, .manualWeekly)
+        XCTAssertEqual(result.selectedSnapshot.storage.weekly?.usedPercent, 60)
+        XCTAssertEqual(result.selectedSnapshot.provenance, .standard)
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testBillingHTTP403IsSingleRequestWithLoginRequired() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .success((403, Data())))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        let result = await adapter.refresh(input())
+        XCTAssertEqual(result.oauthFailure, .billingHTTP403)
+        XCTAssertEqual(result.statusKey, "xai.oauth.status.login_required")
+        XCTAssertEqual(result.selectedOutcome, .neutral)
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testOversizedBillingBodyMapsResponseInvalidWithoutRetry() async throws {
+        let oversized = Data(repeating: 0x61, count: GrokOAuthWeeklyUsageAdapter.maximumBillingBodyBytes + 1)
+        let transport = StubGrokOAuthBillingTransport(result: .success((200, oversized)))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        let result = await adapter.refresh(input())
+        XCTAssertEqual(result.oauthFailure, .billingResponseTooLarge)
+        XCTAssertEqual(result.statusKey, "xai.oauth.status.response_invalid")
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testMalformedBillingDTOMapsResponseInvalid() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .success((200, Data("not-json".utf8))))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        let result = await adapter.refresh(input())
+        XCTAssertEqual(result.oauthFailure, .billingDTOInvalid)
+        XCTAssertEqual(result.statusKey, "xai.oauth.status.response_invalid")
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testManualFallbackBeatsNeutralOnOAuthFailure() async throws {
+        let transport = StubGrokOAuthBillingTransport(result: .success((429, Data())))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        var settings = eligibleSettings()
+        settings.xAI.weeklySnapshotEnabled = true
+        settings.xAI.weeklyRemainingPercent = 25
+        let result = await adapter.refresh(input(settings: settings))
+        XCTAssertEqual(result.oauthFailure, .billingHTTP429)
+        XCTAssertEqual(result.selectedOutcome, .manualWeekly)
+        XCTAssertEqual(result.selectedSnapshot.storage.dataSource, .manual)
+        XCTAssertEqual(result.selectedSnapshot.storage.weekly?.usedPercent, 75)
+        XCTAssertFalse(result.selectedSnapshot.storage.isExperimental)
+        XCTAssertEqual(result.selectedSnapshot.provenance, .standard)
+    }
+
+    func testRevokeBeforeBillingCompletesYieldsStaleCancelledResult() async throws {
+        let gate = GrokOAuthAsyncGate()
+        let transport = GatingGrokOAuthBillingTransport(gate: gate, result: .success((200, try validBillingBody())))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        let ticket = XAIRefreshTicket(generation: 7)
+        async let pending = adapter.refresh(input(ticket: ticket))
+        await gate.waitUntilEntered()
+        await adapter.revoke(ticket: ticket)
+        gate.open()
+        let result = await pending
+        XCTAssertEqual(result.oauthFailure, .staleResult)
+        XCTAssertEqual(result.completion, .cancelledOrdinarily)
+        XCTAssertNotEqual(result.selectedOutcome, .oauthWeekly)
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testUsageStoreDropsStaleResultAfterRevokeAndNeverMergesIntoSnapshots() async throws {
+        let gate = GrokOAuthAsyncGate()
+        let transport = GatingGrokOAuthBillingTransport(gate: gate, result: .success((200, try validBillingBody())))
+        let adapter = try makeEligibleAdapter(descriptor: validDescriptor(), transport: transport)
+        let store = UsageStore(
+            refreshAdapters: [],
+            makeExperimentalWeeklyService: { adapter },
+            executionCapability: XAIExecutionCapability(isSandboxed: false)
+        )
+        let settings = eligibleSettings()
+        async let pending = store.refresh(settings: settings, intent: .manual)
+        await gate.waitUntilEntered()
+        await store.revokeXAIExperimentalWeekly()
+        gate.open()
+        let result = await pending
+        XCTAssertNil(result.xaiOAuthResult)
+        XCTAssertFalse(result.snapshots.contains(where: { $0.provider == .xai && $0.dataSource == .experimentalCLI }))
+        XCTAssertEqual(transport.callCount(), 1)
+    }
+
+    func testUsageStoreFactoryNotConstructedWhenIneligible() async {
+        let counter = GrokOAuthFactoryCounter()
+        let store = UsageStore(
+            refreshAdapters: [],
+            makeExperimentalWeeklyService: {
+                counter.increment()
+                return GrokOAuthWeeklyUsageAdapter(executionCapability: XAIExecutionCapability(isSandboxed: false))
+            },
+            executionCapability: XAIExecutionCapability(isSandboxed: false)
+        )
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.xAI.experimentalOAuthWeeklyConsentVersion = nil
+        let result = await store.refresh(settings: settings, intent: .manual)
+        XCTAssertNil(result.xaiOAuthResult)
+        XCTAssertEqual(counter.current(), 0)
+    }
+
+    func testMenuBarIsolationIgnoresOAuthFailureAndCancelledResults() {
+        let now = fixedNow
+        let failure = XAIRefreshResult(
+            selectedOutcome: .manualWeekly,
+            selectedSnapshot: XAIProvenancedSnapshot(
+                standard: ProviderSnapshot(
+                    provider: .xai,
+                    updatedAt: now,
+                    weekly: LimitWindow(kind: .weekly, usedPercent: 55, confidence: .manual),
+                    confidence: .manual,
+                    dataSource: .manual
+                )
+            ),
+            oauthFailure: .billingHTTP401,
+            statusKey: "xai.oauth.status.login_required",
+            actionKey: "xai.oauth.action.run_grok_login",
+            fetchedAt: nil,
+            resolvedAt: now,
+            origin: .fresh,
+            completion: .completed
+        )
+        let cancelled = XAIRefreshResult(
+            selectedOutcome: .neutral,
+            selectedSnapshot: XAIProvenancedSnapshot(standard: ProviderSnapshot(provider: .xai, updatedAt: now)),
+            oauthFailure: .staleResult,
+            statusKey: "xai.oauth.status.unavailable",
+            actionKey: "xai.oauth.action.refresh",
+            fetchedAt: nil,
+            resolvedAt: now,
+            origin: .fresh,
+            completion: .cancelledOrdinarily
+        )
+        let local = ProviderSnapshot(
+            provider: .xai,
+            updatedAt: now,
+            confidence: .medium,
+            dataSource: .localLog,
+            statusMessage: "LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: 80
+        )
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.menuBarDisplayTarget = .xai
+        settings.menuBarDisplayStyle = .providerMetrics
+
+        let failureSegments = MenuBarStatusService().providerMetricsSegments(
+            snapshots: [local],
+            settings: settings,
+            now: now,
+            xaiOAuthResult: failure
+        )
+        let cancelledSegments = MenuBarStatusService().providerMetricsSegments(
+            snapshots: [local],
+            settings: settings,
+            now: now,
+            xaiOAuthResult: cancelled
+        )
+        XCTAssertEqual(failureSegments.first?.displayValue, "20%")
+        XCTAssertEqual(cancelledSegments.first?.displayValue, "20%")
+        XCTAssertFalse(failureSegments.contains(where: { $0.displayValue.contains("55") }))
+    }
+
+    // MARK: - Helpers
+
+    private func eligibleSettings() -> AppSettings {
+        var settings = AppSettings()
+        settings.xaiEnabled = true
+        _ = settings.setProviderEnabled(.xai, isEnabled: true)
+        settings.xAI.experimentalOAuthWeeklyConsentVersion = 1
+        return settings
+    }
+
+    private func input(
+        settings: AppSettings? = nil,
+        ticket: XAIRefreshTicket = XAIRefreshTicket(generation: 1)
+    ) -> XAIExperimentalWeeklyInput {
+        XAIExperimentalWeeklyInput(
+            settings: settings ?? eligibleSettings(),
+            intent: .manual,
+            ticket: ticket,
+            now: fixedNow
+        )
+    }
+
+    private func makeEligibleAdapter(
+        descriptor: Data,
+        transport: any GrokOAuthBillingTransporting
+    ) throws -> GrokOAuthWeeklyUsageAdapter {
+        GrokOAuthWeeklyUsageAdapter(
+            executionCapability: XAIExecutionCapability(isSandboxed: false),
+            makeDescriptorLoader: { StubGrokOAuthDescriptorLoader(result: .success(descriptor)) },
+            makeTransport: { transport }
+        )
+    }
+
+    private func futureExpiry() -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: fixedNow.addingTimeInterval(86_400))
+    }
+
+    private func validDescriptor() throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            GrokOAuthWeeklyUsageAdapter.selectedScopeKey: [
+                "access_token": "synthetic-access",
+                "expires_at": futureExpiry(),
+                "auth_mode": "oidc",
+                "oidc_issuer": "https://auth.x.ai",
+                "oidc_client_id": "b1a00492-073a-47ea-816f-4c329264a828"
+            ]
+        ])
+    }
+
+    private func expiredDescriptor() throws -> Data {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let past = formatter.string(from: fixedNow.addingTimeInterval(-60))
+        return try JSONSerialization.data(withJSONObject: [
+            GrokOAuthWeeklyUsageAdapter.selectedScopeKey: [
+                "access_token": "synthetic-access",
+                "expires_at": past,
+                "auth_mode": "oidc",
+                "oidc_issuer": "https://auth.x.ai",
+                "oidc_client_id": "b1a00492-073a-47ea-816f-4c329264a828"
+            ]
+        ])
+    }
+
+    private func validBillingBody() throws -> Data {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let start = formatter.string(from: fixedNow.addingTimeInterval(-86_400))
+        let end = formatter.string(from: fixedNow.addingTimeInterval(6 * 86_400))
+        return try JSONSerialization.data(withJSONObject: [
+            "config": ["isUnifiedBillingUser": true],
+            "currentPeriod": [
+                "type": "USAGE_PERIOD_TYPE_WEEKLY",
+                "start": start,
+                "end": end
+            ],
+            "creditUsagePercent": 36
+        ])
+    }
+}
+
+private final class GrokOAuthAsyncGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entered = false
+    private var opened = false
+    private var enterWaiters: [CheckedContinuation<Void, Never>] = []
+    private var openWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func waitUntilEntered() async {
+        lock.lock()
+        if entered {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { continuation in
+            enterWaiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func waitUntilOpened() async {
+        lock.lock()
+        if opened {
+            lock.unlock()
+            return
+        }
+        await withCheckedContinuation { continuation in
+            openWaiters.append(continuation)
+            lock.unlock()
+        }
+    }
+
+    func markEntered() {
+        lock.lock()
+        entered = true
+        let waiters = enterWaiters
+        enterWaiters.removeAll()
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+    }
+
+    func open() {
+        lock.lock()
+        opened = true
+        let waiters = openWaiters
+        openWaiters.removeAll()
+        lock.unlock()
+        waiters.forEach { $0.resume() }
+    }
+}
+
+private final class GatingGrokOAuthBillingTransport: GrokOAuthBillingTransporting, @unchecked Sendable {
+    private let gate: GrokOAuthAsyncGate
+    private let result: Result<(statusCode: Int, body: Data), XAIUnavailableReason>
+    private let lock = NSLock()
+    private var calls = 0
+
+    init(gate: GrokOAuthAsyncGate, result: Result<(statusCode: Int, body: Data), XAIUnavailableReason>) {
+        self.gate = gate
+        self.result = result
+    }
+
+    func fetchWeeklyBilling(accessToken: String) async -> Result<(statusCode: Int, body: Data), XAIUnavailableReason> {
+        XCTAssertEqual(accessToken, "synthetic-access")
+        lock.lock()
+        calls += 1
+        lock.unlock()
+        gate.markEntered()
+        await gate.waitUntilOpened()
+        return result
+    }
+
+    func callCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
     }
 }

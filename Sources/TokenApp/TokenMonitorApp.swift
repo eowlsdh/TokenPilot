@@ -48,6 +48,10 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationWillTerminate(_ notification: Notification) {
+        model.shutdownExperimentalOAuthWeekly()
+    }
+
     private func configurePopover() {
         popover.behavior = .transient
         popover.contentSize = NSSize(width: 420, height: 620)

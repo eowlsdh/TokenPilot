@@ -51,7 +51,7 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
 | 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
 | 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
-| 🧰 **Grok/xAI source** | Reads only numeric local context metadata from `~/.grok/sessions/**/signals.json`; it never reads `auth.json`, OAuth tokens, prompts, or responses. |
+| 🧰 **Grok/xAI source** | Local context reads only numeric metadata from `~/.grok/sessions/**/signals.json` (never `auth.json`/tokens/prompts/responses). A separate default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly feature may, after explicit consent, read only the selected access token and expiry from fixed `~/.grok/auth.json` for one billing request; the token stays memory-only and is never logged, stored, diagnosed, or exported. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
@@ -89,7 +89,7 @@ open TokenPilot.xcodeproj
 
 ## How It Works
 
-TokenPilot reads **usage metadata** from local files and explicitly configured sources. It does not read prompts, responses, browser cookies, or provider auth files.
+TokenPilot reads **usage metadata** from local files and explicitly configured sources. It does not read prompts, responses, or browser cookies. Provider auth material is not collected by default; the only exception is the separate default-off EXPERIMENTAL/UNOFFICIAL Grok OAuth weekly feature described below.
 
 | Provider | Data Source | Trust Level |
 |----------|-------------|-------------|
@@ -97,7 +97,7 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 | **Codex** | Opt-in Codex CLI limit hints, manual `/status` / manual estimates, local activity JSONL | Medium/estimated/unofficial unless Codex exposes stable official quota metadata. |
 | **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini `~/.gemini/telemetry.log` remains supported | High for Antigravity statusLine and Gemini telemetry metadata. |
 | **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
-| **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json` only | The menu bar shows remaining local context (`100 - contextWindowUsage`), not subscription quota or API billing. |
+| **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json`; optional default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly usage after explicit consent | Local context shows remaining context (`100 - contextWindowUsage`), not subscription quota. Manual weekly truth has precedence. Experimental OAuth weekly is presentation-only and may break. |
 
 ### Provider diagnostics
 
@@ -107,17 +107,19 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - Diagnostics summarize local metadata availability without showing raw paths, prompts, responses, cookies, tokens, or raw events.
 - Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
-- Grok/xAI diagnostics report only local signal availability and remaining local context; TokenPilot has no credentials, account identifiers, OAuth, or provider-quota claims.
+- Grok/xAI diagnostics report local signal availability and remaining local context. The separate experimental OAuth weekly path is default-off, consent-gated, and does not store credentials or claim official provider quota.
 
 ### Grok / xAI source
 
-TokenPilot reads only numeric local context metadata from:
+TokenPilot's **local context** path reads only numeric metadata from:
 
 ```text
 ~/.grok/sessions/**/signals.json
 ```
 
-It never reads `auth.json`, OAuth tokens, prompts, responses, or provider billing/subscription data. Grok's menu-bar value is remaining local context (`100 - contextWindowUsage`); it is not provider quota and must not be compared with provider quota or API billing.
+That local-context feature never reads `auth.json`, OAuth tokens, prompts, responses, or provider billing/subscription data. Grok's menu-bar local value is remaining context (`100 - contextWindowUsage`); it is not provider quota and must not be compared with provider quota or API billing.
+
+A **separate** default-off **EXPERIMENTAL / UNOFFICIAL** OAuth weekly feature may, only after explicit consent, read the selected access token and expiry from the fixed path `~/.grok/auth.json`, perform one fixed weekly billing request, keep the token memory-only, and never display, log, store, diagnose, or export it. Manual weekly truth has precedence over experimental OAuth presentation.
 
 ### Antigravity CLI setup
 
@@ -163,7 +165,7 @@ TokenPilot is positioned as a **local-first AI coding usage meter for the macOS 
 
 - **No cloud dashboard**: usage stays on-device.
 - **No account required**: no TokenPilot account or provider login flow.
-- **No provider token collection**: Codex/Telegram/Discord/DeepSeek secrets are stored only when explicitly configured, never shown or exported; Grok auth material is never read.
+- **No provider token collection by default**: Codex/Telegram/Discord/DeepSeek secrets are stored only when explicitly configured, never shown or exported. Grok local context never reads auth material; the separate default-off experimental OAuth weekly feature may transiently use a memory-only access token after explicit consent and never persists it.
 - **Honest confidence labels**: official, local, manual, estimated, experimental, and limit-hint sources are visibly distinct.
 - **Release artifacts**: `make bundle` produces `build/TokenPilot.app` and `build/TokenPilot.zip`.
 
@@ -175,17 +177,17 @@ Release copy must stay evidence-bound: do not claim notarization, App Store avai
 
 TokenPilot is designed as a **local-first** utility:
 
-| ✅ Reads | ❌ Never reads |
-|----------|---------------|
+| ✅ Reads | ❌ Never reads / never keeps |
+|----------|------------------------------|
 | Claude statusline JSON | Browser cookies |
-| Antigravity statusLine JSON bridge / Gemini `telemetry.log` | Provider auth files |
-| User-entered Codex values | Raw prompts/responses |
-| User-saved DeepSeek API key in TokenPilot Keychain item | Exported secrets |
-| Grok numeric local context metadata from `~/.grok/sessions/**/signals.json` | `auth.json` and OAuth tokens |
-| Local session JSONL metadata (where supported) | Grok prompts/responses |
-| TokenPilot-owned notification credentials | Other apps' Keychain items |
+| Antigravity statusLine JSON bridge / Gemini `telemetry.log` | Raw prompts/responses |
+| User-entered Codex values | Exported secrets |
+| User-saved DeepSeek API key in TokenPilot Keychain item | Other apps' Keychain items |
+| Grok numeric local context metadata from `~/.grok/sessions/**/signals.json` | Grok prompts/responses; local-context path never reads `auth.json` |
+| Local session JSONL metadata (where supported) | Persisted Grok OAuth tokens (experimental path is memory-only after consent) |
+| TokenPilot-owned notification credentials | Arbitrary provider credential stores outside the fixed, consent-gated Grok OAuth descriptor |
 
-External notifications (Telegram/Discord) are **off by default** and require explicit user configuration. Codex Limit Hints Connector is also off by default and talks to the local Codex CLI app-server rather than reading Codex auth files directly. DeepSeek balance is opt-in and uses a TokenPilot-owned Keychain item for the API key; exports omit secrets. Grok/xAI reads only numeric local context metadata from `~/.grok/sessions/**/signals.json`; it does not read `auth.json`, OAuth tokens, prompts, responses, subscription quota, or API billing.
+External notifications (Telegram/Discord) are **off by default** and require explicit user configuration. Codex Limit Hints Connector is also off by default and talks to the local Codex CLI app-server rather than reading Codex auth files directly. DeepSeek balance is opt-in and uses a TokenPilot-owned Keychain item for the API key; exports omit secrets. Grok/xAI local context reads only numeric metadata from `~/.grok/sessions/**/signals.json`. The separate default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly feature, after explicit consent only, reads the selected access token and expiry from fixed `~/.grok/auth.json` for one fixed billing request; the token stays in memory and is never logged, stored, diagnosed, or exported. Manual weekly truth has precedence.
 
 See [Privacy](docs/PRIVACY.md) and [Security](SECURITY.md) for details.
 

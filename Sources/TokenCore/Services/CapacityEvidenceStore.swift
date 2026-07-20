@@ -605,12 +605,20 @@ public struct CapacityEvidenceWriteResult: Equatable, Sendable {
     public let quarantinedCount: Int
     public let snapshot: CapacityEvidenceSnapshot?
     public let recoveryStatus: CapacityPersistenceStatus
+    public let exclusions: [XAISinkExclusion]
 
-    public init(acceptedCount: Int, quarantinedCount: Int, snapshot: CapacityEvidenceSnapshot?, recoveryStatus: CapacityPersistenceStatus) {
+    public init(
+        acceptedCount: Int,
+        quarantinedCount: Int,
+        snapshot: CapacityEvidenceSnapshot?,
+        recoveryStatus: CapacityPersistenceStatus,
+        exclusions: [XAISinkExclusion] = []
+    ) {
         self.acceptedCount = acceptedCount
         self.quarantinedCount = quarantinedCount
         self.snapshot = snapshot
         self.recoveryStatus = recoveryStatus
+        self.exclusions = exclusions
     }
 }
 
@@ -700,6 +708,18 @@ public actor CapacityEvidenceStore {
         } catch {
             return CapacityEvidenceWriteResult(acceptedCount: 0, quarantinedCount: observations.count, snapshot: nil, recoveryStatus: .recoveryRequired(writeBlocked: true, code: "evidenceCommitFailed"))
         }
+    }
+
+    public func record(_ observations: [XAIProvenancedObservation]) async -> CapacityEvidenceWriteResult {
+        let admission = XAISinkAdmission.admitObservations(observations, sink: .capacityEvidence)
+        let result = await record(admission.accepted)
+        return CapacityEvidenceWriteResult(
+            acceptedCount: result.acceptedCount,
+            quarantinedCount: result.quarantinedCount,
+            snapshot: result.snapshot,
+            recoveryStatus: result.recoveryStatus,
+            exclusions: admission.exclusions
+        )
     }
 
     public func migrateLegacyLimitSamples(_ samples: [ProviderLimitSample]) async -> CapacityEvidenceWriteResult {

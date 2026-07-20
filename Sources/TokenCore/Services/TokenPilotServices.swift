@@ -181,6 +181,8 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
 
     private static let maximumFileBytes = 256 * 1_024
     private static let maximumDiscoveredFiles = 120
+    /// Local context metadata is treated as stale when the newest valid signals file is older than this.
+    private static let staleThreshold: TimeInterval = 15 * 60
     private let sessionRoots: [URL]
 
     public init(sessionRoots: [URL]? = nil) {
@@ -202,20 +204,48 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
     }
 
     private static func newestSnapshot(in roots: [URL], now: Date) -> ProviderSnapshot? {
-        var candidates: [(url: URL, modifiedAt: Date)] = []
-        for root in roots where candidates.count < maximumDiscoveredFiles {
-            candidates.append(contentsOf: discoverSignalsFiles(in: root).prefix(maximumDiscoveredFiles - candidates.count))
+        var signalFiles: [(url: URL, modifiedAt: Date)] = []
+        for root in roots where signalFiles.count < maximumDiscoveredFiles {
+            signalFiles.append(contentsOf: discoverSignalsFiles(in: root).prefix(maximumDiscoveredFiles - signalFiles.count))
         }
-        let snapshots = candidates.compactMap { candidate -> (snapshot: ProviderSnapshot, modifiedAt: Date, path: String)? in
-            guard let snapshot = snapshot(from: candidate.url, now: now) else {
-                return nil
-            }
-            return (snapshot, candidate.modifiedAt, candidate.url.path)
+
+        let validSignals = signalFiles.compactMap { candidate -> (url: URL, modifiedAt: Date, usedPercent: Int)? in
+            guard let usedPercent = usedPercent(from: candidate.url) else { return nil }
+            return (candidate.url, candidate.modifiedAt, usedPercent)
         }
-        return snapshots.max { lhs, rhs in
+
+        guard let newestSignal = validSignals.max(by: { lhs, rhs in
             if lhs.modifiedAt != rhs.modifiedAt { return lhs.modifiedAt < rhs.modifiedAt }
-            return lhs.path < rhs.path
-        }?.snapshot
+            return lhs.url.path < rhs.url.path
+        }) else {
+            return nil
+        }
+
+        // A newer Grok Build session without signals.json must not keep advertising an older percentage.
+        if let newerActivity = newestSessionActivity(in: roots),
+           newerActivity.modifiedAt > newestSignal.modifiedAt.addingTimeInterval(1),
+           !sessionHasSignalsFile(newerActivity.sessionDirectory) {
+            return unavailableSnapshot(
+                now: now,
+                statusMessage: "LOCAL · Grok Build context window unavailable · newer session has no signals"
+            )
+        }
+
+        let age = now.timeIntervalSince(newestSignal.modifiedAt)
+        let isStale = age > staleThreshold
+        return ProviderSnapshot(
+            provider: .xai,
+            updatedAt: newestSignal.modifiedAt,
+            confidence: .low,
+            dataSource: .localLog,
+            isStale: isStale,
+            statusMessage: isStale
+                ? "STALE · LOCAL · Grok Build context window"
+                : "LOCAL · Grok Build context window",
+            model: "Grok Build",
+            contextWindowUsedPercent: newestSignal.usedPercent,
+            events: []
+        )
     }
 
     private static func discoverSignalsFiles(in root: URL) -> [(url: URL, modifiedAt: Date)] {
@@ -245,24 +275,91 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
         return files
     }
 
-    private static func snapshot(from url: URL, now: Date) -> ProviderSnapshot? {
+    private static func newestSessionActivity(in roots: [URL]) -> (sessionDirectory: URL, modifiedAt: Date)? {
+        var newest: (sessionDirectory: URL, modifiedAt: Date)?
+        for root in roots {
+            for sessionDirectory in discoverSessionDirectories(in: root) {
+                guard let activity = sessionActivityDate(in: sessionDirectory) else { continue }
+                if newest == nil || activity > newest!.modifiedAt ||
+                    (activity == newest!.modifiedAt && sessionDirectory.path > newest!.sessionDirectory.path) {
+                    newest = (sessionDirectory, activity)
+                }
+            }
+        }
+        return newest
+    }
+
+    private static func discoverSessionDirectories(in root: URL) -> [URL] {
+        guard !isSymbolicLink(root),
+              let enumerator = FileManager.default.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                options: [.skipsHiddenFiles]
+              ) else {
+            return []
+        }
+
+        var directories: [URL] = []
+        for case let url as URL in enumerator {
+            guard !isSymbolicLink(url),
+                  let values = try? url.resourceValues(forKeys: [.isDirectoryKey]),
+                  values.isDirectory == true else {
+                continue
+            }
+            // Grok session dirs contain summary.json and/or chat_history.jsonl.
+            let hasSummary = FileManager.default.fileExists(atPath: url.appendingPathComponent("summary.json").path)
+            let hasChat = FileManager.default.fileExists(atPath: url.appendingPathComponent("chat_history.jsonl").path)
+            if hasSummary || hasChat {
+                directories.append(url)
+            }
+        }
+        return directories
+    }
+
+    private static func sessionActivityDate(in sessionDirectory: URL) -> Date? {
+        let markers = [
+            "signals.json",
+            "summary.json",
+            "chat_history.jsonl",
+            "events.jsonl",
+            "updates.jsonl"
+        ]
+        var newest: Date?
+        for name in markers {
+            let url = sessionDirectory.appendingPathComponent(name)
+            guard !isSymbolicLink(url),
+                  let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey]),
+                  values.isRegularFile == true,
+                  let modifiedAt = values.contentModificationDate else {
+                continue
+            }
+            if newest == nil || modifiedAt > newest! {
+                newest = modifiedAt
+            }
+        }
+        return newest
+    }
+
+    private static func sessionHasSignalsFile(_ sessionDirectory: URL) -> Bool {
+        let url = sessionDirectory.appendingPathComponent("signals.json")
+        guard !isSymbolicLink(url),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
+              values.isRegularFile == true,
+              let size = values.fileSize,
+              size <= maximumFileBytes else {
+            return false
+        }
+        return usedPercent(from: url) != nil
+    }
+
+    private static func usedPercent(from url: URL) -> Int? {
         guard !isSymbolicLink(url),
               let data = try? Data(contentsOf: url),
               data.count <= maximumFileBytes,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let usedPercent = usedPercent(from: json) else {
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        return ProviderSnapshot(
-            provider: .xai,
-            updatedAt: now,
-            confidence: .low,
-            dataSource: .localLog,
-            statusMessage: "LOCAL · Grok Build context window",
-            model: "Grok Build",
-            contextWindowUsedPercent: usedPercent,
-            events: []
-        )
+        return usedPercent(from: json)
     }
 
     private static func usedPercent(from json: [String: Any]) -> Int? {
@@ -292,13 +389,16 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true
     }
 
-    private static func unavailableSnapshot(now: Date) -> ProviderSnapshot {
+    private static func unavailableSnapshot(
+        now: Date,
+        statusMessage: String = "LOCAL · Grok Build context window unavailable"
+    ) -> ProviderSnapshot {
         ProviderSnapshot(
             provider: .xai,
             updatedAt: now,
             confidence: .low,
             dataSource: .localLog,
-            statusMessage: "LOCAL · Grok Build context window unavailable",
+            statusMessage: statusMessage,
             model: "Grok Build",
             events: []
         )
@@ -969,6 +1069,8 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.codexManual.pastedStatusOutput = ""
         }
         copy.xAI.teamID = copy.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.xAI.weeklyRemainingPercent = min(max(copy.xAI.weeklyRemainingPercent, 0), 100)
+        copy.xAI.weeklyResetText = copy.xAI.weeklyResetText.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.normalizeProviderEnablement()
         copy.normalizeMenuBarComposition()
         return copy
@@ -1089,30 +1191,46 @@ public final class UsageStore: @unchecked Sendable {
         public var capacityObservations: [CapacityObservation]
         public var capacityErrors: [CapacityRefreshError]
         public var observedAt: Date
+        /// Transient presentation-only experimental OAuth weekly result.
+        /// Never converted into ProviderSnapshot/capacity/history/export/alerts sinks.
+        public var xaiOAuthResult: XAIRefreshResult?
 
         public init(
             snapshots: [ProviderSnapshot],
             hasConnectedData: Bool,
             capacityObservations: [CapacityObservation] = [],
             capacityErrors: [CapacityRefreshError] = [],
-            observedAt: Date = Date()
+            observedAt: Date = Date(),
+            xaiOAuthResult: XAIRefreshResult? = nil
         ) {
             self.snapshots = snapshots
             self.hasConnectedData = hasConnectedData
             self.capacityObservations = capacityObservations
             self.capacityErrors = capacityErrors
             self.observedAt = observedAt
+            self.xaiOAuthResult = xaiOAuthResult
         }
     }
 
     private let refreshAdapters: [any ProviderRefreshAdapter]
     private let mockDataService = MockDataService()
+    /// Lazy factory; invoked only after eligibility (enabled + selected + consent v1 + not sandboxed).
+    private let makeExperimentalWeeklyService: (@Sendable () -> any XAIExperimentalWeeklyService)?
+    private let executionCapability: XAIExecutionCapability
+    private let lock = OSAllocatedUnfairLock()
+    private var experimentalWeeklyService: (any XAIExperimentalWeeklyService)?
+    private var refreshGeneration: UInt64 = 0
+    private var activeTicket: XAIRefreshTicket?
 
     public init(
         adapters: [any ProviderAdapter]? = nil,
         refreshAdapters: [any ProviderRefreshAdapter]? = nil,
-        pathResolver: DefaultPathResolver = DefaultPathResolver()
+        pathResolver: DefaultPathResolver = DefaultPathResolver(),
+        makeExperimentalWeeklyService: (@Sendable () -> any XAIExperimentalWeeklyService)? = nil,
+        executionCapability: XAIExecutionCapability = .current
     ) {
+        self.makeExperimentalWeeklyService = makeExperimentalWeeklyService
+        self.executionCapability = executionCapability
         if let refreshAdapters {
             self.refreshAdapters = refreshAdapters
         } else if let adapters {
@@ -1142,7 +1260,10 @@ public final class UsageStore: @unchecked Sendable {
         ]
     }
 
-    public func refresh(settings: AppSettings) async -> Result {
+    public func refresh(
+        settings: AppSettings,
+        intent: UsageRefreshIntent = .automaticTimer
+    ) async -> Result {
         let observedAt = Date()
         let enabledProviders = Set(settings.enabledProviders)
         var snapshots: [ProviderSnapshot] = []
@@ -1165,6 +1286,14 @@ public final class UsageStore: @unchecked Sendable {
             }
         }
 
+        // OAuth weekly is presentation-only: never merged into snapshots/capacity/history/export/alerts,
+        // and never routed through OpenCode Bar.
+        let xaiOAuthResult = await refreshXAIExperimentalWeeklyIfEligible(
+            settings: settings,
+            intent: intent,
+            now: observedAt
+        )
+
         let hasConnectedData = snapshots.contains { !$0.events.isEmpty || $0.primaryUsedPercent != nil || $0.dailyRequestsUsed != nil || $0.contextWindowUsedPercent != nil || $0.balance != nil }
         let ordered = snapshots.sorted { $0.provider.rawValue < $1.provider.rawValue }
 
@@ -1177,7 +1306,8 @@ public final class UsageStore: @unchecked Sendable {
                 hasConnectedData: false,
                 capacityObservations: [],
                 capacityErrors: capacityErrors,
-                observedAt: observedAt
+                observedAt: observedAt,
+                xaiOAuthResult: xaiOAuthResult
             )
         }
 
@@ -1186,8 +1316,90 @@ public final class UsageStore: @unchecked Sendable {
             hasConnectedData: hasConnectedData,
             capacityObservations: capacityObservations,
             capacityErrors: capacityErrors,
-            observedAt: observedAt
+            observedAt: observedAt,
+            xaiOAuthResult: xaiOAuthResult
         )
+    }
+
+    /// Invalidates the current generation and asks any constructed experimental weekly service to revoke.
+    /// Call before persisting disabled provider/consent settings.
+    public func revokeXAIExperimentalWeekly(ticket: XAIRefreshTicket? = nil) async {
+        let serviceAndTicket: (service: (any XAIExperimentalWeeklyService)?, ticket: XAIRefreshTicket?) = lock.withLock {
+            refreshGeneration &+= 1
+            let revokeTicket = ticket ?? activeTicket
+            activeTicket = nil
+            return (experimentalWeeklyService, revokeTicket)
+        }
+        await serviceAndTicket.service?.revoke(ticket: serviceAndTicket.ticket)
+    }
+
+    /// Shuts down and drops any constructed experimental weekly service (app termination / teardown).
+    public func shutdownXAIExperimentalWeekly() async {
+        let service: (any XAIExperimentalWeeklyService)? = lock.withLock {
+            refreshGeneration &+= 1
+            activeTicket = nil
+            let existing = experimentalWeeklyService
+            experimentalWeeklyService = nil
+            return existing
+        }
+        await service?.shutdown()
+    }
+
+    private func isXAIExperimentalWeeklyEligible(_ settings: AppSettings) -> Bool {
+        settings.xaiEnabled
+            && settings.isProviderEnabled(.xai)
+            && settings.xAI.experimentalOAuthWeeklyConsentVersion
+                == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
+            && !executionCapability.isSandboxed
+    }
+
+    /// Constructs the experimental service only when fully eligible; otherwise returns nil with zero service work.
+    /// Late results after revoke/shutdown generation invalidation are dropped (never published).
+    private func refreshXAIExperimentalWeeklyIfEligible(
+        settings: AppSettings,
+        intent: UsageRefreshIntent,
+        now: Date
+    ) async -> XAIRefreshResult? {
+        guard isXAIExperimentalWeeklyEligible(settings) else {
+            return nil
+        }
+        guard let makeService = makeExperimentalWeeklyService else {
+            return nil
+        }
+
+        let serviceAndTicket: (service: any XAIExperimentalWeeklyService, ticket: XAIRefreshTicket)? = lock.withLock {
+            if experimentalWeeklyService == nil {
+                experimentalWeeklyService = makeService()
+            }
+            guard let service = experimentalWeeklyService else { return nil }
+            refreshGeneration &+= 1
+            let ticket = XAIRefreshTicket(generation: refreshGeneration)
+            activeTicket = ticket
+            return (service, ticket)
+        }
+        guard let serviceAndTicket else { return nil }
+
+        let input = XAIExperimentalWeeklyInput(
+            settings: settings,
+            intent: intent,
+            ticket: serviceAndTicket.ticket,
+            now: now
+        )
+        let result = await serviceAndTicket.service.refresh(input)
+
+        // Generation/ticket commit gate: consent off, provider off, revoke, or shutdown
+        // must prevent late OAuth publication even if the transport already finished.
+        return lock.withLock {
+            guard activeTicket == serviceAndTicket.ticket else {
+                return nil
+            }
+            if result.oauthFailure == .staleResult || result.completion == .cancelledOrdinarily {
+                activeTicket = nil
+                return nil
+            }
+            activeTicket = nil
+            return result
+        }
     }
 }
 
@@ -1230,6 +1442,16 @@ public final class NotificationRuleService: @unchecked Sendable {
 
     public init(store: AlertDeduplicationStore = AlertDeduplicationStore()) {
         self.store = store
+    }
+
+    public func evaluate(
+        snapshots: [XAIProvenancedSnapshot],
+        settings: AppSettings,
+        language: TokenPilotLanguage = .en
+    ) -> NotificationRuleEvaluation {
+        let admission = XAISinkAdmission.admitSnapshots(snapshots, sink: .notification)
+        let events = evaluate(snapshots: admission.accepted, settings: settings, language: language)
+        return NotificationRuleEvaluation(events: events, exclusions: admission.exclusions)
     }
 
     public func evaluate(snapshots: [ProviderSnapshot], settings: AppSettings, language: TokenPilotLanguage = .en) -> [AlertEvent] {

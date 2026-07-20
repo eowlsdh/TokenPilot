@@ -403,7 +403,7 @@ struct SettingsScreen: View {
             .accessibilityLabel(model.t("Grok Build source"))
             .accessibilityValue(model.t("Local context metadata"))
 
-            Text(model.t("Reads only local context metadata from ~/.grok/sessions/**/signals.json. It never reads auth.json, OAuth tokens, prompts, or responses."))
+            Text(model.t("The local context source reads only ~/.grok/sessions/**/signals.json metadata. It never reads auth.json, OAuth tokens, prompts, or responses."))
                 .font(.caption2)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -415,6 +415,69 @@ struct SettingsScreen: View {
 
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
                 .buttonStyle(.bordered)
+
+            TokenPilotSeparator()
+
+            Text(model.t("Experimental OAuth weekly usage"))
+                .font(.caption.weight(.semibold))
+            Toggle(
+                model.t("Use experimental Grok OAuth weekly usage"),
+                isOn: Binding(
+                    get: { model.isExperimentalOAuthWeeklyConsentEnabled },
+                    set: { enabled in
+                        Task { await model.setExperimentalOAuthWeeklyConsent(enabled) }
+                    }
+                )
+            )
+            .accessibilityHint(model.t("Default off. Reads the fixed local Grok CLI auth descriptor only after explicit consent."))
+            Text(model.t("EXPERIMENTAL / UNOFFICIAL: After explicit consent, reads only the selected access token and expiry from ~/.grok/auth.json for one weekly billing request. The token stays in memory and is never displayed, logged, stored, diagnosed, or exported."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text(model.experimentalOAuthWeeklyStatusText)
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                Spacer(minLength: 0)
+                Text(model.experimentalOAuthWeeklyActionText)
+                    .font(.caption.weight(.semibold))
+            }
+            .accessibilityElement(children: .combine)
+            Button(model.t("Refresh OAuth weekly usage")) {
+                Task { await model.refresh(reason: .manual) }
+            }
+            .buttonStyle(.bordered)
+            .disabled(!model.isExperimentalOAuthWeeklyConsentEnabled)
+
+            TokenPilotSeparator()
+
+            Text(model.t("Manual weekly limit"))
+                .font(.caption.weight(.semibold))
+            Text(model.t("Grok has no public weekly-limit API and TokenPilot never reuses Grok login sessions the way Orca does for Claude/Codex. Enter the Weekly limit value you see in Grok (for example 64%). Menu bar shows that exact remaining percentage with a MANUAL marker."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(model.t("Use Manual Weekly Limit Snapshot"), isOn: $model.settings.xAI.weeklySnapshotEnabled)
+            Stepper(
+                String(format: model.t("Weekly remaining: %d%%"), model.settings.xAI.weeklyRemainingPercent),
+                value: $model.settings.xAI.weeklyRemainingPercent,
+                in: 0...100
+            )
+            TextField(model.t("Reset note"), text: $model.settings.xAI.weeklyResetText)
+                .textFieldStyle(.roundedBorder)
+            HStack {
+                Button(model.t("Mark Weekly Snapshot Now")) { model.markGrokWeeklySnapshotNow() }
+                if let capturedAt = model.settings.xAI.weeklySnapshotCapturedAt {
+                    Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt, language: model.settings.localization.language))")
+                        .font(.caption)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+            }
+            Text(model.t("When enabled, menu bar prefers this weekly remaining value over local context usage (GROK CTX)."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -830,7 +893,7 @@ struct SettingsScreen: View {
                 privacyLine(model.t("Reads local usage metadata and selected files only."))
                 privacyLine(model.t("Does not read browser cookies or other Keychain items."))
                 privacyLine(model.t("Codex experimental connector is opt-in, local-only, and never reads, displays, stores, or exports Codex access tokens."))
-                privacyLine(model.t("Grok Build reads only local context metadata from signals.json; it never reads auth.json, OAuth tokens, prompts, or responses."))
+                privacyLine(model.t("Grok local context reads only signals.json metadata. The separate experimental OAuth weekly feature is default-off and reads the fixed auth descriptor only after explicit consent."))
                 privacyLine(model.t("Telegram and Discord send only alert messages when enabled."))
             }
         }

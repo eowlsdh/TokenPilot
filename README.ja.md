@@ -2,7 +2,7 @@
 
 **TokenPilot** は AI coding provider の残り割合を macOS メニューバーで最もシンプルに確認する local-first ユーティリティです。上段に provider 名、下段に残りパーセントを表示し、選択した provider を独立したメニューバー項目として並べることも、1つにまとめることもできます。
 
-> TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、provider auth ファイル、任意の Keychain 項目は読みません。
+> TokenPilot は使用量メタデータ中心で動作します。プロンプト / レスポンス本文、ブラウザ Cookie、任意の Keychain 項目は読みません。Provider auth 素材は既定では収集せず、唯一の例外は後述の既定 OFF の EXPERIMENTAL/UNOFFICIAL Grok OAuth 週間機能です。
 >
 > TokenPilot は OpenAI、Anthropic、Google、DeepSeek、xAI と提携しておらず、公式認証製品でもありません。
 
@@ -29,7 +29,7 @@
 - **残りクォータ優先 UI**: 使用済みではなく「どれだけ残っているか」を優先表示します。
 - **Claude / Codex / Antigravity（従来の Gemini telemetry）/ DeepSeek / Grok/xAI 統合**: 各 provider のローカルメタデータ、任意の balance シグナル、Grok ローカル context メタデータを1つの画面に集約します。
 - **DeepSeek balance**: API key を Keychain に保存した場合、公式 `/user/balance` の `topped_up_balance` を native currency で表示します。
-- **Grok/xAI source**: `~/.grok/sessions/**/signals.json` にある数値のローカル context メタデータだけを読みます。`auth.json`、OAuth token、prompt、response は読みません。メニューバーには subscription quota や API billing ではなく、残りローカル context（`100 - contextWindowUsage`）を表示します。
+- **Grok/xAI source**: ローカル context は `~/.grok/sessions/**/signals.json` の数値メタデータだけを読み、`auth.json` / token / prompt / response は読みません。別途、既定 OFF の EXPERIMENTAL/UNOFFICIAL OAuth 週間機能は、明示的な同意後に限り固定パス `~/.grok/auth.json` から選択した access token と有効期限だけを読み、1 回の billing リクエストに使い、token はメモリのみに保持し、表示・ログ・保存・診断・export しません。手動の週間値が優先されます。
 - **手動 fallback と stale 表示**: API key がない、または取得に失敗した場合でも値の信頼度を明示します。
 - **低残高アラート**: topped-up balance が $5 以下になった場合に通知できます。
 - **Privacy-first export**: JSON/CSV export には secret、API key、webhook、chat ID、raw prompt/response、local file path を含めません。
@@ -65,13 +65,15 @@
 
 ### Grok / xAI source
 
-TokenPilot は次のファイルから数値のローカル context メタデータだけを読みます。
+TokenPilot の **ローカル context** 経路は次のファイルから数値のローカル context メタデータだけを読みます。
 
 ```text
 ~/.grok/sessions/**/signals.json
 ```
 
-`auth.json`、OAuth token、prompt、response、provider billing/subscription データは読みません。Grok のメニューバー値は残りローカル context（`100 - contextWindowUsage`）であり、provider quota ではないため、provider quota や API billing と比較できません。
+このローカル context 機能は `auth.json`、OAuth token、prompt、response、provider billing/subscription データを読みません。Grok のメニューバーのローカル値は残り context（`100 - contextWindowUsage`）であり、provider quota ではないため、provider quota や API billing と比較できません。
+
+**別途**、既定 OFF の **EXPERIMENTAL / UNOFFICIAL** OAuth 週間機能は、明示的な同意後に限り固定パス `~/.grok/auth.json` から選択した access token と有効期限を読み、固定の週間 billing リクエストを 1 回行い、token はメモリのみに保持し、表示・ログ・保存・診断・export しません。手動の週間値は experimental OAuth 表示より優先されます。
 
 ---
 

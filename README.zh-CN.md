@@ -2,7 +2,7 @@
 
 **TokenPilot** 是一款 local-first macOS 工具，用最简洁的方式在菜单栏查看 AI coding provider 的剩余百分比：上方显示 provider 名称，下方显示剩余百分比。选中的 provider 可以注册为独立菜单栏项目，也可以合并为一个项目。
 
-> TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie、provider auth 文件或任意 Keychain 项。
+> TokenPilot 只围绕用量元数据工作。它不会读取 prompt/response 正文、浏览器 Cookie 或任意 Keychain 项。Provider 认证材料默认不会被收集；唯一例外是下文所述、默认关闭的 EXPERIMENTAL/UNOFFICIAL Grok OAuth 周用量功能。
 >
 > TokenPilot 不隶属于 OpenAI、Anthropic、Google、DeepSeek 或 xAI，也不是官方认证产品。
 
@@ -29,7 +29,7 @@
 - **剩余额度优先 UI**：优先显示“还剩多少”，而不是“已经用了多少”。
 - **Claude / Codex / Antigravity（旧版 Gemini telemetry）/ DeepSeek / Grok/xAI 集成**：把各 provider 的本地元数据、可选 balance 信号和 Grok 本地 context 元数据汇总到一个界面。
 - **DeepSeek balance**：保存 API key 后，使用官方 `/user/balance` 的 `topped_up_balance`，并按 native currency 显示。
-- **Grok/xAI source**：只读取 `~/.grok/sessions/**/signals.json` 中的数值本地 context 元数据；不会读取 `auth.json`、OAuth token、prompt 或 response。菜单栏显示剩余本地 context（`100 - contextWindowUsage`），不是 subscription quota 或 API billing。
+- **Grok/xAI source**：本地 context 仅读取 `~/.grok/sessions/**/signals.json` 中的数值元数据，不读取 `auth.json`/token/prompt/response。另有一项默认关闭的 EXPERIMENTAL/UNOFFICIAL OAuth 周用量功能，仅在明确同意后，才从固定路径 `~/.grok/auth.json` 读取所选 access token 与过期时间，用于一次固定 billing 请求；token 仅保留在内存中，从不显示、记录、存储、诊断或 export。手动周用量优先。
 - **Manual fallback 与 stale 标记**：没有 API key 或请求失败时，也会清楚标出数据可信度。
 - **低余额提醒**：当 topped-up balance 不高于 $5 时可以触发提醒。
 - **Privacy-first export**：JSON/CSV export 不包含 secret、API key、webhook、chat ID、raw prompt/response 或 local file path。
@@ -65,13 +65,15 @@
 
 ### Grok / xAI source
 
-TokenPilot 只从以下文件读取数值本地 context 元数据：
+TokenPilot 的 **本地 context** 路径只从以下文件读取数值本地 context 元数据：
 
 ```text
 ~/.grok/sessions/**/signals.json
 ```
 
-不会读取 `auth.json`、OAuth token、prompt、response 或 provider billing/subscription 数据。Grok 菜单栏值为剩余本地 context（`100 - contextWindowUsage`），不是 provider quota，因此不可与 provider quota 或 API billing 比较。
+该本地 context 功能不会读取 `auth.json`、OAuth token、prompt、response 或 provider billing/subscription 数据。Grok 菜单栏本地值为剩余 context（`100 - contextWindowUsage`），不是 provider quota，因此不可与 provider quota 或 API billing 比较。
+
+**另有**一项默认关闭的 **EXPERIMENTAL / UNOFFICIAL** OAuth 周用量功能，仅在明确同意后，才从固定路径 `~/.grok/auth.json` 读取所选 access token 与过期时间，发起一次固定的周 billing 请求，token 仅保留在内存中，从不显示、记录、存储、诊断或 export。手动周用量优先于 experimental OAuth 展示。
 
 ---
 
