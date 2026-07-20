@@ -4119,7 +4119,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let expired = ProviderLimitSample(provider: .claude, timestamp: now.addingTimeInterval(-3 * 24 * 60 * 60), window: .fiveHour, usedPercent: 90, remainingPercent: 10, source: "test")
         defaults.set(try JSONEncoder().encode([expired, current]), forKey: key)
 
-        _ = store.record(snapshots: [], enabledProviders: [.claude], referenceDate: now)
+        _ = store.record(snapshots: [ProviderSnapshot](), enabledProviders: [.claude], referenceDate: now)
 
         XCTAssertEqual(store.loadSamples().map(\.usedPercent), [30])
     }
@@ -5443,9 +5443,9 @@ private final class StubGrokOAuthBillingTransport: GrokOAuthBillingTransporting,
 
     func fetchWeeklyBilling(accessToken: String) async -> Result<(statusCode: Int, body: Data), XAIUnavailableReason> {
         XCTAssertEqual(accessToken, "synthetic-access")
-        lock.lock()
-        calls += 1
-        lock.unlock()
+        lock.withLock {
+            calls += 1
+        }
         return result
     }
 
@@ -6039,44 +6039,52 @@ private final class GrokOAuthAsyncGate: @unchecked Sendable {
     private var openWaiters: [CheckedContinuation<Void, Never>] = []
 
     func waitUntilEntered() async {
-        lock.lock()
-        if entered {
-            lock.unlock()
-            return
-        }
         await withCheckedContinuation { continuation in
-            enterWaiters.append(continuation)
-            lock.unlock()
+            let resumeImmediately = lock.withLock {
+                if entered {
+                    return true
+                }
+                enterWaiters.append(continuation)
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
         }
     }
 
     func waitUntilOpened() async {
-        lock.lock()
-        if opened {
-            lock.unlock()
-            return
-        }
         await withCheckedContinuation { continuation in
-            openWaiters.append(continuation)
-            lock.unlock()
+            let resumeImmediately = lock.withLock {
+                if opened {
+                    return true
+                }
+                openWaiters.append(continuation)
+                return false
+            }
+            if resumeImmediately {
+                continuation.resume()
+            }
         }
     }
 
     func markEntered() {
-        lock.lock()
-        entered = true
-        let waiters = enterWaiters
-        enterWaiters.removeAll()
-        lock.unlock()
+        let waiters = lock.withLock {
+            entered = true
+            let waiters = enterWaiters
+            enterWaiters.removeAll()
+            return waiters
+        }
         waiters.forEach { $0.resume() }
     }
 
     func open() {
-        lock.lock()
-        opened = true
-        let waiters = openWaiters
-        openWaiters.removeAll()
-        lock.unlock()
+        let waiters = lock.withLock {
+            opened = true
+            let waiters = openWaiters
+            openWaiters.removeAll()
+            return waiters
+        }
         waiters.forEach { $0.resume() }
     }
 }
@@ -6094,9 +6102,9 @@ private final class GatingGrokOAuthBillingTransport: GrokOAuthBillingTransportin
 
     func fetchWeeklyBilling(accessToken: String) async -> Result<(statusCode: Int, body: Data), XAIUnavailableReason> {
         XCTAssertEqual(accessToken, "synthetic-access")
-        lock.lock()
-        calls += 1
-        lock.unlock()
+        lock.withLock {
+            calls += 1
+        }
         gate.markEntered()
         await gate.waitUntilOpened()
         return result
