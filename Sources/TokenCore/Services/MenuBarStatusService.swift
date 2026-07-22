@@ -198,7 +198,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return "\(candidate.snapshot.provider.shortName) · \(modeLabel)"
         case .info:
             if candidate.snapshot.provider == .codex {
-                return "\(candidate.snapshot.provider.shortName) --%"
+                return "\(candidate.snapshot.provider.shortName) · \(localized("Unavailable", language: settings.localization.language))"
             }
             if candidate.snapshot.todayTokens > 0 {
                 let tokenUnit = TokenPilotLocalizer.localized("tok", language: settings.localization.language)

@@ -517,14 +517,19 @@ struct ProgressLine: View {
     var isDecorative: Bool = false
 
     var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                ProgressTrack(palette: palette)
-                ProgressFill(
-                    color: color ?? palette.status(.neutral),
-                    width: progressWidth(in: geo.size.width)
-                )
+        HStack(spacing: 0) {
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    ProgressTrack(palette: palette)
+                    ProgressFill(
+                        color: color ?? palette.status(.neutral),
+                        width: progressWidth(in: geo.size.width)
+                    )
+                }
             }
+            .frame(maxWidth: 112, minHeight: progressHeight, maxHeight: progressHeight)
+
+            Spacer(minLength: 0)
         }
         .frame(height: progressHeight)
         .accessibilityElement(children: .ignore)

@@ -2837,7 +2837,9 @@ public final class CodexManualAdapter: ProviderAdapter, Sendable {
         let hasReset = !manual.resetTimeText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasData = hasValues || hasPlan || hasReset || !notes.isEmpty || hasPastedStatus
 
-        if manual.webSnapshotEnabled {
+        let hasCapturedWebSnapshot = manual.webSnapshotCapturedAt != nil
+        let hasWebSnapshotEvidence = hasCapturedWebSnapshot || hasValues || manual.webTodayTokens > 0
+        if manual.webSnapshotEnabled, hasWebSnapshotEvidence {
             let capturedAt = manual.webSnapshotCapturedAt ?? Date()
             let fiveHour = LimitWindow(kind: .fiveHour, usedPercent: manual.fiveHourUsagePercentage, confidence: .high)
             let weekly = LimitWindow(kind: .weekly, usedPercent: manual.weeklyUsagePercentage, confidence: .high)

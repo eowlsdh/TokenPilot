@@ -218,7 +218,7 @@ final class TokenMonitorTests: XCTestCase {
             now: Date(timeIntervalSince1970: 1_000_000)
         )
 
-        XCTAssertEqual(title, "Co --%")
+        XCTAssertEqual(title, "Co · 사용 불가")
         XCTAssertFalse(title.contains("100%"))
         XCTAssertFalse(title.contains("0%"))
     }

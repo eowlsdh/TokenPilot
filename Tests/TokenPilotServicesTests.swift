@@ -1476,6 +1476,29 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(snapshot.events.isEmpty)
     }
 
+    func testCodexManualWebSnapshotRequiresCapturedEvidenceBeforeShowingZero() async {
+        var settings = AppSettings()
+        settings.codexManual.webSnapshotEnabled = true
+
+        let snapshot = await CodexManualAdapter().snapshot(settings: settings)
+
+        XCTAssertNil(snapshot.fiveHour)
+        XCTAssertNil(snapshot.weekly)
+        XCTAssertEqual(snapshot.statusMessage, "Manual mode · no data entered")
+    }
+
+    func testCodexManualWebSnapshotPreservesExplicitCapturedZero() async {
+        var settings = AppSettings()
+        settings.codexManual.webSnapshotEnabled = true
+        settings.codexManual.webSnapshotCapturedAt = Date(timeIntervalSince1970: 1_800_000_000)
+
+        let snapshot = await CodexManualAdapter().snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 0)
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 0)
+        XCTAssertEqual(snapshot.statusMessage, "Manual web snapshot · user-entered Codex web values")
+    }
+
     func testCodexManualWebSnapshotShowsUserEnteredWebQuotaWithoutEstimatedLabel() async throws {
         var settings = AppSettings()
         settings.codexManual.webSnapshotEnabled = true
