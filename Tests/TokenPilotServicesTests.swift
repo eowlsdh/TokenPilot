@@ -4249,7 +4249,7 @@ final class TokenPilotServicesTests: XCTestCase {
             modeLabel: "LIVE"
         )
 
-        XCTAssertEqual(title, "Co --%")
+        XCTAssertEqual(title, "Co · Unavailable")
     }
 
     func testMenuBarStatusServiceShowsRemainingPercentagesForFiveHourAndWeekly() {
