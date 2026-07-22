@@ -678,7 +678,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func targetedFallbackTitle(for target: Provider, settings: AppSettings, modeLabel: String) -> String {
         switch target {
         case .codex:
-            return "\(target.shortName) --%"
+            return "\(target.shortName) · \(localized("Unavailable", language: settings.localization.language))"
         case .xai:
             return targetedXAIStatusTitle(settings: settings, language: settings.localization.language)
         case .claude, .gemini, .deepseek:

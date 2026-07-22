@@ -4228,7 +4228,7 @@ final class TokenPilotServicesTests: XCTestCase {
             modeLabel: "LIVE"
         )
 
-        XCTAssertEqual(title, "Co --%")
+        XCTAssertEqual(title, "Co · Unavailable")
         XCTAssertFalse(title.contains("tok"))
         XCTAssertFalse(title.contains("12.4K"))
     }
