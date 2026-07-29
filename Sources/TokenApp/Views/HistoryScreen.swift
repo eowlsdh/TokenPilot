@@ -582,17 +582,17 @@ private struct HistoryTrendBar: View {
     }
 }
 
-struct HistoryModelBreakdownCard: View {
-    let shares: [ModelUsageShare]
-    @ObservedObject var model: TokenPilotViewModel
+    struct HistoryModelBreakdownCard: View {
+        let shares: [ModelUsageShare]
+        @ObservedObject var model: TokenPilotViewModel
 
-    @State private var isExpanded = false
+        @State private var showingAllModels = false
 
-    private var visibleShares: [ModelUsageShare] {
-        isExpanded ? Array(shares.prefix(12)) : Array(shares.prefix(4))
-    }
+        private var visibleShares: [ModelUsageShare] {
+            showingAllModels ? Array(shares.prefix(12)) : Array(shares.prefix(4))
+        }
 
-    private var hasMore: Bool { shares.count > 4 }
+        private var hasMore: Bool { shares.count > 4 }
 
     var body: some View {
         GlassCard(padding: 10) {
@@ -619,8 +619,8 @@ struct HistoryModelBreakdownCard: View {
                 }
 
                 if hasMore {
-                    Button(isExpanded ? model.t("Show fewer models") : model.t("Show all models")) {
-                        withAnimation(.easeInOut(duration: 0.18)) { isExpanded.toggle() }
+                    Button(showingAllModels ? model.t("Show fewer models") : model.t("Show all models")) {
+                        withAnimation(.easeInOut(duration: 0.18)) { showingAllModels.toggle() }
                     }
                     .buttonStyle(.plain)
                     .font(TokenPilotDesign.Typography.caption)

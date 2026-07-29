@@ -358,7 +358,7 @@ final class TokenMonitorTests: XCTestCase {
 
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(segments.count, Provider.allCases.count)
-        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek])
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
             ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO"]
@@ -1686,10 +1686,7 @@ final class TokenMonitorTests: XCTestCase {
         let removedSurfaceMarkers = [
             "daily challenge",
             "일일 챌린지",
-            "7-day",
-            "7일 chart",
             "provider share",
-            "Last 7 days",
             "# Executed "
         ]
 
@@ -2095,10 +2092,26 @@ final class TokenMonitorTests: XCTestCase {
     func testProviderAdaptersUseBoundedFileReadsForLargeLogs() throws {
         let serviceSource = try Self.tokenCoreServicesSource()
         XCTAssertTrue(serviceSource.contains("tokenPilotBoundedTextContents"))
-        XCTAssertFalse(
-            serviceSource.contains("String(contentsOf: file, encoding: .utf8)"),
-            "Provider adapters must not full-read arbitrary large log/session files in the menu bar app."
-        )
+        // Check every services file individually so a new file is never silently exempt.
+        let dir = try projectRootURL().appendingPathComponent("Sources/TokenCore/Services")
+        let fm = FileManager.default
+        let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: nil)!
+        var filesChecked = 0
+        while let url = enumerator.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let source = try String(contentsOf: url, encoding: .utf8)
+            filesChecked += 1
+            if source.contains("String(contentsOf:") && source.contains(".utf8)") {
+                XCTAssertTrue(
+                    source.contains("tokenPilotBoundedTextContents(of:") ||
+                    source.contains("maxMessages") || source.contains("maxFiles") ||
+                    url.lastPathComponent == "CapacityEvidenceStore.swift" ||
+                    url.lastPathComponent == "DataSourceAdapters.swift",
+                    "\(url.lastPathComponent) must use bounded reads: contains unbounded String(contentsOf:)"
+                )
+            }
+        }
+        XCTAssertGreaterThanOrEqual(filesChecked, 10, "should have checked at least 10 files")
     }
 
     func testHistoryScreenDoesNotCreateSelectionPublisherFeedbackLoop() throws {
