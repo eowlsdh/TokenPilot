@@ -361,7 +361,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
-            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK"]
+            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO"]
         )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
@@ -1163,7 +1163,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_SCENARIO"))
         XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_SCREEN"))
         XCTAssertTrue(fixtureSource.contains("TOKENPILOT_DEBUG_LANGUAGE"))
-        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_784_289_600)"))
+        XCTAssertTrue(fixtureSource.contains("private static let fixedReferenceDate = Date().addingTimeInterval(-300)"))
         XCTAssertTrue(fixtureSource.contains("privacyContract"))
         XCTAssertTrue(fixtureSource.contains("No network. No real provider accounts. No credentials. No local paths. No secrets."))
         XCTAssertFalse(viewModelSource.replacingOccurrences(of: fixtureSource, with: "").contains("TOKENPILOT_UI_TESTING"))
@@ -1181,6 +1181,8 @@ final class TokenMonitorTests: XCTestCase {
             "deepseekOfficialBalance",
             "deepseekManualBalance",
             "antigravityBridge",
+            "opencodeLocalSessions",
+            "kiroCreditMetered",
             "runtimeRecoveryRequired",
             "alertsUnsupportedCodexLegacy",
             "alertsPendingDeepSeekCurrency"
@@ -1260,7 +1262,7 @@ final class TokenMonitorTests: XCTestCase {
         let expectedScenarioModes = [
             "case .claudeOfficialFresh, .deepseekOfficialBalance:\n            return .live",
             "case .claudeOfficialStale:\n            return .stale",
-            "case .codexLocalOnly, .alertsUnsupportedCodexLegacy:\n            return .local",
+            "case .codexLocalOnly, .alertsUnsupportedCodexLegacy, .opencodeLocalSessions, .kiroCreditMetered:\n            return .local",
             "case .codexConnectorExperimental:\n            return .experimental",
             "case .codexManual, .deepseekManualBalance:\n            return .manual",
             "case .antigravityBridge:\n            return .compatibilityBridge",
@@ -1305,7 +1307,7 @@ final class TokenMonitorTests: XCTestCase {
         let fixtureStart = try XCTUnwrap(viewModelSource.range(of: fixtureMarker))
         let fixtureSource = String(viewModelSource[fixtureStart.lowerBound...])
 
-        XCTAssertTrue(fixtureSource.contains("Date(timeIntervalSince1970: 1_784_289_600)"))
+        XCTAssertTrue(fixtureSource.contains("private static let fixedReferenceDate = Date().addingTimeInterval(-300)"))
         XCTAssertTrue(fixtureSource.contains("resetAt: resetAfter.map { fixedReferenceDate.addingTimeInterval($0) }"))
         XCTAssertTrue(fixtureSource.contains("let assessments = observations.map { assessmentService.assess($0, now: fixedReferenceDate) }"))
         XCTAssertFalse(fixtureSource.contains("Date(timeIntervalSince1970: 1_700_000_000)"))

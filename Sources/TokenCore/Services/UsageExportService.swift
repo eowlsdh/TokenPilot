@@ -68,7 +68,16 @@ public final class UsageExportService {
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
             events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:)),
             capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments),
-            modelBreakdown: exportUsage.modelBreakdown
+            modelBreakdown: exportUsage.modelBreakdown.map { share in
+                ModelUsageShare(
+                    provider: share.provider,
+                    model: TokenPilotPrivacyRedactor.redact(share.model),
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: share.estimatedCostUSD,
+                    tokenPercent: share.tokenPercent
+                )
+            }
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

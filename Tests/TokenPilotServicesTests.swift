@@ -210,7 +210,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let decoded = try JSONDecoder().decode(AppSettings.self, from: Data(unknownProviderJSON.utf8))
 
         XCTAssertNil(decoded.menuBarDisplayTarget)
-        XCTAssertEqual(decoded.enabledProviders, [.claude])
+        XCTAssertEqual(decoded.enabledProviders, [.claude, .opencode, .kiro])
         XCTAssertEqual(decoded.monitoredProviders.enabledProviders, [.claude])
         XCTAssertEqual(decoded.monitoredProviders.providerModes, [.claude: .auto])
         XCTAssertEqual(decoded.monitoredProviders.customPaths, [.claude: "/tmp/claude"])
@@ -3205,9 +3205,11 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(payload.capacity?.observations.first?.remainingPercent, 18)
         XCTAssertFalse(raw.contains("forecast"))
         XCTAssertFalse(raw.contains("statusMessage"))
-        XCTAssertFalse(raw.contains("model"))
         XCTAssertFalse(raw.contains("/Users/"))
         XCTAssertFalse(raw.contains("secret"))
+        // "model" appears in modelBreakdown keys but the old model/statusMessage fields from
+        // ProviderSnapshot must not be present as regular export fields.
+        XCTAssertFalse(raw.contains(""statusMessage""))
     }
 
     func testUsageExportRedactsSnapshotAndEventDiagnosticFields() throws {
@@ -3296,7 +3298,7 @@ final class TokenPilotServicesTests: XCTestCase {
         )
 
         XCTAssertFalse(monitoredOnly.xaiEnabled)
-        XCTAssertEqual(monitoredOnly.enabledProviders, [.claude, .xai])
+        XCTAssertEqual(monitoredOnly.enabledProviders, [.claude, .xai, .opencode, .kiro])
         XCTAssertTrue(monitoredOnly.isProviderEnabled(.xai))
     }
 
