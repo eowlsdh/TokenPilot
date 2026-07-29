@@ -3897,7 +3897,6 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(settings.setProviderEnabled(.gemini, isEnabled: false))
 
         XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
-        XCTAssertEqual(settings.enabledProviders, [.deepseek])
         XCTAssertEqual(settings.enabledProviders, [.deepseek, .opencode, .kiro])
         XCTAssertTrue(settings.isProviderEnabled(.deepseek))
     }
@@ -3908,7 +3907,6 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertTrue(settings.deepseekEnabled)
         XCTAssertTrue(settings.isProviderEnabled(.deepseek))
-        XCTAssertEqual(settings.enabledProviders, [.claude, .codex, .gemini, .deepseek])
         XCTAssertEqual(settings.enabledProviders, [.claude, .codex, .gemini, .deepseek, .opencode, .kiro])
     }
 
