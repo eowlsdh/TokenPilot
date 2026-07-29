@@ -903,7 +903,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertFalse(componentsSource.contains("@Environment(\\.tokenPilotContrastOverride) private var contrastOverride"))
     }
 
-    func testSettingsDataSourcesUseFiveProviderDisclosuresWithPreservedControls() throws {
+    func testSettingsDataSourcesCoverEveryProviderWithPreservedControls() throws {
         let source = try Self.tokenMonitorAppSource()
 
         XCTAssertTrue(source.contains("private func providerSetupDisclosure<Content: View>"))
@@ -918,13 +918,15 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
         XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
         XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
-        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro]"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .opencode, title: model.t(\"opencode\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .kiro, title: model.t(\"Kiro\"))"))
 
-        XCTAssertTrue(source.contains("providerToggle(.claude)"))
-        XCTAssertTrue(source.contains("providerToggle(.codex)"))
-        XCTAssertTrue(source.contains("providerToggle(.gemini)"))
-        XCTAssertTrue(source.contains("providerToggle(.deepseek)"))
-        XCTAssertTrue(source.contains("providerToggle(.xai)"))
+        XCTAssertTrue(
+            source.contains("ForEach(Provider.allCases) { provider in\n                            providerToggle(provider)"),
+            "the provider picker must iterate every provider so new providers cannot be silently omitted"
+        )
+        XCTAssertFalse(source.contains("providerToggle(.claude)"), "hardcoded provider lists drift when providers are added")
         XCTAssertTrue(source.contains("model.chooseClaudeStatusFile()"))
         XCTAssertTrue(source.contains("model.chooseGeminiTelemetrySource()"))
         XCTAssertTrue(source.contains("Toggle(model.t(\"Use Manual DeepSeek Balance\")"))

@@ -31,7 +31,10 @@
 		75A9B33EC6BE215468C025DC /* TokenPilot.icns in Resources */ = {isa = PBXBuildFile; fileRef = F417840E7E6C1164FF7B7487 /* TokenPilot.icns */; };
 		7EF5DB9E4D8DE59641E1C29D /* SecurityScopedBookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F485074C073DA1833A23027 /* SecurityScopedBookmarks.swift */; };
 		8106B700D5A638BC92BDA283 /* TokenCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E4EED30F2F00F8FF408170B3 /* TokenCore.framework */; };
+		84654F6548DC3A290D4FAAFB /* OpenCodeRateLimitAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2200A10C18105C907F2009B0 /* OpenCodeRateLimitAdapter.swift */; };
+		86EB3DD5E46A1CED50F045A1 /* OpenCodeAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2411CC24DF0CCD62A2C523E5 /* OpenCodeAdapter.swift */; };
 		91E9190FFF31916478903D7D /* DataSourceConnectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A74A389CD470FD21491DE89 /* DataSourceConnectionService.swift */; };
+		A92EC541A4D92B4C27035A5E /* KiroAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACF860C5E11CF8F7A401C0F5 /* KiroAdapter.swift */; };
 		B42F3DBBFD35E0EEEBA6E076 /* HistoryScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D9BF8AEB4219BBD6B6CFF6B /* HistoryScreen.swift */; };
 		B4F80CEDD4D74D46FC25EFCE /* UsageExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B47DC935EDF476A6B808F96 /* UsageExportService.swift */; };
 		B873551CAAA7971482C629F4 /* TokenPilotDesign.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F329D1DD3F3573BB11A01E7 /* TokenPilotDesign.swift */; };
@@ -41,6 +44,7 @@
 		CAC646A8AF1384AB2D324AFE /* SettingsScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 607F0C78661A6561C4E64E02 /* SettingsScreen.swift */; };
 		D4DA58A2377F9DF829574F97 /* TokenPilotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B39A9C5F1DD41AB3B6B169F /* TokenPilotModels.swift */; };
 		F2BE982512197A4707D9CC16 /* TokenPilotServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6266F42C492852F65699522 /* TokenPilotServices.swift */; };
+		F59944DA532F8602E5DA6A59 /* KiroUsageLimitsAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD3DA404FED04A696DED2806 /* KiroUsageLimitsAdapter.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -75,6 +79,8 @@
 		0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokOAuthWeeklyUsageAdapter.swift; sourceTree = "<group>"; };
 		18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPathResolver.swift; sourceTree = "<group>"; };
 		1BFCE519B2DB43F132E85C4A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		2200A10C18105C907F2009B0 /* OpenCodeRateLimitAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeRateLimitAdapter.swift; sourceTree = "<group>"; };
+		2411CC24DF0CCD62A2C523E5 /* OpenCodeAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenCodeAdapter.swift; sourceTree = "<group>"; };
 		2886D1113E8AD1729D15F8F8 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		2AC77B7F87E55856E05E3D67 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		2D0989744766BAD094B2F91A /* ProviderSelectionModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderSelectionModels.swift; sourceTree = "<group>"; };
@@ -99,7 +105,9 @@
 		ABF2DF632C954FA5B8002C53 /* UsageHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UsageHistoryStore.swift; sourceTree = "<group>"; };
 		AC7A087E3AFC24BF561B671B /* CodexStatusParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodexStatusParser.swift; sourceTree = "<group>"; };
 		ACE9E89C05ED618276E602B8 /* AggregationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AggregationService.swift; sourceTree = "<group>"; };
+		ACF860C5E11CF8F7A401C0F5 /* KiroAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroAdapter.swift; sourceTree = "<group>"; };
 		B6266F42C492852F65699522 /* TokenPilotServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotServices.swift; sourceTree = "<group>"; };
+		BD3DA404FED04A696DED2806 /* KiroUsageLimitsAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KiroUsageLimitsAdapter.swift; sourceTree = "<group>"; };
 		E4EED30F2F00F8FF408170B3 /* TokenCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TokenCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		F417840E7E6C1164FF7B7487 /* TokenPilot.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = TokenPilot.icns; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -227,8 +235,12 @@
 				18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */,
 				0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */,
 				597D13137D2CF349E61013AD /* JSONValueExtractors.swift */,
+				ACF860C5E11CF8F7A401C0F5 /* KiroAdapter.swift */,
+				BD3DA404FED04A696DED2806 /* KiroUsageLimitsAdapter.swift */,
 				5ED5A520C2ED990829B6A7B2 /* LimitHistoryStore.swift */,
 				A08643DBAE00B01030C05D93 /* MenuBarStatusService.swift */,
+				2411CC24DF0CCD62A2C523E5 /* OpenCodeAdapter.swift */,
+				2200A10C18105C907F2009B0 /* OpenCodeRateLimitAdapter.swift */,
 				05472E429144F9DCC9A7A7F1 /* ProviderSelectionService.swift */,
 				9F485074C073DA1833A23027 /* SecurityScopedBookmarks.swift */,
 				B6266F42C492852F65699522 /* TokenPilotServices.swift */,
@@ -349,8 +361,12 @@
 				0DEE98AFC80FF3884539AFF3 /* DefaultPathResolver.swift in Sources */,
 				47A593E59AE01612E3CFEAAB /* GrokOAuthWeeklyUsageAdapter.swift in Sources */,
 				3AC78E62884727A8316B3762 /* JSONValueExtractors.swift in Sources */,
+				A92EC541A4D92B4C27035A5E /* KiroAdapter.swift in Sources */,
+				F59944DA532F8602E5DA6A59 /* KiroUsageLimitsAdapter.swift in Sources */,
 				14B3591DE152D573B0F90726 /* LimitHistoryStore.swift in Sources */,
 				35826ABF56D3D699934ADFD6 /* MenuBarStatusService.swift in Sources */,
+				86EB3DD5E46A1CED50F045A1 /* OpenCodeAdapter.swift in Sources */,
+				84654F6548DC3A290D4FAAFB /* OpenCodeRateLimitAdapter.swift in Sources */,
 				6594F682ED641D532B6D6EC9 /* ProviderSelectionModels.swift in Sources */,
 				4D6450BAFB9C2CA19D33AA27 /* ProviderSelectionService.swift in Sources */,
 				7EF5DB9E4D8DE59641E1C29D /* SecurityScopedBookmarks.swift in Sources */,

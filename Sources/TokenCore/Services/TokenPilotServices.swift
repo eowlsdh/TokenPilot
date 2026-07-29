@@ -68,7 +68,14 @@ public enum TokenPilotPrivacyRedactor {
         (#"(?i)\b(?:authorization|access[_-]?token|refresh[_-]?token|api[_-]?key|secret|password)\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED]"),
         (#"(?i)\b(?:prompt|response|completion|messages?|content)\s*[:=]\s*["']?[^"\n\r;]+"#, "[REDACTED]"),
         (#"\b[A-Za-z0-9_-]{32,}\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}\b"#, "[REDACTED]"),
-        (#"(?i)\b(?:sk|pk|api|key|token)[-_][A-Za-z0-9]{16,}\b"#, "[REDACTED]"),
+        // Provider keys are commonly prefixed and segmented (`sk-live-...`, `sk-proj-...`), so the
+        // tail must allow the separators too. The previous pattern required an unbroken alphanumeric
+        // run and therefore missed every hyphenated key.
+        (#"(?i)\b(?:sk|pk|api|key|token)[-_][A-Za-z0-9][A-Za-z0-9_-]{14,}\b"#, "[REDACTED]"),
+        // Cloud resource identifiers embed the account number and profile name.
+        (#"(?i)\barn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[0-9]{6,}:[^\s"',;)]+"#, "[REDACTED_ARN]"),
+        // Provider user identifiers are personal data even without a credential attached.
+        (#"(?i)\b(?:user[_-]?id|account[_-]?id|profile[_-]?arn|subject)\s*[:=]\s*["']?[^"',;\s]+"#, "[REDACTED]"),
         (#"\b[A-Za-z0-9_~+/=-]{48,}\b"#, "[REDACTED]"),
         (#"(?i)(?:~|/(?:Users|home|private/var|private/tmp|var/folders|tmp|Volumes|opt/homebrew|usr/local|etc))/[^\s"',;)]+["']?"#, "[REDACTED_PATH]"),
         (#"(?i)(?:^|[\s/])(?:auth\.json|credentials(?:\.json)?|\.env(?:\.[A-Za-z0-9_-]+)?|id_rsa|id_ed25519|token(?:s)?\.json|key(?:s)?\.json)(?=$|[\s"',;:)])"#, "[REDACTED_FILE]")
@@ -955,6 +962,125 @@ public enum CapacityObservationFactory {
             }
         case .xai:
             break
+        case .opencode:
+            // Consent-gated probe result: provider-reported quota, so comparable unlike the
+            // token/cost activity signals below.
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "rate-limit",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "rate-limit", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            // opencode reports exact per-message token counts and cost, but no subscription window,
+            // so this is activity evidence only: incomparable to provider quota and alert-ineligible.
+            if let balance = snapshot.balance,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "session-cost", kind: .balance, unit: .currency),
+               let value = try? CapacityValue(money: balance.toppedUpBalance, currency: balance.currency),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "opencodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            // Free-tier models report zero cost, so token activity is what remains observable.
+            if snapshot.todayTokens > 0,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "context", kind: .context, unit: .tokens),
+               let value = try? CapacityValue(tokens: snapshot.todayTokens),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "opencodeTokensV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .kiro:
+            // Consent-gated usage API result: this is provider-reported quota, so unlike the
+            // credit/context signals it is comparable and alert-eligible.
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "usage-limits",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "usage-limits", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "kiroUsageLimitsV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            // Kiro meters in credits, not tokens, and exposes a context-window percentage.
+            // Neither maps onto a resettable quota window, so both stay incomparable.
+            if let credits = snapshot.creditsUsed,
+               let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "credits-used", kind: .balance, unit: .credits),
+               let value = try? CapacityValue(credits: credits),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "kiroCreditsV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if let contextPercent = snapshot.contextWindowUsedPercent,
+               let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent),
+               let value = try? CapacityValue(usedPercent: contextPercent),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "kiroContextV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
         case .deepseek:
             guard let balance = snapshot.balance else { break }
             let authority: CapacityAuthority = snapshot.dataSource == .officialTelemetry ? .providerReported : .userEntered
@@ -1185,6 +1311,11 @@ public final class MockDataService: Sendable {
 }
 
 public final class UsageStore: @unchecked Sendable {
+    private enum ProviderAdapterOutcome: Sendable {
+        case cancelled
+        case refreshed(ProviderRefreshResult, cancelledAfterwards: Bool)
+    }
+
     public struct Result: Sendable {
         public var snapshots: [ProviderSnapshot]
         public var hasConnectedData: Bool
@@ -1250,13 +1381,28 @@ public final class UsageStore: @unchecked Sendable {
         let geminiSourceURLs = pathResolver.resolveDefaultPaths(for: .gemini)
             .filter { ["antigravity_statusline", "telemetry", "tmp", "history"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: ["tmp", "history"].contains($0.kind)) }
+        let openCodePaths = pathResolver.resolveDefaultPaths(for: .opencode)
+        let openCodeDatabases = openCodePaths
+            .filter { ["database", "database_next"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path) }
+        let openCodeLegacyRoots = openCodePaths
+            .filter { $0.kind == "legacy_messages" && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let kiroSessionRoots = pathResolver.resolveDefaultPaths(for: .kiro)
+            .filter { ["ide_sessions", "cli_sessions"].contains($0.kind) && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
 
         return [
             ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
             CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
             DeepSeekBalanceAdapter(),
-            GrokLocalSignalsAdapter()
+            GrokLocalSignalsAdapter(),
+            OpenCodeSessionAdapter(
+                databaseURLs: openCodeDatabases.isEmpty ? nil : openCodeDatabases,
+                legacyMessageRoots: openCodeLegacyRoots.isEmpty ? nil : openCodeLegacyRoots
+            ),
+            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots)
         ]
     }
 
@@ -1270,19 +1416,39 @@ public final class UsageStore: @unchecked Sendable {
         var capacityObservations: [CapacityObservation] = []
         var capacityErrors: [CapacityRefreshError] = []
 
-        for adapter in refreshAdapters where enabledProviders.contains(adapter.provider) {
-            if Task.isCancelled {
-                capacityErrors.append(CapacityRefreshError(provider: adapter.provider, category: .cancelled, code: "refreshCancelled", redactedMessage: "Provider refresh cancelled."))
-                continue
+        // Concurrent so one slow adapter (Codex app-server waits up to 8s) cannot delay the rest;
+        // results are reassembled by adapter index to keep ordering deterministic.
+        let activeAdapters = refreshAdapters.filter { enabledProviders.contains($0.provider) }
+        var perAdapterResults = [ProviderAdapterOutcome?](repeating: nil, count: activeAdapters.count)
+
+        await withTaskGroup(of: (offset: Int, outcome: ProviderAdapterOutcome).self) { group in
+            for (offset, adapter) in activeAdapters.enumerated() {
+                group.addTask {
+                    if Task.isCancelled {
+                        return (offset, .cancelled)
+                    }
+                    let result = await adapter.refresh(settings: settings, now: observedAt)
+                    return (offset, .refreshed(result, cancelledAfterwards: Task.isCancelled))
+                }
             }
-            let result = await adapter.refresh(settings: settings, now: observedAt)
-            var snapshot = result.snapshot
-            snapshot.updatedAt = result.observedAt
-            snapshots.append(snapshot)
-            capacityObservations.append(contentsOf: result.capacityObservations)
-            capacityErrors.append(contentsOf: result.typedErrors)
-            if Task.isCancelled {
+            for await completed in group {
+                perAdapterResults[completed.offset] = completed.outcome
+            }
+        }
+
+        for (offset, adapter) in activeAdapters.enumerated() {
+            switch perAdapterResults[offset] {
+            case .cancelled, .none:
                 capacityErrors.append(CapacityRefreshError(provider: adapter.provider, category: .cancelled, code: "refreshCancelled", redactedMessage: "Provider refresh cancelled."))
+            case .refreshed(let result, let cancelledAfterwards):
+                var snapshot = result.snapshot
+                snapshot.updatedAt = result.observedAt
+                snapshots.append(snapshot)
+                capacityObservations.append(contentsOf: result.capacityObservations)
+                capacityErrors.append(contentsOf: result.typedErrors)
+                if cancelledAfterwards {
+                    capacityErrors.append(CapacityRefreshError(provider: adapter.provider, category: .cancelled, code: "refreshCancelled", redactedMessage: "Provider refresh cancelled."))
+                }
             }
         }
 
@@ -1692,8 +1858,27 @@ private extension String {
     }
 }
 
+public enum TokenPilotNotificationTransport {
+    public static let defaultTimeoutSeconds: TimeInterval = 10
+
+    public static func makeSession(timeoutSeconds: TimeInterval = defaultTimeoutSeconds) -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        let bounded = max(timeoutSeconds, 1)
+        configuration.timeoutIntervalForRequest = bounded
+        configuration.timeoutIntervalForResource = bounded
+        configuration.waitsForConnectivity = false
+        configuration.httpCookieAcceptPolicy = .never
+        configuration.httpShouldSetCookies = false
+        return URLSession(configuration: configuration)
+    }
+}
+
 public final class TelegramNotificationService: @unchecked Sendable {
-    public init() {}
+    private let session: URLSession
+
+    public init(timeoutSeconds: TimeInterval = TokenPilotNotificationTransport.defaultTimeoutSeconds) {
+        session = TokenPilotNotificationTransport.makeSession(timeoutSeconds: timeoutSeconds)
+    }
 
     public func sendMessage(token: String, chatID: String, text: String, parseMode: String? = nil) async throws {
         guard !token.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw TelegramError.notConfigured }
@@ -1705,7 +1890,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         var payload: [String: Any] = ["chat_id": chatID, "text": text]
         if let parseMode { payload["parse_mode"] = parseMode }
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw TelegramError.requestFailed
         }
@@ -1716,7 +1901,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         guard let url = URL(string: "https://api.telegram.org/bot\(token)/getUpdates") else { throw TelegramError.invalidURL }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw TelegramError.requestFailed
         }
@@ -1753,7 +1938,11 @@ public enum TelegramError: LocalizedError, Equatable {
 }
 
 public final class DiscordNotificationService: @unchecked Sendable {
-    public init() {}
+    private let session: URLSession
+
+    public init(timeoutSeconds: TimeInterval = TokenPilotNotificationTransport.defaultTimeoutSeconds) {
+        session = TokenPilotNotificationTransport.makeSession(timeoutSeconds: timeoutSeconds)
+    }
 
     public static func makeRequest(webhookURL: String, content: String) throws -> URLRequest {
         let trimmedURL = webhookURL.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1774,7 +1963,7 @@ public final class DiscordNotificationService: @unchecked Sendable {
 
     public func sendMessage(webhookURL: String, content: String) async throws {
         let request = try Self.makeRequest(webhookURL: webhookURL, content: content)
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw DiscordError.requestFailed
         }
@@ -1916,6 +2105,20 @@ public enum TokenPilotFormatters {
         String(format: "$%.4f", NSDecimalNumber(decimal: value).doubleValue)
     }
 
+    /// Credits are a provider-defined metering unit, never currency, so this formats a bare number
+    /// with no currency symbol.
+    public static func creditAmount(_ value: Decimal) -> String {
+        let double = NSDecimalNumber(decimal: value).doubleValue
+        if double >= 1_000 { return compactNumber(Int(double.rounded())) }
+        if double >= 100 { return String(format: "%.0f", double) }
+        return String(format: "%.2f", double)
+    }
+
+    public static func creditAmount(_ rawValue: String) -> String {
+        guard let decimal = Decimal(string: rawValue, locale: Locale(identifier: "en_US_POSIX")) else { return rawValue }
+        return creditAmount(decimal)
+    }
+
     public static func remainingTime(
         until date: Date,
         language: TokenPilotLanguage = .en,
@@ -1986,4 +2189,3 @@ public enum TokenPilotFormatters {
         }
     }
 }
-

@@ -8,7 +8,7 @@
 > **A local-first macOS menu bar monitor that keeps AI capacity visible as simple provider percentages.**
 > TokenPilot's signature view is a compact two-row menu metric—provider name above, remaining percentage below. Show selected providers as independent macOS status items or combine them into one item, without opening a dashboard or collecting provider tokens.
 >
-> TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, or xAI.
+> TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, xAI, opencode, or AWS/Kiro.
 
 [한국어 README](README.ko.md) · [日本語 README](README.ja.md) · [简体中文 README](README.zh-CN.md)
 
@@ -45,7 +45,9 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Glanceable provider percentages** | Native two-row `NSStatusItem` blocks keep each selected provider's remaining percentage visible; show them separately or combined. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, and local Grok context metadata in one place. |
+| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, and Kiro credits in one place. |
+| 🧮 **Per-model breakdown** | The History screen ranks every model by tokens for the selected period, with request counts and estimated cost where the provider reports it. Included in JSON export under `localActivity.modelBreakdown`. |
+| 📈 **7-day trend** | The History screen charts the last seven days of local token activity, highlighting the peak day and counting active days. Inactive days stay visible as zero so gaps are obvious. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
@@ -98,6 +100,8 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 | **Antigravity CLI** | TokenPilot statusLine JSON bridge at `~/Library/Application Support/TokenPilot/antigravity-statusline.json`; legacy Gemini `~/.gemini/telemetry.log` remains supported | High for Antigravity statusLine and Gemini telemetry metadata. |
 | **DeepSeek** | Optional API-key request to official `/user/balance`, plus manual fallback | High for official balance responses; manual values are clearly labeled. |
 | **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json`; optional default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly usage after explicit consent | Local context shows remaining context (`100 - contextWindowUsage`), not subscription quota. Manual weekly truth has precedence. Experimental OAuth weekly is presentation-only and may break. |
+| **opencode** | Read-only local session store: `~/.local/share/opencode/opencode.db` (or `opencode-next.db`), with pre-1.2 `storage/message` JSON as fallback. Honors `XDG_DATA_HOME` | High for token counts and cost: opencode records exact per-message values. Local activity only — opencode publishes no subscription window, so this is never shown as quota. |
+| **Kiro** | Read-only local sessions: IDE `usage_summary` credits under `~/.kiro/sessions/<workspace>/sess_*/messages.jsonl`, plus CLI context-window percentage from `~/.kiro/sessions/cli/*.json` | High for the values Kiro itself reports. Kiro meters in **credits**, not tokens, so TokenPilot shows credits as credits and never estimates token counts from transcript text. |
 
 ### Provider diagnostics
 
@@ -108,6 +112,7 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - Codex connector state is explicit: off, manual, local activity, or unofficial limit hints.
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
 - Grok/xAI diagnostics report local signal availability and remaining local context. The separate experimental OAuth weekly path is default-off, consent-gated, and does not store credentials or claim official provider quota.
+- opencode and Kiro diagnostics report local session store availability. Their databases are opened read-only and immutable, so a running agent is never blocked and its data is never modified. Credential tables (`account`, `credential`, `auth_kv`) are never read.
 
 ### Grok / xAI source
 

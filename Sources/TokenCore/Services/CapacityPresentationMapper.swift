@@ -49,6 +49,10 @@ public struct CapacityPresentationMapper: Sendable {
             guard let tokens = observation.value.tokens else { preconditionFailure("Invalid capacity token value") }
             titleKey = "capacity.tokens"
             data["tokens"] = String(tokens)
+        case .credits:
+            guard let credits = observation.value.credits else { preconditionFailure("Invalid capacity credits value") }
+            titleKey = "capacity.credits"
+            data["credits"] = CapacityCanonical.decimalString(credits)
         }
         return CapacityPresentation(titleKey: titleKey, detailKey: "capacity.\(assessment.freshness.rawValue).detail", accessibilityKey: "capacity.accessibility", data: data)
     }

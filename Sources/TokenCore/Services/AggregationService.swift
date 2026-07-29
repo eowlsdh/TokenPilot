@@ -38,8 +38,40 @@ public final class AggregationService: Sendable {
             ),
             sevenDayBars: sevenDayBars(from: usageEvents),
             providerShare: share,
-            events: filteredEvents
+            events: filteredEvents,
+            modelBreakdown: modelBreakdown(from: filteredEvents, totalTokens: totalTokens)
         )
+    }
+
+    private func modelBreakdown(from events: [UsageEvent], totalTokens: Int) -> [ModelUsageShare] {
+        let grouped = Dictionary(grouping: events) { event in
+            ModelKey(provider: event.provider, model: event.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
+        }
+
+        return grouped.compactMap { key, groupedEvents -> ModelUsageShare? in
+            let tokens = groupedEvents.reduce(0) { $0 + $1.totalTokens }
+            let requests = groupedEvents.reduce(0) { $0 + $1.requestCount }
+            guard tokens > 0 || requests > 0 else { return nil }
+            let costs = groupedEvents.compactMap(\.estimatedCostUSD)
+            return ModelUsageShare(
+                provider: key.provider,
+                model: key.model.isEmpty ? "unknown" : key.model,
+                tokens: tokens,
+                requestCount: requests,
+                estimatedCostUSD: costs.isEmpty ? nil : costs.reduce(Decimal(0), +),
+                tokenPercent: totalTokens > 0 ? Int((Double(tokens) / Double(totalTokens) * 100).rounded()) : 0
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.tokens != rhs.tokens { return lhs.tokens > rhs.tokens }
+            if lhs.requestCount != rhs.requestCount { return lhs.requestCount > rhs.requestCount }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private struct ModelKey: Hashable {
+        var provider: Provider
+        var model: String
     }
 
     private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod) -> [UsageEvent] {

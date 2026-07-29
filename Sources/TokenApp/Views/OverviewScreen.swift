@@ -288,6 +288,8 @@ struct CapacityDisplayItem: Identifiable {
             return localized("Requests", language: language)
         case .tokens:
             return localized("Context", language: language)
+        case .credits:
+            return localized("Credits", language: language)
         }
     }
 
@@ -308,6 +310,9 @@ struct CapacityDisplayItem: Identifiable {
         case .tokens:
             guard let tokens else { return "—" }
             return "\(TokenPilotFormatters.compactNumber(tokens)) \(localized("tok", language: language))"
+        case .credits:
+            guard let credits = presentation.data["credits"] else { return "—" }
+            return "\(TokenPilotFormatters.creditAmount(credits)) \(localized("credits", language: language))"
         }
     }
 

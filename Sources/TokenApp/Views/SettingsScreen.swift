@@ -78,6 +78,8 @@ struct SettingsScreen: View {
             deepSeekProviderSetup
             xAIProviderSetup
             codexProviderSetup
+            openCodeProviderSetup
+            kiroProviderSetup
         }
     }
 
@@ -120,11 +122,9 @@ struct SettingsScreen: View {
                         columns: [GridItem(.flexible()), GridItem(.flexible())],
                         spacing: 8
                     ) {
-                        providerToggle(.claude)
-                        providerToggle(.codex)
-                        providerToggle(.gemini)
-                        providerToggle(.deepseek)
-                        providerToggle(.xai)
+                        ForEach(Provider.allCases) { provider in
+                            providerToggle(provider)
+                        }
                     }
                     Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
                         .font(.caption2)
@@ -291,6 +291,20 @@ struct SettingsScreen: View {
             Text(model.t("Raw local paths stay hidden. Choose again to replace the saved source bookmark."))
                 .font(.caption2)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+            TokenPilotSeparator()
+            Text(model.t("Install statusline bridge"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("Claude Code only reports 5-hour and weekly limits through a statusLine command. Copy this script and run it once in Terminal to write the metadata TokenPilot reads."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("An existing status line is preserved: the bridge records the payload, then runs your original command."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(model.t("Copy Setup Script")) { model.copyToClipboard(claudeStatuslineSnippet) }
+                .buttonStyle(.bordered)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
                 .buttonStyle(.bordered)
         }
@@ -478,6 +492,80 @@ struct SettingsScreen: View {
                 .font(.caption2)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var openCodeProviderSetup: some View {
+        providerSetupDisclosure(provider: .opencode, title: model.t("opencode")) {
+            Text(model.t("Local session store"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("opencode is detected automatically from its local session database. No API key, token, or file selection is required."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. opencode publishes no subscription window, so this is local activity and never provider quota."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("The database is opened read-only so a running opencode session is never blocked, and credential tables are never read."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TokenPilotSeparator()
+            Text(model.t("Provider-reported usage limits"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("opencode Zen currently publishes no usage or limits endpoint, and its API responses carry no rate-limit headers, so remaining quota cannot be read yet."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Toggle(model.t("Check for a rate-limit header when opencode adds one"), isOn: openCodeRateLimitBinding)
+            Text(model.t("Default off. Leave it off unless opencode announces quota headers: enabling it spends one authenticated request per refresh and today returns nothing."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Only the plan API key is read for that request; it is never logged, saved, diagnosed, or exported."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.opencode) } }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var kiroProviderSetup: some View {
+        providerSetupDisclosure(provider: .kiro, title: model.t("Kiro")) {
+            Text(model.t("Local session store"))
+                .font(.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("Kiro is detected automatically from its local session files. No API key, token, or file selection is required."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Kiro meters usage in credits, not tokens, and also reports a context-window percentage. TokenPilot shows credits as credits and does not estimate token counts from transcript text."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Credits are local activity, not provider quota, and are never shown as currency."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            TokenPilotSeparator()
+            Text(model.t("Provider-reported usage limits"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Read stored Kiro token to fetch usage limits"), isOn: kiroUsageLimitsBinding)
+            Text(model.t("Calls Kiro's official usage-limits API to show remaining quota. TokenPilot reads only the stored access token and profile ID for one request; the token is never logged, saved, diagnosed, or exported, and the refresh token is never read."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Default off. If the stored token has expired, sign in to Kiro again and refresh."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.kiro) } }
+                .buttonStyle(.bordered)
         }
     }
 
@@ -790,11 +878,11 @@ struct SettingsScreen: View {
                     status: model.sourceStatusText(.claude),
                     statusColor: model.sourceStatusColor(.claude),
                     detail: model.sourceDetailText(.claude),
-                    explanation: model.t("Scans only local default paths and user-selected files."),
-                    primaryAction: model.t("Choose…"),
-                    copyText: nil,
-                    onPrimary: { model.chooseClaudeStatusFile() },
-                    onCopy: nil
+                    explanation: model.t("Install the statusline bridge to read 5-hour and weekly limits. Your existing status line is preserved."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: claudeStatuslineSnippet,
+                    onPrimary: { Task { await model.checkConnection(.claude) } },
+                    onCopy: { model.copyToClipboard(claudeStatuslineSnippet) }
                 )
                 GuideCard(
                     title: model.t("Connect Antigravity CLI"),
@@ -838,6 +926,28 @@ struct SettingsScreen: View {
                     primaryAction: model.t("Paste Status"),
                     copyText: nil,
                     onPrimary: { model.pasteCodexStatusFromClipboard() },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("opencode"),
+                    status: model.sourceStatusText(.opencode),
+                    statusColor: model.sourceStatusColor(.opencode),
+                    detail: model.sourceDetailText(.opencode),
+                    explanation: model.t("Detected automatically from the local session store. Nothing to configure."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.opencode) } },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("Kiro"),
+                    status: model.sourceStatusText(.kiro),
+                    statusColor: model.sourceStatusColor(.kiro),
+                    detail: model.sourceDetailText(.kiro),
+                    explanation: model.t("Detected automatically from local sessions. Usage is metered in credits, not tokens."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.kiro) } },
                     onCopy: nil
                 )
                 GuideCard(
@@ -1294,7 +1404,7 @@ struct SettingsScreen: View {
     }
 
     private var providerSetupOrder: [Provider] {
-        [.claude, .gemini, .deepseek, .xai, .codex]
+        [.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro]
     }
 
     private var firstAttentionProvider: Provider? {
@@ -1327,7 +1437,7 @@ struct SettingsScreen: View {
             return model.t("No secret required")
         case .codex:
             return model.t("No Codex token stored")
-        case .claude, .gemini:
+        case .claude, .gemini, .opencode, .kiro:
             return model.t("No secret required")
         }
     }
@@ -1393,6 +1503,29 @@ struct SettingsScreen: View {
         Binding(
             get: { model.settings.menuBarShowsSecondaryProvider },
             set: { model.setMenuBarShowsSecondaryProvider($0) }
+        )
+    }
+
+    /// Consent is stored as a version integer so a future contract change cannot inherit it.
+    private var kiroUsageLimitsBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.kiro.usageLimitsEnabled },
+            set: { enabled in
+                model.settings.kiro = KiroSettings(
+                    usageLimitsConsentVersion: enabled ? KiroSettings.usageLimitsConsentVersionCurrent : nil
+                )
+            }
+        )
+    }
+
+    private var openCodeRateLimitBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.openCode.rateLimitProbeEnabled },
+            set: { enabled in
+                model.settings.openCode = OpenCodeSettings(
+                    rateLimitConsentVersion: enabled ? OpenCodeSettings.rateLimitConsentVersionCurrent : nil
+                )
+            }
         )
     }
 
@@ -1464,6 +1597,201 @@ struct SettingsScreen: View {
         }
     }
 
+
+    private var claudeStatuslineSnippet: String {
+        """
+        #!/usr/bin/env bash
+        set -euo pipefail
+
+        TOKENPILOT_DIR="$HOME/Library/Application Support/TokenPilot"
+        CLAUDE_DIR="$HOME/.claude"
+        WRITER="$TOKENPILOT_DIR/claude-statusline-writer.py"
+        COMMAND="$TOKENPILOT_DIR/claude-statusline.sh"
+        SETTINGS="$CLAUDE_DIR/settings.json"
+
+        mkdir -p "$TOKENPILOT_DIR" "$CLAUDE_DIR"
+
+        cat > "$WRITER" <<'PY'
+        #!/usr/bin/env python3
+        import json
+        import os
+        import subprocess
+        import sys
+        import tempfile
+
+        def safe_int(value):
+            if isinstance(value, bool):
+                return 0
+            try:
+                return max(int(value), 0)
+            except (TypeError, ValueError):
+                return 0
+
+        def safe_float(value):
+            if isinstance(value, bool):
+                return None
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+
+        def safe_text(value, limit=120):
+            if isinstance(value, str):
+                text = value
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                text = str(value)
+            else:
+                return None
+            text = " ".join(text.split())
+            return text[:limit] if text else None
+
+        def window(source):
+            if not isinstance(source, dict):
+                return None
+            used = safe_float(source.get("used_percentage"))
+            if used is None:
+                remaining = safe_float(source.get("remaining_percentage"))
+                if remaining is not None:
+                    used = max(0.0, min(100.0, 100.0 - remaining))
+            if used is None:
+                return None
+            out = {"used_percentage": max(0.0, min(100.0, used))}
+            resets = safe_text(source.get("resets_at") or source.get("reset_at"), 64)
+            if resets:
+                out["resets_at"] = resets
+            return out
+
+        raw = sys.stdin.read()
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except Exception:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+
+        context = data.get("context_window") if isinstance(data.get("context_window"), dict) else {}
+        usage = context.get("current_usage") if isinstance(context.get("current_usage"), dict) else {}
+        model = data.get("model") if isinstance(data.get("model"), dict) else {}
+        limits = data.get("rate_limits") if isinstance(data.get("rate_limits"), dict) else {}
+        cost = data.get("cost") if isinstance(data.get("cost"), dict) else {}
+
+        safe = {
+            "model": {
+                "id": safe_text(model.get("id")),
+                "display_name": safe_text(model.get("display_name"))
+            },
+            "context_window": {
+                "used_percentage": safe_float(context.get("used_percentage")),
+                "current_usage": {
+                    "input_tokens": safe_int(usage.get("input_tokens")),
+                    "output_tokens": safe_int(usage.get("output_tokens")),
+                    "cache_creation_input_tokens": safe_int(usage.get("cache_creation_input_tokens")),
+                    "cache_read_input_tokens": safe_int(usage.get("cache_read_input_tokens"))
+                }
+            }
+        }
+
+        rate_limits = {}
+        for key in ("five_hour", "seven_day"):
+            parsed = window(limits.get(key))
+            if parsed:
+                rate_limits[key] = parsed
+        if rate_limits:
+            safe["rate_limits"] = rate_limits
+
+        total_cost = safe_float(cost.get("total_cost_usd"))
+        if total_cost is not None and total_cost >= 0:
+            safe["cost"] = {"total_cost_usd": total_cost}
+
+        target = os.path.join(
+            os.path.expanduser("~/Library/Application Support/TokenPilot"),
+            "claude-statusline.json"
+        )
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".claude-statusline-", suffix=".json", dir=os.path.dirname(target))
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(safe, handle, ensure_ascii=False, separators=(",", ":"))
+            handle.write(chr(10))
+        os.replace(tmp, target)
+
+        # Chain to the previous statusLine so an existing prompt keeps rendering. TokenPilot only
+        # observes the payload; it must not take over the user's status line output.
+        previous = os.environ.get("TOKENPILOT_CLAUDE_PREVIOUS_STATUSLINE", "").strip()
+        if previous:
+            try:
+                result = subprocess.run(
+                    ["/bin/sh", "-c", previous],
+                    input=raw,
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                sys.stdout.write(result.stdout)
+                sys.exit(0)
+            except Exception:
+                pass
+
+        current = safe["context_window"]["current_usage"]
+        tokens = sum(safe_int(current[key]) for key in current)
+        label = safe["model"]["display_name"] or safe["model"]["id"] or "Claude"
+        used = safe.get("rate_limits", {}).get("five_hour", {}).get("used_percentage")
+        suffix = f" · 5h {used:.0f}%" if isinstance(used, float) else ""
+        print(f"{label} · {tokens} tok{suffix}")
+        PY
+
+        chmod 700 "$WRITER"
+
+        python3 - "$SETTINGS" "$COMMAND" "$WRITER" <<'PY'
+        import json
+        import os
+        import shlex
+        import sys
+        import tempfile
+
+        settings_path, command_path, writer_path = sys.argv[1], sys.argv[2], sys.argv[3]
+        try:
+            with open(settings_path, "r", encoding="utf-8") as handle:
+                settings = json.load(handle)
+        except FileNotFoundError:
+            settings = {}
+        except Exception as error:
+            raise SystemExit(f"TokenPilot could not parse {settings_path}. Fix or back it up before installing: {error}")
+        if not isinstance(settings, dict):
+            raise SystemExit(f"TokenPilot expected {settings_path} to contain a JSON object.")
+
+        existing = settings.get("statusLine")
+        previous_command = ""
+        if isinstance(existing, dict) and existing.get("type") == "command":
+            candidate = existing.get("command")
+            if isinstance(candidate, str) and candidate.strip() and command_path not in candidate:
+                previous_command = candidate.strip()
+
+        # The wrapper records the payload for TokenPilot and then replays the user's original command,
+        # so installing this bridge never removes an existing status line.
+        with open(command_path, "w", encoding="utf-8") as handle:
+            handle.write("#!/usr/bin/env bash\\n")
+            handle.write("export TOKENPILOT_CLAUDE_PREVIOUS_STATUSLINE=%s\\n" % shlex.quote(previous_command))
+            handle.write("exec python3 %s\\n" % shlex.quote(writer_path))
+        os.chmod(command_path, 0o700)
+
+        settings["statusLine"] = {"type": "command", "command": command_path}
+
+        os.makedirs(os.path.dirname(settings_path), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".settings-", suffix=".json", dir=os.path.dirname(settings_path))
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(settings, handle, ensure_ascii=False, indent=2)
+            handle.write(chr(10))
+        os.replace(tmp, settings_path)
+
+        if previous_command:
+            print("TokenPilot chained the existing Claude status line: %s" % previous_command)
+        else:
+            print("TokenPilot installed the Claude status line bridge.")
+        PY
+
+        echo "Restart Claude Code, then press Check Connection in TokenPilot."
+        """
+    }
 
     private var geminiSettingsSnippet: String {
         """

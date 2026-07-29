@@ -59,6 +59,34 @@ For each row, record tester/date/status, redacted evidence, artifact SHA-256 whe
 | Gatekeeper assessment | `spctl --assess --type execute --verbose=4 build/TokenPilot.app` | Assessment accepts the signed artifact. |
 | Staple validation | `xcrun stapler validate build/TokenPilot.app` | Stapled/notarized artifact validates when notarization is part of the approved release run. |
 
+## Signing identity and the Keychain re-prompt
+
+`build.sh` signs with a real identity when one is available and falls back to ad-hoc only when none is
+found. The order is `TOKENPILOT_SIGN_IDENTITY` (explicit), then `Developer ID Application`, then
+`Apple Development`.
+
+This is not cosmetic. An ad-hoc signature carries no Authority chain and no Team ID:
+
+```
+ad-hoc:             Authority entries = 0, TeamIdentifier = not set
+Apple Development:  Authority entries = 3, TeamIdentifier = <team-id>
+```
+
+macOS Keychain identifies an application by that signing identity, so an ad-hoc build cannot stay a
+trusted caller for a stored secret. Every run re-prompts the user to allow Keychain access. With a
+signing identity the Team ID is stable across rebuilds and a single "Always Allow" persists.
+
+Select a specific identity for a release run:
+
+```bash
+TOKENPILOT_SIGN_IDENTITY="Developer ID Application: Example (TEAMID)" ./build.sh
+```
+
+`Apple Development` fixes the Keychain prompt for local use but is not a distribution certificate:
+`spctl --assess` still rejects the bundle. Distribution requires a Developer ID certificate plus
+notarization, which remain approval-gated. `BuildSigningTests` pins the identity preference, the
+ad-hoc fallback, and the `grep`/`pipefail` tolerance in the lookup.
+
 ## Live fixture QA matrix
 
 Use the actual executable product `TokenMonitor` for SwiftPM fixture runs, not stale screenshots or source-only previews. Every DEBUG fixture launch uses exactly these five environment variables before the command, in this order:
@@ -68,6 +96,24 @@ TOKENPILOT_UI_TESTING=1 TOKENPILOT_DEBUG_SCENARIO=<scenario> TOKENPILOT_DEBUG_SC
 ```
 
 The Xcode `TokenPilot` app target alternative uses the same five environment variables under **Edit Scheme → Run → Arguments → Environment Variables**. Unsupported screen/language/profile values fall back to `overview`/`en`/`standard`; unsupported scenarios fall back to `empty`. These controls are DEBUG and UI-testing gated only, apply app-owned optional SwiftUI environment override keys to the real production `TokenPilotRootView`, and must not be used as production data evidence. macOS accessibility settings are never changed by automation: do not open System Settings, run system preference/defaults commands, or persist accessibility preferences for automated QA.
+
+Fixture events are anchored relative to `TokenPilotDebugFixture.fixedReferenceDate`, which tracks the
+current time rather than a hard-coded epoch. `AggregationService` filters usage against wall-clock
+`now`, so a pinned epoch would age out of the `today`/`last7Days` windows and every usage screen would
+render empty, and an anchor placed at a fixed hour-of-day would be future-dated (therefore filtered)
+before that hour. If a History run shows no usage events, verify this anchor before reporting the
+screen itself as broken. `DebugFixtureFreshnessTests` pins this behavior.
+
+Local-activity provider scenarios:
+
+| Scenario | Covers | Expected History content |
+|---|---|---|
+| `opencodeLocalSessions` | opencode SQLite session store | Three events across three days, two models, non-zero 7-day trend bars, estimated cost present. |
+| `kiroCreditMetered` | Kiro credit metering | `56.84` credits and `41%` context; token totals stay `0` because Kiro reports no token counts. |
+
+Neither scenario may display a percentage in the menu bar: both providers publish no quota window, so
+the segments show measured amounts (`2Ktok`, `56.84cr`) instead. `NewProviderFixtureScenarioTests`
+pins the zero-token and local-mode invariants.
 
 ### Evidence manifest
 

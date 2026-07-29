@@ -37,9 +37,114 @@ public final class DefaultPathResolver: Sendable {
             return resolveCodexPaths()
         case .gemini:
             return resolveGeminiPaths()
+        case .opencode:
+            return resolveOpenCodePaths()
+        case .kiro:
+            return resolveKiroPaths()
         case .deepseek, .xai:
             return []
         }
+    }
+
+    // MARK: - opencode
+
+    private func resolveOpenCodePaths() -> [ProviderPathCandidate] {
+        var candidates: [ProviderPathCandidate] = []
+
+        for entry in claudeHomeCandidates() {
+            let dataRoot = openCodeDataRoot(for: entry.home)
+
+            // opencode 1.2+ keeps per-message usage in SQLite; `opencode-next.db` is the v2 layout.
+            for (kind, fileName) in [("database", "opencode.db"), ("database_next", "opencode-next.db")] {
+                let dbURL = dataRoot.appendingPathComponent(fileName)
+                let exists = FileManager.default.fileExists(atPath: dbURL.path)
+                candidates.append(ProviderPathCandidate(
+                    provider: .opencode,
+                    kind: kind,
+                    path: dbURL.path,
+                    source: entry.source,
+                    exists: exists,
+                    readable: exists && isReadable(dbURL),
+                    confidence: entry.confidence,
+                    notes: exists ? "opencode session usage database" : "opencode database not found"
+                ))
+            }
+
+            // Pre-1.2 installs stored one JSON document per message.
+            let messages = dataRoot.appendingPathComponent("storage/message", isDirectory: true)
+            let messagesExists = FileManager.default.fileExists(atPath: messages.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .opencode,
+                kind: "legacy_messages",
+                path: messages.path,
+                source: entry.source,
+                exists: messagesExists,
+                readable: messagesExists && isReadable(messages),
+                confidence: .medium,
+                notes: messagesExists ? "opencode legacy JSON message store" : "opencode legacy message store not found"
+            ))
+        }
+
+        return deduplicated(candidates)
+    }
+
+    private func openCodeDataRoot(for home: URL) -> URL {
+        if let xdgData = environment["XDG_DATA_HOME"],
+           !xdgData.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let xdgURL = urlFromPath(xdgData) {
+            return xdgURL.appendingPathComponent("opencode", isDirectory: true)
+        }
+        return home.appendingPathComponent(".local/share/opencode", isDirectory: true)
+    }
+
+    // MARK: - Kiro
+
+    private func resolveKiroPaths() -> [ProviderPathCandidate] {
+        var candidates: [ProviderPathCandidate] = []
+
+        for entry in claudeHomeCandidates() {
+            let kiroRoot = entry.home.appendingPathComponent(".kiro", isDirectory: true)
+            let rootExists = FileManager.default.fileExists(atPath: kiroRoot.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .kiro,
+                kind: "root",
+                path: kiroRoot.path,
+                source: "default",
+                exists: rootExists,
+                readable: rootExists && isReadable(kiroRoot),
+                confidence: .high,
+                notes: rootExists ? nil : "Kiro folder not found"
+            ))
+
+            let cliSessions = kiroRoot.appendingPathComponent("sessions/cli", isDirectory: true)
+            let cliExists = FileManager.default.fileExists(atPath: cliSessions.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .kiro,
+                kind: "cli_sessions",
+                path: cliSessions.path,
+                source: entry.source,
+                exists: cliExists,
+                readable: cliExists && isReadable(cliSessions),
+                confidence: entry.confidence,
+                notes: cliExists ? "Kiro CLI session state" : "Kiro CLI sessions folder not found"
+            ))
+
+            // IDE sessions nest per-workspace hashes: sessions/<workspace>/sess_<id>/messages.jsonl
+            let ideSessions = kiroRoot.appendingPathComponent("sessions", isDirectory: true)
+            let ideExists = FileManager.default.fileExists(atPath: ideSessions.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .kiro,
+                kind: "ide_sessions",
+                path: ideSessions.path,
+                source: entry.source,
+                exists: ideExists,
+                readable: ideExists && isReadable(ideSessions),
+                confidence: entry.confidence,
+                notes: ideExists ? "Kiro IDE session transcripts" : "Kiro sessions folder not found"
+            ))
+        }
+
+        return deduplicated(candidates)
     }
 
     // MARK: - Claude Code

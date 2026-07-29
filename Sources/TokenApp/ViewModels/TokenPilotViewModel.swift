@@ -1753,30 +1753,62 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func deliverCapacity(_ attempts: [CapacityAlertDeliveryAttempt]) async -> [CapacityAlertDeliveryOutcome] {
         guard !attempts.isEmpty else { return [] }
-        var outcomes: [CapacityAlertDeliveryOutcome] = []
-        for attempt in attempts {
+
+        var outcomes = [CapacityAlertDeliveryOutcome?](repeating: nil, count: attempts.count)
+        var pending: [(offset: Int, attempt: CapacityAlertDeliveryAttempt, send: @Sendable () async throws -> Void)] = []
+
+        for (offset, attempt) in attempts.enumerated() {
             guard attempt.provider != .codex, attempt.provider != .gemini else {
-                outcomes.append(CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: false, completedAt: Date()))
+                outcomes[offset] = CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: false, completedAt: Date())
                 continue
             }
             let message = capacityAlertMessage(for: attempt)
-            let succeeded: Bool
-            do {
-                switch attempt.key.channel {
-                case .macOS:
-                    try await localNotificationService.send(title: message.title, body: message.body)
-                case .telegram:
-                    try await sendTelegram(text: message.body)
-                case .discord:
-                    try await sendDiscord(text: message.body)
+            switch attempt.key.channel {
+            case .macOS:
+                let service = localNotificationService
+                pending.append((offset, attempt, { try await service.send(title: message.title, body: message.body) }))
+            case .telegram:
+                guard let token = try? telegramTokenForUse() else {
+                    outcomes[offset] = CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: false, completedAt: Date())
+                    continue
                 }
-                succeeded = true
-            } catch {
-                succeeded = false
+                let service = telegramService
+                let chatID = settings.telegram.chatID
+                pending.append((offset, attempt, { try await service.sendMessage(token: token, chatID: chatID, text: message.body) }))
+            case .discord:
+                guard let webhookURL = try? discordWebhookForUse() else {
+                    outcomes[offset] = CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: false, completedAt: Date())
+                    continue
+                }
+                let service = discordService
+                pending.append((offset, attempt, { try await service.sendMessage(webhookURL: webhookURL, content: message.body) }))
             }
-            outcomes.append(CapacityAlertDeliveryOutcome(attempt: attempt, succeeded: succeeded, completedAt: Date()))
         }
-        return outcomes
+
+        // Channels are independent bounded-timeout network/system sends, so a stalled channel
+        // must not delay the others or the refresh pass awaiting this call.
+        await withTaskGroup(of: (offset: Int, succeeded: Bool, completedAt: Date).self) { group in
+            for item in pending {
+                group.addTask {
+                    do {
+                        try await item.send()
+                        return (item.offset, true, Date())
+                    } catch {
+                        return (item.offset, false, Date())
+                    }
+                }
+            }
+            for await finished in group {
+                let attempt = attempts[finished.offset]
+                outcomes[finished.offset] = CapacityAlertDeliveryOutcome(
+                    attempt: attempt,
+                    succeeded: finished.succeeded,
+                    completedAt: finished.completedAt
+                )
+            }
+        }
+
+        return outcomes.compactMap { $0 }
     }
 
     private func capacityAlertMessage(for attempt: CapacityAlertDeliveryAttempt) -> (title: String, body: String) {
@@ -1845,6 +1877,8 @@ enum TokenPilotDebugScenario: String, CaseIterable {
     case deepseekOfficialBalance
     case deepseekManualBalance
     case antigravityBridge
+    case opencodeLocalSessions
+    case kiroCreditMetered
     case runtimeRecoveryRequired
     case alertsUnsupportedCodexLegacy
     case alertsPendingDeepSeekCurrency
@@ -1852,7 +1886,12 @@ enum TokenPilotDebugScenario: String, CaseIterable {
 
 struct TokenPilotDebugFixture {
     static let privacyContract = "DEBUG fixture uses fixed dates. No network. No real provider accounts. No credentials. No local paths. No secrets."
-    private static let fixedReferenceDate = Date(timeIntervalSince1970: 1_784_289_600)
+    // Fixture events sit at offsets from this anchor while AggregationService filters against
+    // wall-clock now, dropping anything in the future or older than the period. A hard-coded epoch
+    // ages out and leaves every usage screen empty, and a fixed hour-of-day is still in the future
+    // before that hour. Anchoring just behind now keeps offsets inside the today/last-7-days windows
+    // at any launch time.
+    private static let fixedReferenceDate = Date().addingTimeInterval(-300)
 
     let scenario: TokenPilotDebugScenario
     let referenceDate: Date
@@ -2169,6 +2208,66 @@ struct TokenPilotDebugFixture {
                 ]
             )
 
+        case .opencodeLocalSessions:
+            // Spread across days so the 7-day trend and per-model cards both have content.
+            let events = [
+                usageEvent(30, provider: .opencode, model: "anthropic/claude-sonnet", minutesBeforeNow: 12, input: 1_400, output: 320, cacheRead: 260, cost: "0.0180", dataSource: .localLog),
+                usageEvent(31, provider: .opencode, model: "anthropic/claude-sonnet", minutesBeforeNow: 1_500, input: 900, output: 180, cacheRead: 140, cost: "0.0110", dataSource: .localLog),
+                usageEvent(32, provider: .opencode, model: "opencode/hy3-free", minutesBeforeNow: 3_000, input: 2_600, output: 140, cacheRead: 0, dataSource: .localLog)
+            ]
+            let todayTokens = events
+                .filter { Calendar.current.isDate($0.timestamp, inSameDayAs: fixedReferenceDate) }
+                .reduce(0) { $0 + $1.totalTokens }
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .opencode,
+                    updatedAt: fixedReferenceDate,
+                    todayTokens: todayTokens,
+                    todayCostUSD: decimal("0.0180"),
+                    confidence: .high,
+                    dataSource: .localLog,
+                    statusMessage: "Local session store · no quota window",
+                    model: "anthropic/claude-sonnet",
+                    events: events,
+                    balance: ProviderBalance(currency: "USD", toppedUpBalance: decimal("0.0180"), capturedAt: fixedReferenceDate)
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .opencode),
+                snapshots: snapshots,
+                observations: [
+                    openCodeTokensObservation(tokens: todayTokens, authority: .localDerived, stability: .supported, comparability: .incomparable)
+                ]
+            )
+
+        case .kiroCreditMetered:
+            // Kiro meters credits, so this fixture must keep token counts at zero.
+            let events = [
+                usageEvent(40, provider: .kiro, model: nil, minutesBeforeNow: 20, input: 0, output: 0, cacheRead: 0, dataSource: .localLog),
+                usageEvent(41, provider: .kiro, model: nil, minutesBeforeNow: 1_600, input: 0, output: 0, cacheRead: 0, dataSource: .localLog)
+            ]
+            let snapshots = [
+                ProviderSnapshot(
+                    provider: .kiro,
+                    updatedAt: fixedReferenceDate,
+                    confidence: .high,
+                    dataSource: .localLog,
+                    statusMessage: "Local sessions · credits metered, no quota window",
+                    contextWindowUsedPercent: 41,
+                    events: events,
+                    creditsUsed: decimal("56.84")
+                )
+            ]
+            return fixture(
+                scenario: scenario,
+                settings: baseSettings(menuBarTarget: .kiro),
+                snapshots: snapshots,
+                observations: [
+                    creditsObservation(credits: "56.84", authority: .localDerived, stability: .supported, comparability: .incomparable)
+                ]
+            )
+
         case .runtimeRecoveryRequired:
             return fixture(
                 scenario: scenario,
@@ -2440,6 +2539,48 @@ struct TokenPilotDebugFixture {
         )
     }
 
+    private static func creditsObservation(
+        credits: String,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: kiroCreditsSeries(),
+            observedAt: fixedReferenceDate,
+            value: try! CapacityValue(credits: decimal(credits)),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 86_400),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
+    private static func kiroCreditsSeries() -> CapacitySeriesID {
+        try! CapacitySeriesID(provider: .kiro, providerWindowID: "credits-used", kind: .balance, unit: .credits)
+    }
+
+    private static func openCodeTokensObservation(
+        tokens: Int,
+        authority: CapacityAuthority,
+        stability: CapacityStability,
+        comparability: CapacityComparability
+    ) -> CapacityObservation {
+        try! CapacityObservation(
+            seriesID: try! CapacitySeriesID(provider: .opencode, providerWindowID: "context", kind: .context, unit: .tokens),
+            observedAt: fixedReferenceDate,
+            value: try! CapacityValue(tokens: tokens),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 86_400),
+            comparability: comparability,
+            parserRevision: "debug-fixture-v1",
+            now: fixedReferenceDate
+        )
+    }
+
     private static func makeLimitHistorySamples(from snapshots: [ProviderSnapshot]) -> [ProviderLimitSample] {
         snapshots.flatMap { snapshot -> [ProviderLimitSample] in
             var samples: [ProviderLimitSample] = []
@@ -2513,7 +2654,7 @@ struct TokenPilotDebugFixture {
             return .live
         case .claudeOfficialStale:
             return .stale
-        case .codexLocalOnly, .alertsUnsupportedCodexLegacy:
+        case .codexLocalOnly, .alertsUnsupportedCodexLegacy, .opencodeLocalSessions, .kiroCreditMetered:
             return .local
         case .codexConnectorExperimental:
             return .experimental

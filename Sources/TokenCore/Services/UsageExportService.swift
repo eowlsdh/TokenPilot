@@ -67,7 +67,8 @@ public final class UsageExportService {
             providerShare: exportUsage.providerShare,
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
             events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:)),
-            capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments)
+            capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments),
+            modelBreakdown: exportUsage.modelBreakdown
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -257,9 +258,14 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         snapshots: [SnapshotExport],
         events: [EventExport],
         capacity: CapacityExportSection? = nil,
-        localActivity: LocalActivityExport? = nil
+        localActivity: LocalActivityExport? = nil,
+        modelBreakdown: [ModelUsageShare] = []
     ) {
-        let resolvedLocalActivity = localActivity ?? LocalActivityExport(sevenDayBars: sevenDayBars, providerShare: providerShare)
+        let resolvedLocalActivity = localActivity ?? LocalActivityExport(
+            sevenDayBars: sevenDayBars,
+            providerShare: providerShare,
+            modelBreakdown: modelBreakdown
+        )
         self.schemaVersion = schemaVersion
         self.generatedAt = generatedAt
         self.period = period
@@ -300,17 +306,20 @@ public struct LocalActivityExport: Codable, Equatable, Sendable {
     public var scope: String
     public var sevenDayBars: [DailyUsageBar]
     public var providerShare: [ProviderShare]
+    public var modelBreakdown: [ModelUsageShare]
     public var quotaComparableOnly: Bool
 
     public init(
         scope: String = Self.defaultScope,
         sevenDayBars: [DailyUsageBar],
         providerShare: [ProviderShare],
+        modelBreakdown: [ModelUsageShare] = [],
         quotaComparableOnly: Bool = true
     ) {
         self.scope = scope
         self.sevenDayBars = sevenDayBars
         self.providerShare = providerShare
+        self.modelBreakdown = modelBreakdown
         self.quotaComparableOnly = quotaComparableOnly
     }
 }

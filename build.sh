@@ -101,15 +101,55 @@ with destination.open('wb') as handle:
     plistlib.dump(plist, handle, sort_keys=False)
 PY
 
-# 7. 로컬 실행용 ad-hoc 서명
+# 7. 코드 서명
 # SwiftPM 실행 파일은 linker-signed 상태라 앱 번들 안에 넣으면 macOS 정책에서
-# 리소스 봉인이 맞지 않는 것으로 볼 수 있습니다. 배포 서명이 아니라 로컬 smoke
-# 실행을 위한 ad-hoc 서명만 적용합니다.
-echo "🔏 Step 7: 로컬 실행용 ad-hoc 서명..."
-if command -v codesign >/dev/null 2>&1; then
-    codesign --force --deep --sign - "$APP_DIR"
-else
+# 리소스 봉인이 맞지 않는 것으로 볼 수 있어 재서명이 필요합니다.
+#
+# ad-hoc 서명(--sign -)에는 서명 주체(Authority)와 Team ID가 없습니다. macOS Keychain은
+# 이 둘로 앱을 식별하므로, ad-hoc 앱은 빌드가 바뀔 때마다 신뢰 대상으로 인정받지 못하고
+# 저장된 비밀에 접근할 때마다 사용자에게 다시 인증을 요구합니다. 서명 신원이 있으면
+# Team ID가 고정되어 "항상 허용"이 유지됩니다.
+#
+# TOKENPILOT_SIGN_IDENTITY로 명시 지정할 수 있고, 지정하지 않으면 사용 가능한 신원을
+# 자동 탐색합니다. 신원이 없는 환경(CI 등)에서는 ad-hoc으로 폴백해 빌드를 깨지 않습니다.
+echo "🔏 Step 7: 코드 서명..."
+if ! command -v codesign >/dev/null 2>&1; then
     echo "⚠️  codesign을 찾지 못해 서명을 건너뜁니다."
+else
+    SIGN_IDENTITY="${TOKENPILOT_SIGN_IDENTITY:-}"
+
+    if [ -z "$SIGN_IDENTITY" ] && command -v security >/dev/null 2>&1; then
+        AVAILABLE_IDENTITIES="$(security find-identity -v -p codesigning 2>/dev/null || true)"
+        # Developer ID를 우선 사용하고(배포 가능), 없으면 Apple Development를 사용합니다.
+        # grep은 매치 실패 시 exit 1이므로 `set -o pipefail` 아래에서 스크립트를 중단시킵니다.
+        # `|| true`로 실패를 흡수해야 첫 패턴이 없을 때도 다음 패턴을 계속 탐색합니다.
+        for pattern in "Developer ID Application" "Apple Development"; do
+            candidate="$(printf '%s\n' "$AVAILABLE_IDENTITIES" \
+                | grep "$pattern" \
+                | head -1 \
+                | sed -E 's/^[[:space:]]*[0-9]+\)[[:space:]]*([0-9A-F]{40}).*/\1/' || true)"
+            if [ -n "$candidate" ]; then
+                SIGN_IDENTITY="$candidate"
+                break
+            fi
+        done
+    fi
+
+    if [ -n "$SIGN_IDENTITY" ] && codesign --force --deep --options runtime --timestamp=none \
+        --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null; then
+        SIGN_AUTHORITY="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^Authority=' | head -1 | cut -d= -f2-)"
+        SIGN_TEAM="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^TeamIdentifier=' | head -1 | cut -d= -f2-)"
+        echo "   서명 신원: ${SIGN_AUTHORITY:-unknown}"
+        echo "   Team ID: ${SIGN_TEAM:-not set} (고정되므로 Keychain 재인증이 반복되지 않습니다)"
+    else
+        if [ -n "$SIGN_IDENTITY" ]; then
+            echo "⚠️  서명 신원으로 서명하지 못해 ad-hoc으로 대체합니다."
+        else
+            echo "ℹ️  사용 가능한 서명 신원이 없어 ad-hoc으로 서명합니다."
+        fi
+        echo "   ad-hoc 앱은 실행할 때마다 Keychain 인증을 다시 요구할 수 있습니다."
+        codesign --force --deep --sign - "$APP_DIR"
+    fi
 fi
 
 # 8. GitHub Release용 zip 생성

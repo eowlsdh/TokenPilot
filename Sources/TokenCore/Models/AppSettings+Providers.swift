@@ -16,6 +16,14 @@ extension AppSettings {
            monitoredEnabled.isSuperset(of: Set([Provider.claude, .codex, .gemini])) {
             fallback.insert(.deepseek)
         }
+        // Default-on migration for provider sets persisted before opencode/Kiro existed. Such a set
+        // cannot mention them at all, so absence carries no user intent and the explicit flag decides.
+        // This must not require any other provider to be monitored: a user who had disabled Gemini or
+        // monitored only one provider would otherwise never receive the new providers.
+        for provider in [Provider.opencode, .kiro]
+        where isLegacyProviderFlagEnabled(provider) && !fallback.contains(provider) && !monitoredEnabled.contains(provider) {
+            fallback.insert(provider)
+        }
         // xAI requires an explicit local selection and must never arrive through defaults.
         if xaiEnabled || monitoredEnabled.contains(.xai) {
             fallback.insert(.xai)
@@ -35,7 +43,7 @@ extension AppSettings {
             return claudeStatusFileBookmarkData
         case .gemini:
             return geminiTelemetrySourceBookmarkData
-        case .codex, .deepseek, .xai:
+        case .codex, .deepseek, .xai, .opencode, .kiro:
             return nil
         }
     }
@@ -46,7 +54,7 @@ extension AppSettings {
             claudeStatusFileBookmarkData = data
         case .gemini:
             geminiTelemetrySourceBookmarkData = data
-        case .codex, .deepseek, .xai:
+        case .codex, .deepseek, .xai, .opencode, .kiro:
             break
         }
     }
@@ -82,6 +90,8 @@ extension AppSettings {
         case .gemini: return geminiEnabled
         case .deepseek: return deepseekEnabled
         case .xai: return xaiEnabled
+        case .opencode: return opencodeEnabled
+        case .kiro: return kiroEnabled
         }
     }
 
@@ -92,6 +102,8 @@ extension AppSettings {
         geminiEnabled = safeProviders.contains(.gemini)
         deepseekEnabled = safeProviders.contains(.deepseek)
         xaiEnabled = safeProviders.contains(.xai)
+        opencodeEnabled = safeProviders.contains(.opencode)
+        kiroEnabled = safeProviders.contains(.kiro)
         monitoredProviders.enabledProviders = safeProviders
     }
 }

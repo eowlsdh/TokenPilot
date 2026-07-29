@@ -121,6 +121,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
     public let currency: String?
     public let count: Int?
     public let tokens: Int?
+    public let credits: Decimal?
 
     public init(value: CapacityValue) {
         self.unit = value.kind
@@ -129,6 +130,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
         self.currency = value.currency
         self.count = value.count
         self.tokens = value.tokens
+        self.credits = value.credits
     }
 
     public func capacityValue() throws -> CapacityValue {
@@ -145,6 +147,9 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
         case .tokens:
             guard let tokens else { throw CapacityContractError.invalidValue }
             return try CapacityValue(tokens: tokens)
+        case .credits:
+            guard let credits else { throw CapacityContractError.invalidValue }
+            return try CapacityValue(credits: credits)
         }
     }
 
@@ -160,6 +165,8 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
             object["count"] = count ?? 0
         case .tokens:
             object["tokens"] = tokens ?? 0
+        case .credits:
+            object["credits"] = CapacityCanonical.decimalString(credits ?? 0)
         }
         return object
     }
@@ -171,6 +178,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
         case currency
         case count
         case tokens
+        case credits
     }
 
     public init(from decoder: Decoder) throws {
@@ -185,6 +193,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
             currency = nil
             count = nil
             tokens = nil
+            credits = nil
         case .currency:
             let rawAmount = try container.decode(String.self, forKey: .amount)
             guard let amount = Decimal(string: rawAmount, locale: Locale(identifier: "en_US_POSIX")) else {
@@ -197,6 +206,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
             self.currency = currency
             count = nil
             tokens = nil
+            credits = nil
         case .requestCount:
             let count = try container.decode(Int.self, forKey: .count)
             guard count >= 0 else { throw CapacityContractError.invalidValue }
@@ -205,6 +215,7 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
             currency = nil
             self.count = count
             tokens = nil
+            credits = nil
         case .tokens:
             let tokens = try container.decode(Int.self, forKey: .tokens)
             guard tokens >= 0 else { throw CapacityContractError.invalidValue }
@@ -213,6 +224,19 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
             currency = nil
             count = nil
             self.tokens = tokens
+            credits = nil
+        case .credits:
+            let rawCredits = try container.decode(String.self, forKey: .credits)
+            guard let credits = Decimal(string: rawCredits, locale: Locale(identifier: "en_US_POSIX")),
+                  credits >= 0 else {
+                throw CapacityContractError.invalidValue
+            }
+            usedPercent = nil
+            moneyAmount = nil
+            currency = nil
+            count = nil
+            tokens = nil
+            self.credits = credits
         }
     }
 
@@ -234,6 +258,9 @@ public struct CapacityEvidenceValue: Codable, Equatable, Sendable {
         case .tokens:
             guard let tokens, tokens >= 0 else { throw CapacityContractError.invalidValue }
             try container.encode(tokens, forKey: .tokens)
+        case .credits:
+            guard let credits, credits >= 0 else { throw CapacityContractError.invalidValue }
+            try container.encode(CapacityCanonical.decimalString(credits), forKey: .credits)
         }
     }
 }
@@ -352,6 +379,11 @@ public struct CapacityEvidenceRecord: Codable, Equatable, Identifiable, Sendable
     }
 
     fileprivate func asRetention(_ retention: CapacityEvidenceRetention, dayStart: Date? = nil) throws -> CapacityEvidenceRecord {
+        // The digest is derived from these exact fields, so re-deriving it for an unchanged
+        // retention/dayStart pair only repeats a SHA256 over identical input.
+        if retention == self.retention, dayStart == self.dayStart {
+            return self
+        }
         let digest = try Self.digest(
             seriesID: seriesID,
             observedAt: observedAt,
@@ -655,6 +687,11 @@ public actor CapacityEvidenceStore {
     private let fileSystem: any CapacityEvidenceFileSystem
     private let clock: any CapacityEvidenceClock
     private let decoder = CapacityEvidenceCoders.decoder()
+    // Decoding an envelope re-verifies a SHA256 digest per record, so a store holding a realistic
+    // number of records costs hundreds of ms per read. Refreshes re-read the same bytes repeatedly,
+    // so the decoded result is cached against the exact bytes it came from: any external rewrite
+    // produces different bytes and falls through to a full decode plus checksum validation.
+    private var envelopeCache: [URL: (bytes: Data, envelope: CapacityEvidenceEnvelope)] = [:]
 
     public init(directory: URL? = nil, fileSystem: any CapacityEvidenceFileSystem = LocalCapacityEvidenceFileSystem(), clock: any CapacityEvidenceClock = SystemCapacityEvidenceClock()) {
         self.files = CapacityEvidenceFileSet(directory: directory ?? Self.defaultDirectory())
@@ -847,6 +884,28 @@ public actor CapacityEvidenceStore {
         try validateCardinality(successorRecords)
         let prunedQuarantine = pruneQuarantine(quarantine, now: now)
         let successor = try CapacityEvidenceEnvelope.make(generation: baseEnvelope.generation + 1, records: successorRecords, quarantine: prunedQuarantine)
+
+        // Re-committing the whole envelope (encode + SHA256 + backup copy + fsync) costs hundreds of ms
+        // at realistic record counts, and bucket compaction makes most refreshes produce the same records,
+        // so skip the write when nothing changed. The checksum covers `generation`, which always differs
+        // for a successor, so content equality is compared on records and quarantine digests instead.
+        if source == .primary,
+           fileSystem.fileExists(at: files.primary),
+           Self.contentEquals(baseEnvelope, successorRecords: successorRecords, successorQuarantine: prunedQuarantine) {
+            let unchanged = CapacityEvidenceSnapshot(
+                generation: baseEnvelope.generation,
+                records: baseEnvelope.records,
+                quarantine: baseEnvelope.quarantine,
+                recoveryStatus: .ready(source: .primary, generation: baseEnvelope.generation)
+            )
+            return CapacityEvidenceWriteResult(
+                acceptedCount: cardinality.accepted.count,
+                quarantinedCount: observations.count - cardinality.accepted.count + additionalQuarantine.count,
+                snapshot: unchanged,
+                recoveryStatus: unchanged.recoveryStatus
+            )
+        }
+
         try commit(successor: successor, baseSource: source)
         let snapshot = CapacityEvidenceSnapshot(generation: successor.generation, records: successor.records, quarantine: successor.quarantine, recoveryStatus: .ready(source: .primary, generation: successor.generation))
         return CapacityEvidenceWriteResult(acceptedCount: cardinality.accepted.count, quarantinedCount: observations.count - cardinality.accepted.count + additionalQuarantine.count, snapshot: snapshot, recoveryStatus: snapshot.recoveryStatus)
@@ -883,9 +942,7 @@ public actor CapacityEvidenceStore {
         let txnExists = fileSystem.fileExists(at: files.txn)
 
         let primary = validEnvelope(at: files.primary)
-        let backup = validEnvelope(at: files.backup)
         let txn = validTransaction()
-        let matchingTemp = txn.flatMap { matchingTempEnvelope(for: $0) }
 
         if let primary {
             if let txn, txn.phase == .primaryReplaced, primary.generation == txn.targetGeneration, primary.checksum == txn.targetChecksum {
@@ -896,7 +953,9 @@ public actor CapacityEvidenceStore {
             return .base(primary, .primary)
         }
 
-        if !primaryExists, let txn, txn.phase == .prepared, txn.baseGeneration == 0, let matchingTemp {
+        // Decoding an envelope verifies a digest per record, so the backup and temp envelopes are only
+        // decoded once the primary is known to be unusable.
+        if !primaryExists, let txn, txn.phase == .prepared, txn.baseGeneration == 0, let matchingTemp = matchingTempEnvelope(for: txn) {
             if cleanupAllowed {
                 try fileSystem.replaceItem(at: files.primary, withItemAt: files.temp)
                 try fileSystem.removeItemIfExists(at: files.txn)
@@ -906,7 +965,7 @@ public actor CapacityEvidenceStore {
             return .base(matchingTemp, .temp)
         }
 
-        if let backup {
+        if let backup = validEnvelope(at: files.backup) {
             if cleanupAllowed {
                 try fileSystem.removeItemIfExists(at: files.temp)
                 try fileSystem.removeItemIfExists(at: files.backupTemp)
@@ -925,11 +984,19 @@ public actor CapacityEvidenceStore {
 
     private func validEnvelope(at url: URL) -> CapacityEvidenceEnvelope? {
         guard fileSystem.fileExists(at: url),
-              let data = try? fileSystem.readData(at: url),
-              let envelope = try? decoder.decode(CapacityEvidenceEnvelope.self, from: data),
-              envelope.validatesChecksum() else {
+              let data = try? fileSystem.readData(at: url) else {
+            envelopeCache.removeValue(forKey: url)
             return nil
         }
+        if let cached = envelopeCache[url], cached.bytes == data {
+            return cached.envelope
+        }
+        guard let envelope = try? decoder.decode(CapacityEvidenceEnvelope.self, from: data),
+              envelope.validatesChecksum() else {
+            envelopeCache.removeValue(forKey: url)
+            return nil
+        }
+        envelopeCache[url] = (data, envelope)
         return envelope
     }
 
@@ -1046,6 +1113,14 @@ public actor CapacityEvidenceStore {
         for (_, ids) in byProvider {
             guard Set(ids.map(\.canonicalID)).count <= Self.maxSeriesPerProvider else { throw CapacityContractError.invalidValue }
         }
+    }
+
+    private static func contentEquals(
+        _ base: CapacityEvidenceEnvelope,
+        successorRecords: [CapacityEvidenceRecord],
+        successorQuarantine: [CapacityEvidenceQuarantineEntry]
+    ) -> Bool {
+        base.records == successorRecords && base.quarantine == successorQuarantine
     }
 
     private func bucketKey(for record: CapacityEvidenceRecord) -> String {
@@ -1224,6 +1299,23 @@ private enum CapacityEvidenceCoders {
 }
 
 public enum CapacityCanonical {
+    // ISO8601DateFormatter construction reaches ICU udat_open, which dominated refresh CPU when
+    // every encoded/decoded evidence record built its own formatter. These are configured once and
+    // only read afterwards, matching the nonisolated(unsafe) formatter pattern in JSONValueExtractors.
+    private nonisolated(unsafe) static let fractionalFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    private nonisolated(unsafe) static let plainFormatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+
     public static func decimalString(_ decimal: Decimal) -> String {
         normalizeDecimalString(NSDecimalNumber(decimal: decimal).stringValue)
     }
@@ -1233,21 +1325,12 @@ public enum CapacityCanonical {
     }
 
     public static func dateString(_ date: Date) -> String {
-        let formatter = ISO8601DateFormatter()
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
+        fractionalFormatter.string(from: date)
     }
 
     public static func date(from string: String) -> Date? {
-        let fractional = ISO8601DateFormatter()
-        fractional.timeZone = TimeZone(secondsFromGMT: 0)
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = fractional.date(from: string) { return date }
-        let plain = ISO8601DateFormatter()
-        plain.timeZone = TimeZone(secondsFromGMT: 0)
-        plain.formatOptions = [.withInternetDateTime]
-        return plain.date(from: string)
+        if let date = fractionalFormatter.date(from: string) { return date }
+        return plainFormatter.date(from: string)
     }
 
     public static func jsonData(_ object: Any) throws -> Data {

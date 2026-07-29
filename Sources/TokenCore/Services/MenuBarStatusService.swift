@@ -72,12 +72,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
     public func selectedSnapshot(
         from snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date = Date(),
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> ProviderSnapshot? {
         selectedCandidate(
             from: snapshots,
             settings: settings,
-            now: Date(),
+            now: now,
             xaiOAuthResult: xaiOAuthResult
         )?.snapshot
     }
@@ -156,13 +157,19 @@ public final class MenuBarStatusService: @unchecked Sendable {
         let candidates = providerMetricsCandidates(
             from: snapshots,
             settings: settings,
+            now: now,
             xaiOAuthResult: xaiOAuthResult
         )
         let providers = settings.effectiveMenuBarMetricProviders
 
         return providers.map { provider in
             let candidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == provider })
-            return providerMetricSegment(provider: provider, candidate: candidate, settings: settings)
+            return providerMetricSegment(
+                provider: provider,
+                candidate: candidate,
+                settings: settings,
+                snapshots: snapshots
+            )
         }
     }
 
@@ -173,7 +180,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         now: Date,
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> String {
-        let candidates = allCandidates(from: snapshots, settings: settings, xaiOAuthResult: xaiOAuthResult)
+        let candidates = allCandidates(from: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult)
         if let target = settings.menuBarDisplayTarget,
            settings.isProviderEnabled(target),
            !candidates.contains(where: { $0.snapshot.provider == target }) {
@@ -207,6 +214,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
             if let used = candidate.snapshot.dailyRequestsUsed {
                 return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(used))req"
             }
+            if let credits = candidate.snapshot.creditsUsed, credits > 0 {
+                return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.creditAmount(credits))cr"
+            }
             return "\(candidate.snapshot.provider.shortName) · \(modeLabel)"
         }
     }
@@ -218,7 +228,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         separator: String = " · ",
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> String {
-        let candidates = allCandidates(from: snapshots, settings: settings, xaiOAuthResult: xaiOAuthResult)
+        let candidates = allCandidates(from: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult)
         let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
         let primaryCandidate = compactPrimaryCandidate(
             from: candidates,
@@ -258,7 +268,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func providerMetricSegment(
         provider: Provider?,
         candidate: Candidate?,
-        settings: AppSettings
+        settings: AppSettings,
+        snapshots: [ProviderSnapshot] = []
     ) -> MenuBarProviderMetricSegment {
         guard let provider else {
             return MenuBarProviderMetricSegment(provider: nil, providerShortLabel: "TP", displayValue: "Setup", accessibilityLabel: "TokenPilot, \(localized("Setup", language: settings.localization.language))")
@@ -374,7 +385,18 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
 
         guard let candidate else {
-            return MenuBarProviderMetricSegment(provider: provider, providerShortLabel: providerMetricLabel(provider), displayValue: "—", accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized("Setup", language: settings.localization.language))")
+            // A connected local source with no usage today is idle, not unconfigured. Saying "Setup"
+            // in that case sends the user to configuration they have already completed.
+            let isConnectedButIdle = snapshots.contains {
+                $0.provider == provider && $0.dataSource != .mock && $0.dataSource != .unknown && !$0.events.isEmpty
+            }
+            let marker = isConnectedButIdle ? "No usage today" : "Setup"
+            return MenuBarProviderMetricSegment(
+                provider: provider,
+                providerShortLabel: providerMetricLabel(provider),
+                displayValue: "—",
+                accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
+            )
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
@@ -406,6 +428,41 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 ].joined(separator: ", ")
             )
         }
+        // Local activity providers have no percentage to show, so surface the measured amount
+        // instead of a bare "Local" marker, tagged so it is never read as quota.
+        if candidate.kind == .info, candidate.authority == "local-derived" {
+            if let credits = candidate.snapshot.creditsUsed, credits > 0 {
+                let value = TokenPilotFormatters.creditAmount(credits)
+                return MenuBarProviderMetricSegment(
+                    provider: provider,
+                    providerShortLabel: providerMetricLabel(provider),
+                    displayValue: "\(value)cr",
+                    accessibilityLabel: [
+                        localized(provider.displayName, language: settings.localization.language),
+                        "\(value) \(localized("credits", language: settings.localization.language))",
+                        localizedAuthority(candidate.authority, language: settings.localization.language),
+                        localizedFreshness(candidate.freshness, language: settings.localization.language)
+                    ].joined(separator: ", ")
+                )
+            }
+            if candidate.snapshot.todayTokens > 0 {
+                let value = TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens)
+                // The menu bar has very little width, so the segment uses the language-neutral "tok"
+                // abbreviation while the accessibility label carries the localized unit.
+                let unit = "tok"
+                return MenuBarProviderMetricSegment(
+                    provider: provider,
+                    providerShortLabel: providerMetricLabel(provider),
+                    displayValue: "\(value)\(unit)",
+                    accessibilityLabel: [
+                        localized(provider.displayName, language: settings.localization.language),
+                        "\(value) \(localized("tok", language: settings.localization.language))",
+                        localizedAuthority(candidate.authority, language: settings.localization.language),
+                        localizedFreshness(candidate.freshness, language: settings.localization.language)
+                    ].joined(separator: ", ")
+                )
+            }
+        }
         let marker: String
         switch candidate.authority {
         case "user-entered":
@@ -430,6 +487,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case .gemini: return "ANTIGRAVITY"
         case .deepseek: return "DEEPSEEK"
         case .xai: return "GROK CTX"
+        case .opencode: return "OPENCODE"
+        case .kiro: return "KIRO"
         }
     }
 
@@ -478,12 +537,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
     public func statusLevel(
         snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date = Date(),
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> MenuBarStatusLevel {
         guard let candidate = selectedCandidate(
             from: snapshots,
             settings: settings,
-            now: Date(),
+            now: now,
             xaiOAuthResult: xaiOAuthResult
         ),
               candidate.kind == .percent,
@@ -499,17 +559,19 @@ public final class MenuBarStatusService: @unchecked Sendable {
     public func shouldShowStatusDot(
         snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date = Date(),
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> Bool {
-        statusLevel(snapshots: snapshots, settings: settings, xaiOAuthResult: xaiOAuthResult) != .normal
+        statusLevel(snapshots: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult) != .normal
     }
 
     public func lowestRemainingSummary(
         snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date = Date(),
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> MenuBarLowestRemainingSummary? {
-        allCandidates(from: snapshots, settings: settings, xaiOAuthResult: xaiOAuthResult)
+        allCandidates(from: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult)
             .filter { $0.kind == .percent && $0.rank < 8 }
             .compactMap { candidate -> MenuBarLowestRemainingSummary? in
                 candidate.remainingPercent.map {
@@ -603,6 +665,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         let candidates = allCandidates(
             from: snapshots,
             settings: settings,
+            now: now,
             xaiOAuthResult: xaiOAuthResult
         )
         let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
@@ -681,7 +744,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return "\(target.shortName) · \(localized("Unavailable", language: settings.localization.language))"
         case .xai:
             return targetedXAIStatusTitle(settings: settings, language: settings.localization.language)
-        case .claude, .gemini, .deepseek:
+        case .claude, .gemini, .deepseek, .opencode, .kiro:
             return "\(target.shortName) · \(modeLabel)"
         }
     }
@@ -829,6 +892,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             from: allCandidates(
                 from: snapshots,
                 settings: settings,
+                now: now,
                 xaiOAuthResult: xaiOAuthResult
             ),
             settings: settings,
@@ -916,13 +980,14 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func allCandidates(
         from snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date,
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> [Candidate] {
         var result = presentationSnapshots(from: snapshots, settings: settings)
             .flatMap { candidates(for: $0) }
         if let oauthSnapshot = oauthSnapshot(from: xaiOAuthResult) {
             result.removeAll { $0.snapshot.provider == .xai }
-            if let manual = grokWeeklyManualCandidate(settings: settings) {
+            if let manual = grokWeeklyManualCandidate(settings: settings, now: now) {
                 result.append(manual)
             } else if let candidate = oauthWeeklyCandidate(for: oauthSnapshot) {
                 result.append(candidate)
@@ -933,13 +998,14 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func providerMetricsCandidates(
         from snapshots: [ProviderSnapshot],
         settings: AppSettings,
+        now: Date,
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> [Candidate] {
         if let oauthSnapshot = oauthSnapshot(from: xaiOAuthResult) {
             let nonXAI = presentationSnapshots(from: snapshots, settings: settings)
                 .filter { $0.provider != .xai }
                 .flatMap { candidates(for: $0) }
-            if let manual = grokWeeklyManualCandidate(settings: settings) {
+            if let manual = grokWeeklyManualCandidate(settings: settings, now: now) {
                 return nonXAI + [manual]
             }
             return nonXAI + [oauthWeeklyCandidate(for: oauthSnapshot)].compactMap { $0 }
@@ -948,7 +1014,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         var result: [Candidate] = []
         // Prefer explicit manual weekly limit (Grok TUI "Weekly limit") when the user opts in.
         // This is not Orca-style session scraping; values are user-entered only.
-        let weeklyManual = grokWeeklyManualCandidate(settings: settings)
+        let weeklyManual = grokWeeklyManualCandidate(settings: settings, now: now)
         if let weeklyManual {
             result.append(weeklyManual)
         }
@@ -1029,17 +1095,20 @@ public final class MenuBarStatusService: @unchecked Sendable {
         )
     }
 
-    private func grokWeeklyManualCandidate(settings: AppSettings) -> Candidate? {
+    private func grokWeeklyManualCandidate(settings: AppSettings, now: Date) -> Candidate? {
         guard settings.isProviderEnabled(.xai),
               settings.xAI.weeklySnapshotEnabled else {
             return nil
         }
         let remaining = min(max(settings.xAI.weeklyRemainingPercent, 0), 100)
-        let capturedAt = settings.xAI.weeklySnapshotCapturedAt ?? Date()
-        let isStale = Date().timeIntervalSince(capturedAt) > 12 * 60 * 60
+        // The settings toggle can be enabled without ever pressing "Mark Weekly Snapshot Now",
+        // which leaves the capture time unknown. Unknown age fails closed to stale so an
+        // unconfirmed manual value is never presented as current.
+        let capturedAt = settings.xAI.weeklySnapshotCapturedAt
+        let isStale = capturedAt.map { now.timeIntervalSince($0) > 12 * 60 * 60 } ?? true
         let snapshot = ProviderSnapshot(
             provider: .xai,
-            updatedAt: capturedAt,
+            updatedAt: capturedAt ?? now,
             weekly: LimitWindow(
                 kind: .weekly,
                 usedPercent: 100 - remaining,
@@ -1155,7 +1224,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
         appendBridgeContextCandidate(snapshot: snapshot, into: &candidates)
 
         if candidates.isEmpty {
-            if snapshot.todayTokens > 0 || snapshot.dailyRequestsUsed != nil || snapshot.contextWindowUsedPercent != nil {
+            // Credit-metered providers report no tokens, so credits also count as observable activity.
+            if snapshot.todayTokens > 0
+                || snapshot.dailyRequestsUsed != nil
+                || snapshot.contextWindowUsedPercent != nil
+                || (snapshot.creditsUsed ?? 0) > 0 {
                 candidates.append(Candidate(
                     snapshot: snapshot,
                     kind: .info,
@@ -1225,6 +1298,14 @@ public final class MenuBarStatusService: @unchecked Sendable {
     private func percentClassification(for snapshot: ProviderSnapshot) -> (rank: Int, suffix: String, authority: String, stability: String, action: String)? {
         let staleOffset = snapshot.isStale ? 4 : 0
         if snapshot.provider == .claude, snapshot.dataSource == .officialStatusline {
+            return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
+        }
+        // Kiro's consent-gated usage API returns real quota even though the snapshot is otherwise
+        // assembled from local sessions, so it must outrank the local-activity classification below.
+        if snapshot.provider == .kiro, snapshot.weekly?.providerWindowID == "usage-limits" {
+            return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
+        }
+        if snapshot.provider == .opencode, snapshot.weekly?.providerWindowID == "rate-limit" {
             return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
         }
         if snapshot.provider == .codex, snapshot.dataSource == .webUsage, snapshot.isExperimental {

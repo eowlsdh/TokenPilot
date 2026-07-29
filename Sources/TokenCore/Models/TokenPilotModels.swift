@@ -6,6 +6,8 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case gemini
     case deepseek
     case xai
+    case opencode
+    case kiro
 
     public var id: String { rawValue }
 
@@ -16,6 +18,8 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .gemini: return "Antigravity CLI"
         case .deepseek: return "DeepSeek"
         case .xai: return "Grok / xAI API"
+        case .opencode: return "opencode"
+        case .kiro: return "Kiro"
         }
     }
 
@@ -26,6 +30,8 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .gemini: return "AG"
         case .deepseek: return "DS"
         case .xai: return "xAI"
+        case .opencode: return "OC"
+        case .kiro: return "Ki"
         }
     }
 
@@ -36,6 +42,8 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .gemini: return "sparkles"
         case .deepseek: return "dollarsign.circle"
         case .xai: return "server.rack"
+        case .opencode: return "chevron.left.forwardslash.chevron.right"
+        case .kiro: return "cube.transparent"
         }
     }
 }
@@ -387,6 +395,9 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var contextWindowUsedPercent: Int?
     public var events: [UsageEvent]
     public var balance: ProviderBalance?
+    /// Credit-metered usage (Kiro). Not tokens and not currency; kept separate so it is never
+    /// formatted as either.
+    public var creditsUsed: Decimal?
 
     public init(
         provider: Provider,
@@ -406,7 +417,8 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         model: String? = nil,
         contextWindowUsedPercent: Int? = nil,
         events: [UsageEvent] = [],
-        balance: ProviderBalance? = nil
+        balance: ProviderBalance? = nil,
+        creditsUsed: Decimal? = nil
     ) {
         self.provider = provider
         self.updatedAt = updatedAt
@@ -426,6 +438,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         self.contextWindowUsedPercent = contextWindowUsedPercent.map { min(max($0, 0), 100) }
         self.events = events
         self.balance = balance
+        self.creditsUsed = creditsUsed.map { max($0, 0) }
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -447,6 +460,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         case contextWindowUsedPercent
         case events
         case balance
+        case creditsUsed
     }
 
     public init(from decoder: Decoder) throws {
@@ -469,7 +483,8 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
             model: try container.decodeIfPresent(String.self, forKey: .model),
             contextWindowUsedPercent: try container.decodeIfPresent(Int.self, forKey: .contextWindowUsedPercent),
             events: try container.decodeIfPresent([UsageEvent].self, forKey: .events) ?? [],
-            balance: try container.decodeIfPresent(ProviderBalance.self, forKey: .balance)
+            balance: try container.decodeIfPresent(ProviderBalance.self, forKey: .balance),
+            creditsUsed: try container.decodeIfPresent(Decimal.self, forKey: .creditsUsed)
         )
     }
 
@@ -493,6 +508,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(contextWindowUsedPercent, forKey: .contextWindowUsedPercent)
         try container.encode(events, forKey: .events)
         try container.encodeIfPresent(balance, forKey: .balance)
+        try container.encodeIfPresent(creditsUsed, forKey: .creditsUsed)
     }
 
     public var dailyRequestsPercent: Int? {
@@ -544,6 +560,76 @@ public enum XAIUsageSource: String, Codable, CaseIterable, Sendable {
 
     public var isExperimental: Bool {
         self == .experimentalOpenCodeBarCLI
+    }
+}
+
+/// Opt-in consent for reading Kiro's stored bearer token to call the official
+/// `GetUsageLimits` API. Default-off; only integer `1` is retained so a future contract change
+/// cannot silently inherit consent. The token is used in-memory for one request and is never
+/// logged, persisted, diagnosed, or exported.
+public struct KiroSettings: Codable, Equatable, Sendable {
+    public static let usageLimitsConsentVersionCurrent = 1
+
+    public var usageLimitsConsentVersion: Int?
+
+    public var usageLimitsEnabled: Bool {
+        usageLimitsConsentVersion == Self.usageLimitsConsentVersionCurrent
+    }
+
+    public init(usageLimitsConsentVersion: Int? = nil) {
+        self.usageLimitsConsentVersion =
+            usageLimitsConsentVersion == Self.usageLimitsConsentVersionCurrent
+            ? Self.usageLimitsConsentVersionCurrent
+            : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case usageLimitsConsentVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(usageLimitsConsentVersion: try container.decodeIfPresent(Int.self, forKey: .usageLimitsConsentVersion))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(usageLimitsConsentVersion, forKey: .usageLimitsConsentVersion)
+    }
+}
+
+/// Opt-in consent for reading opencode's stored access token to observe Zen/Go rate-limit
+/// headers. Default-off. Unlike Kiro's read-only usage API, opencode exposes remaining quota
+/// only through `ratelimit-*` response headers, so a probe request is required and may itself
+/// count against the plan. That trade-off is stated in the UI before consent.
+public struct OpenCodeSettings: Codable, Equatable, Sendable {
+    public static let rateLimitConsentVersionCurrent = 1
+
+    public var rateLimitConsentVersion: Int?
+
+    public var rateLimitProbeEnabled: Bool {
+        rateLimitConsentVersion == Self.rateLimitConsentVersionCurrent
+    }
+
+    public init(rateLimitConsentVersion: Int? = nil) {
+        self.rateLimitConsentVersion =
+            rateLimitConsentVersion == Self.rateLimitConsentVersionCurrent
+            ? Self.rateLimitConsentVersionCurrent
+            : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rateLimitConsentVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(rateLimitConsentVersion: try container.decodeIfPresent(Int.self, forKey: .rateLimitConsentVersion))
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(rateLimitConsentVersion, forKey: .rateLimitConsentVersion)
     }
 }
 
@@ -1106,6 +1192,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var geminiEnabled: Bool
     public var deepseekEnabled: Bool
     public var xaiEnabled: Bool
+    public var opencodeEnabled: Bool
+    public var kiroEnabled: Bool
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
@@ -1131,6 +1219,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var alertRules: [AlertRule]
     public var deepSeekBalance: DeepSeekBalanceSettings
     public var xAI: XAISettings
+    public var kiro: KiroSettings
+    public var openCode: OpenCodeSettings
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
 
@@ -1143,6 +1233,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         geminiEnabled: Bool = true,
         deepseekEnabled: Bool = true,
         xaiEnabled: Bool = false,
+        opencodeEnabled: Bool = true,
+        kiroEnabled: Bool = true,
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
@@ -1161,6 +1253,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         alertRules: [AlertRule] = AppSettings.defaultAlertRules,
         deepSeekBalance: DeepSeekBalanceSettings = DeepSeekBalanceSettings(),
         xAI: XAISettings = XAISettings(),
+        kiro: KiroSettings = KiroSettings(),
+        openCode: OpenCodeSettings = OpenCodeSettings(),
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
@@ -1176,6 +1270,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.geminiEnabled = geminiEnabled
         self.deepseekEnabled = deepseekEnabled
         self.xaiEnabled = xaiEnabled
+        self.opencodeEnabled = opencodeEnabled
+        self.kiroEnabled = kiroEnabled
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
@@ -1201,6 +1297,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.alertRules = alertRules
         self.deepSeekBalance = deepSeekBalance
         self.xAI = xAI
+        self.kiro = kiro
+        self.openCode = openCode
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
     }
@@ -1252,6 +1350,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case geminiEnabled
         case deepseekEnabled
         case xaiEnabled
+        case opencodeEnabled
+        case kiroEnabled
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
@@ -1277,6 +1377,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case alertRules
         case deepSeekBalance
         case xAI
+        case kiro
+        case openCode
         case showMockDataWhenDisconnected
         case challengeTargetTokens
     }
@@ -1289,6 +1391,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             geminiEnabled: try container.decodeIfPresent(Bool.self, forKey: .geminiEnabled) ?? true,
             deepseekEnabled: try container.decodeIfPresent(Bool.self, forKey: .deepseekEnabled) ?? true,
             xaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .xaiEnabled) ?? false,
+            opencodeEnabled: try container.decodeIfPresent(Bool.self, forKey: .opencodeEnabled) ?? true,
+            kiroEnabled: try container.decodeIfPresent(Bool.self, forKey: .kiroEnabled) ?? true,
             deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
@@ -1307,6 +1411,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             alertRules: try container.decodeIfPresent([AlertRule].self, forKey: .alertRules) ?? AppSettings.defaultAlertRules,
             deepSeekBalance: try container.decodeIfPresent(DeepSeekBalanceSettings.self, forKey: .deepSeekBalance) ?? DeepSeekBalanceSettings(),
             xAI: try container.decodeIfPresent(XAISettings.self, forKey: .xAI) ?? XAISettings(),
+            kiro: try container.decodeIfPresent(KiroSettings.self, forKey: .kiro) ?? KiroSettings(),
+            openCode: try container.decodeIfPresent(OpenCodeSettings.self, forKey: .openCode) ?? OpenCodeSettings(),
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
@@ -1434,19 +1540,49 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
     public var sevenDayBars: [DailyUsageBar]
     public var providerShare: [ProviderShare]
     public var events: [UsageEvent]
+    public var modelBreakdown: [ModelUsageShare]
 
     public init(
         period: HistoryPeriod,
         metrics: UsageMetrics = UsageMetrics(),
         sevenDayBars: [DailyUsageBar] = [],
         providerShare: [ProviderShare] = [],
-        events: [UsageEvent] = []
+        events: [UsageEvent] = [],
+        modelBreakdown: [ModelUsageShare] = []
     ) {
         self.period = period
         self.metrics = metrics
         self.sevenDayBars = sevenDayBars
         self.providerShare = providerShare
         self.events = events
+        self.modelBreakdown = modelBreakdown
+    }
+}
+
+/// Per-model rollup for the selected history period, ranked so the heaviest consumer is first.
+public struct ModelUsageShare: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { "\(provider.rawValue)|\(model)" }
+    public var provider: Provider
+    public var model: String
+    public var tokens: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
+    public var tokenPercent: Int
+
+    public init(
+        provider: Provider,
+        model: String,
+        tokens: Int,
+        requestCount: Int,
+        estimatedCostUSD: Decimal?,
+        tokenPercent: Int
+    ) {
+        self.provider = provider
+        self.model = model
+        self.tokens = max(tokens, 0)
+        self.requestCount = max(requestCount, 0)
+        self.estimatedCostUSD = estimatedCostUSD
+        self.tokenPercent = min(max(tokenPercent, 0), 100)
     }
 }
 public enum CapacitySeriesKind: String, Codable, CaseIterable, Sendable {
@@ -1462,6 +1598,7 @@ public enum CapacityUnit: String, Codable, CaseIterable, Sendable {
     case currency
     case requestCount
     case tokens
+    case credits
 }
 
 public enum CapacityContractError: Error, Equatable, Sendable {
@@ -1548,6 +1685,11 @@ public struct CapacitySeriesID: Codable, Equatable, Hashable, Sendable, CustomSt
         SeriesSemantics(providers: [.codex], providerWindowID: "rolling", kind: .rolling, unit: .percent, duration: .requiredPositive, resetCapable: true),
         SeriesSemantics(providers: [.gemini], providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, duration: .optionalExact(1_440), resetCapable: true),
         SeriesSemantics(providers: [.deepseek], providerWindowID: "balance", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.opencode], providerWindowID: "session-cost", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.opencode], providerWindowID: "rate-limit", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.kiro], providerWindowID: "credits-used", kind: .balance, unit: .credits, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.kiro], providerWindowID: "usage-limits", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.kiro], providerWindowID: "context-percent", kind: .context, unit: .percent, duration: .none, resetCapable: false),
         SeriesSemantics(providers: Set(Provider.allCases), providerWindowID: "context", kind: .context, unit: .tokens, duration: .none, resetCapable: false)
     ]
 
@@ -1624,6 +1766,7 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         case money(Decimal, currency: String)
         case count(Int)
         case tokens(Int)
+        case credits(Decimal)
     }
 
     private let storage: Storage
@@ -1650,12 +1793,18 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         self.storage = .tokens(tokens)
     }
 
+    public init(credits: Decimal) throws {
+        guard credits >= 0 else { throw CapacityContractError.invalidValue }
+        self.storage = .credits(credits)
+    }
+
     public var kind: CapacityUnit {
         switch storage {
         case .usedPercent: .percent
         case .money: .currency
         case .count: .requestCount
         case .tokens: .tokens
+        case .credits: .credits
         }
     }
 
@@ -1684,6 +1833,11 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         return value
     }
 
+    public var credits: Decimal? {
+        guard case let .credits(value) = storage else { return nil }
+        return value
+    }
+
     public func validate() throws {
         switch storage {
         case let .usedPercent(value):
@@ -1691,6 +1845,8 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         case let .money(amount, currency):
             guard amount >= 0, CapacityValidation.isValidCurrencyCode(currency) else { throw CapacityContractError.invalidValue }
         case let .count(value), let .tokens(value):
+            guard value >= 0 else { throw CapacityContractError.invalidValue }
+        case let .credits(value):
             guard value >= 0 else { throw CapacityContractError.invalidValue }
         }
     }
@@ -1700,6 +1856,7 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         case money
         case count
         case tokens
+        case credits
     }
 
     private enum AssociatedValueKeys: String, CodingKey {
@@ -1729,6 +1886,13 @@ public struct CapacityValue: Codable, Equatable, Sendable {
         case .tokens:
             let value = try Self.decodeAssociatedInt(from: container, forKey: .tokens)
             try self.init(tokens: value)
+        case .credits:
+            if let direct = try? container.decode(Decimal.self, forKey: .credits) {
+                try self.init(credits: direct)
+            } else {
+                let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .credits)
+                try self.init(credits: try nested.decode(Decimal.self, forKey: .value))
+            }
         }
     }
 
@@ -1748,6 +1912,9 @@ public struct CapacityValue: Codable, Equatable, Sendable {
             try nested.encode(value, forKey: .value)
         case let .tokens(value):
             var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .tokens)
+            try nested.encode(value, forKey: .value)
+        case let .credits(value):
+            var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .credits)
             try nested.encode(value, forKey: .value)
         }
     }

@@ -464,6 +464,8 @@ private extension Provider {
         case .gemini: return 0.16
         case .deepseek: return 0.22
         case .xai: return 0.28
+        case .opencode: return 0.34
+        case .kiro: return 0.40
         }
     }
 }
