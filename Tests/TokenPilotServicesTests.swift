@@ -3209,7 +3209,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(raw.contains("secret"))
         // "model" appears in modelBreakdown keys but the old model/statusMessage fields from
         // ProviderSnapshot must not be present as regular export fields.
-        XCTAssertFalse(raw.contains(""statusMessage""))
+        XCTAssertFalse(raw.contains("\"statusMessage\""))
     }
 
     func testUsageExportRedactsSnapshotAndEventDiagnosticFields() throws {
