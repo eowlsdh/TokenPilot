@@ -2093,7 +2093,7 @@ final class TokenMonitorTests: XCTestCase {
         let serviceSource = try Self.tokenCoreServicesSource()
         XCTAssertTrue(serviceSource.contains("tokenPilotBoundedTextContents"))
         // Check every services file individually so a new file is never silently exempt.
-        let dir = try projectRootURL().appendingPathComponent("Sources/TokenCore/Services")
+        let dir = try Self.projectRootURL().appendingPathComponent("Sources/TokenCore/Services")
         let fm = FileManager.default
         let enumerator = fm.enumerator(at: dir, includingPropertiesForKeys: nil)!
         var filesChecked = 0
