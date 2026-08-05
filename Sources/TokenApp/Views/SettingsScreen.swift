@@ -8,6 +8,7 @@ struct SettingsScreen: View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
                 consoleSummary
+                generalSettings
                 sourceSettings
                 notificationSettings
                 privacySettings
@@ -67,6 +68,50 @@ struct SettingsScreen: View {
                 }
             }
         }
+    }
+
+    private var generalSettings: some View {
+        DisclosureCard(
+            accessibilityLabel: model.t("Launch at login"),
+            accessibilityValue: model.settings.launchAtLogin ? model.t("ON") : model.t("OFF")
+        ) {
+            DisclosureSummaryRow(
+                title: model.t("General"),
+                subtitle: generalSettingsSummaryText,
+                status: model.settings.launchAtLogin ? model.t("ON") : model.t("OFF"),
+                statusColor: model.settings.launchAtLogin ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
+                systemImage: "gearshape"
+            )
+        } content: {
+            VStack(alignment: .leading, spacing: 10) {
+                Toggle(model.t("Launch at login"), isOn: launchAtLoginBinding)
+                Text(model.t("Starts TokenPilot automatically when you log in so usage stays monitored and alerts keep working without opening the app."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                TokenPilotSeparator()
+
+                HStack(alignment: .firstTextBaseline) {
+                    Text(model.t("Version"))
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Text(model.appVersionText)
+                        .font(.caption)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                }
+            }
+        }
+    }
+
+    private var generalSettingsSummaryText: String {
+        model.settings.launchAtLogin ? model.t("Starts when you log in") : model.t("Starts manually")
+    }
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.launchAtLogin },
+            set: { model.setLaunchAtLogin($0) }
+        )
     }
 
     private var sourceSettings: some View {

@@ -86,6 +86,41 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(LimitWindow(kind: .weekly, usedPercent: 0).remainingPercent, 100)
         XCTAssertNil(LimitWindow(kind: .weekly).remainingPercent)
     }
+
+    func testDateValueNormalizesMillisecondEpochsToTheSameInstantAsSeconds() {
+        let seconds: TimeInterval = 1_700_000_000
+        let expected = Date(timeIntervalSince1970: seconds)
+        let millis = seconds * 1_000
+
+        // Seconds epochs (number and string) are unchanged.
+        XCTAssertEqual(dateValue(seconds), expected)
+        XCTAssertEqual(dateValue(seconds as NSNumber), expected)
+        XCTAssertEqual(dateValue(String(Int64(seconds))), expected)
+
+        // Millisecond epochs must land on the same instant, not the year ~55,899.
+        XCTAssertEqual(dateValue(millis), expected)
+        XCTAssertEqual(dateValue(millis as NSNumber), expected)
+        XCTAssertEqual(dateValue(String(Int64(millis))), expected)
+    }
+
+    func testDateValueParsesISO8601WithAndWithoutFractionalSeconds() {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = TimeZone(identifier: "UTC")!
+        let date = { (month: Int, day: Int, second: TimeInterval) in
+            utc.date(from: DateComponents(year: 2027, month: month, day: day, hour: 0, minute: 0, second: 0))!
+                .addingTimeInterval(second)
+        }
+
+        XCTAssertEqual(dateValue("2027-01-15T00:00:00Z"), date(1, 15, 0))
+
+        let fractional = dateValue("2027-02-03T00:00:00.123Z")
+        let whole = date(2, 3, 0)
+        if let fractional {
+            XCTAssertEqual(Int((fractional.timeIntervalSince(whole) * 1000).rounded()), 123)
+        } else {
+            XCTFail("fractional ISO8601 date did not parse")
+        }
+    }
     func testProviderSnapshotLegacyDecodeAndMonthlyRoundTrip() throws {
         let legacyJSON = """
         {
@@ -247,6 +282,98 @@ final class TokenPilotServicesTests: XCTestCase {
         let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(legacy.menuBarProviderGrouping, .separate)
         XCTAssertEqual(legacy.menuBarMetricProviders, Set(legacy.enabledProviders))
+    }
+
+    func testLaunchAtLoginSettingRoundTripAndLegacyDefault() throws {
+        var settings = AppSettings()
+        XCTAssertFalse(settings.launchAtLogin)
+
+        settings.launchAtLogin = true
+        let roundTrip = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertTrue(roundTrip.launchAtLogin)
+
+        let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
+        XCTAssertFalse(legacy.launchAtLogin)
+    }
+
+    func testVersionDisplayStringFormatsVersionAndBuild() {
+        XCTAssertEqual(TokenPilotVersion.displayString(version: "1.0.0", build: "1"), "1.0.0 (1)")
+        XCTAssertEqual(TokenPilotVersion.displayString(version: "1.0.0", build: nil), "1.0.0")
+        XCTAssertEqual(TokenPilotVersion.displayString(version: nil, build: "42"), "(42)")
+        XCTAssertEqual(TokenPilotVersion.displayString(version: nil, build: nil), "--")
+        XCTAssertEqual(TokenPilotVersion.displayString(version: " 1.0.0 ", build: " 1 "), "1.0.0 (1)")
+        XCTAssertEqual(TokenPilotVersion.displayString(version: "", build: ""), "--")
+    }
+
+    func testUsageEventProjectLabelRoundTripAndLegacyDefault() throws {
+        let event = UsageEvent(
+            provider: .opencode,
+            model: "opencode-go/deepseek",
+            inputTokens: 100,
+            outputTokens: 20,
+            source: "opencode-session",
+            dataSource: .localLog,
+            projectLabel: "TokenPilot"
+        )
+        let decoded = try JSONDecoder().decode(UsageEvent.self, from: JSONEncoder().encode(event))
+        XCTAssertEqual(decoded.projectLabel, "TokenPilot")
+
+        let legacy = try JSONDecoder().decode(UsageEvent.self, from: Data(#"{"provider":"opencode"}"#.utf8))
+        XCTAssertNil(legacy.projectLabel)
+    }
+
+    func testAggregatedProjectBreakdownRanksOpenCodeProjectsAndSkipsUnlabeled() {
+        let now = Date()
+        let service = AggregationService()
+        let events = [
+            openCodeEvent(project: "TokenPilot", input: 5_000, output: 1_000, cost: 0.4, at: now),
+            openCodeEvent(project: "TokenPilot", input: 3_000, output: 500, cost: 0.2, at: now.addingTimeInterval(-60)),
+            openCodeEvent(project: "Other", input: 1_000, output: 200, cost: nil, at: now.addingTimeInterval(-120)),
+            openCodeEvent(project: nil, input: 999, output: 1, cost: nil, at: now.addingTimeInterval(-180))
+        ]
+        let snapshot = ProviderSnapshot(provider: .opencode, events: events)
+        let usage = service.aggregate(snapshots: [snapshot], period: .today, now: now)
+
+        // totalTokens covers all events (11,700); unlabeled events never create a bucket.
+        XCTAssertEqual(usage.metrics.totalTokens, 11_700)
+        XCTAssertEqual(usage.projectBreakdown.map(\.label), ["TokenPilot", "Other"])
+        XCTAssertEqual(usage.projectBreakdown.map(\.tokens), [9_500, 1_200])
+        XCTAssertEqual(usage.projectBreakdown.map(\.tokenPercent), [81, 10])
+        XCTAssertEqual(usage.projectBreakdown[0].requestCount, 2)
+        XCTAssertEqual(usage.projectBreakdown[0].estimatedCostUSD, 0.6)
+        XCTAssertNil(usage.projectBreakdown[1].estimatedCostUSD)
+        XCTAssertTrue(usage.projectBreakdown.allSatisfy { $0.provider == .opencode })
+    }
+
+    func testExportPayloadAndCSVExcludeProjectLabels() throws {
+        let now = Date()
+        let event = openCodeEvent(project: "ConfidentialProjectName", input: 100, output: 10, cost: 0.5, at: now)
+        let snapshot = ProviderSnapshot(provider: .opencode, events: [event])
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .today, now: now)
+
+        let json = try XCTUnwrap(String(
+            data: UsageExportService().export(usage: usage, snapshots: [snapshot], dataMode: "LIVE", format: .json, generatedAt: now),
+            encoding: .utf8
+        ))
+        XCTAssertFalse(json.contains("ConfidentialProjectName"), "Project folder names must never appear in JSON export.")
+        XCTAssertFalse(json.contains("projectLabel"), "projectLabel must never appear in JSON export.")
+
+        let csv = UsageExportService().makeCSVString(usage: usage)
+        XCTAssertFalse(csv.contains("ConfidentialProjectName"), "Project folder names must never appear in CSV export.")
+    }
+
+    private func openCodeEvent(project: String?, input: Int, output: Int, cost: Decimal?, at date: Date) -> UsageEvent {
+        UsageEvent(
+            provider: .opencode,
+            model: "opencode-go/model",
+            timestamp: date,
+            inputTokens: input,
+            outputTokens: output,
+            estimatedCostUSD: cost,
+            source: "opencode-session",
+            dataSource: .localLog,
+            projectLabel: project
+        )
     }
 
     func testMenuBarProviderMetricSettingsDropUnknownValues() throws {
@@ -1451,11 +1578,14 @@ final class TokenPilotServicesTests: XCTestCase {
             return "{\"timestamp\":\"\(timestamp)\",\"name\":\"gemini_cli.api_response\",\"metadata\":{\"total_token_count\":1,\"model\":\"gemini-2.5-flash\"}}"
         }
         try lines.joined(separator: "\n").write(to: logURL, atomically: true, encoding: .utf8)
+        // All 130 events live within the first ~130 minutes of the month; anchor `now` just past the
+        // last event so aggregation is deterministic even when the test runs at a month boundary.
+        let now = startOfMonth.addingTimeInterval(130 * 60)
 
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.geminiTelemetryLogPath = logURL.path
         let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
-        let monthly = AggregationService().aggregate(snapshots: [snapshot], period: .thisMonth)
+        let monthly = AggregationService().aggregate(snapshots: [snapshot], period: .thisMonth, now: now)
 
         XCTAssertEqual(snapshot.events.count, 130)
         XCTAssertEqual(monthly.metrics.totalTokens, 130)
@@ -2709,10 +2839,33 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await CodexLocalSessionAdapter(sessionRoots: [directory.appendingPathComponent("sessions")]).snapshot(settings: AppSettings(showMockDataWhenDisconnected: false))
 
         XCTAssertEqual(snapshot.fiveHour?.usedPercent, 63)
+        XCTAssertEqual(snapshot.fiveHour?.providerWindowID, "rate-limit")
         XCTAssertEqual(snapshot.weekly?.usedPercent, 41)
+        XCTAssertEqual(snapshot.weekly?.providerWindowID, "rate-limit")
         XCTAssertNotNil(snapshot.fiveHour?.resetAt)
         XCTAssertNotNil(snapshot.weekly?.resetAt)
         XCTAssertEqual(snapshot.model, "gpt-5.5")
+    }
+
+    func testCodexLocalSessionTokenCountsAreExactNotEstimated() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let sessions = directory.appendingPathComponent("sessions/2026/05/18", isDirectory: true)
+        try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let now = Date()
+        let timestamp = ISO8601DateFormatter().string(from: now)
+        let content = """
+        {"type":"event_msg","timestamp":"\(timestamp)","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":10,"output_tokens":25,"reasoning_output_tokens":5,"total_tokens":140}}}}
+        """
+        try content.write(to: sessions.appendingPathComponent("rollout-exact.jsonl"), atomically: true, encoding: .utf8)
+
+        let snapshot = await CodexLocalSessionAdapter(sessionRoots: [directory.appendingPathComponent("sessions")])
+            .snapshot(settings: AppSettings(showMockDataWhenDisconnected: false))
+
+        let event = try XCTUnwrap(snapshot.events.first)
+        XCTAssertFalse(event.isEstimated, "Server-reported token counts are exact, not estimates.")
+        XCTAssertEqual(event.totalTokens, 140)
     }
 
     func testCodexLocalSessionAdapterParsesRemainingPercentAndRawCountsFromSessionRateLimits() async throws {
@@ -3257,15 +3410,21 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testAggregationPeriodsChangeWhenHistoryContainsOlderEvents() {
-        let now = Date()
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 8
+        components.day = 15
+        components.hour = 12
+        let now = calendar.date(from: components)!
         let current = UsageEvent(provider: .claude, timestamp: now, inputTokens: 100, outputTokens: 0, source: "test")
         let yesterday = UsageEvent(provider: .claude, timestamp: now.addingTimeInterval(-24 * 60 * 60), inputTokens: 200, outputTokens: 0, source: "test")
         let snapshots = [ProviderSnapshot(provider: .claude, updatedAt: now, todayTokens: 100, events: [current, yesterday])]
         let service = AggregationService()
 
-        let today = service.aggregate(snapshots: snapshots, period: .today)
-        let sevenDays = service.aggregate(snapshots: snapshots, period: .last7Days)
-        let month = service.aggregate(snapshots: snapshots, period: .thisMonth)
+        let today = service.aggregate(snapshots: snapshots, period: .today, now: now)
+        let sevenDays = service.aggregate(snapshots: snapshots, period: .last7Days, now: now)
+        let month = service.aggregate(snapshots: snapshots, period: .thisMonth, now: now)
 
         XCTAssertEqual(today.metrics.totalTokens, 100)
         XCTAssertEqual(sevenDays.metrics.totalTokens, 300)
@@ -4216,6 +4375,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
     func testMenuBarStatusServiceDoesNotPresentCodexLocalActivityAsQuota() {
         var settings = AppSettings()
+        settings.localization.language = .en
         settings.menuBarDisplayTarget = .codex
         let snapshot = ProviderSnapshot(
             provider: .codex,
@@ -4237,6 +4397,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
     func testMenuBarStatusServiceKeepsExplicitCodexTargetWhenQuotaIsUnavailable() {
         var settings = AppSettings()
+        settings.localization.language = .en
         settings.menuBarDisplayTarget = .codex
         let deepSeek = ProviderSnapshot(
             provider: .deepseek,
@@ -4519,7 +4680,7 @@ final class TokenPilotServicesTests: XCTestCase {
         ]
 
         // MARK: - .today period
-        let todayResult = AggregationService().aggregate(snapshots: snapshots, period: .today)
+        let todayResult = AggregationService().aggregate(snapshots: snapshots, period: .today, now: now)
         XCTAssertEqual(todayResult.metrics.totalTokens, 100, ".today should only count today's event")
         XCTAssertEqual(todayResult.metrics.inputTokens, 100)
         XCTAssertEqual(todayResult.metrics.outputTokens, 0)
@@ -4546,7 +4707,7 @@ final class TokenPilotServicesTests: XCTestCase {
         }
 
         // MARK: - .last7Days period
-        let last7Result = AggregationService().aggregate(snapshots: snapshots, period: .last7Days)
+        let last7Result = AggregationService().aggregate(snapshots: snapshots, period: .last7Days, now: now)
         // Should include today (100), yesterday (200), 6 days ago (300) = 600
         // Should exclude 10 days ago (400)
         XCTAssertEqual(last7Result.metrics.totalTokens, 600, ".last7Days should count events from last 7 days (600)")
@@ -4569,7 +4730,7 @@ final class TokenPilotServicesTests: XCTestCase {
         }
 
         // MARK: - .thisMonth period
-        let monthResult = AggregationService().aggregate(snapshots: snapshots, period: .thisMonth)
+        let monthResult = AggregationService().aggregate(snapshots: snapshots, period: .thisMonth, now: now)
         // Should include all events that actually fall in the current month. This keeps the
         // test deterministic at the beginning of a month, when 6/10-days-ago can be previous month.
         let monthEvents = [todayEvent, yesterdayEvent, sixDaysAgoEvent, tenDaysAgoEvent].filter {
@@ -5323,6 +5484,36 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await store.loadSnapshot()
         XCTAssertEqual(snapshot.recoveryStatus, .ready(source: expectedSource, generation: snapshot.generation))
         try verify(files)
+    }
+
+    func testTokenPilotRelativeTimestampFormatting() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+        // No recorded timestamp yet → no label.
+        XCTAssertNil(TokenPilotRelativeTimestamp.format(from: nil, now: now))
+
+        // A future timestamp (clock skew) is normalized to "just now".
+        XCTAssertEqual(TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(30), now: now)?.key, "Updated just now")
+
+        // Under a minute.
+        let justNow = TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(-5), now: now)
+        XCTAssertEqual(justNow?.key, "Updated just now")
+        XCTAssertNil(justNow?.arg)
+
+        // Minutes.
+        let minutes = TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(-3 * 60), now: now)
+        XCTAssertEqual(minutes?.key, "Updated %d min ago")
+        XCTAssertEqual(minutes?.arg, 3)
+
+        // Hours.
+        let hours = TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(-2 * 3600), now: now)
+        XCTAssertEqual(hours?.key, "Updated %d hr ago")
+        XCTAssertEqual(hours?.arg, 2)
+
+        // Days.
+        let days = TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(-5 * 86400), now: now)
+        XCTAssertEqual(days?.key, "Updated %d days ago")
+        XCTAssertEqual(days?.arg, 5)
     }
 }
 

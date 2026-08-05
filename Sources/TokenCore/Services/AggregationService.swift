@@ -4,9 +4,9 @@ import os
 public final class AggregationService: Sendable {
     public init() {}
 
-    public func aggregate(snapshots: [ProviderSnapshot], period: HistoryPeriod) -> AggregatedUsage {
+    public func aggregate(snapshots: [ProviderSnapshot], period: HistoryPeriod, now: Date = Date()) -> AggregatedUsage {
         let usageEvents = snapshots.flatMap { $0.events }
-        let filteredEvents = filterEvents(usageEvents, period: period)
+        let filteredEvents = filterEvents(usageEvents, period: period, now: now)
 
         let totalTokens = filteredEvents.reduce(0) { $0 + $1.totalTokens }
         let inputTokens = filteredEvents.reduce(0) { $0 + $1.inputTokens }
@@ -36,10 +36,11 @@ public final class AggregationService: Sendable {
                 mostUsedProvider: mostUsed,
                 busiestHour: busiestHour(in: filteredEvents)
             ),
-            sevenDayBars: sevenDayBars(from: usageEvents),
+            sevenDayBars: sevenDayBars(from: usageEvents, now: now),
             providerShare: share,
             events: filteredEvents,
-            modelBreakdown: modelBreakdown(from: filteredEvents, totalTokens: totalTokens)
+            modelBreakdown: modelBreakdown(from: filteredEvents, totalTokens: totalTokens),
+            projectBreakdown: projectBreakdown(from: filteredEvents, totalTokens: totalTokens)
         )
     }
 
@@ -69,14 +70,50 @@ public final class AggregationService: Sendable {
         }
     }
 
+    /// Rolls up local activity by workspace label (opencode only today). Events without a
+    /// `projectLabel` are excluded so other providers never fall into an "unknown" bucket.
+    private func projectBreakdown(from events: [UsageEvent], totalTokens: Int) -> [ProjectUsageShare] {
+        let grouped = Dictionary(grouping: events) { event in
+            ProjectKey(
+                provider: event.provider,
+                label: event.projectLabel?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            )
+        }
+
+        return grouped.compactMap { key, groupedEvents -> ProjectUsageShare? in
+            guard !key.label.isEmpty else { return nil }
+            let tokens = groupedEvents.reduce(0) { $0 + $1.totalTokens }
+            let requests = groupedEvents.reduce(0) { $0 + $1.requestCount }
+            guard tokens > 0 || requests > 0 else { return nil }
+            let costs = groupedEvents.compactMap(\.estimatedCostUSD)
+            return ProjectUsageShare(
+                provider: key.provider,
+                label: key.label,
+                tokens: tokens,
+                requestCount: requests,
+                estimatedCostUSD: costs.isEmpty ? nil : costs.reduce(Decimal(0), +),
+                tokenPercent: totalTokens > 0 ? Int((Double(tokens) / Double(totalTokens) * 100).rounded()) : 0
+            )
+        }
+        .sorted { lhs, rhs in
+            if lhs.tokens != rhs.tokens { return lhs.tokens > rhs.tokens }
+            if lhs.requestCount != rhs.requestCount { return lhs.requestCount > rhs.requestCount }
+            return lhs.id < rhs.id
+        }
+    }
+
     private struct ModelKey: Hashable {
         var provider: Provider
         var model: String
     }
 
-    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod) -> [UsageEvent] {
+    private struct ProjectKey: Hashable {
+        var provider: Provider
+        var label: String
+    }
+
+    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod, now: Date) -> [UsageEvent] {
         let calendar = Calendar.current
-        let now = Date()
         let start: Date
         switch period {
         case .today:
@@ -89,9 +126,8 @@ public final class AggregationService: Sendable {
         return events.filter { $0.timestamp >= start && $0.timestamp <= now.addingTimeInterval(1) }
     }
 
-    private func sevenDayBars(from events: [UsageEvent]) -> [DailyUsageBar] {
+    private func sevenDayBars(from events: [UsageEvent], now: Date) -> [DailyUsageBar] {
         let calendar = Calendar.current
-        let now = Date()
         let formatter = Self.dayFormatter
 
         return (0..<7).reversed().map { offset in

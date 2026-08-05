@@ -390,12 +390,20 @@ public final class MenuBarStatusService: @unchecked Sendable {
             let isConnectedButIdle = snapshots.contains {
                 $0.provider == provider && $0.dataSource != .mock && $0.dataSource != .unknown && !$0.events.isEmpty
             }
+            let isStale = snapshots.first { $0.provider == provider }?.isStale == true
             let marker = isConnectedButIdle ? "No usage today" : "Setup"
+            var accessibilityParts = [
+                localized(provider.displayName, language: settings.localization.language),
+                localized(marker, language: settings.localization.language)
+            ]
+            if isConnectedButIdle && isStale {
+                accessibilityParts.append(localized("Stale", language: settings.localization.language))
+            }
             return MenuBarProviderMetricSegment(
                 provider: provider,
                 providerShortLabel: providerMetricLabel(provider),
-                displayValue: "—",
-                accessibilityLabel: "\(localized(provider.displayName, language: settings.localization.language)), \(localized(marker, language: settings.localization.language))"
+                displayValue: isConnectedButIdle && isStale ? "— STALE" : "—",
+                accessibilityLabel: accessibilityParts.joined(separator: ", ")
             )
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
@@ -431,12 +439,15 @@ public final class MenuBarStatusService: @unchecked Sendable {
         // Local activity providers have no percentage to show, so surface the measured amount
         // instead of a bare "Local" marker, tagged so it is never read as quota.
         if candidate.kind == .info, candidate.authority == "local-derived" {
+            // Stale local activity looks identical to live activity unless the marker is visible;
+            // quota providers already carry a STALE suffix, local-activity providers need one too.
+            let staleSuffix = candidate.snapshot.isStale ? " STALE" : ""
             if let credits = candidate.snapshot.creditsUsed, credits > 0 {
                 let value = TokenPilotFormatters.creditAmount(credits)
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: providerMetricLabel(provider),
-                    displayValue: "\(value)cr",
+                    displayValue: "\(value)cr\(staleSuffix)",
                     accessibilityLabel: [
                         localized(provider.displayName, language: settings.localization.language),
                         "\(value) \(localized("credits", language: settings.localization.language))",
@@ -453,7 +464,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: providerMetricLabel(provider),
-                    displayValue: "\(value)\(unit)",
+                    displayValue: "\(value)\(unit)\(staleSuffix)",
                     accessibilityLabel: [
                         localized(provider.displayName, language: settings.localization.language),
                         "\(value) \(localized("tok", language: settings.localization.language))",
@@ -468,7 +479,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case "user-entered":
             marker = "Manual"
         case "local-derived":
-            marker = "Local"
+            marker = candidate.snapshot.isStale ? "Local STALE" : "Local"
         default:
             marker = "Unavailable"
         }
@@ -528,7 +539,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case "user-entered":
             return "\(provider.shortName) Manual"
         case "local-derived":
-            return "\(provider.shortName) Local"
+            return "\(provider.shortName) Local" + (candidate.snapshot.isStale ? " STALE" : "")
         default:
             return "\(provider.shortName) Unavailable"
         }
@@ -1306,6 +1317,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
         }
         if snapshot.provider == .opencode, snapshot.weekly?.providerWindowID == "rate-limit" {
+            return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
+        }
+        // Codex writes the server-reported quota into its local session log (rate_limits on
+        // token_count rows). That is provider-reported data, so it must surface as a percent
+        // rather than being buried in the local-activity rank.
+        if snapshot.provider == .codex,
+           snapshot.fiveHour?.providerWindowID == "rate-limit" || snapshot.weekly?.providerWindowID == "rate-limit" {
             return (0 + staleOffset, snapshot.isStale ? "STALE" : "", "provider-reported", "supported", snapshot.isStale ? "refreshProvider" : "waitForReset")
         }
         if snapshot.provider == .codex, snapshot.dataSource == .webUsage, snapshot.isExperimental {

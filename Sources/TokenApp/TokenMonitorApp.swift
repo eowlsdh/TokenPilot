@@ -21,6 +21,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private var standardStatusItem: NSStatusItem?
     private var combinedMetricsView: ProviderMetricsMenuBarNSView?
     private var separateMetricItems: [Provider: MetricStatusItem] = [:]
+    private weak var contextMenuButton: NSStatusBarButton?
     private var modelObservation: AnyCancellable?
 #if DEBUG
     private let debugAccessibilityProfile: TokenPilotDebugAccessibilityProfile?
@@ -171,8 +172,8 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem.button else { return statusItem }
         button.target = self
-        button.action = #selector(togglePopover(_:))
-        button.sendAction(on: [.leftMouseUp])
+        button.action = #selector(handleStatusItemClick(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         return statusItem
     }
 
@@ -194,6 +195,53 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         guard let metricItem = separateMetricItems.removeValue(forKey: provider) else { return }
         metricItem.remove()
         NSStatusBar.system.removeStatusItem(metricItem.statusItem)
+    }
+
+    @objc private func handleStatusItemClick(_ sender: Any?) {
+        guard let button = sender as? NSStatusBarButton else { return }
+        let eventType = NSApp.currentEvent?.type
+        if eventType == .rightMouseUp || eventType == .rightMouseDown {
+            showContextMenu(for: button)
+        } else {
+            togglePopover(button)
+        }
+    }
+
+    private func showContextMenu(for button: NSStatusBarButton) {
+        contextMenuButton = button
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let openItem = NSMenuItem(title: model.t("Open TokenPilot"), action: #selector(openPopoverAction(_:)), keyEquivalent: "")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        let refreshItem = NSMenuItem(title: model.t("Refresh"), action: #selector(refreshNowAction(_:)), keyEquivalent: "r")
+        refreshItem.target = self
+        menu.addItem(refreshItem)
+
+        menu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: model.t("Quit"), action: #selector(quitAction(_:)), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)
+    }
+
+    @objc private func openPopoverAction(_ sender: Any?) {
+        guard let button = contextMenuButton else { return }
+        togglePopover(button)
+    }
+
+    @objc private func refreshNowAction(_ sender: Any?) {
+        Task { @MainActor in
+            await model.refresh(reason: .manual)
+        }
+    }
+
+    @objc private func quitAction(_ sender: Any?) {
+        NSApp.terminate(nil)
     }
 
     @objc private func togglePopover(_ sender: Any?) {

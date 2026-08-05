@@ -2107,7 +2107,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             dataSource: .localLog,
             isExperimental: true,
             isStale: false,
-            statusMessage: "EXPERIMENTAL · local Codex log · not web quota",
+            statusMessage: (latestRateLimits?.fiveHour != nil || latestRateLimits?.weekly != nil)
+                ? "Codex rate limits · provider-reported · local Codex session log"
+                : "EXPERIMENTAL · local Codex log · not web quota",
             model: model,
             events: events
         )
@@ -2240,7 +2242,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
                 requestCount: 1,
                 source: "codex-session-jsonl",
                 dataSource: .localLog,
-                isEstimated: true,
+                // Server-reported token counts from the session log are exact, not estimates;
+                // the experimental flag reflects the parsing path, not the data.
+                isEstimated: false,
                 isExperimental: true,
                 totalTokensOverride: usage.total
             )
@@ -2420,7 +2424,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
-        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium, providerWindowID: nil, durationMinutes: durationMinutes)
+        // The local session log carries the same server-reported quota the app-server connector
+        // returns; mark the window so the menu bar can present it as provider-reported percent.
+        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium, providerWindowID: "rate-limit", durationMinutes: durationMinutes)
     }
 
     private func firstCodexSessionValue(in dictionary: [String: Any], keys: [String]) -> Any? {

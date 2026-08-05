@@ -31,28 +31,33 @@ public struct CapacityPresentationMapper: Sendable {
         let titleKey: String
         switch observation.value.kind {
         case .percent:
-            guard let used = observation.value.usedPercent else { preconditionFailure("Invalid capacity percent value") }
             titleKey = "capacity.remaining.percent"
-            data["usedPercent"] = String(used)
-            data["remainingPercent"] = String(100 - used)
+            if let used = observation.value.usedPercent {
+                data["usedPercent"] = String(used)
+                data["remainingPercent"] = String(100 - used)
+            }
         case .currency:
-            guard let amount = observation.value.moneyAmount,
-                  let currency = observation.value.currency else { preconditionFailure("Invalid capacity money value") }
             titleKey = "capacity.balance.money"
-            data["amount"] = NSDecimalNumber(decimal: amount).stringValue
-            data["currency"] = currency
+            if let amount = observation.value.moneyAmount,
+               let currency = observation.value.currency {
+                data["amount"] = NSDecimalNumber(decimal: amount).stringValue
+                data["currency"] = currency
+            }
         case .requestCount:
-            guard let count = observation.value.count else { preconditionFailure("Invalid capacity count value") }
             titleKey = "capacity.count"
-            data["count"] = String(count)
+            if let count = observation.value.count {
+                data["count"] = String(count)
+            }
         case .tokens:
-            guard let tokens = observation.value.tokens else { preconditionFailure("Invalid capacity token value") }
             titleKey = "capacity.tokens"
-            data["tokens"] = String(tokens)
+            if let tokens = observation.value.tokens {
+                data["tokens"] = String(tokens)
+            }
         case .credits:
-            guard let credits = observation.value.credits else { preconditionFailure("Invalid capacity credits value") }
             titleKey = "capacity.credits"
-            data["credits"] = CapacityCanonical.decimalString(credits)
+            if let credits = observation.value.credits {
+                data["credits"] = CapacityCanonical.decimalString(credits)
+            }
         }
         return CapacityPresentation(titleKey: titleKey, detailKey: "capacity.\(assessment.freshness.rawValue).detail", accessibilityKey: "capacity.accessibility", data: data)
     }

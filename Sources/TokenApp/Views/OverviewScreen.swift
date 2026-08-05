@@ -4,6 +4,14 @@ import TokenCore
 struct TokenPilotRootView: View {
     @ObservedObject var model: TokenPilotViewModel
 
+    @State private var isRefreshHovered = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
     var body: some View {
         VStack(spacing: TokenPilotDesign.Spacing.section) {
             header
@@ -39,23 +47,34 @@ struct TokenPilotRootView: View {
     private var header: some View {
         HStack(spacing: TokenPilotDesign.Spacing.md) {
             TokenPilotBrandMark()
-                .scaleEffect(0.88)
-                .frame(width: 22, height: 22)
+                .scaleEffect(1.0)
+                .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                 Text(model.t("TokenPilot"))
-                    .font(TokenPilotDesign.Typography.cardTitle)
+                    .font(TokenPilotDesign.Typography.appTitle)
                     .foregroundStyle(TokenPilotDesign.text(.primary))
                     .lineLimit(1)
 
                 Text(model.menuBarTitle)
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .font(TokenPilotDesign.Typography.micro)
                     .monospacedDigit()
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
                     .lineLimit(1)
                     .minimumScaleFactor(0.78)
                     .help(model.menuBarAccessibilityLabel)
                     .accessibilityLabel(model.menuBarAccessibilityLabel)
+
+                if let lastUpdated = model.lastUpdatedText {
+                    Text(lastUpdated)
+                        .font(TokenPilotDesign.Typography.micro)
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.text(.tertiary))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.70)
+                        .help(model.t("Last updated"))
+                        .accessibilityLabel("\(model.t("Last updated")): \(lastUpdated)")
+                }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
@@ -63,7 +82,7 @@ struct TokenPilotRootView: View {
 
             refreshButton
         }
-        .frame(height: 30)
+        .frame(height: 40)
     }
 
     private var headerModeIndicator: some View {
@@ -91,7 +110,7 @@ struct TokenPilotRootView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(height: 24)
+        .frame(height: 30)
         .accessibilityLabel(model.t("Screen"))
         .focusable()
     }
@@ -106,10 +125,11 @@ struct TokenPilotRootView: View {
                         .controlSize(.mini)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
+                        .rotationEffect(.degrees(refreshArrowRotation))
                 }
             }
-            .frame(width: 28, height: 28)
+            .frame(width: 30, height: 30)
             .background {
                 LiquidGlassBackground(
                     cornerRadius: TokenPilotDesign.Radius.sm,
@@ -120,12 +140,25 @@ struct TokenPilotRootView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(TokenPilotDesign.text(.secondary))
+        .onHover { hovering in
+            if reduceMotion {
+                isRefreshHovered = hovering
+            } else {
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.7)) {
+                    isRefreshHovered = hovering
+                }
+            }
+        }
         .disabled(model.isRefreshing)
         .keyboardShortcut("r", modifiers: [.command])
         .accessibilityLabel(model.t("Refresh"))
         .accessibilityValue(model.isRefreshing ? model.t("Refreshing") : model.t("Ready"))
         .help(model.t("Refresh"))
         .focusable()
+    }
+
+    private var refreshArrowRotation: Double {
+        isRefreshHovered ? 50 : 0
     }
 
     private func banner(_ message: String) -> some View {
@@ -137,7 +170,7 @@ struct TokenPilotRootView: View {
         ) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
                     .accessibilityHidden(true)
 
@@ -524,6 +557,7 @@ struct UsageSummaryCard: View {
                 capacityHeader(
                     value: item.primaryValue(language: language),
                     detail: item.title(language: language),
+                    valueColor: item.valueColor,
                     statusLabel: item.showsRiskStatusBadge ? item.statusLabel(language: language) : nil,
                     statusColor: item.statusColor
                 )
@@ -559,6 +593,7 @@ struct UsageSummaryCard: View {
                 capacityHeader(
                     value: "—",
                     detail: localized("Capacity unavailable", language: language),
+                    valueColor: TokenPilotDesign.text(.secondary),
                     statusLabel: unavailableStatus,
                     statusColor: unavailableStatusColor
                 )
@@ -579,13 +614,13 @@ struct UsageSummaryCard: View {
         .accessibilityLabel("\(localized("Capacity unavailable", language: language)), \(unavailableStatus), \(unavailableDetail), \(unavailableGuidance)")
     }
 
-    private func capacityHeader(value: String, detail: String, statusLabel: String?, statusColor: Color) -> some View {
+    private func capacityHeader(value: String, detail: String, valueColor: Color, statusLabel: String?, statusColor: Color) -> some View {
         HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                 Text(value)
                     .font(TokenPilotDesign.Typography.metricLarge)
                     .monospacedDigit()
-                    .foregroundStyle(TokenPilotDesign.text(.primary))
+                    .foregroundStyle(valueColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
 
@@ -861,13 +896,13 @@ struct CapacitySignalLine: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(item.seriesLabel(language: language))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .lineLimit(1)
                     .frame(width: 58, alignment: .leading)
 
                 Text(item.primaryValue(language: language))
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .monospacedDigit()
                     .foregroundStyle(item.valueColor)
                     .lineLimit(1)
@@ -876,14 +911,14 @@ struct CapacitySignalLine: View {
             }
 
             Text(item.metadataSummary(language: language))
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .font(TokenPilotDesign.Typography.micro)
                 .foregroundStyle(TokenPilotDesign.textTertiary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.74)
 
             if shouldShowEvidenceSummary {
                 Text(evidenceSummary)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textTertiary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
@@ -1017,10 +1052,10 @@ struct CapacityErrorInline: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(localized(error.redactedMessage, language: language))
-                .font(.system(size: 9, weight: .medium))
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(2)
             Spacer(minLength: 0)
@@ -1062,7 +1097,7 @@ struct AlertsStatusRow: View {
         ) {
             HStack(spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "bell.badge")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
                     .accessibilityHidden(true)
 

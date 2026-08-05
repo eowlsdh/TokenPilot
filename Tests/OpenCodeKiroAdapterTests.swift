@@ -54,6 +54,89 @@ final class OpenCodeAdapterTests: XCTestCase {
         XCTAssertEqual(snapshot.events.count, 1)
     }
 
+    func testAttachesWorkspaceFolderLabelFromSessionTable() async throws {
+        let database = directory.appendingPathComponent("opencode.db")
+        let now = Date()
+        try makeSessionAwareDatabase(at: database, messages: [
+            (sessionID: "ses_a", payload: Self.assistantPayload(at: now)),
+            (sessionID: "ses_b", payload: Self.assistantPayload(at: now.addingTimeInterval(-60)))
+        ])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 2)
+        let labels = Set(snapshot.events.compactMap(\.projectLabel))
+        XCTAssertEqual(labels, ["TokenPilot", "OtherProject"])
+        XCTAssertTrue(snapshot.events.allSatisfy { $0.projectLabel != nil })
+        XCTAssertTrue(snapshot.events.allSatisfy { !($0.projectLabel?.contains("/") ?? false) },
+                      "Labels must be workspace folder names, never full paths.")
+    }
+
+    func testMissingSessionTableLeavesProjectLabelNil() async throws {
+        let database = directory.appendingPathComponent("opencode.db")
+        try makeDatabase(at: database, table: "message", payloads: [Self.assistantPayload(at: Date())])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertNil(snapshot.events.first?.projectLabel)
+    }
+
+    func testDatabaseReadKeepsDistinctParallelMessagesRoundedToTheSameSecond() async throws {
+        let now = Date()
+        let second = floor(now.timeIntervalSince1970)
+        let database = directory.appendingPathComponent("opencode.db")
+        // 0.2s and the previous second's 0.9s both round to `second`; a content-based dedup key
+        // merged them and dropped one real usage event. The read path dedups by message id, so
+        // both must survive.
+        let stamp1 = Int64((second + 0.2) * 1000)
+        let stamp2 = Int64((second - 0.1) * 1000)
+        let payload = Self.assistantPayload(at: Date(timeIntervalSince1970: second))
+        try makeDatabase(at: database, table: "message", payloads: [payload, payload], timestamps: [stamp1, stamp2])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 2, "Distinct parallel messages must not be merged by second-rounding.")
+        XCTAssertEqual(snapshot.todayTokens, 3_200)
+    }
+
+    func testCrossDatabaseReadsDeduplicateByRealMessageID() async throws {
+        let first = directory.appendingPathComponent("opencode.db")
+        let second = directory.appendingPathComponent("opencode-next.db")
+        let payload = Self.assistantPayload(at: Date())
+        // Both rows are inserted with the same id ("row-0") — the same message observed through
+        // overlapping databases must be read exactly once.
+        try makeDatabase(at: first, table: "message", payloads: [payload])
+        try makeDatabase(at: second, table: "session_message", payloads: [payload])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [first, second], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1, "Same message id across databases must be read once.")
+        XCTAssertEqual(snapshot.todayTokens, 1_600)
+    }
+
+    func testDatabaseReadIgnoresMessagesOutsideRetentionWindow() async throws {
+        let now = Date()
+        let database = directory.appendingPathComponent("opencode.db")
+        let old = Int64((now.timeIntervalSince1970 - 46 * 24 * 3_600) * 1000)
+        let recent = Int64(now.timeIntervalSince1970 * 1000)
+        try makeDatabase(
+            at: database,
+            table: "message",
+            payloads: [Self.assistantPayload(at: now), Self.assistantPayload(at: now)],
+            timestamps: [old, recent]
+        )
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1, "Rows older than the 44-day retention window must not be read.")
+    }
+
     func testOpenCodeUsageIsMeasuredNotEstimated() async throws {
         let database = directory.appendingPathComponent("opencode.db")
         try makeDatabase(at: database, table: "message", payloads: [Self.assistantPayload(at: Date())])
@@ -165,7 +248,60 @@ final class OpenCodeAdapterTests: XCTestCase {
         """
     }
 
-    private func makeDatabase(at url: URL, table: String, payloads: [String]) throws {
+    /// Builds a DB matching opencode's session-aware schema: a `session` table with
+    /// `directory`, plus a `message` table whose rows reference `session_id`.
+    private func makeSessionAwareDatabase(
+        at url: URL,
+        messages: [(sessionID: String, payload: String)]
+    ) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
+              let handle else {
+            if let handle { sqlite3_close_v2(handle) }
+            throw XCTSkip("Unable to create SQLite fixture")
+        }
+        defer { sqlite3_close_v2(handle) }
+
+        let sessionDDL = "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL);"
+        XCTAssertEqual(sqlite3_exec(handle, sessionDDL, nil, nil, nil), SQLITE_OK)
+        let messageDDL = "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL, time_created INTEGER NOT NULL);"
+        XCTAssertEqual(sqlite3_exec(handle, messageDDL, nil, nil, nil), SQLITE_OK)
+
+        let sessionSQL = "INSERT INTO session (id, directory, title) VALUES (?, ?, ?);"
+        for (id, directory, title) in [
+            ("ses_a", "/Users/test/TokenPilot", "A"),
+            ("ses_b", "/Users/test/OtherProject", "B")
+        ] {
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(handle, sessionSQL, -1, &statement, nil), SQLITE_OK)
+            let bound = try XCTUnwrap(statement)
+            sqlite3_bind_text(bound, 1, id, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 2, directory, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 3, title, -1, sqliteTransient)
+            XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
+            sqlite3_finalize(bound)
+        }
+
+        let messageSQL = "INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?);"
+        for (index, message) in messages.enumerated() {
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(handle, messageSQL, -1, &statement, nil), SQLITE_OK)
+            let bound = try XCTUnwrap(statement)
+            sqlite3_bind_text(bound, 1, "msg-\(index)", -1, sqliteTransient)
+            sqlite3_bind_text(bound, 2, message.sessionID, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 3, message.payload, -1, sqliteTransient)
+            sqlite3_bind_int64(bound, 4, Int64(Date().timeIntervalSince1970 * 1_000))
+            XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
+            sqlite3_finalize(bound)
+        }
+    }
+
+    private func makeDatabase(
+        at url: URL,
+        table: String,
+        payloads: [String],
+        timestamps: [Int64]? = nil
+    ) throws {
         var handle: OpaquePointer?
         guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
               let handle else {
@@ -184,7 +320,8 @@ final class OpenCodeAdapterTests: XCTestCase {
             let bound = try XCTUnwrap(statement)
             sqlite3_bind_text(bound, 1, "row-\(index)", -1, sqliteTransient)
             sqlite3_bind_text(bound, 2, payload, -1, sqliteTransient)
-            sqlite3_bind_int64(bound, 3, Int64(Date().timeIntervalSince1970 * 1_000))
+            let stamp = timestamps?[index] ?? Int64(Date().timeIntervalSince1970 * 1_000)
+            sqlite3_bind_int64(bound, 3, stamp)
             XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
             sqlite3_finalize(bound)
         }
@@ -514,10 +651,11 @@ final class ModelBreakdownTests: XCTestCase {
 
 final class SevenDayTrendTests: XCTestCase {
     func testSevenDayBarsAlwaysCoverSevenDaysEndingToday() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 500), Self.event(daysAgo: 3, tokens: 200)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 500, relativeTo: now), Self.event(daysAgo: 3, tokens: 200, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.count, 7)
         XCTAssertEqual(usage.sevenDayBars.map(\.dayLabel).count, Set(usage.sevenDayBars.map(\.dayLabel)).count,
@@ -526,20 +664,22 @@ final class SevenDayTrendTests: XCTestCase {
     }
 
     func testDaysWithoutActivityStayZeroRatherThanMissing() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 100)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 100, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.filter { $0.tokens == 0 }.count, 6)
         XCTAssertEqual(usage.sevenDayBars.last?.tokens, 100, "today is the trailing bar")
     }
 
     func testTrendIgnoresEventsOutsideTheSevenDayWindow() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 50), Self.event(daysAgo: 30, tokens: 9_000)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 50, relativeTo: now), Self.event(daysAgo: 30, tokens: 9_000, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.reduce(0) { $0 + $1.tokens }, 50)
     }
@@ -548,8 +688,8 @@ final class SevenDayTrendTests: XCTestCase {
         XCTAssertEqual(DailyUsageBar(dayLabel: "Mon", tokens: -5).tokens, 0)
     }
 
-    private static func event(daysAgo: Int, tokens: Int) -> UsageEvent {
-        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+    private static func event(daysAgo: Int, tokens: Int, relativeTo now: Date) -> UsageEvent {
+        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now) ?? now
         return UsageEvent(
             provider: .opencode,
             model: "opencode/test",
@@ -583,7 +723,8 @@ final class DebugFixtureFreshnessTests: XCTestCase {
     }
 
     func testEventsAnchoredLikeTheFixturePopulateEveryHistoryPeriod() {
-        let anchor = Date().addingTimeInterval(-300)
+        let now = Date()
+        let anchor = now.addingTimeInterval(-300)
         var snapshot = ProviderSnapshot(provider: .claude, dataSource: .officialStatusline)
         snapshot.events = [
             Self.event(at: anchor, tokens: 5_000, model: "claude-sonnet"),
@@ -592,10 +733,10 @@ final class DebugFixtureFreshnessTests: XCTestCase {
         ]
         let aggregator = AggregationService()
 
-        let today = aggregator.aggregate(snapshots: [snapshot], period: .today)
+        let today = aggregator.aggregate(snapshots: [snapshot], period: .today, now: now)
         XCTAssertEqual(today.events.count, 1, "fixture QA must not show an empty Today screen")
 
-        let week = aggregator.aggregate(snapshots: [snapshot], period: .last7Days)
+        let week = aggregator.aggregate(snapshots: [snapshot], period: .last7Days, now: now)
         XCTAssertEqual(week.events.count, 3)
         XCTAssertEqual(week.metrics.totalTokens, 10_000)
         XCTAssertTrue(week.sevenDayBars.contains { $0.tokens > 0 }, "trend card needs at least one non-zero bar")
@@ -929,6 +1070,22 @@ final class KiroUsageLimitsTests: XCTestCase {
             let parsed = KiroUsageLimitsObserver.parse(try XCTUnwrap(body.data(using: .utf8)), now: now)
             XCTAssertEqual(parsed?.usedPercent, expected, "shape: \(body)")
         }
+    }
+
+    /// A `percent_used`/`percentUsed` reported as a fraction (0..1) must be treated as a percentage
+    /// rather than collapsing to 0%, matching how the codex session parser interprets fractions.
+    func testParsesPercentUsedAsFractionWithoutCollapsingToZero() throws {
+        let now = Date()
+
+        let snake = try XCTUnwrap(#"{"limits":[{"percent_used":0.5}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(snake, now: now)?.usedPercent, 50)
+
+        let camel = try XCTUnwrap(#"{"limits":[{"percentUsed":0.37}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(camel, now: now)?.usedPercent, 37)
+
+        // Integer percentages stay untouched.
+        let integer = try XCTUnwrap(#"{"limits":[{"percent_used":0}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(integer, now: now)?.usedPercent, 0)
     }
 
     func testCredentialExtractionIgnoresRefreshTokenAndOtherFields() throws {

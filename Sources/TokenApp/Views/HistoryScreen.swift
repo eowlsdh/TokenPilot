@@ -87,6 +87,9 @@ struct HistoryScreen: View {
                     if !model.historyUsage.modelBreakdown.isEmpty {
                         HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
                     }
+                    if !model.historyUsage.projectBreakdown.isEmpty {
+                        HistoryProjectBreakdownCard(shares: model.historyUsage.projectBreakdown, model: model)
+                    }
                     HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)
                     HistoryExportCard(model: model)
                 }
@@ -678,6 +681,116 @@ private struct HistoryModelRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(share.model), \(share.tokenPercent)%, \(detailText)")
+    }
+
+    private var detailText: String {
+        var parts = [
+            model.providerDisplayName(share.provider),
+            "\(share.requestCount) \(model.t("Requests"))"
+        ]
+        if let cost = share.estimatedCostUSD, cost > 0 {
+            parts.append("\(TokenPilotFormatters.cost(cost)) \(model.t("est."))")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
+struct HistoryProjectBreakdownCard: View {
+    let shares: [ProjectUsageShare]
+    @ObservedObject var model: TokenPilotViewModel
+
+    @State private var showingAllProjects = false
+
+    private var visibleShares: [ProjectUsageShare] {
+        showingAllProjects ? Array(shares.prefix(12)) : Array(shares.prefix(4))
+    }
+
+    private var hasMore: Bool { shares.count > 4 }
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Projects"), systemImage: "folder")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    SemanticChip(
+                        label: "\(shares.count)",
+                        systemImage: "list.number",
+                        role: .neutral
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                    ForEach(visibleShares) { share in
+                        HistoryProjectRow(share: share, model: model)
+                    }
+                }
+
+                if hasMore {
+                    Button(showingAllProjects ? model.t("Show fewer projects") : model.t("Show all projects")) {
+                        withAnimation(.easeInOut(duration: 0.18)) { showingAllProjects.toggle() }
+                    }
+                    .buttonStyle(.plain)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.calm)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.t("Projects"))
+    }
+}
+
+private struct HistoryProjectRow: View {
+    let share: ProjectUsageShare
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
+                Circle()
+                    .fill(TokenPilotDesign.accent(for: share.provider))
+                    .frame(width: 7, height: 7)
+
+                Text(share.label)
+                    .font(TokenPilotDesign.Typography.label)
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: TokenPilotDesign.Spacing.sm)
+
+                Text(TokenPilotFormatters.compactNumber(share.tokens))
+                    .font(TokenPilotDesign.Typography.metric)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+            }
+
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                ProgressView(value: Double(share.tokenPercent), total: 100)
+                    .progressViewStyle(.linear)
+                    .tint(TokenPilotDesign.accent(for: share.provider))
+                    .frame(height: 3)
+
+                Text("\(share.tokenPercent)%")
+                    .font(TokenPilotDesign.Typography.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+
+            Text(detailText)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(share.label), \(share.tokenPercent)%, \(detailText)")
     }
 
     private var detailText: String {

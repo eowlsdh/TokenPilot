@@ -94,7 +94,11 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
         }
 
         let databases = databaseURLs ?? Self.defaultDatabaseURLs()
-        var events = databases.flatMap { readDatabaseEvents(at: $0) }
+        var events: [UsageEvent] = []
+        var seenMessageIDs = Set<String>()
+        for database in databases {
+            events.append(contentsOf: readDatabaseEvents(at: database, seenMessageIDs: &seenMessageIDs))
+        }
 
         if events.isEmpty {
             let roots = legacyMessageRoots ?? Self.defaultLegacyMessageRoots()
@@ -138,7 +142,9 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
     }
 
     public static func makeSnapshot(from rawEvents: [UsageEvent], staleThreshold: TimeInterval, now: Date = Date()) -> ProviderSnapshot {
-        let events = deduplicated(rawEvents).sorted { $0.timestamp < $1.timestamp }
+        // Events arrive source-deduplicated: the database path dedups by real message id across
+        // databases and the legacy path by file, so no content-based pass can drop real usage here.
+        let events = rawEvents.sorted { $0.timestamp < $1.timestamp }
         let calendar = Calendar.current
         let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
@@ -170,40 +176,172 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
 
     // MARK: - SQLite sources
 
-    private func readDatabaseEvents(at url: URL) -> [UsageEvent] {
+    private func readDatabaseEvents(at url: URL, seenMessageIDs: inout Set<String>) -> [UsageEvent] {
         guard FileManager.default.fileExists(atPath: url.path), !isForbiddenOpenCodePath(url) else { return [] }
 
         // v2 (`opencode-next.db`) moved per-message rows into `session_message`; v1 keeps `message`.
         for table in ["session_message", "message"] where TokenPilotSQLite.tableExists(databasePath: url.path, table: table) {
-            let rows = TokenPilotSQLite.query(
-                databasePath: url.path,
-                sql: "SELECT data, time_created FROM \(table) ORDER BY time_created DESC LIMIT \(maxMessages)",
-                maxRows: maxMessages,
-                columnCount: 2
+            let sessionLabels = Self.sessionLabels(databasePath: url.path)
+            let sessionColumn = Self.sessionColumnName(databasePath: url.path, table: table)
+            let events = readMessageEvents(
+                at: url,
+                table: table,
+                sessionColumn: sessionColumn,
+                sessionLabels: sessionLabels,
+                seenMessageIDs: &seenMessageIDs
             )
-            let events = rows.compactMap { row -> UsageEvent? in
-                guard let payload = row.first ?? nil else { return nil }
-                let fallback = row.count > 1 ? Self.date(fromMilliseconds: row[1]) : nil
-                return Self.parseMessage(json: payload, fallbackTimestamp: fallback)
-            }
             if !events.isEmpty { return events }
         }
         return []
+    }
+
+    /// Reads message rows within the 44-day retention window and extracts token/cost fields in
+    /// SQL (`json_extract`), so heavy stores are aggregated by SQLite instead of parsed in Swift.
+    /// Rows are deduplicated by their real message id across databases — parallel messages with
+    /// identical token counts in the same second are distinct rows and are all kept.
+    private func readMessageEvents(
+        at url: URL,
+        table: String,
+        sessionColumn: String?,
+        sessionLabels: [String: String],
+        seenMessageIDs: inout Set<String>
+    ) -> [UsageEvent] {
+        let cutoff = Self.retentionCutoffMilliseconds(now: Date())
+        var columns = [
+            "id",
+            "time_created",
+            "json_extract(data, '$.tokens.input')",
+            "json_extract(data, '$.tokens.output')",
+            "json_extract(data, '$.tokens.reasoning')",
+            "json_extract(data, '$.tokens.cache.read')",
+            "json_extract(data, '$.tokens.cache.write')",
+            "json_extract(data, '$.cost')",
+            "json_extract(data, '$.modelID')",
+            "json_extract(data, '$.providerID')"
+        ]
+        if let sessionColumn {
+            columns.append(sessionColumn)
+        }
+        let sql = "SELECT \(columns.joined(separator: ", ")) FROM \(table) WHERE time_created >= \(cutoff) ORDER BY time_created DESC"
+
+        let rows = TokenPilotSQLite.query(
+            databasePath: url.path,
+            sql: sql,
+            maxRows: Self.maxRetainedMessageRows,
+            columnCount: columns.count
+        )
+
+        return rows.compactMap { row -> UsageEvent? in
+            guard row.count >= 10,
+                  let rawID = row[0],
+                  seenMessageIDs.insert(rawID).inserted,
+                  let timestamp = Self.date(fromMilliseconds: row[1]) else { return nil }
+
+            let input = openCodeInt(row[2])
+            let output = openCodeInt(row[3])
+            let reasoning = openCodeInt(row[4])
+            let cacheRead = openCodeInt(row[5])
+            let cacheWrite = openCodeInt(row[6])
+            guard input + output + reasoning + cacheRead + cacheWrite > 0 else { return nil }
+
+            let cost = openCodeDecimal(row[7])
+            let modelID = row[8]
+            let providerID = row[9]
+            let model = [providerID, modelID].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "/")
+
+            let sessionID = row.count > 10 ? row[10] : nil
+            let label = sessionID.flatMap { sessionLabels[$0] }
+
+            return UsageEvent(
+                provider: .opencode,
+                model: model.isEmpty ? nil : model,
+                timestamp: timestamp,
+                inputTokens: input,
+                outputTokens: output,
+                cacheReadTokens: cacheRead,
+                cacheCreationTokens: cacheWrite,
+                reasoningTokens: reasoning,
+                requestCount: 1,
+                estimatedCostUSD: (cost ?? 0) > 0 ? cost : nil,
+                source: "opencode-session",
+                dataSource: .localLog,
+                projectLabel: label
+            )
+        }
+    }
+
+    /// Safety valve for absurdly large stores. The 44-day window keeps the realistic count far
+    /// below this, and the newest rows are read first, so this never silently drops recent data.
+    private static let maxRetainedMessageRows = 250_000
+
+    private static func retentionCutoffMilliseconds(now: Date) -> Int64 {
+        let start = Calendar.current.date(byAdding: .day, value: -44, to: Calendar.current.startOfDay(for: now)) ?? now
+        return Int64(start.timeIntervalSince1970 * 1000)
+    }
+
+    /// Column that links a message row to a `session` row, across opencode schema generations.
+    private static func sessionColumnName(databasePath: String, table: String) -> String? {
+        let rows = TokenPilotSQLite.query(
+            databasePath: databasePath,
+            sql: "PRAGMA table_info(\(table))",
+            maxRows: 64,
+            columnCount: 6
+        )
+        let names = rows.compactMap { $0.count > 1 ? $0[1] : nil }
+        return names.first { $0 == "session_id" } ?? names.first { $0 == "sessionID" }
+    }
+
+    /// Maps session id → workspace folder name from the `session` table. Returns only the last
+    /// path component so a full workspace path never leaves the adapter.
+    private static func sessionLabels(databasePath: String) -> [String: String] {
+        guard TokenPilotSQLite.tableExists(databasePath: databasePath, table: "session") else { return [:] }
+
+        let columns = TokenPilotSQLite.query(
+            databasePath: databasePath,
+            sql: "PRAGMA table_info(session)",
+            maxRows: 64,
+            columnCount: 6
+        ).compactMap { $0.count > 1 ? $0[1] : nil }
+        guard let directoryColumn = columns.first(where: { $0 == "directory" }) ?? columns.first(where: { $0 == "dir" }) else {
+            return [:]
+        }
+
+        let rows = TokenPilotSQLite.query(
+            databasePath: databasePath,
+            sql: "SELECT id, \(directoryColumn) FROM session",
+            maxRows: 2_000,
+            columnCount: 2
+        )
+
+        var labels: [String: String] = [:]
+        for row in rows {
+            guard let id = row.first ?? nil, let directory = row.count > 1 ? row[1] : nil else { continue }
+            let trimmed = directory.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let name = URL(fileURLWithPath: trimmed).lastPathComponent
+            guard !name.isEmpty, name != "/" else { continue }
+            labels[id] = name
+        }
+        return labels
     }
 
     // MARK: - Legacy JSON sources
 
     private func readLegacyEvents(roots: [URL]) -> [UsageEvent] {
         let files = openCodeCandidateFiles(in: roots, maxFiles: maxMessages)
+        // Legacy files are one message per path, so the file path is the exact dedupe identity;
+        // a content-based pass could merge distinct parallel messages, so none is applied here.
+        var seenFiles = Set<String>()
         return files.compactMap { file in
-            guard let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
+            guard seenFiles.insert(file.path).inserted,
+                  let text = try? String(contentsOf: file, encoding: .utf8) else { return nil }
             return Self.parseMessage(json: text, fallbackTimestamp: fileModificationDateForOpenCode(file))
         }
     }
 
     // MARK: - Parsing
 
-    public static func parseMessage(json: String, fallbackTimestamp: Date?) -> UsageEvent? {
+    public static func parseMessage(json: String, fallbackTimestamp: Date?, sessionLabel: String? = nil) -> UsageEvent? {
         guard let data = json.data(using: .utf8),
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
@@ -240,7 +378,8 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             source: "opencode-session",
             dataSource: .localLog,
             isEstimated: false,
-            isExperimental: false
+            isExperimental: false,
+            projectLabel: sessionLabel
         )
     }
 
@@ -257,25 +396,6 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
         return Date(timeIntervalSince1970: milliseconds / 1_000)
     }
 
-    private static func deduplicated(_ events: [UsageEvent]) -> [UsageEvent] {
-        var seen = Set<String>()
-        var result: [UsageEvent] = []
-        for event in events {
-            let key = [
-                String(Int(event.timestamp.timeIntervalSince1970.rounded())),
-                event.model ?? "",
-                String(event.inputTokens),
-                String(event.outputTokens),
-                String(event.reasoningTokens),
-                String(event.cacheReadTokens),
-                String(event.cacheCreationTokens)
-            ].joined(separator: "|")
-            if seen.insert(key).inserted {
-                result.append(event)
-            }
-        }
-        return result
-    }
 
     // MARK: - Default locations
 

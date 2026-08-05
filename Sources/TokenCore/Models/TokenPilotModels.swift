@@ -128,6 +128,9 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     public var authType: String?
     public var durationMS: Int?
     public var totalTokensOverride: Int?
+    /// Workspace label for local-activity rollups (opencode only today). Holds the
+    /// workspace *folder name* — never a full path — and is excluded from exports.
+    public var projectLabel: String?
 
     public init(
         id: UUID = UUID(),
@@ -148,7 +151,8 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         isExperimental: Bool = false,
         authType: String? = nil,
         durationMS: Int? = nil,
-        totalTokensOverride: Int? = nil
+        totalTokensOverride: Int? = nil,
+        projectLabel: String? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -169,6 +173,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         self.authType = authType
         self.durationMS = durationMS
         self.totalTokensOverride = totalTokensOverride.map { max($0, 0) }
+        self.projectLabel = projectLabel
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -191,6 +196,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         case authType
         case durationMS
         case totalTokensOverride
+        case projectLabel
     }
 
     public init(from decoder: Decoder) throws {
@@ -214,7 +220,8 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
             isExperimental: try container.decodeIfPresent(Bool.self, forKey: .isExperimental) ?? false,
             authType: try container.decodeIfPresent(String.self, forKey: .authType),
             durationMS: try container.decodeIfPresent(Int.self, forKey: .durationMS),
-            totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride)
+            totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride),
+            projectLabel: try container.decodeIfPresent(String.self, forKey: .projectLabel)
         )
     }
 
@@ -239,6 +246,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(authType, forKey: .authType)
         try container.encodeIfPresent(durationMS, forKey: .durationMS)
         try container.encodeIfPresent(totalTokensOverride, forKey: .totalTokensOverride)
+        try container.encodeIfPresent(projectLabel, forKey: .projectLabel)
     }
 
     private var componentTokenTotal: Int {
@@ -778,49 +786,7 @@ public struct ProviderLimitSample: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public struct ChallengeGoal: Codable, Equatable, Identifiable, Sendable {
-    public var id: UUID
-    public var title: String
-    public var provider: Provider?
-    public var targetTokens: Int?
-    public var targetCostUSD: Decimal?
-    public var startsAt: Date
-    public var endsAt: Date?
 
-    public init(
-        id: UUID = UUID(),
-        title: String,
-        provider: Provider? = nil,
-        targetTokens: Int? = nil,
-        targetCostUSD: Decimal? = nil,
-        startsAt: Date = Date(),
-        endsAt: Date? = nil
-    ) {
-        self.id = id
-        self.title = title
-        self.provider = provider
-        self.targetTokens = targetTokens
-        self.targetCostUSD = targetCostUSD
-        self.startsAt = startsAt
-        self.endsAt = endsAt
-    }
-}
-
-public struct ChallengeProgress: Codable, Equatable, Identifiable, Sendable {
-    public var id: UUID
-    public var goalID: UUID
-    public var tokensUsed: Int
-    public var costUSD: Decimal
-    public var updatedAt: Date
-
-    public init(id: UUID = UUID(), goalID: UUID, tokensUsed: Int = 0, costUSD: Decimal = 0, updatedAt: Date = Date()) {
-        self.id = id
-        self.goalID = goalID
-        self.tokensUsed = tokensUsed
-        self.costUSD = costUSD
-        self.updatedAt = updatedAt
-    }
-}
 
 public enum AlertThreshold: String, Codable, CaseIterable, Identifiable, Sendable {
     case reset
@@ -847,14 +813,6 @@ public enum AlertThreshold: String, Codable, CaseIterable, Identifiable, Sendabl
         case .hundred: return "100"
         }
     }
-}
-
-public enum NotificationChannel: String, Codable, CaseIterable, Identifiable, Sendable {
-    case macOS
-    case telegram
-    case discord
-
-    public var id: String { rawValue }
 }
 
 public struct AlertRule: Codable, Equatable, Identifiable, Sendable {
@@ -1052,6 +1010,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
     case ko
     case en
     case zhHans = "zh-Hans"
+    case zhHant = "zh-Hant"
     case ja
 
     public var id: String { rawValue }
@@ -1062,6 +1021,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
         case .ko: return "한국어"
         case .en: return "English"
         case .zhHans: return "简体中文"
+        case .zhHant: return "繁體中文"
         case .ja: return "日本語"
         }
     }
@@ -1072,6 +1032,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
         case .ko: return "ko"
         case .en: return "en"
         case .zhHans: return "zh-Hans"
+        case .zhHant: return "zh-Hant"
         case .ja: return "ja"
         }
     }
@@ -1223,6 +1184,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var openCode: OpenCodeSettings
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
+    public var launchAtLogin: Bool
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
     public static let legacyGeminiTelemetryPath = "~/.gemini/telemetry.log"
@@ -1263,7 +1225,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarDisplayStyle: MenuBarDisplayStyle = .detailed,
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
-        challengeTargetTokens: Int = 10_000
+        challengeTargetTokens: Int = 10_000,
+        launchAtLogin: Bool = false
     ) {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
@@ -1301,6 +1264,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.openCode = openCode
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
+        self.launchAtLogin = launchAtLogin
     }
     public mutating func normalizeMenuBarComposition() {
         if let primary = menuBarDisplayTarget, !isProviderEnabled(primary) {
@@ -1381,6 +1345,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case openCode
         case showMockDataWhenDisconnected
         case challengeTargetTokens
+        case launchAtLogin
     }
 
     public init(from decoder: Decoder) throws {
@@ -1421,7 +1386,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarDisplayStyle: Self.decodeMenuBarDisplayStyle(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
-            challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000
+            challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
+            launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         )
         self.normalizeMenuBarComposition()
     }
@@ -1541,6 +1507,7 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
     public var providerShare: [ProviderShare]
     public var events: [UsageEvent]
     public var modelBreakdown: [ModelUsageShare]
+    public var projectBreakdown: [ProjectUsageShare]
 
     public init(
         period: HistoryPeriod,
@@ -1548,7 +1515,8 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
         sevenDayBars: [DailyUsageBar] = [],
         providerShare: [ProviderShare] = [],
         events: [UsageEvent] = [],
-        modelBreakdown: [ModelUsageShare] = []
+        modelBreakdown: [ModelUsageShare] = [],
+        projectBreakdown: [ProjectUsageShare] = []
     ) {
         self.period = period
         self.metrics = metrics
@@ -1556,6 +1524,7 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
         self.providerShare = providerShare
         self.events = events
         self.modelBreakdown = modelBreakdown
+        self.projectBreakdown = projectBreakdown
     }
 }
 
@@ -1579,6 +1548,35 @@ public struct ModelUsageShare: Codable, Equatable, Identifiable, Sendable {
     ) {
         self.provider = provider
         self.model = model
+        self.tokens = max(tokens, 0)
+        self.requestCount = max(requestCount, 0)
+        self.estimatedCostUSD = estimatedCostUSD
+        self.tokenPercent = min(max(tokenPercent, 0), 100)
+    }
+}
+
+/// Per-project rollup for the selected history period, ranked so the heaviest consumer is first.
+/// Today only opencode events carry a `projectLabel` (workspace folder name), so this surface is
+/// opencode-local activity and is never part of export payloads.
+public struct ProjectUsageShare: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { "\(provider.rawValue)|\(label)" }
+    public var provider: Provider
+    public var label: String
+    public var tokens: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
+    public var tokenPercent: Int
+
+    public init(
+        provider: Provider,
+        label: String,
+        tokens: Int,
+        requestCount: Int,
+        estimatedCostUSD: Decimal?,
+        tokenPercent: Int
+    ) {
+        self.provider = provider
+        self.label = label
         self.tokens = max(tokens, 0)
         self.requestCount = max(requestCount, 0)
         self.estimatedCostUSD = estimatedCostUSD
@@ -2639,25 +2637,6 @@ public struct XAIProvenancedObservation: @unchecked Sendable {
     }
 }
 
-public struct XAIProvenancedAssessment: @unchecked Sendable {
-    internal let storage: CapacityAssessment
-    public let provenance: XAIProvenance
-
-    public init(standard assessment: CapacityAssessment) {
-        self.storage = assessment
-        self.provenance = .standard
-    }
-
-    internal init(
-        experimentalOAuthWeekly assessment: CapacityAssessment,
-        capability: XAIExperimentalProvenanceCapability
-    ) {
-        _ = capability
-        self.storage = assessment
-        self.provenance = .experimentalOAuthWeekly
-    }
-}
-
 /// Capability token that only Core experimental construction owns.
 internal struct XAIExperimentalProvenanceCapability: Sendable {
     fileprivate init() {}
@@ -2764,11 +2743,6 @@ public struct XAIRefreshResult: Sendable {
     }
 }
 
-public enum XAIWaiterResolution: Sendable {
-    case result(XAIRefreshResult)
-    case cancelledOrdinarily
-}
-
 public struct XAIExperimentalWeeklyInput: Sendable {
     public let settings: AppSettings
     public let intent: UsageRefreshIntent
@@ -2780,31 +2754,6 @@ public struct XAIExperimentalWeeklyInput: Sendable {
         self.intent = intent
         self.ticket = ticket
         self.now = now
-    }
-}
-
-public struct XAIExperimentalWeeklyPresentation: Sendable, Equatable {
-    public let sourceKey: String
-    public let statusKey: String
-    public let actionKey: String
-    public let isExperimental: Bool
-    public let isAvailable: Bool
-    public let resetText: String?
-
-    public init(
-        sourceKey: String,
-        statusKey: String,
-        actionKey: String,
-        isExperimental: Bool,
-        isAvailable: Bool,
-        resetText: String?
-    ) {
-        self.sourceKey = sourceKey
-        self.statusKey = statusKey
-        self.actionKey = actionKey
-        self.isExperimental = isExperimental
-        self.isAvailable = isAvailable
-        self.resetText = resetText
     }
 }
 
@@ -2836,11 +2785,6 @@ public struct XAIAdmission<T: Sendable>: Sendable {
         self.accepted = accepted
         self.exclusions = exclusions
     }
-}
-
-public enum XAIAdmissionOne<T: Sendable>: Sendable {
-    case accepted(T)
-    case excluded(XAISinkExclusion)
 }
 
 public enum XAISinkAdmission {
@@ -2936,77 +2880,8 @@ public struct XAIExecutionCapability: Sendable, Equatable {
     }
 }
 
-public protocol XAIClock: Sendable {
-    func wallNow() -> Date
-    func monotonicNow() -> ContinuousClock.Instant
-}
-
-public struct XAISystemClock: XAIClock {
-    public init() {}
-
-    public func wallNow() -> Date { Date() }
-
-    public func monotonicNow() -> ContinuousClock.Instant { ContinuousClock.now }
-}
-
-public protocol XAIRefreshValidity: Sendable {
-    func isCurrent(_ ticket: XAIRefreshTicket) -> Bool
-}
-
 public protocol XAIExperimentalWeeklyService: Sendable {
     func refresh(_ input: XAIExperimentalWeeklyInput) async -> XAIRefreshResult
     func revoke(ticket: XAIRefreshTicket?) async
     func shutdown() async
-}
-
-public protocol XAIExperimentalWeeklySource: Sendable {
-    func makeService() -> any XAIExperimentalWeeklyService
-}
-
-public protocol TokenPilotLocalizing: Sendable {
-    func string(_ key: String, language: TokenPilotLanguage) -> String
-}
-
-public protocol XAIWeeklyResetFormatting: Sendable {
-    func string(for end: Date, now: Date, language: TokenPilotLanguage) -> String
-}
-
-public protocol XAIExperimentalWeeklyPresenting: Sendable {
-    func present(
-        _ result: XAIRefreshResult?,
-        settings: AppSettings,
-        now: Date
-    ) -> XAIExperimentalWeeklyPresentation
-}
-
-public enum TokenPilotSettingsPersistenceResult: Sendable, Equatable {
-    case persisted
-    case rejected(XAIUnavailableReason)
-}
-
-public protocol TokenPilotSettingsPersisting: Sendable {
-    func persist(_ settings: AppSettings) -> TokenPilotSettingsPersistenceResult
-}
-
-public protocol TokenPilotSettingsPersistenceBackend: Sendable {
-    func loadData() -> Data?
-    func storeTransaction(_ data: Data) -> Bool
-}
-
-/// Atomic consent metadata stored beside AppSettings (V19 wire format).
-public struct XAIOAuthConsentRecord: Equatable, Sendable {
-    public var grantedVersion: Int
-    public var grantEpoch: Int
-    public var revocationEpoch: Int
-
-    public init(grantedVersion: Int, grantEpoch: Int, revocationEpoch: Int) {
-        self.grantedVersion = grantedVersion
-        self.grantEpoch = grantEpoch
-        self.revocationEpoch = revocationEpoch
-    }
-
-    public var isEligible: Bool {
-        grantedVersion == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
-            && grantEpoch > revocationEpoch
-    }
 }

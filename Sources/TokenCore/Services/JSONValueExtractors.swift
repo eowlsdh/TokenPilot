@@ -73,11 +73,18 @@ func stringValue(_ value: Any?) -> String? {
 
 func dateValue(_ value: Any?) -> Date? {
     if let date = value as? Date { return date }
-    if let number = value as? NSNumber { return Date(timeIntervalSince1970: number.doubleValue) }
-    if let double = value as? Double { return Date(timeIntervalSince1970: double) }
+    // Epoch values may be seconds or milliseconds depending on the writer. A second-based epoch is
+    // ~1.7e9 today and can never exceed ~2.1e9 (year 2038), while millisecond epochs are ~1.7e12.
+    // Treating a 13-digit value as seconds would produce a date in the year ~55,899, so normalize to
+    // the same seconds-vs-milliseconds convention used by the Kiro/opencode/codex adapters.
+    func epochDate(_ raw: TimeInterval) -> Date {
+        Date(timeIntervalSince1970: raw > 1_000_000_000_000 ? raw / 1_000 : raw)
+    }
+    if let number = value as? NSNumber { return epochDate(number.doubleValue) }
+    if let double = value as? Double { return epochDate(double) }
     guard let string = value as? String else { return nil }
     let trimmed = string.trimmingCharacters(in: .whitespacesAndNewlines)
-    if let seconds = TimeInterval(trimmed), seconds > 1_000_000 { return Date(timeIntervalSince1970: seconds) }
+    if let seconds = TimeInterval(trimmed), seconds > 1_000_000 { return epochDate(seconds) }
     if let date = isoFractionalFormatter.date(from: trimmed) { return date }
     return isoFormatter.date(from: trimmed)
 }

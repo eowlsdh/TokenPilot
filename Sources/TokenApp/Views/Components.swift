@@ -270,7 +270,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
             HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                 summary()
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.text(.secondary))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .accessibilityHidden(true)
@@ -426,7 +426,7 @@ struct TokenPilotBrandMark: View {
                         )
                 )
             Text("TP")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
                 .foregroundStyle(palette.text(.primary))
             Circle()
                 .fill(palette.status(.calm))
@@ -511,6 +511,7 @@ struct MetricRow: View {
 struct ProgressLine: View {
     @Environment(\.tokenPilotLanguage) private var language
     @Environment(\.tokenPilotSemanticPalette) private var palette
+    @Environment(\.tokenPilotDifferentiateWithoutColor) private var differentiateWithoutColor
 
     let percent: Int?
     let color: Color?
@@ -525,7 +526,9 @@ struct ProgressLine: View {
                     ProgressTrack(palette: palette)
                     ProgressFill(
                         color: color ?? palette.status(.neutral),
-                        width: progressWidth(in: geo.size.width)
+                        width: progressWidth(in: geo.size.width),
+                        capHeight: progressHeight,
+                        hatched: differentiateWithoutColor
                     )
                 }
             }
@@ -589,11 +592,50 @@ struct ProgressLine: View {
     private struct ProgressFill: View {
         let color: Color
         let width: CGFloat
+        let capHeight: CGFloat
+        let hatched: Bool
 
         var body: some View {
-            Capsule()
-                .fill(color)
-                .frame(width: width)
+            ZStack {
+                Capsule()
+                    .fill(color)
+
+                if hatched {
+                    DiagonalHatch()
+                        .stroke(
+                            Color(white: 1.0).opacity(capHeight >= 5 ? 0.34 : 0.26),
+                            lineWidth: 1
+                        )
+                        .clipShape(Capsule())
+                } else {
+                    // Subtle top gloss for premium depth; keeps the fill readable.
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(white: 1.0).opacity(0.22), Color.clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+            }
+            .frame(width: width, height: capHeight)
+        }
+    }
+
+    /// Diagonal hatch used to convey progress without relying on color (Differentiate Without Color).
+    private struct DiagonalHatch: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let spacing: CGFloat = 4
+            guard rect.width > 0, rect.height > 0 else { return path }
+            var x = rect.minX
+            while x <= rect.maxX + rect.height {
+                path.move(to: CGPoint(x: x, y: rect.maxY))
+                path.addLine(to: CGPoint(x: x - rect.height, y: rect.minY))
+                x += spacing
+            }
+            return path
         }
     }
 }
@@ -622,9 +664,16 @@ struct EmptyStateCard: View {
             HStack(spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.text(.secondary))
+                    .foregroundStyle(palette.status(.goal))
                     .frame(width: 24, height: 24)
-                    .background(palette.surface(.cardMuted))
+                    .background(palette.status(.goal).opacity(palette.colorSchemeContrast == .increased ? 0.16 : 0.10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous)
+                            .stroke(
+                                palette.status(.goal).opacity(palette.colorSchemeContrast == .increased ? 0.45 : 0.28),
+                                lineWidth: palette.borderWidth()
+                            )
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
                     .accessibilityHidden(true)
 
@@ -709,6 +758,19 @@ struct SemanticChip: View {
             case .danger: return .danger
             }
         }
+
+        /// Non-color glyph used when "Differentiate Without Color" is enabled so status is
+        /// communicated independently of hue.
+        var differentiationGlyph: String? {
+            switch self {
+            case .neutral: return "smallcircle.filled.circle"
+            case .truth: return "checkmark.seal"
+            case .action: return "arrow.right.circle"
+            case .success: return "checkmark.circle"
+            case .warning: return "exclamationmark.triangle"
+            case .danger: return "exclamationmark.octagon"
+            }
+        }
     }
 
     let label: String
@@ -717,6 +779,7 @@ struct SemanticChip: View {
     private let role: Role?
 
     @Environment(\.tokenPilotSemanticPalette) private var palette
+    @Environment(\.tokenPilotDifferentiateWithoutColor) private var differentiateWithoutColor
 
     init(label: String, systemImage: String? = nil, color: Color? = nil) {
         self.label = label
@@ -737,6 +800,10 @@ struct SemanticChip: View {
             if let systemImage {
                 Image(systemName: systemImage)
                     .font(.system(size: 8, weight: .semibold))
+                    .accessibilityHidden(true)
+            } else if differentiateWithoutColor, let glyph = role?.differentiationGlyph {
+                Image(systemName: glyph)
+                    .font(.system(size: 8, weight: .bold))
                     .accessibilityHidden(true)
             }
 

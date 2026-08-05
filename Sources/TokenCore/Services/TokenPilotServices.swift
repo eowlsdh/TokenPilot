@@ -2137,6 +2137,8 @@ public enum TokenPilotFormatters {
             units = ("時間", "分")
         case .zhHans:
             units = ("小时", "分钟")
+        case .zhHant:
+            units = ("小時", "分鐘")
         }
         if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute)" }
         return "\(minutes)\(units.minute)"
@@ -2186,6 +2188,8 @@ public enum TokenPilotFormatters {
             return "ja_JP"
         case .zhHans:
             return "zh_Hans_CN"
+        case .zhHant:
+            return "zh_Hant_TW"
         }
     }
 }

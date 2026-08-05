@@ -118,25 +118,25 @@ enum TokenPilotDesign {
     }
 
     enum Typography {
-        static let appTitle = Font.system(size: 15, weight: .semibold, design: .rounded)
-        static let sectionTitle = Font.system(size: 12, weight: .bold, design: .rounded)
-        static let cardTitle = Font.system(size: 13, weight: .semibold, design: .rounded)
-        static let label = Font.system(size: 11, weight: .medium)
-        static let caption = Font.system(size: 10, weight: .medium)
-        static let micro = Font.system(size: 9, weight: .semibold, design: .monospaced)
-        static let metric = Font.system(size: 12, weight: .semibold, design: .monospaced)
-        static let metricLarge = Font.system(size: 34, weight: .semibold, design: .monospaced)
-        static let badge = Font.system(size: 10, weight: .bold, design: .monospaced)
+        static let appTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
+        static let sectionTitle = Font.system(size: 13, weight: .bold, design: .rounded)
+        static let cardTitle = Font.system(size: 14, weight: .semibold, design: .rounded)
+        static let label = Font.system(size: 12, weight: .medium)
+        static let caption = Font.system(size: 11, weight: .medium)
+        static let micro = Font.system(size: 10, weight: .semibold, design: .monospaced)
+        static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
+        static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
+        static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
     }
 
     enum Spacing {
-        static let xxs: CGFloat = 2
-        static let xs: CGFloat = 3
-        static let sm: CGFloat = 5
-        static let md: CGFloat = 7
-        static let lg: CGFloat = 9
-        static let xl: CGFloat = 12
-        static let section: CGFloat = 9
+        static let xxs: CGFloat = 3
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 9
+        static let lg: CGFloat = 11
+        static let xl: CGFloat = 14
+        static let section: CGFloat = 12
     }
 
     enum Radius {
@@ -569,6 +569,9 @@ private struct TokenPilotReduceTransparencyOverrideKey: EnvironmentKey {
 private struct TokenPilotContrastOverrideKey: EnvironmentKey {
     static let defaultValue: ColorSchemeContrast? = nil
 }
+private struct TokenPilotDifferentiateWithoutColorKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
 private struct TokenPilotSemanticPaletteKey: EnvironmentKey {
     static let defaultValue = TokenPilotDesign.SemanticPalette(colorSchemeContrast: .standard)
 }
@@ -596,6 +599,11 @@ extension EnvironmentValues {
         set { self[TokenPilotContrastOverrideKey.self] = newValue }
     }
 
+    var tokenPilotDifferentiateWithoutColor: Bool {
+        get { self[TokenPilotDifferentiateWithoutColorKey.self] }
+        set { self[TokenPilotDifferentiateWithoutColorKey.self] = newValue }
+    }
+
     var tokenPilotSemanticPalette: TokenPilotDesign.SemanticPalette {
         get { self[TokenPilotSemanticPaletteKey.self] }
         set { self[TokenPilotSemanticPaletteKey.self] = newValue }
@@ -604,13 +612,16 @@ extension EnvironmentValues {
 
 private struct TokenPilotSemanticPaletteModifier: ViewModifier {
     @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
     @Environment(\.tokenPilotContrastOverride) private var contrastOverride
 
     func body(content: Content) -> some View {
-        content.environment(
-            \.tokenPilotSemanticPalette,
-            TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
-        )
+        content
+            .environment(
+                \.tokenPilotSemanticPalette,
+                TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
+            )
+            .environment(\.tokenPilotDifferentiateWithoutColor, systemDifferentiateWithoutColor)
     }
 }
 

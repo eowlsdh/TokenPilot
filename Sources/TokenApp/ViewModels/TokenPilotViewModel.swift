@@ -138,11 +138,29 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func startProductionRuntime() {
         startAutoRefresh()
+        syncLaunchAtLoginFromSystem()
         Task {
             await updatePermissionStatus()
             await refresh(reason: .automaticTimer)
             refreshStoredCredentialPresence()
+            await refreshConnectionDiagnostics()
         }
+    }
+
+    /// Populates provider diagnostics (statuses only — no path adoption, no banner) once at
+    /// startup so Settings reflects connected/stale states without a manual Check Connection.
+    private func refreshConnectionDiagnostics() async {
+        let sources = await connectionService.checkAll(settings: settings)
+        applyDataSources(sources)
+    }
+
+    /// The login item is the system truth; fold its state into settings once at startup.
+    private func syncLaunchAtLoginFromSystem() {
+        let registered = LaunchAtLoginService.isEnabled
+        guard settings.launchAtLogin != registered else { return }
+        var next = settings
+        next.launchAtLogin = registered
+        settings = next
     }
 
 #if DEBUG
@@ -544,6 +562,22 @@ final class TokenPilotViewModel: ObservableObject {
         TokenPilotLocalizer.localized(key, language: settings.localization.language)
     }
 
+    var appVersionText: String {
+        TokenPilotVersion.current()
+    }
+
+    /// Localized relative freshness label (e.g. "Updated 3 min ago"), or nil when the
+    /// app has never completed a refresh yet.
+    var lastUpdatedText: String? {
+        guard let format = TokenPilotRelativeTimestamp.format(from: lastRefreshFinishedAt, now: menuBarNow) else {
+            return nil
+        }
+        if let arg = format.arg {
+            return String(format: t(format.key), arg)
+        }
+        return t(format.key)
+    }
+
     func localizedStatus(_ status: String) -> String {
         TokenPilotLocalizer.localized(status, language: settings.localization.language)
     }
@@ -657,6 +691,22 @@ final class TokenPilotViewModel: ObservableObject {
     }
     func setMenuBarDisplayStyle(_ style: MenuBarDisplayStyle) {
         settings.menuBarDisplayStyle = style
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        guard settings.launchAtLogin != enabled else { return }
+        do {
+            try LaunchAtLoginService.apply(enabled)
+            var next = settings
+            next.launchAtLogin = enabled
+            settings = next
+            bannerMessage = nil
+        } catch {
+            bannerMessage = enabled ? t("Could not enable launch at login") : t("Could not disable launch at login")
+        }
     }
     func setMenuBarProviderGrouping(_ grouping: MenuBarProviderGrouping) {
         settings.menuBarProviderGrouping = grouping
