@@ -125,7 +125,7 @@ struct TokenPilotRootView: View {
                         .controlSize(.mini)
                 } else {
                     Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(TokenPilotDesign.Typography.glyph)
                         .rotationEffect(.degrees(refreshArrowRotation))
                 }
             }
@@ -212,6 +212,7 @@ struct OverviewScreen: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 UsageSummaryCard(model: model)
+                DailyGoalCard(goal: model.dailyGoal, model: model)
 
                 if hasNoOverviewData {
                     emptyOverviewState
@@ -255,6 +256,55 @@ struct OverviewScreen: View {
     }
 }
 
+struct DailyGoalCard: View {
+    let goal: DailyGoalProgress
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Daily goal"), systemImage: "flag.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(
+                        "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
+                        "\(TokenPilotFormatters.compactNumber(goal.targetTokens)) " +
+                        model.t("tok")
+                    )
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.78)
+                }
+
+                ProgressLine(
+                    percent: goal.percent,
+                    color: TokenPilotDesign.trust,
+                    accessibilityLabel: model.t("Daily goal"),
+                    accessibilityValue: "\(TokenPilotFormatters.compactNumber(goal.tokens)) / \(TokenPilotFormatters.compactNumber(goal.targetTokens))"
+                )
+
+                Text(model.t("Local activity, not provider quota"))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(model.t("Daily goal")): " +
+            "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
+            "\(TokenPilotFormatters.compactNumber(goal.targetTokens))"
+        )
+    }
+}
+
 struct CapacityDisplayItem: Identifiable {
     let assessment: CapacityAssessment
     let presentation: CapacityPresentation
@@ -271,6 +321,18 @@ struct CapacityDisplayItem: Identifiable {
 
     var progressPercent: Int? {
         valueKind == .percent ? remainingPercent : nil
+    }
+
+    var paceProjection: CapacityPaceProjection? {
+        CapacityPaceService().projection(observation: assessment.observation)
+    }
+
+    func paceText(language: TokenPilotLanguage) -> String {
+        guard let projection = paceProjection else { return "" }
+        return String(
+            format: localized("At this pace, exhausts in ~%@ (est.)", language: language),
+            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt)
+        )
     }
 
     var progressColor: Color {
@@ -531,7 +593,6 @@ private func capacityDisplayRank(_ item: CapacityDisplayItem) -> Int {
 struct UsageSummaryCard: View {
     @Environment(\.tokenPilotLanguage) private var language
     @ObservedObject var model: TokenPilotViewModel
-
     var body: some View {
         if let primaryItem {
             primaryContent(for: primaryItem)
@@ -574,9 +635,13 @@ struct UsageSummaryCard: View {
                 VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                     compactSummaryLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
                     compactSummaryLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
+                    let paceText = item.paceText(language: language)
+                    if !paceText.isEmpty {
+                        compactSummaryLine(paceText, color: TokenPilotDesign.text(.tertiary))
+                    }
                 }
 
-                metadataLine(item.metadataSummary(language: language))
+                liveMetadata(for: item)
 
                 if let error = model.capacityRefreshErrors.first {
                     CapacityErrorInline(error: error)
@@ -585,6 +650,24 @@ struct UsageSummaryCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: item))
+    }
+
+    private func liveMetadata(for item: CapacityDisplayItem) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            if let resetAt = item.resetAt, resetAt > Date() {
+                HStack(spacing: TokenPilotDesign.Spacing.xs) {
+                    Text(localized("Reset in", language: language))
+                    LiveResetCountdown(resetAt: resetAt)
+                }
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.text(.tertiary))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            } else {
+                metadataLine(item.resetText(language: language))
+            }
+            metadataLine(item.observedText(language: language))
+        }
     }
 
     private var unavailableContent: some View {
@@ -847,6 +930,10 @@ struct ProviderCapacityRow: View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
             compactProviderLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
             compactProviderLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
+            let paceText = item.paceText(language: language)
+            if !paceText.isEmpty {
+                compactProviderLine(paceText, color: TokenPilotDesign.text(.tertiary))
+            }
             providerMetadataLine(item.metadataSummary(language: language))
         }
     }

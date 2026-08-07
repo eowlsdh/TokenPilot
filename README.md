@@ -57,6 +57,12 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
 | 🧰 **Grok/xAI source** | Local context reads only numeric metadata from `~/.grok/sessions/**/signals.json` (never `auth.json`/tokens/prompts/responses). A separate default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly feature may, after explicit consent, read only the selected access token and expiry from fixed `~/.grok/auth.json` for one billing request; the token stays memory-only and is never logged, stored, diagnosed, or exported. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
+| 🖥️ **CLI export + summary** | `TokenPilot export --format json|csv [--capacity]` and `TokenPilot summary` print local usage from the terminal with the same redaction rules as GUI export. |
+| ⚡ **Configurable auto-refresh** | Pick the local-source refresh cadence (15 sec to 15 min) from Settings; menu bar tick stays live. |
+| 📉 **Menu bar sparkline** | Provider-metrics blocks draw a mini remaining-percent trend from the stored limit history, for the same window as the displayed value. |
+| 🎯 **Daily goal** | Set a local daily token target (Settings > General); Overview shows today's progress with a bar and honest local-activity labeling. |
+| 📬 **Weekly digest** | Optional opt-in summary of this week's local usage every Monday at 09:00, delivered as a macOS notification while TokenPilot is running. |
+| ⌘⇧Space **global shortcut** | Optional opt-in shortcut opens the popover from anywhere; right-click the menu bar item for **Copy summary**. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
 
@@ -88,6 +94,26 @@ xcodegen generate
 open TokenPilot.xcodeproj
 # Press Cmd+R
 ```
+
+### Option 4: Command line
+
+The app binary doubles as a read-only CLI (ccusage/toktrack-style) for local usage:
+
+```bash
+# Print today's local usage totals
+TokenPilot summary
+
+# Export the last 7 days as JSON to stdout
+TokenPilot export --period last7Days
+
+# Export today as CSV to a file
+TokenPilot export --format csv --period today --out usage.csv
+
+# Include the latest capacity evidence per series in the JSON payload
+TokenPilot export --period today --capacity
+```
+
+`export` accepts `--format json|csv` (default `json`), `--period today|last7Days|thisMonth` (default `last7Days`), `--out <path>`, and `--capacity` (append latest stored capacity evidence). Output never includes prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
 
 ---
 

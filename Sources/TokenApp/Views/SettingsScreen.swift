@@ -92,6 +92,44 @@ struct SettingsScreen: View {
                 TokenPilotSeparator()
 
                 HStack(alignment: .firstTextBaseline) {
+                    Text(model.t("Auto refresh"))
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Picker(model.t("Refresh interval"), selection: $model.settings.refreshIntervalSeconds) {
+                        ForEach(Self.refreshIntervalPresets) { preset in
+                            Text(model.t(preset.labelKey)).tag(preset.seconds)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 130)
+                }
+                Text(model.t("How often TokenPilot re-reads local sources while the menu bar app runs."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                TokenPilotSeparator()
+
+                Toggle(model.t("Global shortcut"), isOn: $model.settings.menuBarHotkeyEnabled)
+                Text(model.t("Opens the TokenPilot popover from anywhere with ⌘⇧Space."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                TokenPilotSeparator()
+
+                Stepper(
+                    String(format: model.t("Daily goal: %d tokens"), model.settings.challengeTargetTokens),
+                    value: $model.settings.challengeTargetTokens,
+                    in: 100...10_000_000,
+                    step: 500
+                )
+                Text(model.t("Today's local token target shown on Overview. Local activity, not a provider quota."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                TokenPilotSeparator()
+
+                HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Version"))
                         .font(.caption.weight(.semibold))
                     Spacer(minLength: 8)
@@ -101,6 +139,22 @@ struct SettingsScreen: View {
                 }
             }
         }
+    }
+
+    private static let refreshIntervalPresets: [RefreshIntervalPreset] = [
+        RefreshIntervalPreset(seconds: 15, labelKey: "15 sec"),
+        RefreshIntervalPreset(seconds: 30, labelKey: "30 sec"),
+        RefreshIntervalPreset(seconds: 60, labelKey: "1 min"),
+        RefreshIntervalPreset(seconds: 120, labelKey: "2 min"),
+        RefreshIntervalPreset(seconds: 300, labelKey: "5 min"),
+        RefreshIntervalPreset(seconds: 600, labelKey: "10 min"),
+        RefreshIntervalPreset(seconds: 900, labelKey: "15 min")
+    ]
+
+    private struct RefreshIntervalPreset: Identifiable {
+        let seconds: Int
+        let labelKey: String
+        var id: Int { seconds }
     }
 
     private var generalSettingsSummaryText: String {
@@ -696,6 +750,11 @@ struct SettingsScreen: View {
                 Toggle(model.t("Global notifications"), isOn: $model.settings.globalNotificationsEnabled)
                 Toggle(model.t("macOS notifications"), isOn: $model.settings.macOSNotificationsEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled)
+                Toggle(model.t("Weekly digest"), isOn: $model.settings.weeklyDigestEnabled)
+                    .disabled(!model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
+                Text(model.t("Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
                 Toggle(model.t("Telegram notifications"), isOn: $model.settings.telegramNotificationsEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled)
                 Toggle(model.t("Discord notifications"), isOn: $model.settings.discordNotificationsEnabled)

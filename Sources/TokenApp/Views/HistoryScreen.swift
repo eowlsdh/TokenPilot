@@ -84,6 +84,7 @@ struct HistoryScreen: View {
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
+                    HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
                     if !model.historyUsage.modelBreakdown.isEmpty {
                         HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
                     }
@@ -192,9 +193,36 @@ struct CurrentCapacitySignalCard: View {
                     accessibilityValue: item.progressAccessibilityValue(language: model.settings.localization.language)
                 )
             }
+
+            liveSignalMetadata(for: item)
         }
         .accessibilityElement(children: actionIsButton(item) ? .contain : .combine)
         .accessibilityLabel(accessibilityLabel(for: item))
+    }
+
+    @ViewBuilder
+    private func liveSignalMetadata(for item: CapacityDisplayItem) -> some View {
+        let language = model.settings.localization.language
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            if let resetAt = item.resetAt, resetAt > Date() {
+                HStack(spacing: TokenPilotDesign.Spacing.xs) {
+                    Text(model.t("Reset in"))
+                    LiveResetCountdown(resetAt: resetAt)
+                }
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            }
+            let paceText = item.paceText(language: language)
+            if !paceText.isEmpty {
+                Text(paceText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+            }
+        }
     }
 
     @ViewBuilder
@@ -582,6 +610,115 @@ private struct HistoryTrendBar: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+struct HistoryHeatmapCard: View {
+    let cells: [UsageHeatCell]
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var grid: [[UsageHeatCell]] {
+        guard !cells.isEmpty else { return [] }
+        let calendar = Calendar.current
+        // Group by ISO week so columns are Mon..Sun like GitHub's contribution graph.
+        let grouped = Dictionary(grouping: cells) { cell -> Date in
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.dateFormat = "yyyy-MM-dd"
+            let date = formatter.date(from: cell.dateKey) ?? Date()
+            return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)) ?? date
+        }
+        let weeks = grouped.keys.sorted()
+        return weeks.map { week in
+            (0..<7).compactMap { dayOffset in
+                guard let date = calendar.date(byAdding: .day, value: dayOffset, to: week) else { return nil }
+                let key = Self.dateFormatter.string(from: date)
+                return grouped.values.flatMap { $0 }.first { $0.dateKey == key }
+            }
+        }
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private var totalTokens: Int {
+        cells.reduce(0) { $0 + $1.tokens }
+    }
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Last 12 weeks"), systemImage: "square.grid.3x3.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    SemanticChip(
+                        label: TokenPilotFormatters.compactNumber(totalTokens),
+                        systemImage: "number",
+                        role: .neutral
+                    )
+                }
+
+                if grid.isEmpty {
+                    EmptyInlineState(text: model.t("Local activity, not provider quota"))
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(0..<7, id: \.self) { row in
+                                HStack(spacing: 2) {
+                                    ForEach(0..<grid.count, id: \.self) { column in
+                                        heatCell(grid[column][row])
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text(model.t("Local activity, not provider quota"))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    @ViewBuilder
+    private func heatCell(_ cell: UsageHeatCell?) -> some View {
+        if let cell {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(heatColor(level: cell.level))
+                .frame(width: 9, height: 9)
+                .help("\(cell.dateKey): \(TokenPilotFormatters.compactNumber(cell.tokens)) tok")
+        } else {
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(TokenPilotDesign.surface(.separator).opacity(0.4))
+                .frame(width: 9, height: 9)
+        }
+    }
+
+    private func heatColor(level: Int) -> Color {
+        switch level {
+        case 0: return TokenPilotDesign.surface(.separator).opacity(0.5)
+        case 1: return TokenPilotDesign.trust.opacity(0.30)
+        case 2: return TokenPilotDesign.trust.opacity(0.50)
+        case 3: return TokenPilotDesign.trust.opacity(0.72)
+        default: return TokenPilotDesign.calm.opacity(0.85)
+        }
+    }
+
+    private var accessibilitySummary: String {
+        "\(model.t("Last 12 weeks")), \(TokenPilotFormatters.compactNumber(totalTokens)) tok"
     }
 }
 

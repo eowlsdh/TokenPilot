@@ -1187,6 +1187,8 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.alertRules.append(rule)
         }
         copy.geminiDailyRequestCap = max(copy.geminiDailyRequestCap, 1)
+        copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 15), 900)
+        copy.challengeTargetTokens = max(copy.challengeTargetTokens, 1)
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)
@@ -2152,6 +2154,18 @@ public enum TokenPilotFormatters {
         if hours > 0 { return "\(hours)h" }
         let minutes = (seconds % 3_600) / 60
         return "\(minutes)m"
+    }
+
+    /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s".
+    /// Used for live ticking reset timers; the label is localized, the separators are not.
+    public static func countdown(until date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remainingSeconds = seconds % 60
+        if hours > 0 { return "\(hours)h \(minutes)m \(remainingSeconds)s" }
+        if minutes > 0 { return "\(minutes)m \(remainingSeconds)s" }
+        return "\(remainingSeconds)s"
     }
 
     private static let clockFormatters = OSAllocatedUnfairLock(initialState: [String: DateFormatter]())

@@ -154,4 +154,49 @@ public final class AggregationService: Sendable {
         }
         return counts.max(by: { $0.value < $1.value })?.key
     }
+
+    /// Builds a GitHub-style contribution grid for the trailing `days` (default 84 = 12 weeks).
+    /// Cells are ordered newest-last; each day is bucketed into a 0...4 intensity level derived
+    /// from its share of the busiest day so a single heavy day does not wash out quiet days.
+    public func heatmapCells(from events: [UsageEvent], days: Int = 84, now: Date = Date()) -> [UsageHeatCell] {
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: now)
+        let start = calendar.date(byAdding: .day, value: -(days - 1), to: startOfToday) ?? startOfToday
+
+        let dailyTokens = (0..<days).map { offset in
+            let date = calendar.date(byAdding: .day, value: offset, to: start) ?? start
+            let tokens = events
+                .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
+                .reduce(0) { $0 + $1.totalTokens }
+            return (date, tokens)
+        }
+
+        let peak = max(dailyTokens.map(\.1).max() ?? 0, 1)
+        let dateFormatter = Self.heatmapDateFormatter
+
+        return dailyTokens.map { date, tokens in
+            let level: Int
+            if tokens <= 0 {
+                level = 0
+            } else {
+                let ratio = Double(tokens) / Double(peak)
+                if ratio > 0.75 { level = 4 }
+                else if ratio > 0.5 { level = 3 }
+                else if ratio > 0.25 { level = 2 }
+                else { level = 1 }
+            }
+            return UsageHeatCell(
+                dateKey: dateFormatter.withLock { $0.string(from: date) },
+                tokens: tokens,
+                level: level
+            )
+        }
+    }
+
+    private static let heatmapDateFormatter = OSAllocatedUnfairLock(initialState: {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }())
 }

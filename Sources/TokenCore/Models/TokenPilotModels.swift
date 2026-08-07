@@ -1185,6 +1185,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
     public var launchAtLogin: Bool
+    public var refreshIntervalSeconds: Int
+    public var menuBarHotkeyEnabled: Bool
+    public var weeklyDigestEnabled: Bool
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
     public static let legacyGeminiTelemetryPath = "~/.gemini/telemetry.log"
@@ -1226,7 +1229,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
         challengeTargetTokens: Int = 10_000,
-        launchAtLogin: Bool = false
+        launchAtLogin: Bool = false,
+        refreshIntervalSeconds: Int = 60,
+        menuBarHotkeyEnabled: Bool = false,
+        weeklyDigestEnabled: Bool = false
     ) {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
@@ -1265,6 +1271,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
         self.launchAtLogin = launchAtLogin
+        self.refreshIntervalSeconds = refreshIntervalSeconds
+        self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
+        self.weeklyDigestEnabled = weeklyDigestEnabled
     }
     public mutating func normalizeMenuBarComposition() {
         if let primary = menuBarDisplayTarget, !isProviderEnabled(primary) {
@@ -1346,6 +1355,9 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case showMockDataWhenDisconnected
         case challengeTargetTokens
         case launchAtLogin
+        case refreshIntervalSeconds
+        case menuBarHotkeyEnabled
+        case weeklyDigestEnabled
     }
 
     public init(from decoder: Decoder) throws {
@@ -1387,7 +1399,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
-            launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
+            launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
+            refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
+            menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
+            weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false
         )
         self.normalizeMenuBarComposition()
     }
@@ -1497,6 +1512,21 @@ public struct DailyUsageBar: Codable, Equatable, Identifiable, Sendable {
     public init(dayLabel: String, tokens: Int) {
         self.dayLabel = dayLabel
         self.tokens = max(tokens, 0)
+    }
+}
+
+/// One day cell in the History contribution heatmap. `level` is a 0...4 bucket derived from the
+/// day's token share so the UI can map it to a neutral intensity scale (GitHub-style heatmap).
+public struct UsageHeatCell: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { dateKey }
+    public var dateKey: String
+    public var tokens: Int
+    public var level: Int
+
+    public init(dateKey: String, tokens: Int, level: Int) {
+        self.dateKey = dateKey
+        self.tokens = max(tokens, 0)
+        self.level = min(max(level, 0), 4)
     }
 }
 

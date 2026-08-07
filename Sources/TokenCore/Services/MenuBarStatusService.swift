@@ -23,12 +23,20 @@ public struct MenuBarProviderMetricSegment: Equatable, Sendable {
     public let provider: Provider?
     public let providerShortLabel: String
     public let displayValue: String
+    public let sparklineValues: [Double]
     public let accessibilityLabel: String
 
-    public init(provider: Provider?, providerShortLabel: String, displayValue: String, accessibilityLabel: String) {
+    public init(
+        provider: Provider?,
+        providerShortLabel: String,
+        displayValue: String,
+        sparklineValues: [Double] = [],
+        accessibilityLabel: String
+    ) {
         self.provider = provider
         self.providerShortLabel = providerShortLabel
         self.displayValue = displayValue
+        self.sparklineValues = sparklineValues
         self.accessibilityLabel = accessibilityLabel
     }
 }
@@ -152,7 +160,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
         snapshots: [ProviderSnapshot],
         settings: AppSettings,
         now: Date = Date(),
-        xaiOAuthResult: XAIRefreshResult? = nil
+        xaiOAuthResult: XAIRefreshResult? = nil,
+        limitSamples: [ProviderLimitSample] = []
     ) -> [MenuBarProviderMetricSegment] {
         let candidates = providerMetricsCandidates(
             from: snapshots,
@@ -168,7 +177,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 provider: provider,
                 candidate: candidate,
                 settings: settings,
-                snapshots: snapshots
+                snapshots: snapshots,
+                limitSamples: limitSamples
             )
         }
     }
@@ -269,7 +279,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
         provider: Provider?,
         candidate: Candidate?,
         settings: AppSettings,
-        snapshots: [ProviderSnapshot] = []
+        snapshots: [ProviderSnapshot] = [],
+        limitSamples: [ProviderLimitSample] = []
     ) -> MenuBarProviderMetricSegment {
         guard let provider else {
             return MenuBarProviderMetricSegment(provider: nil, providerShortLabel: "TP", displayValue: "Setup", accessibilityLabel: "TokenPilot, \(localized("Setup", language: settings.localization.language))")
@@ -412,6 +423,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 provider: provider,
                 providerShortLabel: providerMetricLabel(provider),
                 displayValue: "\(remaining)%",
+                sparklineValues: MenuBarSparklineService.normalizedValues(
+                    samples: limitSamples,
+                    provider: provider,
+                    window: MenuBarSparklineService.windowKind(forSeriesID: candidate.seriesID)
+                ),
                 accessibilityLabel: [
                     localized(provider.displayName, language: settings.localization.language),
                     localizedRemaining(remaining, language: settings.localization.language),

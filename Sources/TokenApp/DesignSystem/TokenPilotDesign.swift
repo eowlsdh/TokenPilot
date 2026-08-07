@@ -127,6 +127,7 @@ enum TokenPilotDesign {
         static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
         static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
         static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
+        static let glyph = Font.system(size: 12, weight: .semibold)
     }
 
     enum Spacing {

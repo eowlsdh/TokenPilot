@@ -35,6 +35,12 @@
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.
+- **CLI export / summary**: `TokenPilot export --format json|csv`, `TokenPilot summary`로 터미널에서 로컬 사용량을 출력합니다. GUI export와 동일한 redaction 규칙을 따릅니다.
+- **메뉴 바 스파크라인**: provider 지표 블록에 저장된 한도 이력 기반 남은 비율 미니 추세선을 표시합니다(표시 중인 창과 동일한 창의 샘플 사용).
+- **일일 목표**: 로컬 일일 토큰 목표(설정 > 일반)를 Overview에서 진행률 바와 함께 확인합니다. 로컬 활동임을 명시합니다.
+- **주간 요약 알림**: 옵트인 시 TokenPilot이 실행되는 동안 매주 월요일 09:00에 이번 주 로컬 사용량 요약을 macOS 알림으로 보냅니다.
+- **새로고침 간격 설정**: 로컬 소스를 다시 읽는 주기를 15초~15분 사이에서 설정할 수 있으며, 메뉴 막대 틱은 계속 실시간으로 동작합니다.
+- **전역 단축키(⌘⇧Space)**: 옵트인 설정으로 어디서든 팝오버를 열 수 있고, 메뉴 막대 우클릭 메뉴에서 **요약 복사**가 가능합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
 - **Grok/xAI source**: 로컬 context는 `~/.grok/sessions/**/signals.json`의 숫자 메타데이터만 읽습니다(`auth.json`/token/prompt/response는 읽지 않음). 별도로 기본 OFF인 EXPERIMENTAL/UNOFFICIAL OAuth 주간 기능은 명시적 동의 후에만 고정 경로 `~/.grok/auth.json`에서 선택된 access token과 만료 시각만 읽어 1회 billing 요청에 쓰고, token은 메모리에만 두며 표시·로그·저장·진단·export하지 않습니다. 수동 주간 값이 우선합니다.
@@ -188,6 +194,21 @@ swift build -Xswiftc -warnings-as-errors
 make verify
 # build + tests + release bundle smoke
 ```
+
+CLI 사용:
+
+```bash
+TokenPilot summary
+# 오늘 로컬 사용량 요약 출력
+
+TokenPilot export --format csv --period today --out usage.csv
+# 오늘 사용량을 CSV 파일로 내보내기
+
+TokenPilot export --period today --capacity
+# 시리즈별 최신 capacity 증거를 JSON에 포함해 내보내기
+```
+
+`export`는 `--format json|csv`(기본 `json`), `--period today|last7Days|thisMonth`(기본 `last7Days`), `--out <path>`, `--capacity`(최신 capacity 증거 포함)를 지원합니다. 출력에는 프롬프트·응답·로컬 경로·채팅 ID·웹훅·provider 자격 증명이 포함되지 않습니다.
 
 앱 번들 생성:
 

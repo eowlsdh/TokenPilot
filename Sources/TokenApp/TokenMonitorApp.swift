@@ -1,9 +1,21 @@
 import SwiftUI
 import AppKit
 import Combine
+import Carbon.HIToolbox
+import Darwin
 import TokenCore
 
 @main
+enum TokenPilotEntry {
+    static func main() async {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if TokenPilotCLIService.isCLIInvocation(arguments) {
+            exit(await TokenPilotCLIRunner.run(arguments: arguments))
+        }
+        TokenMonitorApp.main()
+    }
+}
+
 struct TokenMonitorApp: App {
     @NSApplicationDelegateAdaptor(TokenPilotAppDelegate.self) private var appDelegate
 
@@ -11,6 +23,96 @@ struct TokenMonitorApp: App {
         Settings {
             EmptyView()
         }
+    }
+}
+
+private enum TokenPilotCLIRunner {
+    static func run(arguments: [String]) async -> Int32 {
+        switch TokenPilotCLIService.parse(arguments: arguments) {
+        case .failure(let error):
+            writeError("TokenPilot: \(error.localizedDescription)\n\n\(TokenPilotCLIService.helpText)")
+            return 2
+        case .success(.help):
+            print(TokenPilotCLIService.helpText)
+            return 0
+        case .success(.summary):
+            let settings = TokenPilotSettingsStore().load()
+            let events = UsageHistoryStore().loadEvents()
+            print(
+                TokenPilotCLIService.summaryText(
+                    events: events,
+                    enabledProviders: settings.enabledProviders,
+                    language: .en,
+                    period: .today
+                )
+            )
+            return 0
+        case .success(.export(let format, let period, let outputPath, let includesCapacity)):
+            return await runExport(
+                format: format,
+                period: period,
+                outputPath: outputPath,
+                includesCapacity: includesCapacity
+            )
+        }
+    }
+
+    private static func runExport(
+        format: UsageExportFormat,
+        period: HistoryPeriod,
+        outputPath: String?,
+        includesCapacity: Bool
+    ) async -> Int32 {
+        let events = UsageHistoryStore().loadEvents()
+        let snapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: snapshots, period: period)
+        do {
+            let assessments = includesCapacity
+                ? await loadLatestCapacityAssessments()
+                : []
+            let data = try UsageExportService().export(
+                usage: usage,
+                snapshots: snapshots,
+                dataMode: "CLI",
+                format: format,
+                capacityAssessments: assessments
+            )
+            if let outputPath {
+                try data.write(to: URL(fileURLWithPath: outputPath))
+            } else {
+                FileHandle.standardOutput.write(data)
+                if data.last != 0x0A {
+                    FileHandle.standardOutput.write(Data([0x0A]))
+                }
+            }
+            return 0
+        } catch {
+            writeError("TokenPilot: export failed: \(error.localizedDescription)")
+            return 1
+        }
+    }
+
+    private static func loadLatestCapacityAssessments() async -> [CapacityAssessment] {
+        let snapshot = await CapacityEvidenceStore().loadSnapshot()
+        let now = Date()
+        let observations = snapshot.records.compactMap { record in
+            try? record.observationForAssessment(now: now)
+        }
+        let latestBySeries = Dictionary(grouping: observations) { $0.seriesID.canonicalID }
+            .compactMapValues { seriesObservations in
+                seriesObservations.max { $0.observedAt < $1.observedAt }
+            }
+            .values
+        return latestBySeries.map { CapacityAssessmentService().assess($0, now: now) }
+    }
+
+    private static func writeError(_ text: String) {
+        FileHandle.standardError.write(Data((text + "\n").utf8))
     }
 }
 
@@ -23,6 +125,10 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private var separateMetricItems: [Provider: MetricStatusItem] = [:]
     private weak var contextMenuButton: NSStatusBarButton?
     private var modelObservation: AnyCancellable?
+    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyEventHandlerRef: EventHandlerRef?
+    private static let hotKeySignature: OSType = 0x54504B50
+    private static let hotKeyID: UInt32 = 1
 #if DEBUG
     private let debugAccessibilityProfile: TokenPilotDebugAccessibilityProfile?
 #endif
@@ -51,6 +157,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdownExperimentalOAuthWeekly()
+        unregisterGlobalHotkey()
     }
 
     private func configurePopover() {
@@ -77,6 +184,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateStatusItem() {
+        syncGlobalHotkey()
         let segments = model.menuBarMetricSegments
         guard model.settings.menuBarDisplayStyle == .providerMetrics else {
             removeSeparateMetricItems()
@@ -220,6 +328,10 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         refreshItem.target = self
         menu.addItem(refreshItem)
 
+        let copyItem = NSMenuItem(title: model.t("Copy summary"), action: #selector(copySummaryAction(_:)), keyEquivalent: "c")
+        copyItem.target = self
+        menu.addItem(copyItem)
+
         menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: model.t("Quit"), action: #selector(quitAction(_:)), keyEquivalent: "q")
@@ -240,17 +352,97 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    @objc private func copySummaryAction(_ sender: Any?) {
+        model.copyUsageSummaryToPasteboard()
+    }
+
     @objc private func quitAction(_ sender: Any?) {
         NSApp.terminate(nil)
     }
 
     @objc private func togglePopover(_ sender: Any?) {
         guard let button = sender as? NSStatusBarButton else { return }
+        togglePopover(using: button)
+    }
+
+    private func togglePopover(using button: NSStatusBarButton) {
         if popover.isShown {
             popover.performClose(nil)
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+    }
+
+    func togglePopoverFromHotkey() {
+        guard let button = standardStatusItem?.button else { return }
+        togglePopover(using: button)
+    }
+
+    private func syncGlobalHotkey() {
+        if model.settings.menuBarHotkeyEnabled {
+            if hotKeyRef == nil {
+                registerGlobalHotkey()
+            }
+        } else if hotKeyRef != nil {
+            unregisterGlobalHotkey()
+        }
+    }
+
+    private func registerGlobalHotkey() {
+        unregisterGlobalHotkey()
+
+        var eventSpec = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        let selfPointer = Unmanaged.passUnretained(self).toOpaque()
+        let handlerStatus = InstallEventHandler(
+            GetEventDispatcherTarget(),
+            { _, _, userData in
+                guard let userData else { return noErr }
+                let delegate = Unmanaged<TokenPilotAppDelegate>.fromOpaque(userData).takeUnretainedValue()
+                Task { @MainActor in
+                    delegate.togglePopoverFromHotkey()
+                }
+                return noErr
+            },
+            1,
+            &eventSpec,
+            selfPointer,
+            &hotKeyEventHandlerRef
+        )
+        guard handlerStatus == noErr else {
+            hotKeyEventHandlerRef = nil
+            return
+        }
+
+        let hotKeyID = EventHotKeyID(signature: Self.hotKeySignature, id: Self.hotKeyID)
+        let registerStatus = RegisterEventHotKey(
+            UInt32(kVK_Space),
+            UInt32(cmdKey) | UInt32(shiftKey),
+            hotKeyID,
+            GetEventDispatcherTarget(),
+            0,
+            &hotKeyRef
+        )
+        if registerStatus != noErr {
+            if let hotKeyEventHandlerRef {
+                RemoveEventHandler(hotKeyEventHandlerRef)
+            }
+            hotKeyEventHandlerRef = nil
+            hotKeyRef = nil
+        }
+    }
+
+    private func unregisterGlobalHotkey() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+        }
+        hotKeyRef = nil
+        if let hotKeyEventHandlerRef {
+            RemoveEventHandler(hotKeyEventHandlerRef)
+        }
+        hotKeyEventHandlerRef = nil
     }
 }
 
@@ -359,8 +551,33 @@ private final class ProviderMetricsMenuBarNSView: NSView {
                 font: Self.valueFont,
                 color: valueColor(segment.displayValue)
             )
+            if segment.sparklineValues.count >= 2 {
+                drawSparkline(
+                    segment.sparklineValues,
+                    in: NSRect(x: x, y: Self.viewHeight - 3, width: width, height: 3),
+                    color: valueColor(segment.displayValue)
+                )
+            }
             x += width + Self.segmentSpacing
         }
+    }
+
+    private func drawSparkline(_ values: [Double], in rect: NSRect, color: NSColor) {
+        let path = NSBezierPath()
+        let step = rect.width / CGFloat(values.count - 1)
+        let bottom = rect.maxY
+        for (index, value) in values.enumerated() {
+            let x = rect.minX + CGFloat(index) * step
+            let y = bottom - CGFloat(min(max(value, 0), 1)) * rect.height
+            if index == 0 {
+                path.move(to: NSPoint(x: x, y: y))
+            } else {
+                path.line(to: NSPoint(x: x, y: y))
+            }
+        }
+        path.lineWidth = 1
+        color.withAlphaComponent(0.85).setStroke()
+        path.stroke()
     }
 
     private func segmentWidth(_ segment: MenuBarProviderMetricSegment) -> CGFloat {

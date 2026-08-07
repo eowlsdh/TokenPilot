@@ -983,7 +983,8 @@ final class TokenMonitorTests: XCTestCase {
         let source = try Self.tokenMonitorAppSource()
 
         XCTAssertTrue(source.contains("private let menuBarTickInterval: TimeInterval = 1"))
-        XCTAssertTrue(source.contains("private let dataRefreshInterval: TimeInterval = 5"))
+        XCTAssertTrue(source.contains("private var dataRefreshInterval: TimeInterval"))
+        XCTAssertTrue(source.contains("TimeInterval(max(settings.refreshIntervalSeconds, 5))"))
         XCTAssertTrue(source.contains("RunLoop.main.add(timer, forMode: .common)"))
         XCTAssertTrue(source.contains("await refresh(reason: .automaticTimer)"))
         XCTAssertFalse(source.contains("Timer.scheduledTimer(withTimeInterval: menuBarTickInterval"))

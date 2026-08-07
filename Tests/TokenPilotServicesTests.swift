@@ -472,6 +472,439 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(loaded.menuBarShowsSecondaryProvider)
     }
 
+    func testCLIInvocationDetection() {
+        XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["export"]))
+        XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["summary"]))
+        XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["help"]))
+        XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["--help"]))
+        XCTAssertFalse(TokenPilotCLIService.isCLIInvocation([]))
+        XCTAssertFalse(TokenPilotCLIService.isCLIInvocation(["TokenMonitor"]))
+    }
+
+    func testCLIParseExportDefaults() {
+        let result = TokenPilotCLIService.parse(arguments: ["export"])
+        XCTAssertEqual(result, .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false)))
+    }
+
+    func testCLIParseExportFlags() {
+        let result = TokenPilotCLIService.parse(
+            arguments: ["export", "--format", "csv", "--period", "today", "--out", "/tmp/tokenpilot.csv"]
+        )
+        XCTAssertEqual(
+            result,
+            .success(.export(format: .csv, period: .today, outputPath: "/tmp/tokenpilot.csv", includesCapacity: false))
+        )
+    }
+
+    func testCLIParseExportCapacityFlag() {
+        let result = TokenPilotCLIService.parse(arguments: ["export", "--capacity"])
+        XCTAssertEqual(result, .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: true)))
+    }
+
+    func testCapacityRecordRoundTripFeedsCLICapacityExportSection() throws {
+        let now = Date()
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        let observation = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 62),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "cliCapacityV1",
+            now: now
+        )
+
+        let record = try CapacityEvidenceRecord(observation: observation)
+        let converted = try record.observationForAssessment(now: now)
+        XCTAssertEqual(converted.seriesID.canonicalID, observation.seriesID.canonicalID)
+        XCTAssertEqual(converted.value.usedPercent, 62)
+
+        let assessment = CapacityAssessmentService().assess(converted, now: now)
+        XCTAssertEqual(assessment.risk, .normal)
+
+        let section = CapacityExportSection(assessments: [assessment])
+        XCTAssertEqual(section.observations.count, 1)
+        XCTAssertEqual(section.observations.first?.usedPercent, 62)
+        XCTAssertEqual(section.observations.first?.remainingPercent, 38)
+    }
+
+    func testCLIParseRejectsInvalidInput() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["bogus"]), .failure(.unknownCommand("bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format", "xml"]), .failure(.invalidFormat("xml")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--period", "yesterday"]), .failure(.invalidPeriod("yesterday")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format"]), .failure(.missingValue(forFlag: "--format")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--bogus"]), .failure(.unknownCommand("--bogus")))
+    }
+
+    func testCLIParseSummaryAndHelp() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
+    }
+
+    func testCLISummaryTextUsesAggregatesOnly() {
+        let now = Date()
+        let event = UsageEvent(
+            provider: .claude,
+            model: "claude-sonnet",
+            timestamp: now,
+            inputTokens: 100,
+            outputTokens: 50,
+            requestCount: 3,
+            estimatedCostUSD: Decimal(0.12),
+            source: "statusline",
+            dataSource: .officialStatusline
+        )
+
+        let text = TokenPilotCLIService.summaryText(
+            events: [event],
+            enabledProviders: [.claude],
+            language: .en,
+            period: .today,
+            now: now
+        )
+
+        XCTAssertTrue(text.contains("Total tokens: 150"))
+        XCTAssertTrue(text.contains("Requests: 3"))
+        XCTAssertTrue(text.contains("$0.12"))
+        XCTAssertTrue(text.contains("Claude"))
+        XCTAssertFalse(text.contains("claude-sonnet"))
+        XCTAssertFalse(text.contains("statusline"))
+    }
+
+    func testCLISummaryTextIncludesCapacityRemaining() {
+        let now = Date()
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            fiveHour: LimitWindow(
+                kind: .fiveHour,
+                usedPercent: 60,
+                resetAt: now.addingTimeInterval(3_600),
+                confidence: .medium
+            ),
+            confidence: .medium,
+            dataSource: .officialStatusline,
+            events: []
+        )
+
+        let text = TokenPilotCLIService.summaryText(
+            events: [],
+            snapshots: [snapshot],
+            enabledProviders: [.claude],
+            language: .en,
+            period: .today,
+            now: now
+        )
+
+        XCTAssertTrue(text.contains("Claude Code (5h window): 40% Remaining"))
+    }
+
+    func testMenuBarSparklineNormalizesRemainingPercentTrend() {
+        let now = Date()
+        let samples = [
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-3_600),
+                window: .fiveHour,
+                usedPercent: 80,
+                remainingPercent: 20,
+                source: "limit-history"
+            ),
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-2_400),
+                window: .fiveHour,
+                usedPercent: 60,
+                remainingPercent: 40,
+                source: "limit-history"
+            ),
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-1_200),
+                window: .fiveHour,
+                usedPercent: 30,
+                remainingPercent: 70,
+                source: "limit-history"
+            ),
+            ProviderLimitSample(
+                provider: .codex,
+                timestamp: now.addingTimeInterval(-600),
+                window: .fiveHour,
+                usedPercent: 50,
+                remainingPercent: 50,
+                source: "limit-history"
+            ),
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-300),
+                window: .weekly,
+                usedPercent: 90,
+                remainingPercent: 10,
+                source: "limit-history"
+            )
+        ]
+
+        let fiveHour = MenuBarSparklineService.normalizedValues(
+            samples: samples,
+            provider: .claude,
+            window: .fiveHour,
+            now: now
+        )
+        XCTAssertEqual(fiveHour, [0.2, 0.4, 0.7])
+
+        let anyWindow = MenuBarSparklineService.normalizedValues(
+            samples: samples,
+            provider: .claude,
+            now: now
+        )
+        XCTAssertEqual(anyWindow, [0.2, 0.4, 0.7, 0.1])
+
+        let otherProvider = MenuBarSparklineService.normalizedValues(
+            samples: samples,
+            provider: .deepseek,
+            now: now
+        )
+        XCTAssertTrue(otherProvider.isEmpty)
+    }
+
+    func testMenuBarSparklineCapsCountAndSkipsDegenerateSeries() {
+        let now = Date()
+        let samples = (0..<10).map { index in
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-Double(10 - index) * 60),
+                window: .fiveHour,
+                usedPercent: index * 5,
+                remainingPercent: 100 - index * 5,
+                source: "limit-history"
+            )
+        }
+
+        let capped = MenuBarSparklineService.normalizedValues(
+            samples: samples,
+            provider: .claude,
+            maxCount: 3,
+            now: now
+        )
+        XCTAssertEqual(capped.count, 3)
+        XCTAssertEqual(capped, [0.65, 0.6, 0.55])
+
+        let single = MenuBarSparklineService.normalizedValues(
+            samples: Array(samples.prefix(1)),
+            provider: .claude,
+            now: now
+        )
+        XCTAssertTrue(single.isEmpty)
+    }
+
+    func testMenuBarSparklineWindowKindMapping() {
+        XCTAssertEqual(MenuBarSparklineService.windowKind(forSeriesID: "claude/five-hour"), .fiveHour)
+        XCTAssertEqual(MenuBarSparklineService.windowKind(forSeriesID: "claude/seven-day"), .weekly)
+        XCTAssertEqual(MenuBarSparklineService.windowKind(forSeriesID: "gemini/daily-requests"), .dailyRequests)
+        XCTAssertNil(MenuBarSparklineService.windowKind(forSeriesID: "codex/rolling"))
+        XCTAssertNil(MenuBarSparklineService.windowKind(forSeriesID: "xai/oauth-weekly"))
+    }
+
+    func testMenuBarSegmentCarriesSparklineForProviderReportedPercent() {
+        let now = Date()
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            updatedAt: now,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 60, resetAt: now.addingTimeInterval(3_600), confidence: .medium),
+            confidence: .medium,
+            dataSource: .officialStatusline,
+            events: []
+        )
+        let samples = [
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-3_600),
+                window: .fiveHour,
+                usedPercent: 80,
+                remainingPercent: 20,
+                source: "limit-history"
+            ),
+            ProviderLimitSample(
+                provider: .claude,
+                timestamp: now.addingTimeInterval(-1_800),
+                window: .fiveHour,
+                usedPercent: 60,
+                remainingPercent: 40,
+                source: "limit-history"
+            )
+        ]
+
+        let segments = MenuBarStatusService().providerMetricsSegments(
+            snapshots: [snapshot],
+            settings: AppSettings(),
+            now: now,
+            limitSamples: samples
+        )
+
+        let claude = segments.first { $0.provider == .claude }
+        XCTAssertEqual(claude?.displayValue, "40%")
+        XCTAssertEqual(claude?.sparklineValues, [0.2, 0.4])
+    }
+
+    func testDailyGoalProgressMath() {
+        XCTAssertEqual(
+            DailyGoalService.progress(tokens: 0, targetTokens: 10_000),
+            DailyGoalProgress(tokens: 0, targetTokens: 10_000, percent: 0)
+        )
+        XCTAssertEqual(DailyGoalService.progress(tokens: 5_000, targetTokens: 10_000).percent, 50)
+        XCTAssertEqual(DailyGoalService.progress(tokens: 10_000, targetTokens: 10_000).percent, 100)
+        XCTAssertEqual(DailyGoalService.progress(tokens: 20_000, targetTokens: 10_000).percent, 100)
+        XCTAssertEqual(DailyGoalService.progress(tokens: 500, targetTokens: 0).targetTokens, 1)
+    }
+
+    func testWeeklyDigestGateFireWindow() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let monday9 = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9))
+        )
+
+        XCTAssertTrue(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(5 * 60), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(-60), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(2 * 3_600), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(5 * 60), lastSentAt: monday9, calendar: calendar))
+
+        let lastWeekMonday = monday9.addingTimeInterval(-7 * 24 * 3_600)
+        XCTAssertTrue(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(5 * 60), lastSentAt: lastWeekMonday, calendar: calendar))
+    }
+
+    func testWeeklyDigestTextAggregatesWeekToDateOnly() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let monday = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9))
+        )
+        let friday = monday.addingTimeInterval(4 * 24 * 3_600 + 2 * 3_600)
+        let events = [
+            UsageEvent(
+                provider: .claude,
+                model: "claude-sonnet",
+                timestamp: monday.addingTimeInterval(3_600),
+                inputTokens: 100,
+                outputTokens: 23,
+                requestCount: 2,
+                estimatedCostUSD: Decimal(0.30),
+                source: "statusline",
+                dataSource: .officialStatusline
+            ),
+            UsageEvent(
+                provider: .codex,
+                model: "codex-mini",
+                timestamp: friday,
+                inputTokens: 400,
+                outputTokens: 56,
+                requestCount: 1,
+                estimatedCostUSD: Decimal(0.20),
+                source: "session-jsonl",
+                dataSource: .localLog
+            ),
+            UsageEvent(
+                provider: .gemini,
+                timestamp: monday.addingTimeInterval(-24 * 3_600),
+                inputTokens: 999,
+                source: "telemetry"
+            )
+        ]
+
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.claude, .codex, .gemini],
+            language: .en,
+            now: friday,
+            calendar: calendar
+        )
+
+        XCTAssertTrue(text.contains("This week"))
+        XCTAssertTrue(text.contains("Total tokens: 579"))
+        XCTAssertTrue(text.contains("Requests: 3"))
+        XCTAssertTrue(text.contains("$0.50"))
+        XCTAssertTrue(text.contains("Top provider: Codex (79%)"))
+        XCTAssertFalse(text.contains("statusline"))
+        XCTAssertFalse(text.contains("session-jsonl"))
+        XCTAssertFalse(text.contains("claude-sonnet"))
+        XCTAssertFalse(text.contains("999"))
+    }
+
+    func testWeeklyDigestTextLocalizedKorean() {
+        let text = WeeklyDigestService.digestText(
+            events: [],
+            enabledProviders: [.claude],
+            language: .ko,
+            now: Date()
+        )
+        XCTAssertTrue(text.contains("이번 주"))
+        XCTAssertTrue(text.contains("전체 토큰"))
+    }
+
+    func testWeeklyDigestStoreRoundtrip() {
+        let suite = "TokenPilotWeeklyDigestTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = WeeklyDigestStore(defaults: defaults)
+
+        XCTAssertNil(store.loadLastSent())
+        let date = Date()
+        store.saveLastSent(date)
+        XCTAssertEqual(store.loadLastSent(), date)
+    }
+
+    func testRefreshIntervalDefaultsAndClamp() {
+        XCTAssertEqual(AppSettings().refreshIntervalSeconds, 60)
+        XCTAssertFalse(AppSettings().menuBarHotkeyEnabled)
+
+        let suite = "TokenPilotRefreshIntervalTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TokenPilotSettingsStore(defaults: defaults)
+
+        var settings = AppSettings()
+        settings.refreshIntervalSeconds = 5
+        store.save(settings)
+        XCTAssertEqual(store.load().refreshIntervalSeconds, 15)
+
+        settings.refreshIntervalSeconds = 9_999
+        store.save(settings)
+        XCTAssertEqual(store.load().refreshIntervalSeconds, 900)
+
+        settings.refreshIntervalSeconds = 120
+        settings.menuBarHotkeyEnabled = true
+        settings.challengeTargetTokens = 0
+        settings.weeklyDigestEnabled = true
+        store.save(settings)
+        let loaded = store.load()
+        XCTAssertEqual(loaded.refreshIntervalSeconds, 120)
+        XCTAssertTrue(loaded.menuBarHotkeyEnabled)
+        XCTAssertEqual(loaded.challengeTargetTokens, 1)
+        XCTAssertTrue(loaded.weeklyDigestEnabled)
+    }
+
+    func testLegacySettingsDecodeKeepsNewDefaults() throws {
+        let decoded = try JSONDecoder().decode(
+            AppSettings.self,
+            from: Data(#"{"launchAtLogin": true}"#.utf8)
+        )
+        XCTAssertEqual(decoded.refreshIntervalSeconds, 60)
+        XCTAssertFalse(decoded.menuBarHotkeyEnabled)
+        XCTAssertFalse(decoded.weeklyDigestEnabled)
+    }
+
     private func abortKeychainTestOnAuthorizationError(_ error: Error) throws {
         #if canImport(Security)
         guard case let KeychainError.unhandledStatus(status) = error,
@@ -5514,6 +5947,118 @@ final class TokenPilotServicesTests: XCTestCase {
         let days = TokenPilotRelativeTimestamp.format(from: now.addingTimeInterval(-5 * 86400), now: now)
         XCTAssertEqual(days?.key, "Updated %d days ago")
         XCTAssertEqual(days?.arg, 5)
+    }
+
+    // MARK: - CapacityPaceService
+
+    func testCapacityPaceProjectsExhaustionFromElapsedWindowShare() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        // 60% used over 3 elapsed hours of a 5h window -> 20%/hour -> remaining 40% -> 2h.
+        let resetAt = now.addingTimeInterval(2 * 3600)
+        let observation = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300),
+            observedAt: now,
+            resetAt: resetAt,
+            value: try CapacityValue(usedPercent: 60),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let projection = try XCTUnwrap(CapacityPaceService().projection(observation: observation, now: now))
+        XCTAssertEqual(projection.usedPercent, 60)
+        XCTAssertEqual(projection.remainingPercent, 40)
+        XCTAssertEqual(projection.percentPerHour, 20, accuracy: 0.001)
+        XCTAssertEqual(projection.hoursUntilExhaustion, 2, accuracy: 0.01)
+        XCTAssertEqual(projection.estimatedExhaustionAt.timeIntervalSince(now), 2 * 3600, accuracy: 10)
+    }
+
+    func testCapacityPaceReturnsNilForNonPercentOrMissingWindow() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let service = CapacityPaceService()
+        let balance = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+            observedAt: now,
+            value: try CapacityValue(money: 5, currency: "USD"),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: balance, now: now))
+        let noReset = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent),
+            observedAt: now,
+            value: try CapacityValue(usedPercent: 40),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: noReset, now: now))
+    }
+
+    func testCapacityPaceSkipsEmptyExhaustedAndTinyElapsedWindows() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let service = CapacityPaceService()
+        let zero = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent),
+            observedAt: now,
+            resetAt: now.addingTimeInterval(5 * 3600),
+            value: try CapacityValue(usedPercent: 0),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: zero, now: now))
+        let exhausted = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent),
+            observedAt: now,
+            resetAt: now.addingTimeInterval(5 * 3600),
+            value: try CapacityValue(usedPercent: 100),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: exhausted, now: now))
+        let fresh = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent),
+            observedAt: now,
+            resetAt: now.addingTimeInterval(5 * 3600 - 60),
+            value: try CapacityValue(usedPercent: 5),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: fresh, now: now))
+        let past = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent),
+            observedAt: now,
+            resetAt: now.addingTimeInterval(-3_600),
+            value: try CapacityValue(usedPercent: 30),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.projection(observation: past, now: now))
     }
 }
 

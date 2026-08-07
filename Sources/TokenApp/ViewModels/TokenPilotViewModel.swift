@@ -84,6 +84,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let connectionService = DataSourceConnectionService()
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
+    private let weeklyDigestStore = WeeklyDigestStore()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
@@ -97,7 +98,9 @@ final class TokenPilotViewModel: ObservableObject {
     private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
     private let capacityAlertVisibilityBuilder = CapacityAlertVisibilityBuilder()
     private let menuBarTickInterval: TimeInterval = 1
-    private let dataRefreshInterval: TimeInterval = 5
+    private var dataRefreshInterval: TimeInterval {
+        TimeInterval(max(settings.refreshIntervalSeconds, 5))
+    }
     private let settingsSaveDebounceNanoseconds: UInt64 = 350_000_000
     private let settingsRefreshDebounceNanoseconds: UInt64 = 450_000_000
     private var timer: Timer?
@@ -107,6 +110,7 @@ final class TokenPilotViewModel: ObservableObject {
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRefreshTask: Task<Void, Never>?
     private var experimentalShutdownTask: Task<Void, Never>?
+    private var lastWeeklyDigestAttemptDay: Date?
 #if DEBUG
     private let debugFixtureMode: Bool
 #endif
@@ -250,7 +254,8 @@ final class TokenPilotViewModel: ObservableObject {
             snapshots: snapshots,
             settings: settings,
             now: menuBarNow,
-            xaiOAuthResult: menuBarOAuthResult
+            xaiOAuthResult: menuBarOAuthResult,
+            limitSamples: limitHistorySamples
         )
     }
 
@@ -268,6 +273,20 @@ final class TokenPilotViewModel: ObservableObject {
         case .warning: return TokenPilotDesign.warning
         case .critical: return TokenPilotDesign.danger
         }
+    }
+
+    func copyUsageSummaryToPasteboard() {
+        let events = historySnapshots.flatMap(\.events)
+        let text = TokenPilotCLIService.summaryText(
+            events: events,
+            snapshots: snapshots,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            period: .today,
+            now: menuBarNow
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     var menuBarAccessibilityLabel: String {
@@ -333,6 +352,18 @@ final class TokenPilotViewModel: ObservableObject {
 
     var filteredSnapshots: [ProviderSnapshot] {
         historySnapshots.isEmpty ? enabledSnapshots : historySnapshots
+    }
+
+    /// GitHub-style 12-week contribution grid derived from stored usage events.
+    var historyHeatmapCells: [UsageHeatCell] {
+        aggregationService.heatmapCells(from: historyUsage.events)
+    }
+
+    var dailyGoal: DailyGoalProgress {
+        DailyGoalService.progress(
+            tokens: overviewUsage.metrics.totalTokens,
+            targetTokens: settings.challengeTargetTokens
+        )
     }
 
     var overviewSnapshots: [ProviderSnapshot] {
@@ -818,8 +849,32 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func handleAutoRefreshTick() async {
         menuBarNow = Date()
+        await checkWeeklyDigest(now: menuBarNow)
         guard shouldRunDataRefresh(at: menuBarNow) else { return }
         await refresh(reason: .automaticTimer)
+    }
+
+    private func checkWeeklyDigest(now: Date) async {
+        guard settings.weeklyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              !Calendar.current.isDate(now, inSameDayAs: lastWeeklyDigestAttemptDay ?? .distantPast) else {
+            return
+        }
+        lastWeeklyDigestAttemptDay = now
+        let lastSent = weeklyDigestStore.loadLastSent()
+        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now
+        )
+        do {
+            try await localNotificationService.send(title: t("Weekly digest"), body: text)
+            weeklyDigestStore.saveLastSent(now)
+        } catch {}
     }
 
     private func shouldRunDataRefresh(at now: Date) -> Bool {

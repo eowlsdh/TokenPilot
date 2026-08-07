@@ -870,3 +870,30 @@ struct GlassCard<Content: View>: View {
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
 }
+
+/// Live ticking countdown to a reset moment. Re-renders every second unless Reduce Motion is
+/// enabled; the view is hidden from VoiceOver because the parent card already announces the
+/// reset via its accessibility label, so ticks never spam the reader.
+struct LiveResetCountdown: View {
+    let resetAt: Date
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    var body: some View {
+        if reduceMotion {
+            Text(TokenPilotFormatters.countdown(until: resetAt))
+                .monospacedDigit()
+                .accessibilityHidden(true)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date))
+                    .monospacedDigit()
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+}
