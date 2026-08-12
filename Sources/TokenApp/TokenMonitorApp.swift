@@ -111,7 +111,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV)):
+        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV, let includesMarkdown)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
@@ -126,6 +126,21 @@ private enum TokenPilotCLIRunner {
                         until: until,
                         days: days,
                         includesCost: includesCost,
+                        project: project,
+                        calendar: calendar
+                    )
+                )
+            } else if includesMarkdown {
+                print(
+                    TokenPilotCLIService.statsMarkdownText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period,
+                        since: effectiveSince,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        includesBreakdown: includesBreakdown,
                         project: project,
                         calendar: calendar
                     )

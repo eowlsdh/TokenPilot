@@ -851,6 +851,16 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["stats", "--json", "--csv"]),
             .failure(.invalidCombination("--csv cannot be combined with --json."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--md"]), .success(.stats(includesMarkdown: true)))
+        // --md is a distinct output format and cannot be combined with --json or --csv.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--json", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--csv", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today,last7Days,thisMonth"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today, .last7Days, .thisMonth])))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today])))
         // --sections requires --json and cannot be combined with custom windows.
@@ -1981,6 +1991,35 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertTrue(noCost.contains("Last 7 days,3000,2,"))
         XCTAssertFalse(noCost.contains("0.06"))
+    }
+
+    func testCLIStatsMarkdownEmitsTable() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "md-stats-test", dataSource: .localLog),
+        ]
+        let markdown = TokenPilotCLIService.statsMarkdownText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        // Document opens with a metric table covering the derived statistics.
+        XCTAssertTrue(markdown.hasPrefix("## TokenPilot · Stats"))
+        XCTAssertTrue(markdown.contains("| Metric | Value |"))
+        XCTAssertTrue(markdown.contains("| Period | Last 7 days |"))
+        XCTAssertTrue(markdown.contains("| Requests | 2 |"))
+        XCTAssertTrue(markdown.contains("| Active days | 1 |"))
+        XCTAssertTrue(markdown.contains("$0.06"))
+        XCTAssertTrue(markdown.contains("**Providers**"))
+        XCTAssertTrue(markdown.contains("| opencode |"))
+        // Honest-label footer mirrors the text summary.
+        XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(markdown.contains("md-stats-test"))
     }
 
     func testCLISummaryJSONPayloadMatchesSummaryText() throws {
