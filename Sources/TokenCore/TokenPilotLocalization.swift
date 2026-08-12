@@ -283,6 +283,8 @@ public enum TokenPilotLocalizer {
         "Read": [.en: "Read", .ko: "읽기", .ja: "読み取り", .zhHans: "读取", .zhHant: "讀取"],
         "Write": [.en: "Write", .ko: "쓰기", .ja: "書き込み", .zhHans: "写入", .zhHant: "寫入"],
         "Share of context reads served from cache. Local activity; cache discount ratios vary by provider.": [.en: "Share of context reads served from cache. Local activity; cache discount ratios vary by provider.", .ko: "캐시에서 처리된 컨텍스트 읽기 비율입니다. 로컬 활동이며 캐시 할인율은 제공자별로 다릅니다.", .ja: "キャッシュから処理されたコンテキスト読み取りの割合です。ローカル活動であり、キャッシュ割引率はプロバイダによって異なります。", .zhHans: "由缓存处理的上下文读取占比。本地活动；缓存折扣率因提供方而异。", .zhHant: "由緩存處理的上下文讀取佔比。本地活動；緩存折扣率因提供方而異。"],
+        "5-hour blocks": [.en: "5-hour blocks", .ko: "5시간 블록", .ja: "5時間ブロック", .zhHans: "5 小时块", .zhHant: "5 小時塊"],
+        "Fixed 5-hour buckets aligned to local midnight, oldest first.": [.en: "Fixed 5-hour buckets aligned to local midnight, oldest first.", .ko: "로컬 자정 기준 고정 5시간 버킷, 오래된 순입니다.", .ja: "ローカル真夜中を基準にした固定5時間バケット、古い順です。", .zhHans: "以本地午夜为基准的固定 5 小时分桶，按时间从旧到新。", .zhHant: "以本地午夜為基準的固定 5 小時分桶，按時間從舊到新。"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],
         "Choose…": [.en: "Choose…", .ko: "선택…", .ja: "選択…", .zhHans: "选择…", .zhHant: "選擇…"],

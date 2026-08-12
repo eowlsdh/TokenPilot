@@ -84,6 +84,9 @@ struct HistoryScreen: View {
                     if model.cacheEfficiency.hasCacheActivity {
                         HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
                     }
+                    if !model.fiveHourBlocks.isEmpty {
+                        HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
+                    }
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
@@ -1076,6 +1079,92 @@ struct HistoryUsageSummaryCard: View {
             "\(model.t("Most used")) \(mostUsed)",
             "\(model.t("Busiest hour")) \(busiestHour)"
         ].joined(separator: ", ")
+    }
+}
+
+struct HistoryFiveHourBlocksCard: View {
+    let blocks: [FiveHourUsageBlock]
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("5-hour blocks"), systemImage: "clock.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                let peak = blocks.map(\.tokens).max() ?? 0
+                ForEach(Array(blocks.suffix(12).enumerated()), id: \.element.id) { index, block in
+                    HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+                        Text(blockTimeText(block.start))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .frame(width: 108, alignment: .leading)
+                            .lineLimit(1)
+
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(TokenPilotDesign.surface(.separator))
+                                    .frame(width: proxy.size.width)
+                                Capsule()
+                                    .fill(blockColor(block, peak: peak))
+                                    .frame(width: max(proxy.size.width * blockWidth(block, peak: peak), 2))
+                            }
+                        }
+                        .frame(height: 8)
+
+                        Text(TokenPilotFormatters.compactNumber(block.tokens))
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textPrimary)
+                            .frame(width: 56, alignment: .trailing)
+                            .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(blockTimeText(block.start)), \(TokenPilotFormatters.compactNumber(block.tokens)) \(model.t("tok"))")
+                }
+
+                Text(model.t("Fixed 5-hour buckets aligned to local midnight, oldest first."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func blockTimeText(_ start: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM d HH:mm"
+        return formatter.string(from: start)
+    }
+
+    private func blockWidth(_ block: FiveHourUsageBlock, peak: Int) -> Double {
+        guard peak > 0 else { return 0 }
+        return Double(block.tokens) / Double(peak)
+    }
+
+    private func blockColor(_ block: FiveHourUsageBlock, peak: Int) -> Color {
+        let ratio = peak > 0 ? Double(block.tokens) / Double(peak) : 0
+        switch ratio {
+        case 0.66...: return TokenPilotDesign.status(.danger)
+        case 0.33..<0.66: return TokenPilotDesign.status(.warning)
+        default: return TokenPilotDesign.trust
+        }
     }
 }
 

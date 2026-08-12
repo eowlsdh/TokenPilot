@@ -10091,6 +10091,62 @@
         }
       }
     },
+    "5-hour blocks": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5시간 블록"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5-hour blocks"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5 小时块"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "5時間ブロック"
+          }
+        }
+      }
+    },
+    "Fixed 5-hour buckets aligned to local midnight, oldest first.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 자정 기준 고정 5시간 버킷, 오래된 순입니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fixed 5-hour buckets aligned to local midnight, oldest first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "以本地午夜为基准的固定 5 小时分桶，按时间从旧到新。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ローカル真夜中を基準にした固定5時間バケット、古い順です。"
+          }
+        }
+      }
+    },
     "Last updated": {
       "localizations": {
         "ko": {

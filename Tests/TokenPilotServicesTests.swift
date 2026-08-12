@@ -6369,6 +6369,59 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(summary.hasCacheActivity)
         XCTAssertTrue(summary.hasAnyActivity)
     }
+
+    // MARK: - FiveHourBlocksService
+
+    func testFiveHourBlocksBucketsAlignedToLocalMidnight() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+
+        // 07:30 -> block [05:00, 10:00); 12:00 -> block [10:00, 15:00); 23:30 -> block [20:00, 25:00).
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .hour, value: -4, to: now)!, inputTokens: 100, outputTokens: 0, source: "block-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 200, outputTokens: 0, source: "block-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .hour, value: 11, to: now)!, inputTokens: 300, outputTokens: 0, source: "block-test", dataSource: .localLog),
+        ]
+
+        let blocks = FiveHourBlocksService.blocks(events: events, now: now, calendar: calendar)
+        XCTAssertEqual(blocks.count, 3)
+
+        // Verify alignment: each block starts at an hour divisible by 5 from midnight.
+        let midnight = calendar.startOfDay(for: now)
+        for block in blocks {
+            let seconds = block.start.timeIntervalSince(midnight)
+            XCTAssertEqual(Int(seconds) % Int(FiveHourBlocksService.blockDuration), 0, "block \(block.start) is not 5-hour aligned")
+        }
+
+        let totalTokens = blocks.reduce(0) { $0 + $1.tokens }
+        XCTAssertEqual(totalTokens, 600)
+        let totalRequests = blocks.reduce(0) { $0 + $1.requestCount }
+        XCTAssertEqual(totalRequests, 3)
+    }
+
+    func testFiveHourBlocksReturnsEmptyWithoutEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let blocks = FiveHourBlocksService.blocks(events: [], now: now, calendar: calendar)
+        XCTAssertTrue(blocks.isEmpty)
+    }
+
+    func testFiveHourBlockStartAlignsToMidnight() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let midnight = calendar.startOfDay(for: calendar.date(from: DateComponents(year: 2030, month: 3, day: 17))!)
+
+        // 04:59 -> block [00:00, 05:00)
+        let early = midnight.addingTimeInterval(4 * 3600 + 59 * 60)
+        XCTAssertEqual(FiveHourBlocksService.blockStart(of: early, calendar: calendar), midnight)
+
+        // 05:00 -> block [05:00, 10:00)
+        let five = midnight.addingTimeInterval(5 * 3600)
+        XCTAssertEqual(FiveHourBlocksService.blockStart(of: five, calendar: calendar), midnight.addingTimeInterval(5 * 3600))
+
+        // 21:30 -> block [20:00, 25:00)
+        let late = midnight.addingTimeInterval(21.5 * 3600)
+        XCTAssertEqual(FiveHourBlocksService.blockStart(of: late, calendar: calendar), midnight.addingTimeInterval(20 * 3600))
+    }
 }
 
 private struct FixedCapacityClock: CapacityEvidenceClock {

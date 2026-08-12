@@ -388,6 +388,10 @@ final class TokenPilotViewModel: ObservableObject {
         CacheEfficiencyService.summary(events: overviewUsage.events)
     }
 
+    var fiveHourBlocks: [FiveHourUsageBlock] {
+        FiveHourBlocksService.blocks(events: historyUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }
