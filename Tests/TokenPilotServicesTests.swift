@@ -6260,6 +6260,44 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertNil(service.projection(progress: earlyProgress, now: early, calendar: calendar))
     }
 
+    // MARK: - ActivityMilestoneService
+
+    func testActivityMilestonesReportsAchievedThresholds() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // 5 days of activity, 60K tokens/day (2 x 30K events), 2 requests/day -> 300K tokens, 10 requests, 5 active days, 5-day streak.
+        let events = (0..<5).flatMap { offset in
+            (0..<2).map { _ in
+                UsageEvent(provider: .opencode, timestamp: day(-offset), inputTokens: 30_000, outputTokens: 0, requestCount: 1, source: "milestone-test", dataSource: .localLog)
+            }
+        }
+
+        let milestones = ActivityMilestoneService().achievedMilestones(events: events, now: now, calendar: calendar)
+        let tokens = milestones.filter { $0.dimension == .lifetimeTokens }.map(\.threshold)
+        XCTAssertTrue(tokens.contains(100_000))
+        XCTAssertTrue(tokens.contains(500_000) == false)
+        let days = milestones.filter { $0.dimension == .activeDays }.map(\.threshold)
+        XCTAssertTrue(days.contains(10) == false)
+        XCTAssertTrue(days.contains(5) == false)
+        let requests = milestones.filter { $0.dimension == .totalRequests }.map(\.threshold)
+        XCTAssertTrue(requests.contains(100) == false)
+        XCTAssertEqual(requests.count, 0)
+        let streaks = milestones.filter { $0.dimension == .longestStreak }.map(\.threshold)
+        XCTAssertTrue(streaks.contains(3))
+        XCTAssertTrue(streaks.contains(7) == false)
+    }
+
+    func testActivityMilestonesEmptyHistory() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let milestones = ActivityMilestoneService().achievedMilestones(events: [], now: now, calendar: calendar)
+        XCTAssertTrue(milestones.isEmpty)
+    }
+
     func testBudgetGuardrailDisabledWindowReturnsZeroProgress() throws {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let calendar = Calendar(identifier: .gregorian)

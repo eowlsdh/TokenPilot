@@ -387,6 +387,10 @@ final class TokenPilotViewModel: ObservableObject {
         BudgetPaceService().projection(progress: budgetGuardrails.daily)
     }
 
+    var activityMilestones: [ActivityMilestone] {
+        ActivityMilestoneService().achievedMilestones(events: overviewUsage.events)
+    }
+
     var usageStreak: UsageStreak {
         UsageStreakService.streak(events: overviewUsage.events)
     }

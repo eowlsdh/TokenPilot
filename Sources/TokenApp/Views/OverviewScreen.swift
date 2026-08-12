@@ -236,6 +236,9 @@ struct OverviewScreen: View {
                 if model.usageStreak.hasActivity {
                     UsageStreakCard(streak: model.usageStreak, model: model)
                 }
+                if !model.activityMilestones.isEmpty {
+                    ActivityMilestonesCard(milestones: model.activityMilestones, model: model)
+                }
                 if model.budgetGuardrails.hasAnyBudget {
                     BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
                 }
@@ -463,6 +466,70 @@ struct UsageStreakCard: View {
             format: model.t("Longest: %@ days"),
             TokenPilotFormatters.compactNumber(streak.longestDays)
         )
+    }
+}
+
+struct ActivityMilestonesCard: View {
+    let milestones: [ActivityMilestone]
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Milestones"), systemImage: "trophy.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.adaptive(minimum: 92), spacing: 6)
+                    ],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
+                    ForEach(milestones) { milestone in
+                        milestoneChip(milestone)
+                    }
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Milestones")): \(milestones.map { milestoneLabel($0) }.joined(separator: ", "))"
+        )
+    }
+
+    private func milestoneChip(_ milestone: ActivityMilestone) -> some View {
+        Text(milestoneLabel(milestone))
+            .font(TokenPilotDesign.Typography.micro.weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(TokenPilotDesign.calm)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(TokenPilotDesign.calm.opacity(0.12)))
+    }
+
+    private func milestoneLabel(_ milestone: ActivityMilestone) -> String {
+        switch milestone.dimension {
+        case .lifetimeTokens:
+            return "\(TokenPilotFormatters.compactNumber(milestone.threshold)) \(model.t("tok"))"
+        case .activeDays:
+            return "\(milestone.threshold) \(model.t("active days"))"
+        case .totalRequests:
+            return "\(TokenPilotFormatters.compactNumber(milestone.threshold)) \(model.t("requests"))"
+        case .longestStreak:
+            return "\(milestone.threshold) \(model.t("day streak"))"
+        }
     }
 }
 
