@@ -19,7 +19,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
-    case blocks(includesJSON: Bool = false)
+    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false)
     case help
 }
 
@@ -108,18 +108,24 @@ public enum TokenPilotCLIService {
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var includesJSON = false
+        var active = false
+        var recent = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
             switch flag {
             case "--json":
                 includesJSON = true
+            case "--active":
+                active = true
+            case "--recent":
+                recent = true
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.blocks(includesJSON: includesJSON))
+        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -403,7 +409,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
-          TokenPilot blocks [--json]
+          TokenPilot blocks [--json] [--active] [--recent]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -431,7 +437,8 @@ public enum TokenPilotCLIService {
         spot gaps left by providers that prune their own logs; --json emits the same coverage
         summary as structured JSON for scripting (toktrack audit --json style). blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
-        stored capacity evidence, mirroring ccusage's blocks command; --json emits them as
+        stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
+        whose reset has not elapsed and --recent keeps only freshly observed blocks. --json emits them as
         structured JSON. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
@@ -1261,15 +1268,19 @@ public enum TokenPilotCLIService {
     ///
     /// Renders each series as a provider + window block with used/remaining
     /// percent and the reset time, so users can see at a glance which billing
-    /// window is closest to exhaustion. Aggregates only; no credentials.
+    /// window is closest to exhaustion. `active` keeps only blocks whose reset
+    /// has not elapsed; `recent` keeps only freshly observed blocks. Aggregates only.
     public static func blocksText(
         assessments: [CapacityAssessment],
+        active: Bool = false,
+        recent: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
+        let blocks = filteredBlocks(assessments, active: active, recent: recent, now: now)
         var lines: [String] = []
         lines.append("TokenPilot · \(localized("Blocks", language: .en))")
-        for assessment in assessments {
+        for assessment in blocks {
             let observation = assessment.observation
             let series = observation.seriesID
             guard let usedPercent = observation.value.usedPercent else { continue }
@@ -1295,12 +1306,15 @@ public enum TokenPilotCLIService {
     /// watch window exhaustion. Cost and credentials never appear.
     public static func blocksJSON(
         assessments: [CapacityAssessment],
+        active: Bool = false,
+        recent: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
+        let blocks = filteredBlocks(assessments, active: active, recent: recent, now: now)
         let payload = BlocksPayloadJSON(
             generatedAt: now,
-            blocks: assessments.compactMap { assessment -> BlocksRowJSON? in
+            blocks: blocks.compactMap { assessment -> BlocksRowJSON? in
                 let observation = assessment.observation
                 let series = observation.seriesID
                 guard let usedPercent = observation.value.usedPercent else { return nil }
@@ -1317,6 +1331,29 @@ public enum TokenPilotCLIService {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return try encoder.encode(payload)
+    }
+
+    /// Applies the `--active`/`--recent` block filters shared by text and JSON output.
+    private static func filteredBlocks(
+        _ assessments: [CapacityAssessment],
+        active: Bool,
+        recent: Bool,
+        now: Date
+    ) -> [CapacityAssessment] {
+        assessments.filter { assessment in
+            if active {
+                if let resetAt = assessment.observation.resetAt, resetAt <= now {
+                    return false
+                }
+            }
+            if recent {
+                let age = now.timeIntervalSince(assessment.observation.observedAt)
+                if age > assessment.observation.freshnessPolicy.maximumAge {
+                    return false
+                }
+            }
+            return true
+        }
     }
 
     private static func dailyBreakdownLines(

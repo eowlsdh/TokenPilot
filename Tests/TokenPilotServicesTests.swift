@@ -653,6 +653,9 @@ final class TokenPilotServicesTests: XCTestCase {
     func testCLIParseBlocksCommand() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks"]), .success(.blocks()))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--json"]), .success(.blocks(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--active"]), .success(.blocks(active: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--recent"]), .success(.blocks(recent: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--json", "--active", "--recent"]), .success(.blocks(includesJSON: true, active: true, recent: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -8361,6 +8364,90 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no parser revision leaks.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("blocksV1"))
+    }
+
+    func testCLIBlocksActiveAndRecentFilters() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        // Active block: resetAt is in the future. Inactive block: resetAt already elapsed.
+        let active = try CapacityAssessmentService().assess(
+            try CapacityEvidenceRecord(
+                observation: try CapacityObservation(
+                    seriesID: series,
+                    observedAt: now,
+                    resetAt: now.addingTimeInterval(3_600),
+                    value: try CapacityValue(usedPercent: 40),
+                    authority: .providerReported,
+                    stability: .supported,
+                    freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+                    comparability: .comparable,
+                    parserRevision: "filterV1",
+                    now: now
+                )
+            ).observationForAssessment(now: now),
+            now: now
+        )
+        let inactive = try CapacityAssessmentService().assess(
+            try CapacityEvidenceRecord(
+                observation: try CapacityObservation(
+                    seriesID: series,
+                    observedAt: now,
+                    resetAt: now.addingTimeInterval(-3_600),
+                    value: try CapacityValue(usedPercent: 80),
+                    authority: .providerReported,
+                    stability: .supported,
+                    freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+                    comparability: .comparable,
+                    parserRevision: "filterV1",
+                    now: now
+                )
+            ).observationForAssessment(now: now),
+            now: now
+        )
+        let text = TokenPilotCLIService.blocksText(
+            assessments: [active, inactive],
+            active: true,
+            now: now,
+            calendar: calendar
+        )
+        // --active keeps only the future-reset block (40% used).
+        XCTAssertTrue(text.contains("40% used"))
+        XCTAssertFalse(text.contains("80% used"))
+
+        // --recent keeps only blocks observed within the freshness window. Build a stale
+        // observation older than its maximumAge so it drops out.
+        let stale = try CapacityAssessmentService().assess(
+            try CapacityEvidenceRecord(
+                observation: try CapacityObservation(
+                    seriesID: series,
+                    observedAt: now.addingTimeInterval(-10_800),
+                    resetAt: now.addingTimeInterval(3_600),
+                    value: try CapacityValue(usedPercent: 25),
+                    authority: .providerReported,
+                    stability: .supported,
+                    freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+                    comparability: .comparable,
+                    parserRevision: "filterV1",
+                    now: now
+                )
+            ).observationForAssessment(now: now),
+            now: now
+        )
+        let recentText = TokenPilotCLIService.blocksText(
+            assessments: [active, stale],
+            recent: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(recentText.contains("40% used"))
+        XCTAssertFalse(recentText.contains("25% used"))
     }
 
     // MARK: - ContextHealthService
