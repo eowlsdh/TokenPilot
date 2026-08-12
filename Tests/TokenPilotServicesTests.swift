@@ -576,6 +576,29 @@ final class TokenPilotServicesTests: XCTestCase {
         )
     }
 
+    func testCLIParseNoCostFlag() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--no-cost"]),
+            .success(.report(period: .last7Days, format: .text, includesCost: false))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--svg", "--no-cost"]),
+            .success(.report(period: .today, format: .svg, includesCost: false))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--no-cost", "--md"]),
+            .success(.report(period: .last7Days, format: .markdown, includesCost: false))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--no-cost"]),
+            .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, includesCost: false))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--capacity", "--no-cost"]),
+            .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: true, includesCost: false))
+        )
+    }
+
     func testCLIParseSummaryAndHelp() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -783,6 +806,83 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Requests: 2"))
         // The explicit date window is reflected in the period label.
         XCTAssertTrue(text.contains("2026-08-01 → 2026-08-13"))
+    }
+
+    func testCLIReportNoCostOmitsCostFigures() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 5_000, outputTokens: 0, estimatedCostUSD: Decimal(0.50), source: "no-cost-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, model: "claude-sonnet", timestamp: now.addingTimeInterval(-60), inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.20), source: "no-cost-test", dataSource: .localLog),
+        ]
+        let withCost = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            language: .en,
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(withCost.contains("Estimated cost: $0.70"))
+        XCTAssertTrue(withCost.contains("· $0.50"))
+
+        let noCost = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            language: .en,
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertFalse(noCost.contains("Estimated cost"))
+        XCTAssertFalse(noCost.contains("$"))
+        // Token/request aggregates and labels still appear.
+        XCTAssertTrue(noCost.contains("Total tokens: 7K"))
+        XCTAssertTrue(noCost.contains("Requests: 2"))
+        XCTAssertTrue(noCost.contains("opencode"))
+        XCTAssertTrue(noCost.contains("claude"))
+
+        let noCostMD = TokenPilotCLIService.reportMarkdownText(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertFalse(noCostMD.contains("Estimated cost"))
+        XCTAssertFalse(noCostMD.contains("| Cost |"))
+        XCTAssertFalse(noCostMD.contains("$"))
+        XCTAssertTrue(noCostMD.contains("| Total tokens | 7K |"))
+        XCTAssertTrue(noCostMD.contains("| Provider | Tokens | Requests |"))
+    }
+
+    func testCLIExportNoCostBlanksCostFields() throws {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 5_000, outputTokens: 0, estimatedCostUSD: Decimal(0.50), source: "no-cost-export", dataSource: .localLog),
+        ]
+        let snapshots = [ProviderSnapshot(provider: .opencode, events: events)]
+        let usage = AggregationService().aggregate(snapshots: snapshots, period: .last7Days, now: now)
+
+        let jsonData = try UsageExportService().makeJSONData(
+            usage: usage,
+            snapshots: snapshots,
+            dataMode: "CLI",
+            includesCost: false
+        )
+        let json = String(data: jsonData, encoding: .utf8) ?? ""
+        XCTAssertFalse(json.contains("0.5"))
+        XCTAssertFalse(json.contains("0.50"))
+
+        let csv = UsageExportService().makeCSVString(usage: usage, includesCost: false)
+        XCTAssertFalse(csv.contains("0.5"))
+        XCTAssertFalse(csv.contains("0.50"))
+        // CSV keeps the schema columns but blanks the cost value in the total row.
+        XCTAssertTrue(csv.contains("cost_usd"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {

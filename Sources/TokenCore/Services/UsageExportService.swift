@@ -39,14 +39,15 @@ public final class UsageExportService {
         dataMode: String,
         format: UsageExportFormat,
         generatedAt: Date = Date(),
-        capacityAssessments: [CapacityAssessment] = []
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true
     ) throws -> Data {
         let exportUsage = sanitizedUsageForExport(usage)
         switch format {
         case .json:
-            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments)
+            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments, includesCost: includesCost)
         case .csv:
-            return makeCSVData(usage: exportUsage)
+            return makeCSVData(usage: exportUsage, includesCost: includesCost)
         }
     }
 
@@ -55,9 +56,11 @@ public final class UsageExportService {
         snapshots: [ProviderSnapshot],
         dataMode: String,
         generatedAt: Date = Date(),
-        capacityAssessments: [CapacityAssessment] = []
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true
     ) throws -> Data {
-        let exportUsage = sanitizedUsageForExport(usage)
+        let sanitized = sanitizedUsageForExport(usage)
+        let exportUsage = includesCost ? sanitized : costStripped(sanitized)
         let payload = UsageExportPayload(
             generatedAt: generatedAt,
             period: usage.period,
@@ -93,8 +96,62 @@ public final class UsageExportService {
         return AggregationService().aggregate(snapshots: snapshots, period: usage.period)
     }
 
-    public func makeCSVString(usage: AggregatedUsage) -> String {
-        let exportUsage = sanitizedUsageForExport(usage)
+    /// Returns a copy of the aggregated usage with every cost field blanked so
+    /// `--no-cost` exports never leak estimated cost figures.
+    private func costStripped(_ usage: AggregatedUsage) -> AggregatedUsage {
+        AggregatedUsage(
+            period: usage.period,
+            metrics: UsageMetrics(
+                totalTokens: usage.metrics.totalTokens,
+                inputTokens: usage.metrics.inputTokens,
+                outputTokens: usage.metrics.outputTokens,
+                cacheTokens: usage.metrics.cacheTokens,
+                requestCount: usage.metrics.requestCount,
+                estimatedCostUSD: 0,
+                mostUsedProvider: usage.metrics.mostUsedProvider,
+                busiestHour: usage.metrics.busiestHour
+            ),
+            sevenDayBars: usage.sevenDayBars,
+            providerShare: usage.providerShare.map { share in
+                ProviderShare(
+                    provider: share.provider,
+                    tokens: share.tokens,
+                    percent: share.percent,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil
+                )
+            },
+            events: usage.events.map { event in
+                var stripped = event
+                stripped.estimatedCostUSD = nil
+                return stripped
+            },
+            modelBreakdown: usage.modelBreakdown.map { share in
+                ModelUsageShare(
+                    provider: share.provider,
+                    model: share.model,
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil,
+                    tokenPercent: share.tokenPercent
+                )
+            },
+            projectBreakdown: usage.projectBreakdown.map { share in
+                ProjectUsageShare(
+                    provider: share.provider,
+                    label: share.label,
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil,
+                    tokenPercent: share.tokenPercent
+                )
+            }
+        )
+    }
+
+    public func makeCSVString(usage: AggregatedUsage, includesCost: Bool = true) -> String {
+        let sanitized = sanitizedUsageForExport(usage)
+        let exportUsage = includesCost ? sanitized : costStripped(sanitized)
         var rows: [[String]] = [[
             "row_type",
             "period",
@@ -188,8 +245,8 @@ public final class UsageExportService {
         return rows.map { $0.map(Self.escapeCSV).joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
-    private func makeCSVData(usage: AggregatedUsage) -> Data {
-        Data(makeCSVString(usage: usage).utf8)
+    private func makeCSVData(usage: AggregatedUsage, includesCost: Bool = true) -> Data {
+        Data(makeCSVString(usage: usage, includesCost: includesCost).utf8)
     }
 
     private func summaryRow(

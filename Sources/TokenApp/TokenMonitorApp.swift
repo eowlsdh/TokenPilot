@@ -47,7 +47,7 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.report(let period, let format, let since, let until)):
+        case .success(.report(let period, let format, let since, let until, let includesCost)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             switch format {
@@ -58,7 +58,8 @@ private enum TokenPilotCLIRunner {
                         enabledProviders: settings.enabledProviders,
                         period: period,
                         since: since,
-                        until: until
+                        until: until,
+                        includesCost: includesCost
                     )
                 )
             case .markdown:
@@ -68,7 +69,8 @@ private enum TokenPilotCLIRunner {
                         enabledProviders: settings.enabledProviders,
                         period: period,
                         since: since,
-                        until: until
+                        until: until,
+                        includesCost: includesCost
                     )
                 )
             case .text:
@@ -79,7 +81,8 @@ private enum TokenPilotCLIRunner {
                         language: .en,
                         period: period,
                         since: since,
-                        until: until
+                        until: until,
+                        includesCost: includesCost
                     )
                 )
             }
@@ -93,14 +96,15 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let includesCost)):
             return await runExport(
                 format: format,
                 period: period,
                 outputPath: outputPath,
                 includesCapacity: includesCapacity,
                 since: since,
-                until: until
+                until: until,
+                includesCost: includesCost
             )
         }
     }
@@ -111,7 +115,8 @@ private enum TokenPilotCLIRunner {
         outputPath: String?,
         includesCapacity: Bool,
         since: Date?,
-        until: Date?
+        until: Date?,
+        includesCost: Bool
     ) async -> Int32 {
         let events = UsageHistoryStore().loadEvents()
         let snapshots = Provider.allCases.map { provider in
@@ -135,7 +140,8 @@ private enum TokenPilotCLIRunner {
                 snapshots: snapshots,
                 dataMode: "CLI",
                 format: format,
-                capacityAssessments: assessments
+                capacityAssessments: assessments,
+                includesCost: includesCost
             )
             if let outputPath {
                 try data.write(to: URL(fileURLWithPath: outputPath))

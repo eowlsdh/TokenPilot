@@ -13,9 +13,9 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
-    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil)
+    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, includesCost: Bool = true)
     case summary
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, includesCost: Bool = true)
     case audit
     case help
 }
@@ -76,6 +76,7 @@ public enum TokenPilotCLIService {
         var format = TokenPilotReportFormat.text
         var since: Date?
         var until: Date?
+        var includesCost = true
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -105,12 +106,14 @@ public enum TokenPilotCLIService {
                 format = .svg
             case "--md":
                 format = .markdown
+            case "--no-cost":
+                includesCost = false
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.report(period: period, format: format, since: since, until: until))
+        return .success(.report(period: period, format: format, since: since, until: until, includesCost: includesCost))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -120,6 +123,7 @@ public enum TokenPilotCLIService {
         var includesCapacity = false
         var since: Date?
         var until: Date?
+        var includesCost = true
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -158,12 +162,14 @@ public enum TokenPilotCLIService {
                 outputPath = flags[index]
             case "--capacity":
                 includesCapacity = true
+            case "--no-cost":
+                includesCost = false
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until))
+        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, includesCost: includesCost))
     }
 
     public static var helpText: String {
@@ -171,9 +177,9 @@ public enum TokenPilotCLIService {
         TokenPilot - local-first AI usage monitor
 
         Usage:
-          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--out <path>] [--capacity]
+          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
-          TokenPilot report [--period today|last7Days|thisMonth] [--svg|--md]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--svg|--md] [--no-cost]
           TokenPilot audit
           TokenPilot help
 
@@ -181,7 +187,9 @@ public enum TokenPilotCLIService {
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints today's local usage totals. report prints a shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
-        SVG and --md emits a copy-pasteable Markdown table. audit reports local history coverage so you can
+        SVG and --md emits a copy-pasteable Markdown table. --since/--until slice the window to
+        explicit dates (yyyy-MM-dd), overriding --period. --no-cost omits estimated cost from
+        reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs. Exports, reports, and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
@@ -242,14 +250,14 @@ public enum TokenPilotCLIService {
     }
 
     /// One provider share line, appending request count and recorded cost when present.
-    private static func providerShareLine(_ share: ProviderShare, language: TokenPilotLanguage) -> String {
+    private static func providerShareLine(_ share: ProviderShare, language: TokenPilotLanguage, includesCost: Bool = true) -> String {
         var line = "\(localized(share.provider.displayName, language: language)): " +
             "\(TokenPilotFormatters.compactNumber(share.tokens)) " +
             "\(localized("tok", language: language)) (\(share.percent)%)"
         if share.requestCount > 0 {
             line += " · \(TokenPilotFormatters.compactNumber(share.requestCount)) \(localized("req", language: language))"
         }
-        if let cost = share.estimatedCostUSD, cost > 0 {
+        if includesCost, let cost = share.estimatedCostUSD, cost > 0 {
             let amount = NSDecimalNumber(decimal: cost).doubleValue
             line += " · $\(String(format: "%.2f", amount))"
         }
@@ -268,6 +276,7 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -291,7 +300,7 @@ public enum TokenPilotCLIService {
         lines.append("\(localized("Period", language: language)): \(periodLabel(period, since: since, until: until, language: language, now: now, calendar: calendar))")
         lines.append("\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(metrics.totalTokens))")
         lines.append("\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(metrics.requestCount))")
-        if metrics.estimatedCostUSD > 0 {
+        if includesCost && metrics.estimatedCostUSD > 0 {
             let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
             lines.append("\(localized("Estimated cost", language: language)): \(String(format: "$%.2f", amount))")
         }
@@ -300,19 +309,19 @@ public enum TokenPilotCLIService {
             lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
         }
         for share in usage.providerShare where share.tokens > 0 {
-            lines.append(providerShareLine(share, language: language))
+            lines.append(providerShareLine(share, language: language, includesCost: includesCost))
         }
-        let modelLines = modelRankingLines(usage.modelBreakdown, language: language, limit: 5)
+        let modelLines = modelRankingLines(usage.modelBreakdown, language: language, limit: 5, includesCost: includesCost)
         if !modelLines.isEmpty {
             lines.append(localized("Top models", language: language))
             lines.append(contentsOf: modelLines)
         }
-        let projectLines = projectRankingLines(usage.projectBreakdown, language: language, limit: 5)
+        let projectLines = projectRankingLines(usage.projectBreakdown, language: language, limit: 5, includesCost: includesCost)
         if !projectLines.isEmpty {
             lines.append(localized("Top projects", language: language))
             lines.append(contentsOf: projectLines)
         }
-        let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, now: now, calendar: calendar)
+        let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, now: now, calendar: calendar, includesCost: includesCost)
         if !dailyLines.isEmpty {
             lines.append(localized("Daily breakdown", language: language))
             lines.append(contentsOf: dailyLines)
@@ -332,6 +341,7 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -370,7 +380,7 @@ public enum TokenPilotCLIService {
         addText("Period: \(periodLabel(period, since: since, until: until, language: .en, now: now, calendar: calendar))", size: 13)
         addText("Total tokens: \(TokenPilotFormatters.compactNumber(metrics.totalTokens))", size: 13)
         addText("Requests: \(TokenPilotFormatters.compactNumber(metrics.requestCount))", size: 13)
-        if metrics.estimatedCostUSD > 0 {
+        if includesCost && metrics.estimatedCostUSD > 0 {
             let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
             addText("Estimated cost: $\(String(format: "%.2f", amount))", size: 13)
         }
@@ -380,19 +390,19 @@ public enum TokenPilotCLIService {
         }
         for share in usage.providerShare where share.tokens > 0 {
             addText(
-                providerShareLine(share, language: .en),
+                providerShareLine(share, language: .en, includesCost: includesCost),
                 size: 13,
                 fill: "#a5c8ff"
             )
         }
-        let modelLines = modelRankingLines(usage.modelBreakdown, language: .en, limit: 5)
+        let modelLines = modelRankingLines(usage.modelBreakdown, language: .en, limit: 5, includesCost: includesCost)
         if !modelLines.isEmpty {
             addText("Top models", size: 14, weight: "bold", fill: "#ffffff")
             for line in modelLines {
                 addText(line, size: 12, fill: "#9b9b9b")
             }
         }
-        let projectLines = projectRankingLines(usage.projectBreakdown, language: .en, limit: 5)
+        let projectLines = projectRankingLines(usage.projectBreakdown, language: .en, limit: 5, includesCost: includesCost)
         if !projectLines.isEmpty {
             addText("Top projects", size: 14, weight: "bold", fill: "#ffffff")
             for line in projectLines {
@@ -405,7 +415,8 @@ public enum TokenPilotCLIService {
             since: since,
             until: until,
             now: now,
-            calendar: calendar
+            calendar: calendar,
+            includesCost: includesCost
         )
         if !dailyLines.isEmpty {
             addText("Daily breakdown", size: 14, weight: "bold", fill: "#ffffff")
@@ -429,6 +440,7 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -455,7 +467,7 @@ public enum TokenPilotCLIService {
         lines.append("| Period | \(periodLabel(period, since: since, until: until, language: .en, now: now, calendar: calendar)) |")
         lines.append("| Total tokens | \(TokenPilotFormatters.compactNumber(metrics.totalTokens)) |")
         lines.append("| Requests | \(TokenPilotFormatters.compactNumber(metrics.requestCount)) |")
-        if metrics.estimatedCostUSD > 0 {
+        if includesCost && metrics.estimatedCostUSD > 0 {
             let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
             lines.append("| Estimated cost | $\(String(format: "%.2f", amount)) |")
         }
@@ -468,11 +480,19 @@ public enum TokenPilotCLIService {
             lines.append("")
             lines.append("**Top models**")
             lines.append("")
-            lines.append("| Model | Tokens | Cost |")
-            lines.append("|---|---|---|")
-            for share in topModels {
-                let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
-                lines.append("| \(share.model) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(cost) |")
+            if includesCost {
+                lines.append("| Model | Tokens | Cost |")
+                lines.append("|---|---|---|")
+                for share in topModels {
+                    let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
+                    lines.append("| \(share.model) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(cost) |")
+                }
+            } else {
+                lines.append("| Model | Tokens |")
+                lines.append("|---|---|")
+                for share in topModels {
+                    lines.append("| \(share.model) | \(TokenPilotFormatters.compactNumber(share.tokens)) |")
+                }
             }
         }
         let shares = usage.providerShare.filter { $0.tokens > 0 }
@@ -480,11 +500,19 @@ public enum TokenPilotCLIService {
             lines.append("")
             lines.append("**Providers**")
             lines.append("")
-            lines.append("| Provider | Tokens | Requests | Cost |")
-            lines.append("|---|---|---|---|")
-            for share in shares {
-                let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
-                lines.append("| \(share.provider.displayName) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) | \(cost) |")
+            if includesCost {
+                lines.append("| Provider | Tokens | Requests | Cost |")
+                lines.append("|---|---|---|---|")
+                for share in shares {
+                    let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
+                    lines.append("| \(share.provider.displayName) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) | \(cost) |")
+                }
+            } else {
+                lines.append("| Provider | Tokens | Requests |")
+                lines.append("|---|---|---|")
+                for share in shares {
+                    lines.append("| \(share.provider.displayName) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) |")
+                }
             }
         }
         lines.append("")
@@ -536,7 +564,8 @@ public enum TokenPilotCLIService {
         since: Date?,
         until: Date?,
         now: Date,
-        calendar: Calendar
+        calendar: Calendar,
+        includesCost: Bool = true
     ) -> [String] {
         let window = reportWindow(period: period, since: since, until: until, now: now, calendar: calendar)
         let dayFormatter = DateFormatter()
@@ -555,7 +584,7 @@ public enum TokenPilotCLIService {
         }
         return dayTokens.keys.sorted().map { day in
             var line = "\(dayFormatter.string(from: day)): \(TokenPilotFormatters.compactNumber(dayTokens[day] ?? 0)) " + localized("tok", language: .en)
-            if let cost = dayCosts[day], cost > 0 {
+            if includesCost, let cost = dayCosts[day], cost > 0 {
                 let amount = NSDecimalNumber(decimal: cost).doubleValue
                 line += " · $\(String(format: "%.2f", amount))"
             }
@@ -568,7 +597,8 @@ public enum TokenPilotCLIService {
     private static func modelRankingLines(
         _ shares: [ModelUsageShare],
         language: TokenPilotLanguage,
-        limit: Int = 5
+        limit: Int = 5,
+        includesCost: Bool = true
     ) -> [String] {
         let top = shares
             .filter { $0.tokens > 0 }
@@ -576,7 +606,7 @@ public enum TokenPilotCLIService {
             .prefix(limit)
         return top.map { share in
             var line = "\(share.model): \(TokenPilotFormatters.compactNumber(share.tokens)) \(localized("tok", language: language)) (\(share.tokenPercent)%)"
-            if let cost = share.estimatedCostUSD, cost > 0 {
+            if includesCost, let cost = share.estimatedCostUSD, cost > 0 {
                 let amount = NSDecimalNumber(decimal: cost).doubleValue
                 line += " · $\(String(format: "%.2f", amount))"
             }
@@ -589,7 +619,8 @@ public enum TokenPilotCLIService {
     private static func projectRankingLines(
         _ shares: [ProjectUsageShare],
         language: TokenPilotLanguage,
-        limit: Int = 5
+        limit: Int = 5,
+        includesCost: Bool = true
     ) -> [String] {
         let top = shares
             .filter { $0.tokens > 0 }
@@ -597,7 +628,7 @@ public enum TokenPilotCLIService {
             .prefix(limit)
         return top.map { share in
             var line = "\(share.label): \(TokenPilotFormatters.compactNumber(share.tokens)) \(localized("tok", language: language)) (\(share.tokenPercent)%)"
-            if let cost = share.estimatedCostUSD, cost > 0 {
+            if includesCost, let cost = share.estimatedCostUSD, cost > 0 {
                 let amount = NSDecimalNumber(decimal: cost).doubleValue
                 line += " · $\(String(format: "%.2f", amount))"
             }
