@@ -725,6 +725,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["summary", "--json", "--instances", "--project", "project-a"]),
             .failure(.invalidCombination("--instances cannot be combined with --project."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--csv"]), .success(.summary(includesCSV: true)))
+        // --csv is a distinct output format and cannot be combined with --json.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--json", "--csv"]),
+            .failure(.invalidCombination("--csv cannot be combined with --json."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -1843,6 +1849,39 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Claude"))
         XCTAssertFalse(text.contains("claude-sonnet"))
         XCTAssertFalse(text.contains("statusline"))
+    }
+
+    func testCLISummaryCSVEmitsSummaryRow() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "csv-summary-test", dataSource: .localLog),
+        ]
+        let csv = TokenPilotCLIService.summaryCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .today,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        // Header uses the export CSV column convention; summary row then provider shares.
+        let lines = csv.split(separator: "\n")
+        XCTAssertEqual(lines.first, "period,tokens,requests,cost_usd")
+        XCTAssertTrue(lines.contains("Today,3000,2,0.06"))
+        XCTAssertTrue(lines.contains("opencode,3000,2,0.06"))
+
+        // --no-cost blanks the cost column while keeping the other columns.
+        let noCost = TokenPilotCLIService.summaryCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .today,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(noCost.contains("Today,3000,2,"))
+        XCTAssertFalse(noCost.contains("0.06"))
     }
 
     func testCLISummaryJSONPayloadMatchesSummaryText() throws {
