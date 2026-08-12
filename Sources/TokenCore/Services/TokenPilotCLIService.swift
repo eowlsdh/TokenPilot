@@ -16,7 +16,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil)
     case summary(period: HistoryPeriod = .today, includesJSON: Bool = false)
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false)
@@ -358,6 +358,7 @@ public enum TokenPilotCLIService {
         var project: String?
         var includesJSON = false
         var weekStartDay: WeekStartDay?
+        var sections: [HistoryPeriod]?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -408,6 +409,16 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidWeekStartDay(flags[index]))
                 }
                 weekStartDay = parsed
+            case "--sections":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                let names = flags[index].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                let parsed = names.map { HistoryPeriod(rawValue: $0) }
+                guard !parsed.contains(nil) else {
+                    let invalid = names.enumerated().first { parsed[$0.offset] == nil }?.element ?? flags[index]
+                    return .failure(.invalidPeriod(invalid))
+                }
+                sections = parsed.compactMap { $0 }
             case "--no-cost":
                 includesCost = false
             case "--json":
@@ -420,7 +431,13 @@ public enum TokenPilotCLIService {
         if weekStartDay != nil, since != nil || until != nil || days != nil {
             return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay))
+        if sections != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        }
+        if sections != nil, !includesJSON {
+            return .failure(.invalidCombination("--sections requires --json output."))
+        }
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay, sections: sections))
     }
 
     public static var helpText: String {
@@ -430,7 +447,7 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary [--period today|last7Days|thisMonth] [--json]
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json] [--sections today,last7Days,thisMonth]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
           TokenPilot blocks [--json] [--active] [--recent]
@@ -442,7 +459,8 @@ public enum TokenPilotCLIService {
         today/last7Days/thisMonth and --json emits the same summary as structured JSON for
         scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
-        the same statistics as structured JSON for scripting (toktrack stats --json style). report prints a
+        the same statistics as structured JSON for scripting (toktrack stats --json style), and
+        --sections (JSON only) emits stats for several periods in one envelope. report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG, --md emits a copy-pasteable Markdown table, and --json emits the same receipt as a
@@ -669,9 +687,70 @@ public enum TokenPilotCLIService {
         days: Int? = nil,
         includesCost: Bool = true,
         project: String? = nil,
+        sections: [HistoryPeriod]? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let sections {
+            // ccusage `--sections` style: each requested period emitted in one envelope
+            // with a totals object last, matching the report JSON envelope.
+            let sectionPayloads = sections.map { section in
+                statsPayload(
+                    events: events,
+                    enabledProviders: enabledProviders,
+                    period: section,
+                    since: nil,
+                    until: nil,
+                    days: nil,
+                    includesCost: includesCost,
+                    project: project,
+                    now: now,
+                    calendar: calendar
+                )
+            }
+            let envelope = StatsSectionsEnvelopeJSON(
+                generatedAt: now,
+                sections: sectionPayloads,
+                totals: StatsTotalsJSON(
+                    totalTokens: sectionPayloads.reduce(0) { $0 + $1.totalTokens },
+                    requestCount: sectionPayloads.reduce(0) { $0 + $1.requestCount },
+                    estimatedCostUSD: includesCost
+                        ? sectionPayloads.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
+                        : nil
+                )
+            )
+            return try encoder.encode(envelope)
+        }
+        let payload = statsPayload(
+            events: events,
+            enabledProviders: enabledProviders,
+            period: period,
+            since: since,
+            until: until,
+            days: days,
+            includesCost: includesCost,
+            project: project,
+            now: now,
+            calendar: calendar
+        )
+        return try encoder.encode(payload)
+    }
+
+    private static func statsPayload(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        includesCost: Bool,
+        project: String?,
+        now: Date,
+        calendar: Calendar
+    ) -> StatsPayloadJSON {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
@@ -698,7 +777,7 @@ public enum TokenPilotCLIService {
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "MM-dd"
-        let payload = StatsPayloadJSON(
+        return StatsPayloadJSON(
             generatedAt: now,
             period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
             totalTokens: metrics.totalTokens,
@@ -710,10 +789,6 @@ public enum TokenPilotCLIService {
             busiestHour: metrics.busiestHour,
             mostUsedProvider: metrics.mostUsedProvider?.displayName
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
     }
 
     /// One provider share line, appending request count and recorded cost when present.
@@ -1863,6 +1938,18 @@ private struct StatsPayloadJSON: Codable {
     var busiestDay: String?
     var busiestHour: Int?
     var mostUsedProvider: String?
+}
+
+private struct StatsSectionsEnvelopeJSON: Codable {
+    var generatedAt: Date
+    var sections: [StatsPayloadJSON]
+    var totals: StatsTotalsJSON
+}
+
+private struct StatsTotalsJSON: Codable {
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
 }
 
 private struct SummaryPayloadJSON: Codable {
