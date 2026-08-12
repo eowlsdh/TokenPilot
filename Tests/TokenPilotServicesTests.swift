@@ -546,6 +546,34 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--period", "yesterday"]), .failure(.invalidPeriod("yesterday")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format"]), .failure(.missingValue(forFlag: "--format")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--bogus"]), .failure(.unknownCommand("--bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--until", "yesterday"]), .failure(.invalidDate("yesterday")))
+    }
+
+    func testCLIParseSinceUntilDates() {
+        let calendar = Calendar(identifier: .gregorian)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")
+        let until = formatter.date(from: "2026-08-13")
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--since", "2026-08-01"]),
+            .success(.report(period: .last7Days, format: .text, since: since, until: nil))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--until", "2026-08-13"]),
+            .success(.report(period: .last7Days, format: .text, since: nil, until: until))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--since", "2026-08-01", "--until", "2026-08-13", "--svg"]),
+            .success(.report(period: .today, format: .svg, since: since, until: until))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--since", "2026-08-01", "--until", "2026-08-13", "--format", "csv"]),
+            .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, since: since, until: until))
+        )
     }
 
     func testCLIParseSummaryAndHelp() {
@@ -722,6 +750,39 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates-only redaction: no per-event source labels or project folders leak.
         XCTAssertFalse(md.contains("md-test"))
         XCTAssertFalse(md.contains("project-a"))
+    }
+
+    func testCLIReportSinceUntilFiltersEventsToDateRange() {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")!
+        let until = formatter.date(from: "2026-08-13")!
+        // Two events inside the window, one well outside (before since, same provider).
+        let inWindow = [
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -1, to: until)!, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "range-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -2, to: until)!, inputTokens: 1_000, outputTokens: 0, estimatedCostUSD: Decimal(0.02), source: "range-test", dataSource: .localLog),
+        ]
+        let outside = [
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -20, to: since)!, inputTokens: 50_000, outputTokens: 0, estimatedCostUSD: Decimal(1.00), source: "range-test", dataSource: .localLog),
+        ]
+        let text = TokenPilotCLIService.reportText(
+            events: inWindow + outside,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            since: since,
+            until: until,
+            now: until.addingTimeInterval(86_400),
+            calendar: calendar
+        )
+        // Only the two in-window events count; the 50K event is outside the range.
+        XCTAssertTrue(text.contains("Total tokens: 3K"))
+        XCTAssertTrue(text.contains("Requests: 2"))
+        // The explicit date window is reflected in the period label.
+        XCTAssertTrue(text.contains("2026-08-01 → 2026-08-13"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {

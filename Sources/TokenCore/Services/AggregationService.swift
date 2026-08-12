@@ -4,9 +4,14 @@ import os
 public final class AggregationService: Sendable {
     public init() {}
 
-    public func aggregate(snapshots: [ProviderSnapshot], period: HistoryPeriod, now: Date = Date()) -> AggregatedUsage {
+    public func aggregate(
+        snapshots: [ProviderSnapshot],
+        period: HistoryPeriod,
+        customRange: ClosedRange<Date>? = nil,
+        now: Date = Date()
+    ) -> AggregatedUsage {
         let usageEvents = snapshots.flatMap { $0.events }
-        let filteredEvents = filterEvents(usageEvents, period: period, now: now)
+        let filteredEvents = filterEvents(usageEvents, period: period, customRange: customRange, now: now)
 
         let totalTokens = filteredEvents.reduce(0) { $0 + $1.totalTokens }
         let inputTokens = filteredEvents.reduce(0) { $0 + $1.inputTokens }
@@ -126,7 +131,10 @@ public final class AggregationService: Sendable {
         var label: String
     }
 
-    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod, now: Date) -> [UsageEvent] {
+    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod, customRange: ClosedRange<Date>?, now: Date) -> [UsageEvent] {
+        if let customRange {
+            return events.filter { customRange.contains($0.timestamp) }
+        }
         let calendar = Calendar.current
         let start: Date
         switch period {

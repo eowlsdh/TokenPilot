@@ -47,7 +47,7 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.report(let period, let format)):
+        case .success(.report(let period, let format, let since, let until)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             switch format {
@@ -56,7 +56,9 @@ private enum TokenPilotCLIRunner {
                     TokenPilotCLIService.reportSVGText(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        period: period
+                        period: period,
+                        since: since,
+                        until: until
                     )
                 )
             case .markdown:
@@ -64,7 +66,9 @@ private enum TokenPilotCLIRunner {
                     TokenPilotCLIService.reportMarkdownText(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        period: period
+                        period: period,
+                        since: since,
+                        until: until
                     )
                 )
             case .text:
@@ -73,7 +77,9 @@ private enum TokenPilotCLIRunner {
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         language: .en,
-                        period: period
+                        period: period,
+                        since: since,
+                        until: until
                     )
                 )
             }
@@ -87,12 +93,14 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until)):
             return await runExport(
                 format: format,
                 period: period,
                 outputPath: outputPath,
-                includesCapacity: includesCapacity
+                includesCapacity: includesCapacity,
+                since: since,
+                until: until
             )
         }
     }
@@ -101,7 +109,9 @@ private enum TokenPilotCLIRunner {
         format: UsageExportFormat,
         period: HistoryPeriod,
         outputPath: String?,
-        includesCapacity: Bool
+        includesCapacity: Bool,
+        since: Date?,
+        until: Date?
     ) async -> Int32 {
         let events = UsageHistoryStore().loadEvents()
         let snapshots = Provider.allCases.map { provider in
@@ -110,7 +120,12 @@ private enum TokenPilotCLIRunner {
                 events: events.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: snapshots, period: period)
+        let window = TokenPilotCLIService.explicitDateRange(period: period, since: since, until: until)
+        let usage = AggregationService().aggregate(
+            snapshots: snapshots,
+            period: period,
+            customRange: window
+        )
         do {
             let assessments = includesCapacity
                 ? await loadLatestCapacityAssessments()
