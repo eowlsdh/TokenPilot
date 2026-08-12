@@ -254,6 +254,11 @@ public enum TokenPilotCLIService {
                 "\(localized("tok", language: language)) (\(share.percent)%)"
             )
         }
+        let modelLines = modelRankingLines(usage.modelBreakdown, language: language, limit: 5)
+        if !modelLines.isEmpty {
+            lines.append(localized("Top models", language: language))
+            lines.append(contentsOf: modelLines)
+        }
         let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, now: now, calendar: calendar)
         if !dailyLines.isEmpty {
             lines.append(localized("Daily breakdown", language: language))
@@ -323,6 +328,13 @@ public enum TokenPilotCLIService {
                 size: 13,
                 fill: "#a5c8ff"
             )
+        }
+        let modelLines = modelRankingLines(usage.modelBreakdown, language: .en, limit: 5)
+        if !modelLines.isEmpty {
+            addText("Top models", size: 14, weight: "bold", fill: "#ffffff")
+            for line in modelLines {
+                addText(line, size: 12, fill: "#9b9b9b")
+            }
         }
         let dailyLines = dailyBreakdownLines(
             events: events.filter { enabledSet.contains($0.provider) },
@@ -403,6 +415,27 @@ public enum TokenPilotCLIService {
     private static func isInPeriod(_ date: Date, period: HistoryPeriod, now: Date, calendar: Calendar) -> Bool {
         guard let start = periodStart(period, now: now, calendar: calendar) else { return false }
         return date >= start && date <= now
+    }
+
+    /// Ranks models by token share and returns the top `limit` as plain lines.
+    /// Mirrors the History per-model breakdown; cost is appended when recorded.
+    private static func modelRankingLines(
+        _ shares: [ModelUsageShare],
+        language: TokenPilotLanguage,
+        limit: Int = 5
+    ) -> [String] {
+        let top = shares
+            .filter { $0.tokens > 0 }
+            .sorted { $0.tokens > $1.tokens }
+            .prefix(limit)
+        return top.map { share in
+            var line = "\(share.model): \(TokenPilotFormatters.compactNumber(share.tokens)) \(localized("tok", language: language)) (\(share.tokenPercent)%)"
+            if let cost = share.estimatedCostUSD, cost > 0 {
+                let amount = NSDecimalNumber(decimal: cost).doubleValue
+                line += " · $\(String(format: "%.2f", amount))"
+            }
+            return line
+        }
     }
 
     private static func periodStart(_ period: HistoryPeriod, now: Date, calendar: Calendar) -> Date? {

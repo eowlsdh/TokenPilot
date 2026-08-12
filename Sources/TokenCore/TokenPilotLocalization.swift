@@ -335,6 +335,7 @@ public enum TokenPilotLocalizer {
         "Reached %d active local days (est.)": [.en: "Reached %d active local days (est.)", .ko: "활동 로컬 일수 %d일 달성 (추정)", .ja: "アクティブなローカル日 %d 日に到達（推定）", .zhHans: "活跃本地天数达到 %d 天（估计）", .zhHant: "活躍本地天數達到 %d 天（估計）"],
         "Reached %@ total local requests (est.)": [.en: "Reached %@ total local requests (est.)", .ko: "총 로컬 요청 %@ 달성 (추정)", .ja: "総ローカルリクエスト %@ に到達（推定）", .zhHans: "本地请求总数达到 %@（估计）", .zhHant: "本地請求總數達到 %@（估計）"],
         "Reached a %d-day longest local streak (est.)": [.en: "Reached a %d-day longest local streak (est.)", .ko: "최장 로컬 연속 %d일 달성 (추정)", .ja: "最長ローカル連続 %d 日に到達（推定）", .zhHans: "最长本地连续天数达到 %d 天（估计）", .zhHant: "最長本地連續天數達到 %d 天（估計）"],
+        "Top models": [.en: "Top models", .ko: "상위 모델", .ja: "上位モデル", .zhHans: "热门模型", .zhHant: "熱門模型"],
         "Switch screens with ⌘1, ⌘2, ⌘3": [.en: "Switch screens with ⌘1, ⌘2, ⌘3", .ko: "⌘1, ⌘2, ⌘3으로 화면 전환", .ja: "⌘1、⌘2、⌘3 で画面を切り替え", .zhHans: "使用 ⌘1、⌘2、⌘3 切换屏幕", .zhHant: "使用 ⌘1、⌘2、⌘3 切換螢幕"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],
