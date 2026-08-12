@@ -46,7 +46,8 @@ public enum WeeklyDigestService {
         language: TokenPilotLanguage,
         now: Date = Date(),
         calendar: Calendar = .current,
-        weekStartDay: WeekStartDay = .monday
+        weekStartDay: WeekStartDay = .monday,
+        budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) -> String {
         let enabled = Set(enabledProviders)
         let weekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) ?? calendar.startOfDay(for: now)
@@ -86,6 +87,16 @@ public enum WeeklyDigestService {
         if cache.hasCacheActivity {
             let hitPercent = Int((cache.cacheHitRate * 100).rounded())
             lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
+        }
+        let weeklyBudget = BudgetGuardrailService().weeklyProgress(
+            events: events,
+            settings: budget,
+            now: now,
+            calendar: calendar,
+            weekStartDay: weekStartDay
+        )
+        if weeklyBudget.budgetTokens > 0 {
+            lines.append("\(localized("Weekly budget used", language: language)): \(weeklyBudget.percent)%")
         }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")

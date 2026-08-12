@@ -1152,6 +1152,30 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Cache hit rate: 60%"))
     }
 
+    func testWeeklyDigestIncludesBudgetUsage() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let monday = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9))
+        )
+        // 5K of a 10K weekly budget -> 50%.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: monday, inputTokens: 5_000, outputTokens: 0, source: "report-test", dataSource: .localLog),
+        ]
+        let budget = BudgetGuardrailSettings(weeklyTokens: 10_000)
+
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: monday,
+            calendar: calendar,
+            budget: budget
+        )
+        XCTAssertTrue(text.contains("Weekly budget used: 50%"))
+    }
+
     func testWeeklyDigestTextLocalizedKorean() {
         let text = WeeklyDigestService.digestText(
             events: [],
@@ -1281,6 +1305,30 @@ final class TokenPilotServicesTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertTrue(text.contains("Cache hit rate: 50%"))
+    }
+
+    func testDailyDigestIncludesBudgetUsage() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+        // 3K of a 6K daily budget -> 50%.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, source: "report-test", dataSource: .localLog),
+        ]
+        let budget = BudgetGuardrailSettings(dailyTokens: 6_000)
+
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: now,
+            calendar: calendar,
+            budget: budget
+        )
+        XCTAssertTrue(text.contains("Daily budget used: 50%"))
     }
 
     func testDailyDigestStoreRoundtrip() {

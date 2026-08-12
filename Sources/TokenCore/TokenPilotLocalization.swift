@@ -524,7 +524,9 @@ public enum TokenPilotLocalizer {
         "Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running.": [.en: "Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running.", .ko: "TokenPilot이 실행되는 동안 매주 월요일 09:00에 이번 주 로컬 사용량을 요약해 보냅니다.", .ja: "TokenPilot の実行中、毎週月曜 09:00 に今週のローカル使用量を要約して送信します。", .zhHans: "TokenPilot 运行期间，每周一 09:00 发送本周本地用量摘要。", .zhHant: "TokenPilot 執行期間，每週一 09:00 傳送本週本機用量摘要。"],
         "This week": [.en: "This week", .ko: "이번 주", .ja: "今週", .zhHans: "本周", .zhHant: "本週"],
         "Top provider": [.en: "Top provider", .ko: "최다 사용 제공자", .ja: "最多使用プロバイダ", .zhHans: "用量最多的提供方", .zhHant: "用量最多的提供方"],
-        "Top model": [.en: "Top model", .ko: "최다 사용 모델", .ja: "最多使用モデル", .zhHans: "用量最多的模型", .zhHant: "用量最多的模型"]
+        "Top model": [.en: "Top model", .ko: "최다 사용 모델", .ja: "最多使用モデル", .zhHans: "用量最多的模型", .zhHant: "用量最多的模型"],
+        "Weekly budget used": [.en: "Weekly budget used", .ko: "주간 예산 사용", .ja: "週間予算の使用", .zhHans: "每周预算已用", .zhHant: "每週預算已用"],
+        "Daily budget used": [.en: "Daily budget used", .ko: "일일 예산 사용", .ja: "1日の予算の使用", .zhHans: "每日预算已用", .zhHant: "每日預算已用"]
     ]
 
     private static func localizedFromCatalog(_ key: String, language: TokenPilotLanguage) -> String? {

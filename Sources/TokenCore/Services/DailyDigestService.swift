@@ -38,7 +38,8 @@ public enum DailyDigestService {
         enabledProviders: [Provider],
         language: TokenPilotLanguage,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) -> String {
         let enabled = Set(enabledProviders)
         let startOfToday = calendar.startOfDay(for: now)
@@ -66,6 +67,10 @@ public enum DailyDigestService {
         if cache.hasCacheActivity {
             let hitPercent = Int((cache.cacheHitRate * 100).rounded())
             lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
+        }
+        let dailyBudget = BudgetGuardrailService().dailyProgress(events: events, settings: budget, now: now, calendar: calendar)
+        if dailyBudget.budgetTokens > 0 {
+            lines.append("\(localized("Daily budget used", language: language)): \(dailyBudget.percent)%")
         }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")

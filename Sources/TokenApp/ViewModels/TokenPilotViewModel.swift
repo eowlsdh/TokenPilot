@@ -951,7 +951,8 @@ final class TokenPilotViewModel: ObservableObject {
             events: events,
             enabledProviders: settings.enabledProviders,
             language: settings.localization.language,
-            now: now
+            now: now,
+            budget: settings.budget
         )
         do {
             try await localNotificationService.send(title: t("Daily digest"), body: text)
@@ -976,7 +977,8 @@ final class TokenPilotViewModel: ObservableObject {
             enabledProviders: settings.enabledProviders,
             language: settings.localization.language,
             now: now,
-            weekStartDay: settings.weekStartDay
+            weekStartDay: settings.weekStartDay,
+            budget: settings.budget
         )
         do {
             try await localNotificationService.send(title: t("Weekly digest"), body: text)
