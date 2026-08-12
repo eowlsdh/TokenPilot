@@ -189,6 +189,21 @@ struct SettingsScreen: View {
                         .font(.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
+
+                TokenPilotSeparator()
+
+                Text(model.t("Settings backup"))
+                    .font(.caption.weight(.semibold))
+                Text(model.t("Export settings as JSON to move or back up your configuration. Credentials, chat IDs, webhooks, and API keys are never included; saved secrets stay in the Keychain."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                HStack(spacing: 8) {
+                    Button(model.t("Export Settings")) { model.exportSettings() }
+                        .buttonStyle(.bordered)
+                    Button(model.t("Import Settings")) { model.importSettings() }
+                        .buttonStyle(.bordered)
+                }
             }
         }
     }

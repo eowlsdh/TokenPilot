@@ -1758,6 +1758,55 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    /// Exports app settings as a JSON backup. Credentials (bot tokens, webhooks,
+    /// DeepSeek/xAI API keys) live in the Keychain and are never part of the
+    /// payload; the Telegram chat ID is scrubbed on export.
+    func exportSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            let data = try SettingsBackupService().exportData(settings: settings)
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "TokenPilot-settings.json"
+            panel.canCreateDirectories = true
+            panel.title = t("Export Settings")
+            panel.message = t("Exports settings without credentials, chat IDs, webhooks, or API keys. Saved secrets stay in the Keychain.")
+            if panel.runModal() == .OK, let url = panel.url {
+                try data.write(to: url, options: .atomic)
+                bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
+            }
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    /// Imports app settings from a JSON backup created by `exportSettings`.
+    /// Keychain-stored credentials are never part of the backup, so any
+    /// configured integrations must be re-entered after importing.
+    func importSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = t("Import Settings")
+        panel.message = t("Imports settings from a TokenPilot backup. Keychain-stored credentials must be re-entered.")
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else {
+            return
+        }
+        do {
+            let imported = try SettingsBackupService().importSettings(from: data)
+            settings = imported
+            bannerMessage = t("Settings imported")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
     func parseCodexStatus() {
         var parsed = CodexStatusParser.safeParse(
             settings.codexManual.pastedStatusOutput,

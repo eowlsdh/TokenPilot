@@ -11883,6 +11883,202 @@
         }
       }
     },
+    "Settings backup": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 백업"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings backup"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置备份"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定バックアップ"
+          }
+        }
+      }
+    },
+    "Export Settings": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 내보내기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出设置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を書き出す"
+          }
+        }
+      }
+    },
+    "Import Settings": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 가져오기"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Settings"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入设置"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を読み込む"
+          }
+        }
+      }
+    },
+    "Export settings as JSON to move or back up your configuration. Credentials, chat IDs, webhooks, and API keys are never included; saved secrets stay in the Keychain.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정을 JSON으로 내보내 다른 기기로 옮기거나 백업합니다. 자격 증명, 채팅 ID, 웹훅, API 키는 절대 포함되지 않으며 저장된 비밀은 Keychain에 유지됩니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export settings as JSON to move or back up your configuration. Credentials, chat IDs, webhooks, and API keys are never included; saved secrets stay in the Keychain."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将设置导出为 JSON 以便迁移或备份。绝不包含凭据、聊天 ID、Webhook 和 API 密钥；已保存的密钥保留在钥匙串中。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定をJSONとして書き出して移行またはバックアップします。認証情報、チャットID、Webhook、APIキーは一切含まれず、保存されたシークレットはキーチェーンに残ります。"
+          }
+        }
+      }
+    },
+    "Exports settings without credentials, chat IDs, webhooks, or API keys. Saved secrets stay in the Keychain.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "자격 증명, 채팅 ID, 웹훅, API 키 없이 설정을 내보냅니다. 저장된 비밀은 Keychain에 유지됩니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exports settings without credentials, chat IDs, webhooks, or API keys. Saved secrets stay in the Keychain."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出设置时不包含凭据、聊天 ID、Webhook 或 API 密钥。已保存的密钥保留在钥匙串中。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "認証情報、チャットID、Webhook、APIキーなしで設定を書き出します。保存されたシークレットはキーチェーンに残ります。"
+          }
+        }
+      }
+    },
+    "Imports settings from a TokenPilot backup. Keychain-stored credentials must be re-entered.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot 백업에서 설정을 가져옵니다. Keychain에 저장된 자격 증명은 다시 입력해야 합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imports settings from a TokenPilot backup. Keychain-stored credentials must be re-entered."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 TokenPilot 备份导入设置。钥匙串中存储的凭据需要重新输入。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot のバックアップから設定を読み込みます。キーチェーンに保存された認証情報は再入力が必要です。"
+          }
+        }
+      }
+    },
+    "Settings imported": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정을 가져왔습니다"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings imported"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置已导入"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を読み込みました"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {

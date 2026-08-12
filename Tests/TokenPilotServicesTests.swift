@@ -857,6 +857,51 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(DailyGoalService.progress(tokens: 500, targetTokens: 0).targetTokens, 1)
     }
 
+    // MARK: - SettingsBackupService
+
+    func testSettingsBackupRoundTripsSettings() throws {
+        var settings = AppSettings()
+        settings.challengeTargetTokens = 42_000
+        settings.weekStartDay = .sunday
+        settings.menuBarPrimaryMetric = .todayCost
+        settings.budget.dailyTokens = 20_000
+
+        let service = SettingsBackupService()
+        let data = try service.exportData(settings: settings)
+        let imported = try service.importSettings(from: data)
+
+        XCTAssertEqual(imported.challengeTargetTokens, 42_000)
+        XCTAssertEqual(imported.weekStartDay, .sunday)
+        XCTAssertEqual(imported.menuBarPrimaryMetric, .todayCost)
+        XCTAssertEqual(imported.budget.dailyTokens, 20_000)
+    }
+
+    func testSettingsBackupScrubsTelegramChatID() throws {
+        var settings = AppSettings()
+        settings.telegram.isEnabled = true
+        settings.telegram.chatID = "123456789"
+        settings.telegram.connectionStatus = "Connected"
+
+        let service = SettingsBackupService()
+        let data = try service.exportData(settings: settings)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let telegram = try XCTUnwrap(json["telegram"] as? [String: Any])
+
+        XCTAssertEqual(telegram["chatID"] as? String, "")
+        XCTAssertEqual(telegram["isEnabled"] as? Bool, true)
+
+        let imported = try service.importSettings(from: data)
+        XCTAssertEqual(imported.telegram.chatID, "")
+        XCTAssertEqual(imported.telegram.isEnabled, true)
+    }
+
+    func testSettingsBackupRejectsInvalidPayload() {
+        let service = SettingsBackupService()
+        XCTAssertThrowsError(try service.importSettings(from: Data("not json".utf8))) { error in
+            XCTAssertEqual(error as? SettingsBackupError, .invalidPayload)
+        }
+    }
+
     // MARK: - WeekStartDay
 
     func testWeekStartDayDaysBefore() {
