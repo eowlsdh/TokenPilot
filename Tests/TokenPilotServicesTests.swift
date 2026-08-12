@@ -747,6 +747,20 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--days", "14", "--since", "2026-08-01"]), .failure(.invalidCombination("--days cannot be combined with --since or --until.")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--timezone", "UTC"]), .success(.audit(timeZone: TimeZone(identifier: "UTC"))))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--project", "project-a"]), .success(.audit(project: "project-a")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--json", "--sections", "today,last7Days"]), .success(.audit(includesJSON: true, sections: [.today, .last7Days])))
+        // --sections requires --json and cannot be combined with custom windows.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--sections", "today"]),
+            .failure(.invalidCombination("--sections requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--json", "--sections", "today", "--days", "14"]),
+            .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--json", "--sections", "today,bogus"]),
+            .failure(.invalidPeriod("bogus"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9208,6 +9222,41 @@ final class TokenPilotServicesTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertTrue(projectText.contains("Active days: 1"))
+    }
+
+    func testCLIAuditJSONSectionsEmitsEnvelope() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // Today carries one event; yesterday carries another, so the last7Days
+        // section reports two active days while the today section reports one.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "sections-audit-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 500, outputTokens: 0, source: "sections-audit-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.auditJSON(
+            events: events,
+            sections: [.today, .last7Days],
+            now: now,
+            calendar: calendar
+        )
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Envelope carries an ordered sections array and a totals object last.
+        let sections = try XCTUnwrap(envelope["sections"] as? [[String: Any]])
+        XCTAssertEqual(sections.count, 2)
+        XCTAssertEqual(sections[0]["windowDays"] as? Int, 1)
+        XCTAssertEqual(sections[0]["activeDays"] as? Int, 1)
+        XCTAssertEqual(sections[1]["windowDays"] as? Int, 7)
+        XCTAssertEqual(sections[1]["activeDays"] as? Int, 2)
+        // Totals sum across sections: 1 + 2 active days, 1 + 7 window days.
+        let totals = try XCTUnwrap(envelope["totals"] as? [String: Any])
+        XCTAssertEqual(totals["totalActiveDays"] as? Int, 3)
+        XCTAssertEqual(totals["totalWindowDays"] as? Int, 8)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("sections-audit-test"))
     }
 
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {

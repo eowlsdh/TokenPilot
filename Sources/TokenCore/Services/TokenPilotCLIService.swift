@@ -18,7 +18,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
-    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil)
+    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil)
     case help
 }
@@ -97,6 +97,7 @@ public enum TokenPilotCLIService {
         var days: Int?
         var timeZone: TimeZone?
         var project: String?
+        var sections: [HistoryPeriod]?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -135,6 +136,16 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--sections":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                let names = flags[index].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                let parsed = names.map { HistoryPeriod(rawValue: $0) }
+                guard !parsed.contains(nil) else {
+                    let invalid = names.enumerated().first { parsed[$0.offset] == nil }?.element ?? flags[index]
+                    return .failure(.invalidPeriod(invalid))
+                }
+                sections = parsed.compactMap { $0 }
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -143,7 +154,13 @@ public enum TokenPilotCLIService {
         if days != nil, since != nil || until != nil {
             return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
         }
-        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project))
+        if sections != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        }
+        if sections != nil, !includesJSON {
+            return .failure(.invalidCombination("--sections requires --json output."))
+        }
+        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections))
     }
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -618,7 +635,7 @@ public enum TokenPilotCLIService {
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot audit [--json]
+          TokenPilot audit [--json] [--sections today,last7Days,thisMonth]
           TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>]
           TokenPilot help
 
@@ -660,8 +677,9 @@ public enum TokenPilotCLIService {
         --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs; --since/--until/--days/--timezone/--project
-        scope the audited window and events, and --json emits the same coverage
-        summary as structured JSON for scripting (toktrack audit --json style). blocks lists the
+        scope the audited window and events, --json emits the same coverage
+        summary as structured JSON for scripting (toktrack audit --json style), and --sections (JSON only)
+        emits coverage for several periods in one envelope. blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
         whose reset has not elapsed, --recent keeps only freshly observed blocks, and --timezone
@@ -1944,14 +1962,76 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         project: String? = nil,
+        sections: [HistoryPeriod]? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let sections {
+            // ccusage `--sections` style: each requested period emitted in one envelope
+            // with a totals object last, matching the report/stats/export/summary envelopes.
+            let sectionPayloads = sections.map { section in
+                auditPayload(
+                    events: events,
+                    project: project,
+                    windowDays: windowDays,
+                    period: section,
+                    since: nil,
+                    until: nil,
+                    days: nil,
+                    now: now,
+                    calendar: calendar
+                )
+            }
+            let envelope = AuditSectionsEnvelopeJSON(
+                generatedAt: now,
+                sections: sectionPayloads,
+                totals: AuditTotalsJSON(
+                    totalActiveDays: sectionPayloads.reduce(0) { $0 + $1.activeDays },
+                    totalWindowDays: sectionPayloads.reduce(0) { $0 + $1.windowDays }
+                )
+            )
+            return try encoder.encode(envelope)
+        }
+        let payload = auditPayload(
+            events: events,
+            project: project,
+            windowDays: windowDays,
+            period: nil,
+            since: since,
+            until: until,
+            days: days,
+            now: now,
+            calendar: calendar
+        )
+        return try encoder.encode(payload)
+    }
+
+    private static func auditPayload(
+        events: [UsageEvent],
+        project: String?,
+        windowDays: Int,
+        period: HistoryPeriod?,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        now: Date,
+        calendar: Calendar
+    ) -> AuditCoverageJSON {
         let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
         let coverage: UsageCoverageSummary
         let anchor: Date
         let auditedEvents: [UsageEvent]
-        if since != nil || until != nil || days != nil {
+        if let period {
+            // Section window: the period's own bounds bound the audited window.
+            let window = reportWindow(period: period, since: nil, until: nil, days: nil, now: now, calendar: calendar)
+            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            auditedEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
+            anchor = window.endExclusive.addingTimeInterval(-1)
+            coverage = UsageCoverageService.coverage(events: auditedEvents, windowDays: spanDays, now: anchor, calendar: calendar)
+        } else if since != nil || until != nil || days != nil {
             let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
             let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
             auditedEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
@@ -1980,7 +2060,7 @@ public enum TokenPilotCLIService {
                 tokens: dayEvents.reduce(0) { $0 + $1.totalTokens }
             )
         }
-        let payload = AuditCoverageJSON(
+        return AuditCoverageJSON(
             generatedAt: now,
             windowDays: coverage.windowDays,
             coveragePercent: Int((coverage.coverageRatio * 100).rounded()),
@@ -1991,10 +2071,6 @@ public enum TokenPilotCLIService {
             longestGapDays: coverage.longestGapDays,
             days: days
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
     }
 
     /// Current limit-window blocks over stored capacity evidence (ccusage `blocks` style).
@@ -2443,6 +2519,17 @@ private struct AuditDayRow: Codable {
     var date: String
     var active: Bool
     var tokens: Int
+}
+
+private struct AuditSectionsEnvelopeJSON: Codable {
+    var generatedAt: Date
+    var sections: [AuditCoverageJSON]
+    var totals: AuditTotalsJSON
+}
+
+private struct AuditTotalsJSON: Codable {
+    var totalActiveDays: Int
+    var totalWindowDays: Int
 }
 
 private struct BlocksPayloadJSON: Codable {
