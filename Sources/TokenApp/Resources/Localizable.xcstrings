@@ -11575,6 +11575,34 @@
         }
       }
     },
+    "Top projects": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상위 프로젝트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Top projects"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "热门项目"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上位プロジェクト"
+          }
+        }
+      }
+    },
     "Cache by provider": {
       "localizations": {
         "ko": {

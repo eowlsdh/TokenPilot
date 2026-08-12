@@ -336,6 +336,7 @@ public enum TokenPilotLocalizer {
         "Reached %@ total local requests (est.)": [.en: "Reached %@ total local requests (est.)", .ko: "총 로컬 요청 %@ 달성 (추정)", .ja: "総ローカルリクエスト %@ に到達（推定）", .zhHans: "本地请求总数达到 %@（估计）", .zhHant: "本地請求總數達到 %@（估計）"],
         "Reached a %d-day longest local streak (est.)": [.en: "Reached a %d-day longest local streak (est.)", .ko: "최장 로컬 연속 %d일 달성 (추정)", .ja: "最長ローカル連続 %d 日に到達（推定）", .zhHans: "最长本地连续天数达到 %d 天（估计）", .zhHant: "最長本地連續天數達到 %d 天（估計）"],
         "Top models": [.en: "Top models", .ko: "상위 모델", .ja: "上位モデル", .zhHans: "热门模型", .zhHant: "熱門模型"],
+        "Top projects": [.en: "Top projects", .ko: "상위 프로젝트", .ja: "上位プロジェクト", .zhHans: "热门项目", .zhHant: "熱門項目"],
         "Cache by provider": [.en: "Cache by provider", .ko: "제공자별 캐시", .ja: "プロバイダ別キャッシュ", .zhHans: "按提供方缓存", .zhHant: "按提供方緩存"],
         "Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider.": [.en: "Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider.", .ko: "제공자별로 캐시에서 처리된 컨텍스트 읽기 비율입니다. 로컬 활동이며 캐시 할인율은 제공자별로 다릅니다.", .ja: "プロバイダごとのキャッシュから処理されたコンテキスト読み取りの割合です。ローカル活動であり、キャッシュ割引率はプロバイダによって異なります。", .zhHans: "各提供方由缓存处理的上下文读取占比。本地活动；缓存折扣率因提供方而异。", .zhHant: "各提供方由緩存處理的上下文讀取佔比。本地活動；緩存折扣率因提供方而異。"],
         "Week starts on": [.en: "Week starts on", .ko: "주 시작 요일", .ja: "週の開始曜日", .zhHans: "每周开始日", .zhHant: "每週開始日"],

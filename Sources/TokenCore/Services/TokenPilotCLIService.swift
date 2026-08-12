@@ -266,6 +266,11 @@ public enum TokenPilotCLIService {
             lines.append(localized("Top models", language: language))
             lines.append(contentsOf: modelLines)
         }
+        let projectLines = projectRankingLines(usage.projectBreakdown, language: language, limit: 5)
+        if !projectLines.isEmpty {
+            lines.append(localized("Top projects", language: language))
+            lines.append(contentsOf: projectLines)
+        }
         let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, now: now, calendar: calendar)
         if !dailyLines.isEmpty {
             lines.append(localized("Daily breakdown", language: language))
@@ -340,6 +345,13 @@ public enum TokenPilotCLIService {
         if !modelLines.isEmpty {
             addText("Top models", size: 14, weight: "bold", fill: "#ffffff")
             for line in modelLines {
+                addText(line, size: 12, fill: "#9b9b9b")
+            }
+        }
+        let projectLines = projectRankingLines(usage.projectBreakdown, language: .en, limit: 5)
+        if !projectLines.isEmpty {
+            addText("Top projects", size: 14, weight: "bold", fill: "#ffffff")
+            for line in projectLines {
                 addText(line, size: 12, fill: "#9b9b9b")
             }
         }
@@ -447,6 +459,27 @@ public enum TokenPilotCLIService {
             .prefix(limit)
         return top.map { share in
             var line = "\(share.model): \(TokenPilotFormatters.compactNumber(share.tokens)) \(localized("tok", language: language)) (\(share.tokenPercent)%)"
+            if let cost = share.estimatedCostUSD, cost > 0 {
+                let amount = NSDecimalNumber(decimal: cost).doubleValue
+                line += " · $\(String(format: "%.2f", amount))"
+            }
+            return line
+        }
+    }
+
+    /// Ranks projects by token share and returns the top `limit` as plain lines.
+    /// Mirrors the History per-project breakdown; cost is appended when recorded.
+    private static func projectRankingLines(
+        _ shares: [ProjectUsageShare],
+        language: TokenPilotLanguage,
+        limit: Int = 5
+    ) -> [String] {
+        let top = shares
+            .filter { $0.tokens > 0 }
+            .sorted { $0.tokens > $1.tokens }
+            .prefix(limit)
+        return top.map { share in
+            var line = "\(share.label): \(TokenPilotFormatters.compactNumber(share.tokens)) \(localized("tok", language: language)) (\(share.tokenPercent)%)"
             if let cost = share.estimatedCostUSD, cost > 0 {
                 let amount = NSDecimalNumber(decimal: cost).doubleValue
                 line += " · $\(String(format: "%.2f", amount))"

@@ -662,6 +662,31 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(topLine?.contains("$0.12") == true)
     }
 
+    func testCLIReportIncludesTopProjectsRanking() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: nil, timestamp: now, inputTokens: 5_000, outputTokens: 0, estimatedCostUSD: Decimal(0.10), source: "report-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: nil, timestamp: now, inputTokens: 1_000, outputTokens: 0, estimatedCostUSD: Decimal(0.02), source: "report-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let text = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Top projects"))
+        XCTAssertTrue(text.contains("project-a"))
+        XCTAssertTrue(text.contains("project-b"))
+        // Ranked first: project-a has the most tokens and carries its cost.
+        let lines = text.components(separatedBy: "\n")
+        let topLine = lines.first { $0.hasPrefix("project-a:") }
+        XCTAssertNotNil(topLine)
+        XCTAssertTrue(topLine?.contains("$0.10") == true)
+    }
+
     func testCLISummaryTextUsesAggregatesOnly() {
         let now = Date()
         let event = UsageEvent(
