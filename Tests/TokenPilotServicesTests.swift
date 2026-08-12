@@ -682,6 +682,31 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project"]), .failure(.missingValue(forFlag: "--project")))
     }
 
+    func testCLIParseReportSections() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--sections", "today,last7Days,thisMonth"]),
+            .success(.report(period: .last7Days, format: .json, sections: [.today, .last7Days, .thisMonth]))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--sections", "today"]),
+            .success(.report(period: .last7Days, format: .json, sections: [.today]))
+        )
+        // Invalid section name is rejected as an invalid period.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--sections", "today,bogus"]),
+            .failure(.invalidPeriod("bogus"))
+        )
+        // --sections requires --json and cannot be combined with custom windows.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--sections", "today"]),
+            .failure(.invalidCombination("--sections requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--sections", "today", "--days", "14"]),
+            .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        )
+    }
+
     func testCLIParseProjectOnStatsAndExport() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--project", "my-workspace"]), .success(.stats(period: .last7Days, project: "my-workspace")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--project", "my-workspace"]), .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, project: "my-workspace")))
@@ -923,6 +948,46 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(modelRows.count, 1)
         let models = try XCTUnwrap(modelRows.first?["models"] as? [[String: Any]])
         XCTAssertEqual(models.first?["model"] as? String, "opencode-sonnet")
+    }
+
+    func testCLIReportJSONSectionsEmitsEnvelope() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        // Today-only 3K event plus a yesterday 2K event (both inside last7Days/thisMonth).
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "sections-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: yesterday, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "sections-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            sections: [.today, .last7Days, .thisMonth],
+            now: now,
+            calendar: calendar
+        )
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Envelope carries an ordered sections array and a totals object last.
+        let sections = try XCTUnwrap(envelope["sections"] as? [[String: Any]])
+        XCTAssertEqual(sections.count, 3)
+        XCTAssertEqual(sections[0]["period"] as? String, "Today")
+        XCTAssertEqual(sections[0]["totalTokens"] as? Int, 3_000)
+        XCTAssertEqual(sections[1]["period"] as? String, "Last 7 days")
+        XCTAssertEqual(sections[1]["totalTokens"] as? Int, 5_000)
+        XCTAssertEqual(sections[2]["period"] as? String, "This month")
+        XCTAssertEqual(sections[2]["totalTokens"] as? Int, 5_000)
+        // Totals sum across sections: 3K + 5K + 5K tokens, 1 + 2 + 2 requests,
+        // and cost 0.06 + 0.10 + 0.10 = 0.26.
+        let totals = try XCTUnwrap(envelope["totals"] as? [String: Any])
+        XCTAssertEqual(totals["totalTokens"] as? Int, 13_000)
+        XCTAssertEqual(totals["requestCount"] as? Int, 5)
+        let totalCost = try XCTUnwrap(totals["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(totalCost.doubleValue, 0.26, accuracy: 0.001)
+        // No per-event source labels leak into the envelope.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("sections-test"))
     }
 
     func testCLIReportBreakdownAddsPerDayPerModelSection() {

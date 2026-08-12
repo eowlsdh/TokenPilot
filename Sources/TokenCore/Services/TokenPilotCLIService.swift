@@ -17,7 +17,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil)
     case summary
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil)
     case audit(includesJSON: Bool = false)
     case help
 }
@@ -29,6 +29,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidDate(String)
     case invalidDays(String)
     case invalidTimezone(String)
+    case invalidCombination(String)
     case missingValue(forFlag: String)
 
     public var errorDescription: String? {
@@ -45,6 +46,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported day count '\(days)'. Use a positive integer (for example --days 14)."
         case .invalidTimezone(let zone):
             return "Unsupported timezone '\(zone)'. Use an IANA identifier (for example UTC or Asia/Seoul)."
+        case .invalidCombination(let message):
+            return message
         case .missingValue(let flag):
             return "Missing value for '\(flag)'."
         }
@@ -107,6 +110,7 @@ public enum TokenPilotCLIService {
         var timeZone: TimeZone?
         var includesBreakdown = false
         var project: String?
+        var sections: [HistoryPeriod]?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -150,6 +154,16 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--sections":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                let names = flags[index].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                let parsed = names.map { HistoryPeriod(rawValue: $0) }
+                guard !parsed.contains(nil) else {
+                    let invalid = names.enumerated().first { parsed[$0.offset] == nil }?.element ?? flags[index]
+                    return .failure(.invalidPeriod(invalid))
+                }
+                sections = parsed.compactMap { $0 }
             case "--svg":
                 format = .svg
             case "--md":
@@ -165,7 +179,13 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project))
+        if sections != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        }
+        if sections != nil, format != .json {
+            return .failure(.invalidCombination("--sections requires --json output."))
+        }
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -317,7 +337,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost] [--json]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth]
           TokenPilot audit [--json]
           TokenPilot help
 
@@ -330,7 +350,9 @@ public enum TokenPilotCLIService {
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG, --md emits a copy-pasteable Markdown table, and --json emits the same receipt as a
         structured JSON payload for scripting (ccusage --json style). --breakdown adds a per-day, per-model
-        breakdown section (ccusage --breakdown style). --since/--until slice the window to
+        breakdown section (ccusage --breakdown style). --sections (JSON only) emits the requested
+        periods in one envelope with a totals object last (ccusage --sections style).
+        --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
         override --period. --timezone groups dates by an IANA timezone (for example UTC or
         Asia/Seoul) instead of the system timezone. --project restricts the report/export to one
@@ -874,9 +896,73 @@ public enum TokenPilotCLIService {
         includesCost: Bool = true,
         includesBreakdown: Bool = false,
         project: String? = nil,
+        sections: [HistoryPeriod]? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let sections {
+            // ccusage `--sections` style: each requested period emitted in one envelope,
+            // with a totals object last so dashboards fetch all granularities in one call.
+            let sectionPayloads = sections.map { section in
+                reportPayload(
+                    events: events,
+                    enabledProviders: enabledProviders,
+                    period: section,
+                    since: nil,
+                    until: nil,
+                    days: nil,
+                    includesCost: includesCost,
+                    includesBreakdown: includesBreakdown,
+                    project: project,
+                    now: now,
+                    calendar: calendar
+                )
+            }
+            let envelope = ReportSectionsEnvelopeJSON(
+                generatedAt: now,
+                sections: sectionPayloads,
+                totals: ReportTotalsJSON(
+                    totalTokens: sectionPayloads.reduce(0) { $0 + $1.totalTokens },
+                    requestCount: sectionPayloads.reduce(0) { $0 + $1.requestCount },
+                    estimatedCostUSD: includesCost
+                        ? sectionPayloads.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
+                        : nil
+                )
+            )
+            return try encoder.encode(envelope)
+        }
+        let payload = reportPayload(
+            events: events,
+            enabledProviders: enabledProviders,
+            period: period,
+            since: since,
+            until: until,
+            days: days,
+            includesCost: includesCost,
+            includesBreakdown: includesBreakdown,
+            project: project,
+            now: now,
+            calendar: calendar
+        )
+        return try encoder.encode(payload)
+    }
+
+    private static func reportPayload(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        includesCost: Bool,
+        includesBreakdown: Bool,
+        project: String?,
+        now: Date,
+        calendar: Calendar
+    ) -> TokenPilotReportJSON {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
@@ -958,7 +1044,7 @@ public enum TokenPilotCLIService {
             )
         }
 
-        let payload = TokenPilotReportJSON(
+        return TokenPilotReportJSON(
             generatedAt: now,
             period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
             totalTokens: metrics.totalTokens,
@@ -986,10 +1072,6 @@ public enum TokenPilotCLIService {
             dailyModelBreakdown: modelBreakdown,
             providerBreakdown: providerBreakdown
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
     }
 
     /// Plain-text local-history coverage report (toktrack-audit style).
@@ -1396,4 +1478,16 @@ private struct StatsPayloadJSON: Codable {
     var busiestDay: String?
     var busiestHour: Int?
     var mostUsedProvider: String?
+}
+
+private struct ReportSectionsEnvelopeJSON: Codable {
+    var generatedAt: Date
+    var sections: [TokenPilotReportJSON]
+    var totals: ReportTotalsJSON
+}
+
+private struct ReportTotalsJSON: Codable {
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
 }
