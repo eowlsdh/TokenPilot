@@ -90,6 +90,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let weeklyDigestStore = WeeklyDigestStore()
     private let dailyDigestStore = DailyDigestStore()
     private let budgetAlertService = BudgetAlertService()
+    private let milestoneNotificationService = MilestoneNotificationService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
@@ -1009,6 +1010,37 @@ final class TokenPilotViewModel: ObservableObject {
         budgetAlertService.markDelivered(candidates)
     }
 
+    private func checkMilestoneNotifications() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled else {
+            return
+        }
+        let newly = milestoneNotificationService.newlyAchieved(milestones: activityMilestones)
+        guard !newly.isEmpty else { return }
+        for milestone in newly {
+            do {
+                try await localNotificationService.send(
+                    title: t("Milestones"),
+                    body: milestoneBody(milestone)
+                )
+            } catch {}
+        }
+        milestoneNotificationService.markNotified(newly)
+    }
+
+    private func milestoneBody(_ milestone: ActivityMilestone) -> String {
+        switch milestone.dimension {
+        case .lifetimeTokens:
+            return String(format: t("Reached %@ lifetime local tokens (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .activeDays:
+            return String(format: t("Reached %d active local days (est.)"), milestone.threshold)
+        case .totalRequests:
+            return String(format: t("Reached %@ total local requests (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .longestStreak:
+            return String(format: t("Reached a %d-day longest local streak (est.)"), milestone.threshold)
+        }
+    }
+
     private func shouldRunDataRefresh(at now: Date) -> Bool {
         guard !refreshInProgress else { return false }
         guard let lastRefreshFinishedAt else { return true }
@@ -1087,6 +1119,7 @@ final class TokenPilotViewModel: ObservableObject {
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
         await checkBudgetAlerts()
+        await checkMilestoneNotifications()
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {

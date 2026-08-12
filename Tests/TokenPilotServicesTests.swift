@@ -6373,6 +6373,45 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(milestones.isEmpty)
     }
 
+    // MARK: - MilestoneNotificationService
+
+    func testMilestoneNotificationReportsNewlyAchievedOnce() throws {
+        let suite = "milestone-notification-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MilestoneNotificationStore(defaults: defaults)
+        let service = MilestoneNotificationService(store: store)
+
+        let milestones = [
+            ActivityMilestone(dimension: .lifetimeTokens, threshold: 100_000),
+            ActivityMilestone(dimension: .longestStreak, threshold: 7),
+        ]
+
+        let first = service.newlyAchieved(milestones: milestones)
+        XCTAssertEqual(first.count, 2)
+
+        service.markNotified(first)
+
+        let second = service.newlyAchieved(milestones: milestones)
+        XCTAssertTrue(second.isEmpty, "achieved milestones should alert only once")
+
+        // A newly achieved threshold still reports.
+        let extended = milestones + [ActivityMilestone(dimension: .activeDays, threshold: 30)]
+        let third = service.newlyAchieved(milestones: extended)
+        XCTAssertEqual(third.map(\.id), ["activeDays.30"])
+    }
+
+    func testMilestoneNotificationStoreRoundtrip() {
+        let suite = "milestone-notification-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MilestoneNotificationStore(defaults: defaults)
+
+        XCTAssertTrue(store.notifiedIDs().isEmpty)
+        store.markNotified(["lifetimeTokens.100000"])
+        XCTAssertEqual(store.notifiedIDs(), ["lifetimeTokens.100000"])
+    }
+
     func testBudgetGuardrailDisabledWindowReturnsZeroProgress() throws {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let calendar = Calendar(identifier: .gregorian)

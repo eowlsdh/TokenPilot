@@ -11435,6 +11435,118 @@
         }
       }
     },
+    "Reached %@ lifetime local tokens (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누적 로컬 토큰 %@ 달성 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reached %@ lifetime local tokens (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累计本地令牌达到 %@（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "累計ローカルトークン %@ に到達（推定）"
+          }
+        }
+      }
+    },
+    "Reached %d active local days (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "활동 로컬 일수 %d일 달성 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reached %d active local days (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "活跃本地天数达到 %d 天（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アクティブなローカル日 %d 日に到達（推定）"
+          }
+        }
+      }
+    },
+    "Reached %@ total local requests (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "총 로컬 요청 %@ 달성 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reached %@ total local requests (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地请求总数达到 %@（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "総ローカルリクエスト %@ に到達（推定）"
+          }
+        }
+      }
+    },
+    "Reached a %d-day longest local streak (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최장 로컬 연속 %d일 달성 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reached a %d-day longest local streak (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最长本地连续天数达到 %d 天（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "最長ローカル連続 %d 日に到達（推定）"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {
