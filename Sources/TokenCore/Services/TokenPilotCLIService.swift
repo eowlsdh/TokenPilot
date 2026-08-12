@@ -11,6 +11,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
     case svg
     case markdown
     case json
+    case csv
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
@@ -381,6 +382,8 @@ public enum TokenPilotCLIService {
                 format = .markdown
             case "--json":
                 format = .json
+            case "--csv":
+                format = .csv
             case "--no-cost":
                 includesCost = false
             case "--breakdown":
@@ -634,7 +637,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json] [--sections today,last7Days,thisMonth]
           TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>]
           TokenPilot help
@@ -660,8 +663,9 @@ public enum TokenPilotCLIService {
         project carrying its own payload (ccusage --instances style). report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
-        SVG, --md emits a copy-pasteable Markdown table, and --json emits the same receipt as a
-        structured JSON payload for scripting (ccusage --json style). --breakdown adds a per-day, per-model
+        SVG, --md emits a copy-pasteable Markdown table, --json emits the same receipt as a
+        structured JSON payload for scripting (ccusage --json style), and --csv emits the same receipt
+        as machine-readable rows for spreadsheets (ccusage --csv style). --breakdown adds a per-day, per-model
         breakdown section (ccusage --breakdown style). --sections (JSON only) emits the requested
         periods in one envelope with a totals object last (ccusage --sections style).
         --instances (JSON only) groups the payload by workspace label with each project carrying
@@ -1399,6 +1403,67 @@ public enum TokenPilotCLIService {
         }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// Machine-readable CSV receipt over stored local activity (ccusage `report --csv` style).
+    ///
+    /// Emits one row per active day (date, tokens, requests, cost) followed by a
+    /// totals row, mirroring the export CSV column convention (`cost_usd`).
+    public static func reportCSVText(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .last7Days,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        includesCost: Bool = true,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: scopedEvents.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let metrics = usage.metrics
+        let periodEvents = scopedEvents.filter { event in
+            enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
+        }
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
+
+        var lines: [String] = ["date,tokens,requests,cost_usd"]
+        for day in dayGroups.keys.sorted() {
+            let dayEvents = dayGroups[day] ?? []
+            let tokens = dayEvents.reduce(0) { $0 + $1.totalTokens }
+            let requestCount = dayEvents.reduce(0) { $0 + $1.requestCount }
+            let cost = includesCost ? dayEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +) : 0
+            lines.append(csvRow(date: dayFormatter.string(from: day), tokens: tokens, requests: requestCount, cost: cost))
+        }
+        lines.append(csvRow(date: "total", tokens: metrics.totalTokens, requests: metrics.requestCount, cost: includesCost ? metrics.estimatedCostUSD : 0))
+        return lines.joined(separator: "\n")
+    }
+
+    /// One CSV data row with the shared column convention.
+    private static func csvRow(date: String, tokens: Int, requests: Int, cost: Decimal) -> String {
+        let costString = cost > 0 ? NSDecimalNumber(decimal: cost).stringValue : ""
+        return "\(csvEscape(date)),\(tokens),\(requests),\(costString)"
+    }
+
+    private static func csvEscape(_ value: String) -> String {
+        if value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r") {
+            return "\"\(value.replacingOccurrences(of: "\"", with: "\"\""))\""
+        }
+        return value
     }
 
     /// Shareable SVG receipt over stored local activity (toktrack `report --svg` style).

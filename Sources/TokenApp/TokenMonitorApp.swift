@@ -205,6 +205,20 @@ private enum TokenPilotCLIRunner {
                     writeError("TokenPilot: report failed: \(error.localizedDescription)")
                     return 1
                 }
+            case .csv:
+                print(
+                    TokenPilotCLIService.reportCSVText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period,
+                        since: effectiveSince,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        project: project,
+                        calendar: calendar
+                    )
+                )
             }
             return 0
         case .success(.audit(let includesJSON, let since, let until, let days, let timeZone, let project, let sections)):

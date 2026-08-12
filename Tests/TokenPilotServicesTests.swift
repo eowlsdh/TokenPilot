@@ -826,6 +826,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md"]), .success(.report(period: .today, format: .markdown)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--json"]), .success(.report(period: .last7Days, format: .json)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--json"]), .success(.report(period: .today, format: .json)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--csv"]), .success(.report(period: .last7Days, format: .csv)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--csv"]), .success(.report(period: .today, format: .csv)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--breakdown"]), .success(.report(period: .last7Days, format: .text, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project", "my-workspace"]), .success(.report(period: .last7Days, format: .text, project: "my-workspace")))
@@ -1613,6 +1615,44 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(noCostMD.contains("$"))
         XCTAssertTrue(noCostMD.contains("| Total tokens | 7K |"))
         XCTAssertTrue(noCostMD.contains("| Provider | Tokens | Requests |"))
+    }
+
+    func testCLIReportCSVEmitsDailyRows() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "csv-report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -1, to: now)!, inputTokens: 2_000, outputTokens: 0, requestCount: 1, estimatedCostUSD: Decimal(0.04), source: "csv-report-test", dataSource: .localLog),
+        ]
+        let csv = TokenPilotCLIService.reportCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        // Header uses the export CSV column convention; one row per active day.
+        let lines = csv.split(separator: "\n")
+        XCTAssertEqual(lines.first, "date,tokens,requests,cost_usd")
+        XCTAssertTrue(lines.contains("2026-08-13,3000,2,0.06"))
+        XCTAssertTrue(lines.contains("2026-08-12,2000,1,0.04"))
+        // Totals row sums the window.
+        XCTAssertTrue(lines.contains("total,5000,3,0.1"))
+
+        // --no-cost blanks the cost column while keeping the other columns.
+        let noCost = TokenPilotCLIService.reportCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(noCost.contains("2026-08-13,3000,2,"))
+        XCTAssertTrue(noCost.contains("total,5000,3,"))
+        XCTAssertFalse(noCost.contains("0.06"))
+        XCTAssertFalse(noCost.contains("0.04"))
     }
 
     func testCLIExportNoCostBlanksCostFields() throws {
