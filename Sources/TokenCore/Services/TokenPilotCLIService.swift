@@ -19,7 +19,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
-    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false)
+    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false)
     case help
 }
@@ -101,6 +101,7 @@ public enum TokenPilotCLIService {
         var sections: [HistoryPeriod]?
         var includesCSV = false
         var instances = false
+        var includesMarkdown = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -153,6 +154,8 @@ public enum TokenPilotCLIService {
                 includesCSV = true
             case "--instances":
                 instances = true
+            case "--md":
+                includesMarkdown = true
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -176,7 +179,10 @@ public enum TokenPilotCLIService {
         if includesCSV, includesJSON {
             return .failure(.invalidCombination("--csv cannot be combined with --json."))
         }
-        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections, includesCSV: includesCSV, instances: instances))
+        if includesMarkdown, includesJSON || includesCSV {
+            return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        }
+        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections, includesCSV: includesCSV, instances: instances, includesMarkdown: includesMarkdown))
     }
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -710,7 +716,7 @@ public enum TokenPilotCLIService {
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot audit [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
+          TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot blocks [--json|--csv] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
           TokenPilot help
 
@@ -759,7 +765,8 @@ public enum TokenPilotCLIService {
         spot gaps left by providers that prune their own logs; --since/--until/--days/--timezone/--project
         scope the audited window and events, --json emits the same coverage
         summary as structured JSON for scripting (toktrack audit --json style), --csv emits the same
-        coverage as per-day rows for spreadsheets (toktrack audit --csv style), and --sections (JSON only)
+        coverage as per-day rows for spreadsheets (toktrack audit --csv style), --md emits the same coverage as a Markdown
+        document for notes and PR descriptions (ccusage --markdown style), and --sections (JSON only)
         emits coverage for several periods in one envelope; --instances (JSON only) groups coverage per
         project label (ccusage --instances style). blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
@@ -2418,6 +2425,57 @@ public enum TokenPilotCLIService {
         for row in payload.days {
             lines.append("\(csvEscape(row.date)),\(row.active ? 1 : 0),\(row.tokens)")
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Markdown audit over stored local history (ccusage `--markdown` style).
+    ///
+    /// Emits the same coverage summary as `auditText` — coverage percent, active
+    /// days, stored span, and gap statistics — as a Markdown document for notes
+    /// and PR descriptions.
+    public static func auditMarkdownText(
+        events: [UsageEvent],
+        windowDays: Int = 45,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let coverage: UsageCoverageSummary
+        if since != nil || until != nil || days != nil {
+            let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
+            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let inWindowEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
+            coverage = UsageCoverageService.coverage(events: inWindowEvents, windowDays: spanDays, now: window.endExclusive.addingTimeInterval(-1), calendar: calendar)
+        } else {
+            coverage = UsageCoverageService.coverage(events: scopedEvents, windowDays: windowDays, now: now, calendar: calendar)
+        }
+        let percent = Int((coverage.coverageRatio * 100).rounded())
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+
+        var lines: [String] = []
+        lines.append("## TokenPilot · Audit")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        lines.append("| Coverage | \(percent)% of last \(coverage.windowDays) days |")
+        lines.append("| Active days | \(coverage.activeDays) |")
+        if let oldest = coverage.oldestEventDay, let newest = coverage.newestEventDay {
+            lines.append("| Oldest stored | \(formatter.string(from: oldest)) |")
+            lines.append("| Newest stored | \(formatter.string(from: newest)) |")
+        } else {
+            lines.append("| Stored activity | None |")
+        }
+        lines.append("| Gap runs | \(coverage.gapRunCount) |")
+        lines.append("| Longest gap | \(coverage.longestGapDays) days |")
+        lines.append("")
+        lines.append("_Local activity, not provider quota._")
         return lines.joined(separator: "\n")
     }
 

@@ -793,6 +793,16 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["audit", "--json", "--instances", "--project", "project-a"]),
             .failure(.invalidCombination("--instances cannot be combined with --project."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--md"]), .success(.audit(includesMarkdown: true)))
+        // --md is a distinct output format and cannot be combined with --json or --csv.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--json", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--csv", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9555,6 +9565,37 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(lines.contains("2030-03-12,0,0"))
         // Aggregates only: no per-event source labels leak.
         XCTAssertFalse(csv.contains("csv-audit-test"))
+    }
+
+    func testCLIAuditMarkdownEmitsTable() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // Today and yesterday are active; the other five window days are gaps.
+        let events = [0, -1].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "md-audit-test", dataSource: .localLog)
+        }
+        let markdown = TokenPilotCLIService.auditMarkdownText(
+            events: events,
+            windowDays: 7,
+            now: now,
+            calendar: calendar
+        )
+        // Document opens with a metric table covering the coverage summary.
+        XCTAssertTrue(markdown.hasPrefix("## TokenPilot · Audit"))
+        XCTAssertTrue(markdown.contains("| Metric | Value |"))
+        XCTAssertTrue(markdown.contains("| Coverage | 29% of last 7 days |"))
+        XCTAssertTrue(markdown.contains("| Active days | 2 |"))
+        XCTAssertTrue(markdown.contains("| Oldest stored | 2030-03-16 |"))
+        XCTAssertTrue(markdown.contains("| Newest stored | 2030-03-17 |"))
+        XCTAssertTrue(markdown.contains("| Gap runs | 1 |"))
+        XCTAssertTrue(markdown.contains("| Longest gap | 5 days |"))
+        // Honest-label footer mirrors the text summary.
+        XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(markdown.contains("md-audit-test"))
     }
 
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {
