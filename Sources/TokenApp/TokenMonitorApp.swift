@@ -116,6 +116,28 @@ private enum TokenPilotCLIRunner {
                         calendar: calendar
                     )
                 )
+            case .json:
+                do {
+                    let data = try TokenPilotCLIService.reportJSON(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period,
+                        since: since,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        includesBreakdown: includesBreakdown,
+                        project: project,
+                        calendar: calendar
+                    )
+                    FileHandle.standardOutput.write(data)
+                    if data.last != 0x0A {
+                        FileHandle.standardOutput.write(Data([0x0A]))
+                    }
+                } catch {
+                    writeError("TokenPilot: report failed: \(error.localizedDescription)")
+                    return 1
+                }
             }
             return 0
         case .success(.audit):

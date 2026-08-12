@@ -663,6 +663,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--svg"]), .success(.report(period: .today, format: .svg)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--md"]), .success(.report(period: .last7Days, format: .markdown)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md"]), .success(.report(period: .today, format: .markdown)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--json"]), .success(.report(period: .last7Days, format: .json)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--json"]), .success(.report(period: .today, format: .json)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--breakdown"]), .success(.report(period: .last7Days, format: .text, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project", "my-workspace"]), .success(.report(period: .last7Days, format: .text, project: "my-workspace")))
@@ -834,6 +836,76 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates-only redaction: no per-event source labels or project folders leak.
         XCTAssertFalse(md.contains("md-test"))
         XCTAssertFalse(md.contains("project-a"))
+    }
+
+    func testCLIReportJSONPayloadStructureAndValues() throws {
+        let now = Date()
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "json-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, model: "claude-sonnet", timestamp: yesterday, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "json-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Totals mirror the text receipt.
+        XCTAssertEqual(json["totalTokens"] as? Int, 5_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        XCTAssertEqual(json["period"] as? String, "Last 7 days")
+        // Cost present when includesCost is true; provider share and top models populated.
+        let cost = try XCTUnwrap(json["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(cost.doubleValue, 0.10, accuracy: 0.001)
+        let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(shares.count, 2)
+        let models = try XCTUnwrap(json["topModels"] as? [[String: Any]])
+        XCTAssertEqual(models.first?["model"] as? String, "opencode-sonnet")
+        let daily = try XCTUnwrap(json["dailyBreakdown"] as? [[String: Any]])
+        XCTAssertEqual(daily.count, 2)
+        // No per-event source labels leak into the payload.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("json-test"))
+    }
+
+    func testCLIReportJSONNoCostAndBreakdown() throws {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "json-test", dataSource: .localLog),
+        ]
+        // --no-cost: cost fields are omitted entirely (ccusage --json --no-cost).
+        let noCost = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        let noCostJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: noCost) as? [String: Any])
+        XCTAssertNil(noCostJSON["estimatedCostUSD"])
+        let noCostShare = try XCTUnwrap(noCostJSON["providerShare"] as? [[String: Any]])
+        XCTAssertNil(noCostShare.first?["estimatedCostUSD"])
+        // --breakdown: per-day per-model rows are present.
+        let breakdown = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesBreakdown: true,
+            now: now,
+            calendar: calendar
+        )
+        let breakdownJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: breakdown) as? [String: Any])
+        let modelRows = try XCTUnwrap(breakdownJSON["dailyModelBreakdown"] as? [[String: Any]])
+        XCTAssertEqual(modelRows.count, 1)
+        let models = try XCTUnwrap(modelRows.first?["models"] as? [[String: Any]])
+        XCTAssertEqual(models.first?["model"] as? String, "opencode-sonnet")
     }
 
     func testCLIReportBreakdownAddsPerDayPerModelSection() {

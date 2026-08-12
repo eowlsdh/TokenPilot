@@ -10,6 +10,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
     case text
     case svg
     case markdown
+    case json
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
@@ -137,6 +138,8 @@ public enum TokenPilotCLIService {
                 format = .svg
             case "--md":
                 format = .markdown
+            case "--json":
+                format = .json
             case "--no-cost":
                 includesCost = false
             case "--breakdown":
@@ -295,7 +298,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md] [--no-cost] [--breakdown]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown]
           TokenPilot audit
           TokenPilot help
 
@@ -305,7 +308,8 @@ public enum TokenPilotCLIService {
         active days, daily average, busiest day and hour, and most-used provider. report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
-        SVG and --md emits a copy-pasteable Markdown table. --breakdown adds a per-day, per-model
+        SVG, --md emits a copy-pasteable Markdown table, and --json emits the same receipt as a
+        structured JSON payload for scripting (ccusage --json style). --breakdown adds a per-day, per-model
         breakdown section (ccusage --breakdown style). --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
         override --period. --timezone groups dates by an IANA timezone (for example UTC or
@@ -771,6 +775,117 @@ public enum TokenPilotCLIService {
         return lines.joined(separator: "\n")
     }
 
+    /// Machine-readable JSON report over stored local activity (ccusage `--json` style).
+    ///
+    /// Mirrors the text/SVG/Markdown receipt as a structured payload: period,
+    /// totals, cache hit rate, provider shares, top models, and daily breakdown,
+    /// plus a per-day per-model breakdown when `includesBreakdown` is set. Cost
+    /// fields are omitted when `includesCost` is false, matching `--json --no-cost`.
+    public static func reportJSON(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .last7Days,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        includesCost: Bool = true,
+        includesBreakdown: Bool = false,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> Data {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: scopedEvents.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let metrics = usage.metrics
+        let periodEvents = scopedEvents.filter { event in
+            enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
+        }
+        let cache = CacheEfficiencyService.summary(events: periodEvents, now: now, calendar: calendar)
+
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "MM-dd"
+
+        let dailyGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
+        let dailyBreakdown = dailyGroups.keys.sorted().map { day -> ReportDailyRow in
+            let dayEvents = dailyGroups[day] ?? []
+            let cost = includesCost ? dayEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +) : nil
+            return ReportDailyRow(
+                date: dayFormatter.string(from: day),
+                tokens: dayEvents.reduce(0) { $0 + $1.totalTokens },
+                estimatedCostUSD: cost
+            )
+        }
+
+        let modelBreakdown: [ReportModelRow]?
+        if includesBreakdown {
+            modelBreakdown = dailyGroups.keys.sorted().map { day -> ReportModelRow in
+                let dayEvents = dailyGroups[day] ?? []
+                let byModel = Dictionary(grouping: dayEvents) { event in
+                    event.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+                }
+                let models = byModel.keys.sorted { lhs, rhs in
+                    let lhsTokens = byModel[lhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                    let rhsTokens = byModel[rhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                    if lhsTokens != rhsTokens { return lhsTokens > rhsTokens }
+                    return lhs < rhs
+                }.map { model -> ReportModelEntry in
+                    let modelEvents = byModel[model] ?? []
+                    let cost = includesCost ? modelEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +) : nil
+                    return ReportModelEntry(
+                        model: model,
+                        tokens: modelEvents.reduce(0) { $0 + $1.totalTokens },
+                        estimatedCostUSD: cost
+                    )
+                }
+                return ReportModelRow(date: dayFormatter.string(from: day), models: models)
+            }
+        } else {
+            modelBreakdown = nil
+        }
+
+        let payload = TokenPilotReportJSON(
+            generatedAt: now,
+            period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
+            totalTokens: metrics.totalTokens,
+            requestCount: metrics.requestCount,
+            estimatedCostUSD: includesCost && metrics.estimatedCostUSD > 0 ? metrics.estimatedCostUSD : nil,
+            cacheHitRate: cache.hasCacheActivity ? Int((cache.cacheHitRate * 100).rounded()) : nil,
+            providerShare: usage.providerShare.filter { $0.tokens > 0 }.map { share in
+                ReportProviderRow(
+                    provider: share.provider.displayName,
+                    tokens: share.tokens,
+                    percent: share.percent,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: includesCost ? share.estimatedCostUSD : nil
+                )
+            },
+            topModels: usage.modelBreakdown.filter { $0.tokens > 0 }.sorted { $0.tokens > $1.tokens }.prefix(5).map { share in
+                ReportModelShare(
+                    model: share.model,
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: includesCost ? share.estimatedCostUSD : nil
+                )
+            },
+            dailyBreakdown: dailyBreakdown,
+            dailyModelBreakdown: modelBreakdown
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
+    }
+
     /// Plain-text local-history coverage report (toktrack-audit style).
     ///
     /// Reports how much of the trailing retention window has recorded activity,
@@ -1066,4 +1181,49 @@ public enum TokenPilotCLIService {
     private static func localized(_ key: String, language: TokenPilotLanguage) -> String {
         TokenPilotLocalizer.localized(key, language: language)
     }
+}
+
+private struct TokenPilotReportJSON: Codable {
+    var generatedAt: Date
+    var period: String
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+    var cacheHitRate: Int?
+    var providerShare: [ReportProviderRow]
+    var topModels: [ReportModelShare]
+    var dailyBreakdown: [ReportDailyRow]
+    var dailyModelBreakdown: [ReportModelRow]?
+}
+
+private struct ReportProviderRow: Codable {
+    var provider: String
+    var tokens: Int
+    var percent: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+}
+
+private struct ReportModelShare: Codable {
+    var model: String
+    var tokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+}
+
+private struct ReportDailyRow: Codable {
+    var date: String
+    var tokens: Int
+    var estimatedCostUSD: Decimal?
+}
+
+private struct ReportModelRow: Codable {
+    var date: String
+    var models: [ReportModelEntry]
+}
+
+private struct ReportModelEntry: Codable {
+    var model: String
+    var tokens: Int
+    var estimatedCostUSD: Decimal?
 }
