@@ -102,6 +102,9 @@ struct HistoryScreen: View {
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
+                    if model.requestHistoryTrend.totalRequests > 0 {
+                        HistoryRequestTrendCard(trend: model.requestHistoryTrend, model: model)
+                    }
                     if model.monthlyTrend.contains(where: { $0.tokens > 0 }) {
                         HistoryMonthlyTrendCard(bars: model.monthlyTrend, model: model)
                     }
@@ -631,6 +634,76 @@ private struct HistoryTrendBar: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+struct HistoryRequestTrendCard: View {
+    let trend: RequestHistoryTrend
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var peakCount: Int {
+        max(trend.days.map(\.requestCount).max() ?? 0, 1)
+    }
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Requests trend"), systemImage: "bolt.badge.clock")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(TokenPilotFormatters.compactNumber(trend.totalRequests))
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
+
+                HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
+                    ForEach(trend.days) { bar in
+                        VStack(spacing: 3) {
+                            GeometryReader { geometry in
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                        .fill(bar.requestCount == peakCount && bar.requestCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
+                                        .frame(height: max(geometry.size.height * fillRatio(bar), bar.requestCount > 0 ? 2 : 1))
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+
+                            Text(bar.dayLabel)
+                                .font(TokenPilotDesign.Typography.micro)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: 38)
+
+                Text(summaryText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(model.t("Requests trend")), \(TokenPilotFormatters.compactNumber(trend.totalRequests))")
+    }
+
+    private func fillRatio(_ bar: DailyRequestBar) -> Double {
+        guard bar.requestCount > 0 else { return 0 }
+        return max(Double(bar.requestCount) / Double(peakCount), 0.06)
+    }
+
+    private var summaryText: String {
+        guard let peak = trend.peakDayLabel else { return model.t("Local activity, not provider quota") }
+        return "\(model.t("Peak")): \(peak) · \(model.t("Local activity, not provider quota"))"
     }
 }
 

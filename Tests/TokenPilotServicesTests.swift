@@ -7155,6 +7155,44 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(trend.activeDayCount, 1)
     }
 
+    // MARK: - RequestHistoryService
+
+    func testRequestHistoryAggregatesDailyRequestCounts() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+        let yesterday = try XCTUnwrap(calendar.date(byAdding: .day, value: -1, to: now))
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 1_000, outputTokens: 0, requestCount: 3, source: "request-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: yesterday, inputTokens: 1_000, outputTokens: 0, requestCount: 2, source: "request-test", dataSource: .localLog),
+        ]
+
+        let trend = RequestHistoryService().trend(events: events, days: 3, now: now, calendar: calendar)
+        XCTAssertEqual(trend.days.count, 3)
+        XCTAssertEqual(trend.totalRequests, 5)
+        XCTAssertEqual(trend.days.last?.requestCount, 3)
+        XCTAssertEqual(trend.days[trend.days.count - 2].requestCount, 2)
+        XCTAssertEqual(trend.days.first?.requestCount, 0)
+        XCTAssertNotNil(trend.peakDayLabel)
+    }
+
+    func testRequestHistoryEmptyWindow() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+
+        let trend = RequestHistoryService().trend(events: [], days: 7, now: now, calendar: calendar)
+        XCTAssertEqual(trend.days.count, 7)
+        XCTAssertEqual(trend.totalRequests, 0)
+        XCTAssertNil(trend.peakDayLabel)
+    }
+
     // MARK: - FiveHourBlocksService
 
     func testFiveHourBlocksBucketsAlignedToLocalMidnight() throws {

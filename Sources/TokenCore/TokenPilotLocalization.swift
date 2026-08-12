@@ -526,7 +526,8 @@ public enum TokenPilotLocalizer {
         "Top provider": [.en: "Top provider", .ko: "최다 사용 제공자", .ja: "最多使用プロバイダ", .zhHans: "用量最多的提供方", .zhHant: "用量最多的提供方"],
         "Top model": [.en: "Top model", .ko: "최다 사용 모델", .ja: "最多使用モデル", .zhHans: "用量最多的模型", .zhHant: "用量最多的模型"],
         "Weekly budget used": [.en: "Weekly budget used", .ko: "주간 예산 사용", .ja: "週間予算の使用", .zhHans: "每周预算已用", .zhHant: "每週預算已用"],
-        "Daily budget used": [.en: "Daily budget used", .ko: "일일 예산 사용", .ja: "1日の予算の使用", .zhHans: "每日预算已用", .zhHant: "每日預算已用"]
+        "Daily budget used": [.en: "Daily budget used", .ko: "일일 예산 사용", .ja: "1日の予算の使用", .zhHans: "每日预算已用", .zhHant: "每日預算已用"],
+        "Requests trend": [.en: "Requests trend", .ko: "요청 추이", .ja: "リクエストトレンド", .zhHans: "请求趋势", .zhHant: "請求趨勢"]
     ]
 
     private static func localizedFromCatalog(_ key: String, language: TokenPilotLanguage) -> String? {
