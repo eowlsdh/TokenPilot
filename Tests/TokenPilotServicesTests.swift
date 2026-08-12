@@ -876,6 +876,15 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(models.first?["model"] as? String, "opencode-sonnet")
         let daily = try XCTUnwrap(json["dailyBreakdown"] as? [[String: Any]])
         XCTAssertEqual(daily.count, 2)
+        // Per-provider model breakdown (ccusage --by-agent style): each provider lists its
+        // models, and provider totals sum to the combined row (opencode 3K, claude 2K).
+        let providerBreakdown = try XCTUnwrap(json["providerBreakdown"] as? [[String: Any]])
+        XCTAssertEqual(providerBreakdown.count, 2)
+        let opencodeBreakdown = try XCTUnwrap(providerBreakdown.first { $0["provider"] as? String == "opencode" })
+        XCTAssertEqual(opencodeBreakdown["tokens"] as? Int, 3_000)
+        let opencodeModels = try XCTUnwrap(opencodeBreakdown["models"] as? [[String: Any]])
+        XCTAssertEqual(opencodeModels.first?["model"] as? String, "opencode-sonnet")
+        XCTAssertEqual(opencodeModels.first?["tokens"] as? Int, 3_000)
         // No per-event source labels leak into the payload.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("json-test"))

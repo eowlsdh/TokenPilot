@@ -936,6 +936,28 @@ public enum TokenPilotCLIService {
             modelBreakdown = nil
         }
 
+        // Per-provider model breakdown (ccusage `--by-agent` style): each provider lists
+        // its models and per-provider totals sum exactly to the combined row.
+        let modelSharesByProvider = Dictionary(grouping: usage.modelBreakdown.filter { $0.tokens > 0 }) { $0.provider }
+        let providerBreakdown = enabledSet.compactMap { provider -> ReportProviderBreakdownRow? in
+            let shares = modelSharesByProvider[provider] ?? []
+            guard !shares.isEmpty else { return nil }
+            let costs = shares.compactMap(\.estimatedCostUSD)
+            return ReportProviderBreakdownRow(
+                provider: provider.displayName,
+                tokens: shares.reduce(0) { $0 + $1.tokens },
+                requestCount: shares.reduce(0) { $0 + $1.requestCount },
+                estimatedCostUSD: includesCost && !costs.isEmpty ? costs.reduce(Decimal(0), +) : nil,
+                models: shares.sorted { $0.tokens > $1.tokens }.map { share in
+                    ReportModelEntry(
+                        model: share.model,
+                        tokens: share.tokens,
+                        estimatedCostUSD: includesCost ? share.estimatedCostUSD : nil
+                    )
+                }
+            )
+        }
+
         let payload = TokenPilotReportJSON(
             generatedAt: now,
             period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
@@ -961,7 +983,8 @@ public enum TokenPilotCLIService {
                 )
             },
             dailyBreakdown: dailyBreakdown,
-            dailyModelBreakdown: modelBreakdown
+            dailyModelBreakdown: modelBreakdown,
+            providerBreakdown: providerBreakdown
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1308,6 +1331,15 @@ private struct TokenPilotReportJSON: Codable {
     var topModels: [ReportModelShare]
     var dailyBreakdown: [ReportDailyRow]
     var dailyModelBreakdown: [ReportModelRow]?
+    var providerBreakdown: [ReportProviderBreakdownRow]
+}
+
+private struct ReportProviderBreakdownRow: Codable {
+    var provider: String
+    var tokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+    var models: [ReportModelEntry]
 }
 
 private struct ReportProviderRow: Codable {
