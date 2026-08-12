@@ -35,17 +35,34 @@ private enum TokenPilotCLIRunner {
         case .success(.help):
             print(TokenPilotCLIService.helpText)
             return 0
-        case .success(.summary):
+        case .success(.summary(let includesJSON)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
-            print(
-                TokenPilotCLIService.summaryText(
-                    events: events,
-                    enabledProviders: settings.enabledProviders,
-                    language: .en,
-                    period: .today
+            if includesJSON {
+                do {
+                    let data = try TokenPilotCLIService.summaryJSON(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: .today
+                    )
+                    FileHandle.standardOutput.write(data)
+                    if data.last != 0x0A {
+                        FileHandle.standardOutput.write(Data([0x0A]))
+                    }
+                } catch {
+                    writeError("TokenPilot: summary failed: \(error.localizedDescription)")
+                    return 1
+                }
+            } else {
+                print(
+                    TokenPilotCLIService.summaryText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        language: .en,
+                        period: .today
+                    )
                 )
-            )
+            }
             return 0
         case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let project, let includesJSON, let weekStartDay)):
             let settings = TokenPilotSettingsStore().load()

@@ -15,7 +15,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil)
-    case summary
+    case summary(includesJSON: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
@@ -74,7 +74,7 @@ public enum TokenPilotCLIService {
         case "help", "-h", "--help":
             return .success(.help)
         case "summary":
-            return .success(.summary)
+            return parseSummary(Array(arguments.dropFirst()))
         case "stats":
             return parseStats(Array(arguments.dropFirst()))
         case "report":
@@ -104,6 +104,22 @@ public enum TokenPilotCLIService {
             index += 1
         }
         return .success(.audit(includesJSON: includesJSON))
+    }
+
+    private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var includesJSON = false
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--json":
+                includesJSON = true
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.summary(includesJSON: includesJSON))
     }
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -405,7 +421,7 @@ public enum TokenPilotCLIService {
 
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost]
-          TokenPilot summary
+          TokenPilot summary [--json]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
@@ -414,7 +430,8 @@ public enum TokenPilotCLIService {
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
-        prints today's local usage totals. stats prints derived usage statistics for the window:
+        prints today's local usage totals; --json emits the same summary as structured JSON for
+        scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
         the same statistics as structured JSON for scripting (toktrack stats --json style). report prints a
         shareable usage receipt with a
@@ -497,6 +514,65 @@ public enum TokenPilotCLIService {
 
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// Machine-readable compact summary payload (toktrack `stats --json` style).
+    ///
+    /// Emits the same aggregates as `summaryText` — period, totals, cost, provider
+    /// share, and capacity remaining per provider — as structured JSON.
+    public static func summaryJSON(
+        events: [UsageEvent],
+        snapshots: [ProviderSnapshot] = [],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .today,
+        now: Date = Date()
+    ) throws -> Data {
+        let enabledSet = Set(enabledProviders)
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let metrics = usage.metrics
+
+        let menuBarService = MenuBarStatusService()
+        let remainingCapacity = snapshots
+            .filter { enabledSet.contains($0.provider) }
+            .compactMap { snapshot -> SummaryRemainingJSON? in
+                guard let window = menuBarService.displayWindow(for: snapshot),
+                      let remaining = window.remainingPercent else {
+                    return nil
+                }
+                return SummaryRemainingJSON(
+                    provider: localized(snapshot.provider.displayName, language: .en),
+                    window: windowLabel(window.kind, language: .en),
+                    remainingPercent: remaining
+                )
+            }
+
+        let payload = SummaryPayloadJSON(
+            generatedAt: now,
+            period: periodLabel(period, language: .en),
+            totalTokens: metrics.totalTokens,
+            requestCount: metrics.requestCount,
+            estimatedCostUSD: metrics.estimatedCostUSD > 0 ? metrics.estimatedCostUSD : nil,
+            providerShare: usage.providerShare.filter { $0.tokens > 0 }.map { share in
+                SummaryProviderShareJSON(
+                    provider: localized(share.provider.displayName, language: .en),
+                    tokens: share.tokens,
+                    percent: share.percent,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: share.estimatedCostUSD
+                )
+            },
+            remainingCapacity: remainingCapacity
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
     }
 
     /// Derived usage statistics over the window (toktrack-stats style).
@@ -1736,6 +1812,30 @@ private struct StatsPayloadJSON: Codable {
     var busiestDay: String?
     var busiestHour: Int?
     var mostUsedProvider: String?
+}
+
+private struct SummaryPayloadJSON: Codable {
+    var generatedAt: Date
+    var period: String
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+    var providerShare: [SummaryProviderShareJSON]
+    var remainingCapacity: [SummaryRemainingJSON]
+}
+
+private struct SummaryProviderShareJSON: Codable {
+    var provider: String
+    var tokens: Int
+    var percent: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+}
+
+private struct SummaryRemainingJSON: Codable {
+    var provider: String
+    var window: String
+    var remainingPercent: Int
 }
 
 private struct ReportSectionsEnvelopeJSON: Codable {

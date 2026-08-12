@@ -639,7 +639,9 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIParseSummaryAndHelp() {
-        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary()))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--json"]), .success(.summary(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
     }
@@ -1395,6 +1397,40 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Claude"))
         XCTAssertFalse(text.contains("claude-sonnet"))
         XCTAssertFalse(text.contains("statusline"))
+    }
+
+    func testCLISummaryJSONPayloadMatchesSummaryText() throws {
+        let now = Date()
+        let event = UsageEvent(
+            provider: .claude,
+            model: "claude-sonnet",
+            timestamp: now,
+            inputTokens: 100,
+            outputTokens: 50,
+            requestCount: 3,
+            estimatedCostUSD: Decimal(0.12),
+            source: "statusline",
+            dataSource: .officialStatusline
+        )
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: [event],
+            enabledProviders: [.claude],
+            period: .today,
+            now: now
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["period"] as? String, "Today")
+        XCTAssertEqual(json["totalTokens"] as? Int, 150)
+        XCTAssertEqual(json["requestCount"] as? Int, 3)
+        let cost = try XCTUnwrap(json["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(cost.doubleValue, 0.12, accuracy: 0.001)
+        let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(shares.count, 1)
+        XCTAssertEqual(shares.first?["provider"] as? String, "Claude Code")
+        // Aggregates only: no per-event model or source leaks.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("claude-sonnet"))
+        XCTAssertFalse(serialized.contains("statusline"))
     }
 
     func testCLIStatsTextDerivesWindowStatistics() {
