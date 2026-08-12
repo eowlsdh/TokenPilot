@@ -354,9 +354,12 @@ final class TokenPilotViewModel: ObservableObject {
         historySnapshots.isEmpty ? enabledSnapshots : historySnapshots
     }
 
-    /// GitHub-style 12-week contribution grid derived from stored usage events.
+    /// GitHub-style contribution grid derived from stored usage events.
+    /// The trailing window is selectable (4 / 8 / 12 weeks) and defaults to 12 weeks.
+    @Published var heatmapWeeks: Int = 12
+
     var historyHeatmapCells: [UsageHeatCell] {
-        aggregationService.heatmapCells(from: historyUsage.events)
+        aggregationService.heatmapCells(from: historyUsage.events, days: max(heatmapWeeks, 1) * 7)
     }
 
     var dailyGoal: DailyGoalProgress {

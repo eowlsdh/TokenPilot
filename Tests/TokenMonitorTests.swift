@@ -3043,3 +3043,63 @@ private extension String {
         return nil
     }
 }
+
+final class ActivityHeatmapTests: XCTestCase {
+    private func event(provider: Provider, daysAgo: Int, tokens: Int, from now: Date) -> UsageEvent {
+        let calendar = Calendar.current
+        let date = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+        let total = max(tokens, 0)
+        return UsageEvent(
+            provider: provider,
+            timestamp: date,
+            inputTokens: total,
+            outputTokens: 0,
+            source: "heatmap-test",
+            dataSource: .localLog
+        )
+    }
+
+    func testHeatmapCellsCoverTrailingWindowAndBucketIntensity() {
+        let now = Date()
+        let service = AggregationService()
+        let events = [
+            event(provider: .opencode, daysAgo: 0, tokens: 4_000, from: now),
+            event(provider: .opencode, daysAgo: 1, tokens: 2_000, from: now),
+            event(provider: .opencode, daysAgo: 2, tokens: 500, from: now),
+        ]
+
+        let cells = service.heatmapCells(from: events, days: 14, now: now)
+        XCTAssertEqual(cells.count, 14)
+
+        let byDate = Dictionary(uniqueKeysWithValues: cells.map { ($0.dateKey, $0) })
+        let today = byDate[Self.dateKey(from: now)]
+        XCTAssertEqual(today?.tokens, 4_000)
+        XCTAssertEqual(today?.level, 4)
+
+        let dayAgo = byDate[Self.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: now)!)]
+        XCTAssertEqual(dayAgo?.level, 2)
+
+        let twoDaysAgo = byDate[Self.dateKey(from: Calendar.current.date(byAdding: .day, value: -2, to: now)!)]
+        XCTAssertEqual(twoDaysAgo?.level, 1)
+
+        // Days outside the window are absent even when events exist.
+        let cellsShort = service.heatmapCells(from: events, days: 2, now: now)
+        XCTAssertEqual(cellsShort.count, 2)
+        XCTAssertNil(cellsShort.first { $0.dateKey == Self.dateKey(from: now.addingTimeInterval(-3 * 24 * 3600)) })
+    }
+
+    func testHeatmapCellsHaveZeroLevelForQuietDays() {
+        let now = Date()
+        let service = AggregationService()
+        let cells = service.heatmapCells(from: [], days: 7, now: now)
+        XCTAssertEqual(cells.count, 7)
+        XCTAssertTrue(cells.allSatisfy { $0.tokens == 0 && $0.level == 0 })
+    }
+
+    private static func dateKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
+    }
+}

@@ -266,6 +266,8 @@ public enum TokenPilotLocalizer {
         "Safe pace": [.en: "Safe pace", .ko: "안전 페이스", .ja: "安全なペース", .zhHans: "节奏安全", .zhHant: "節奏安全"],
         "Steady pace": [.en: "Steady pace", .ko: "안정 페이스", .ja: "安定したペース", .zhHans: "节奏平稳", .zhHant: "節奏平穩"],
         "Hot pace": [.en: "Hot pace", .ko: "빠른 페이스", .ja: "速いペース", .zhHans: "节奏偏快", .zhHant: "節奏偏快"],
+        "Activity heatmap": [.en: "Activity heatmap", .ko: "활동 히트맵", .ja: "アクティビティヒートマップ", .zhHans: "活动热力图", .zhHant: "活動熱力圖"],
+        "Heatmap range": [.en: "Heatmap range", .ko: "히트맵 범위", .ja: "ヒートマップ範囲", .zhHans: "热力图范围", .zhHant: "熱力圖範圍"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],
         "Choose…": [.en: "Choose…", .ko: "선택…", .ja: "選択…", .zhHans: "选择…", .zhHant: "選擇…"],

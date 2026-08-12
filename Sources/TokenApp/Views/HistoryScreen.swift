@@ -645,6 +645,13 @@ struct HistoryHeatmapCard: View {
         return formatter
     }()
 
+    private static let monthFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM"
+        return formatter
+    }()
+
     private var totalTokens: Int {
         cells.reduce(0) { $0 + $1.tokens }
     }
@@ -653,18 +660,21 @@ struct HistoryHeatmapCard: View {
         GlassCard(padding: 10) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
-                    Label(model.t("Last 12 weeks"), systemImage: "square.grid.3x3.fill")
+                    Label(model.t("Activity heatmap"), systemImage: "square.grid.3x3.fill")
                         .font(TokenPilotDesign.Typography.cardTitle)
                         .foregroundStyle(TokenPilotDesign.textPrimary)
                         .lineLimit(1)
 
                     Spacer(minLength: 0)
 
-                    SemanticChip(
-                        label: TokenPilotFormatters.compactNumber(totalTokens),
-                        systemImage: "number",
-                        role: .neutral
-                    )
+                    Picker(model.t("Heatmap range"), selection: $model.heatmapWeeks) {
+                        Text("4w").tag(4)
+                        Text("8w").tag(8)
+                        Text("12w").tag(12)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 150)
                 }
 
                 if grid.isEmpty {
@@ -672,6 +682,13 @@ struct HistoryHeatmapCard: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 2) {
+                                ForEach(0..<grid.count, id: \.self) { column in
+                                    monthLabel(column: column)
+                                        .frame(width: 9, alignment: .leading)
+                                }
+                            }
+                            .frame(height: 10)
                             ForEach(0..<7, id: \.self) { row in
                                 HStack(spacing: 2) {
                                     ForEach(0..<grid.count, id: \.self) { column in
@@ -691,6 +708,34 @@ struct HistoryHeatmapCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilitySummary)
+    }
+
+    @ViewBuilder
+    private func monthLabel(column: Int) -> some View {
+        let month = monthOfWeek(column: column)
+        if month == nil {
+            Color.clear
+        } else {
+            Text(month ?? "")
+                .font(.system(size: 8, weight: .medium))
+                .foregroundStyle(TokenPilotDesign.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private func monthOfWeek(column: Int) -> String? {
+        guard column < grid.count else { return nil }
+        guard let firstCell = grid[column].first else { return nil }
+        guard let date = Self.dateFormatter.date(from: firstCell.dateKey) else { return nil }
+        let previousMonth: String?
+        if column > 0, let prevCell = grid[column - 1].first,
+           let prevDate = Self.dateFormatter.date(from: prevCell.dateKey) {
+            previousMonth = Self.monthFormatter.string(from: prevDate)
+        } else {
+            previousMonth = nil
+        }
+        let month = Self.monthFormatter.string(from: date)
+        return month == previousMonth ? nil : month
     }
 
     @ViewBuilder
@@ -718,7 +763,7 @@ struct HistoryHeatmapCard: View {
     }
 
     private var accessibilitySummary: String {
-        "\(model.t("Last 12 weeks")), \(TokenPilotFormatters.compactNumber(totalTokens)) tok"
+        "\(model.t("Activity heatmap")), \(model.heatmapWeeks)w, \(TokenPilotFormatters.compactNumber(totalTokens)) tok"
     }
 }
 
