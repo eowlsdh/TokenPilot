@@ -1333,6 +1333,10 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(usage.metrics.requestCount, 3)
         XCTAssertEqual(usage.sevenDayBars.count, 7)
         XCTAssertEqual(usage.providerShare.count, Provider.allCases.count)
+        XCTAssertEqual(usage.providerShare.first(where: { $0.provider == .claude })?.requestCount, 1)
+        XCTAssertEqual(usage.providerShare.first(where: { $0.provider == .claude })?.estimatedCostUSD, 0.01)
+        XCTAssertEqual(usage.providerShare.first(where: { $0.provider == .gemini })?.requestCount, 2)
+        XCTAssertNil(usage.providerShare.first(where: { $0.provider == .gemini })?.estimatedCostUSD)
     }
 
     func testLimitHistoryStoreRecordsPercentSamplesWhenTokenEventsAreUnavailable() {

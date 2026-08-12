@@ -1605,11 +1605,15 @@ public struct ProviderShare: Codable, Equatable, Identifiable, Sendable {
     public var provider: Provider
     public var tokens: Int
     public var percent: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
 
-    public init(provider: Provider, tokens: Int, percent: Int) {
+    public init(provider: Provider, tokens: Int, percent: Int, requestCount: Int = 0, estimatedCostUSD: Decimal? = nil) {
         self.provider = provider
-        self.tokens = tokens
+        self.tokens = max(tokens, 0)
         self.percent = min(max(percent, 0), 100)
+        self.requestCount = max(requestCount, 0)
+        self.estimatedCostUSD = estimatedCostUSD
     }
 }
 

@@ -17,10 +17,24 @@ public final class AggregationService: Sendable {
         let providerTokens = Dictionary(grouping: filteredEvents, by: \.provider).mapValues { events in
             events.reduce(0) { $0 + $1.totalTokens }
         }
+        let providerRequests = Dictionary(grouping: filteredEvents, by: \.provider).mapValues { events in
+            events.reduce(0) { $0 + $1.requestCount }
+        }
+        let providerCosts = Dictionary(grouping: filteredEvents, by: \.provider).compactMapValues { events -> Decimal? in
+            let costs = events.compactMap(\.estimatedCostUSD)
+            guard !costs.isEmpty else { return nil }
+            return costs.reduce(Decimal(0), +)
+        }
         let share = Provider.allCases.map { provider in
             let tokens = providerTokens[provider] ?? 0
             let percent = totalTokens > 0 ? Int((Double(tokens) / Double(totalTokens) * 100).rounded()) : 0
-            return ProviderShare(provider: provider, tokens: tokens, percent: percent)
+            return ProviderShare(
+                provider: provider,
+                tokens: tokens,
+                percent: percent,
+                requestCount: providerRequests[provider] ?? 0,
+                estimatedCostUSD: providerCosts[provider]
+            )
         }
         let mostUsed = share.max(by: { $0.tokens < $1.tokens }).flatMap { $0.tokens > 0 ? $0.provider : nil }
 

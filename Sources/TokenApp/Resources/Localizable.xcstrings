@@ -12079,6 +12079,34 @@
         }
       }
     },
+    "req": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "req"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "次"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "回"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {

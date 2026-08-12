@@ -181,11 +181,7 @@ public enum TokenPilotCLIService {
             lines.append("\(localized("Estimated cost", language: language)): \(String(format: "$%.2f", amount))")
         }
         for share in usage.providerShare where share.tokens > 0 {
-            lines.append(
-                "\(localized(share.provider.displayName, language: language)): " +
-                "\(TokenPilotFormatters.compactNumber(share.tokens)) " +
-                "\(localized("tok", language: language)) (\(share.percent)%)"
-            )
+            lines.append(providerShareLine(share, language: language))
         }
 
         let menuBarService = MenuBarStatusService()
@@ -205,6 +201,21 @@ public enum TokenPilotCLIService {
 
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// One provider share line, appending request count and recorded cost when present.
+    private static func providerShareLine(_ share: ProviderShare, language: TokenPilotLanguage) -> String {
+        var line = "\(localized(share.provider.displayName, language: language)): " +
+            "\(TokenPilotFormatters.compactNumber(share.tokens)) " +
+            "\(localized("tok", language: language)) (\(share.percent)%)"
+        if share.requestCount > 0 {
+            line += " · \(TokenPilotFormatters.compactNumber(share.requestCount)) \(localized("req", language: language))"
+        }
+        if let cost = share.estimatedCostUSD, cost > 0 {
+            let amount = NSDecimalNumber(decimal: cost).doubleValue
+            line += " · $\(String(format: "%.2f", amount))"
+        }
+        return line
     }
 
     /// Shareable plain-text receipt over stored local activity (toktrack-report style).
@@ -248,11 +259,7 @@ public enum TokenPilotCLIService {
             lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
         }
         for share in usage.providerShare where share.tokens > 0 {
-            lines.append(
-                "\(localized(share.provider.displayName, language: language)): " +
-                "\(TokenPilotFormatters.compactNumber(share.tokens)) " +
-                "\(localized("tok", language: language)) (\(share.percent)%)"
-            )
+            lines.append(providerShareLine(share, language: language))
         }
         let modelLines = modelRankingLines(usage.modelBreakdown, language: language, limit: 5)
         if !modelLines.isEmpty {
@@ -324,7 +331,7 @@ public enum TokenPilotCLIService {
         }
         for share in usage.providerShare where share.tokens > 0 {
             addText(
-                "\(share.provider.displayName): \(TokenPilotFormatters.compactNumber(share.tokens)) tok (\(share.percent)%)",
+                providerShareLine(share, language: .en),
                 size: 13,
                 fill: "#a5c8ff"
             )
