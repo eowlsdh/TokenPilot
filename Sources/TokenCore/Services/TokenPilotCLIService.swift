@@ -16,7 +16,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
-    case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false)
+    case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false)
@@ -193,6 +193,7 @@ public enum TokenPilotCLIService {
         var includesJSON = false
         var instances = false
         var includesCSV = false
+        var includesMarkdown = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -263,6 +264,8 @@ public enum TokenPilotCLIService {
                 includesJSON = true
             case "--csv":
                 includesCSV = true
+            case "--md":
+                includesMarkdown = true
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -289,7 +292,10 @@ public enum TokenPilotCLIService {
         if includesCSV, includesJSON {
             return .failure(.invalidCombination("--csv cannot be combined with --json."))
         }
-        return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, includesCost: includesCost, includesJSON: includesJSON, instances: instances, includesCSV: includesCSV))
+        if includesMarkdown, includesJSON || includesCSV {
+            return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        }
+        return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, includesCost: includesCost, includesJSON: includesJSON, instances: instances, includesCSV: includesCSV, includesMarkdown: includesMarkdown))
     }
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -695,7 +701,7 @@ public enum TokenPilotCLIService {
 
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
+          TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
@@ -713,7 +719,8 @@ public enum TokenPilotCLIService {
         --no-cost omits estimated cost, --breakdown adds a per-day, per-model
         breakdown section (ccusage --breakdown style), --json emits the same summary as structured JSON for
         scripting (toktrack stats --json style), --csv emits the same summary as machine-readable
-        rows for spreadsheets (toktrack stats --csv style), --sections (JSON only) emits summaries for
+        rows for spreadsheets (toktrack stats --csv style), --md emits the same summary as a Markdown
+        document for notes and PR descriptions (ccusage --markdown style), --sections (JSON only) emits summaries for
         several periods in one envelope, and --instances (JSON only) groups summaries by workspace
         label with each project carrying its own payload (ccusage --instances style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
@@ -863,6 +870,111 @@ public enum TokenPilotCLIService {
         for share in usage.providerShare where share.tokens > 0 {
             lines.append(csvRow(date: localized(share.provider.displayName, language: .en), tokens: share.tokens, requests: share.requestCount, cost: includesCost ? (share.estimatedCostUSD ?? 0) : 0))
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Markdown compact summary (ccusage `--markdown` style).
+    ///
+    /// Emits the same aggregates as `summaryText` — period, totals, cost,
+    /// provider share, and capacity remaining per provider — as a Markdown
+    /// document for notes and PR descriptions.
+    public static func summaryMarkdownText(
+        events: [UsageEvent],
+        snapshots: [ProviderSnapshot] = [],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .today,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        includesCost: Bool = true,
+        includesBreakdown: Bool = false,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: scopedEvents.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let metrics = usage.metrics
+
+        var lines: [String] = []
+        lines.append("## TokenPilot · Summary")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        lines.append("| Period | \(periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar)) |")
+        lines.append("| Total tokens | \(TokenPilotFormatters.compactNumber(metrics.totalTokens)) |")
+        lines.append("| Requests | \(TokenPilotFormatters.compactNumber(metrics.requestCount)) |")
+        if includesCost && metrics.estimatedCostUSD > 0 {
+            let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
+            lines.append("| Estimated cost | $\(String(format: "%.2f", amount)) |")
+        }
+        let shares = usage.providerShare.filter { $0.tokens > 0 }
+        if !shares.isEmpty {
+            lines.append("")
+            lines.append("**Providers**")
+            lines.append("")
+            if includesCost {
+                lines.append("| Provider | Tokens | Requests | Cost |")
+                lines.append("|---|---|---|---|")
+                for share in shares {
+                    let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
+                    lines.append("| \(localized(share.provider.displayName, language: .en)) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) | \(cost) |")
+                }
+            } else {
+                lines.append("| Provider | Tokens | Requests |")
+                lines.append("|---|---|---|")
+                for share in shares {
+                    lines.append("| \(localized(share.provider.displayName, language: .en)) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) |")
+                }
+            }
+        }
+        if includesBreakdown {
+            let breakdownLines = dailyModelBreakdownLines(
+                events: scopedEvents.filter { enabledSet.contains($0.provider) },
+                period: period,
+                since: since,
+                until: until,
+                days: days,
+                now: now,
+                calendar: calendar,
+                includesCost: includesCost
+            )
+            if !breakdownLines.isEmpty {
+                lines.append("")
+                lines.append("**Breakdown**")
+                lines.append("")
+                lines.append("```")
+                lines.append(contentsOf: breakdownLines)
+                lines.append("```")
+            }
+        }
+        let menuBarService = MenuBarStatusService()
+        let remainingLines = snapshots.compactMap { snapshot -> String? in
+            guard enabledSet.contains(snapshot.provider),
+                  let window = menuBarService.displayWindow(for: snapshot),
+                  let remaining = window.remainingPercent else {
+                return nil
+            }
+            return "| \(localized(snapshot.provider.displayName, language: .en)) | \(remaining)% |"
+        }
+        if !remainingLines.isEmpty {
+            lines.append("")
+            lines.append("**Remaining capacity**")
+            lines.append("")
+            lines.append("| Provider | Remaining |")
+            lines.append("|---|---|")
+            lines.append(contentsOf: remainingLines)
+        }
+        lines.append("")
+        lines.append("_Local activity, not provider quota._")
         return lines.joined(separator: "\n")
     }
 

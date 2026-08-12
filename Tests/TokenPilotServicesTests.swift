@@ -731,6 +731,16 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["summary", "--json", "--csv"]),
             .failure(.invalidCombination("--csv cannot be combined with --json."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--md"]), .success(.summary(includesMarkdown: true)))
+        // --md is a distinct output format and cannot be combined with --json or --csv.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--json", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--csv", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -1910,6 +1920,34 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertTrue(noCost.contains("Today,3000,2,"))
         XCTAssertFalse(noCost.contains("0.06"))
+    }
+
+    func testCLISummaryMarkdownEmitsTable() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "md-summary-test", dataSource: .localLog),
+        ]
+        let markdown = TokenPilotCLIService.summaryMarkdownText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .today,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        // Document opens with a metric table, then provider share rows.
+        XCTAssertTrue(markdown.hasPrefix("## TokenPilot · Summary"))
+        XCTAssertTrue(markdown.contains("| Metric | Value |"))
+        XCTAssertTrue(markdown.contains("| Period | Today |"))
+        XCTAssertTrue(markdown.contains("| Requests | 2 |"))
+        XCTAssertTrue(markdown.contains("$0.06"))
+        XCTAssertTrue(markdown.contains("**Providers**"))
+        XCTAssertTrue(markdown.contains("| opencode |"))
+        // Honest-label footer mirrors the text summary.
+        XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(markdown.contains("md-summary-test"))
     }
 
     func testCLIStatsCSVEmitsSummaryRow() {
