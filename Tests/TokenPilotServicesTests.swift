@@ -8295,6 +8295,17 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(json["longestGapDays"] as? Int, 5)
         XCTAssertEqual(json["oldestEventDay"] as? String, "2030-03-16")
         XCTAssertEqual(json["newestEventDay"] as? String, "2030-03-17")
+        // Per-day breakdown (toktrack audit --json style): one row per window day.
+        let days = try XCTUnwrap(json["days"] as? [[String: Any]])
+        XCTAssertEqual(days.count, 7)
+        let todayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-17" })
+        XCTAssertEqual(todayRow["active"] as? Bool, true)
+        XCTAssertEqual(todayRow["tokens"] as? Int, 500)
+        let yesterdayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-16" })
+        XCTAssertEqual(yesterdayRow["active"] as? Bool, true)
+        let gapRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-12" })
+        XCTAssertEqual(gapRow["active"] as? Bool, false)
+        XCTAssertEqual(gapRow["tokens"] as? Int, 0)
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("coverage-test"))

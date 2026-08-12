@@ -1203,6 +1203,20 @@ public enum TokenPilotCLIService {
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "yyyy-MM-dd"
+        let startOfToday = calendar.startOfDay(for: now)
+        let windowStart = calendar.date(byAdding: .day, value: -(coverage.windowDays - 1), to: startOfToday) ?? startOfToday
+        let activeDays = Set(events.map { calendar.startOfDay(for: $0.timestamp) })
+        // toktrack `audit --json` per-day breakdown: one row per window day with
+        // whether activity was recorded and how many tokens that day carried.
+        let days = (0..<coverage.windowDays).map { offset in
+            let day = calendar.date(byAdding: .day, value: offset, to: windowStart) ?? startOfToday
+            let dayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
+            return AuditDayRow(
+                date: dayFormatter.string(from: day),
+                active: activeDays.contains(day),
+                tokens: dayEvents.reduce(0) { $0 + $1.totalTokens }
+            )
+        }
         let payload = AuditCoverageJSON(
             generatedAt: now,
             windowDays: coverage.windowDays,
@@ -1211,7 +1225,8 @@ public enum TokenPilotCLIService {
             oldestEventDay: coverage.oldestEventDay.map { dayFormatter.string(from: $0) },
             newestEventDay: coverage.newestEventDay.map { dayFormatter.string(from: $0) },
             gapRunCount: coverage.gapRunCount,
-            longestGapDays: coverage.longestGapDays
+            longestGapDays: coverage.longestGapDays,
+            days: days
         )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1566,6 +1581,13 @@ private struct AuditCoverageJSON: Codable {
     var newestEventDay: String?
     var gapRunCount: Int
     var longestGapDays: Int
+    var days: [AuditDayRow]
+}
+
+private struct AuditDayRow: Codable {
+    var date: String
+    var active: Bool
+    var tokens: Int
 }
 
 private struct StatsPayloadJSON: Codable {
