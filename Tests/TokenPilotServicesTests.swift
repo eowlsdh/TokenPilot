@@ -663,6 +663,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--svg"]), .success(.report(period: .today, format: .svg)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--md"]), .success(.report(period: .last7Days, format: .markdown)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md"]), .success(.report(period: .today, format: .markdown)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--breakdown"]), .success(.report(period: .last7Days, format: .text, includesBreakdown: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
@@ -823,6 +825,60 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates-only redaction: no per-event source labels or project folders leak.
         XCTAssertFalse(md.contains("md-test"))
         XCTAssertFalse(md.contains("project-a"))
+    }
+
+    func testCLIReportBreakdownAddsPerDayPerModelSection() {
+        let now = Date()
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "breakdown-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, model: "claude-sonnet", timestamp: yesterday, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "breakdown-test", dataSource: .localLog),
+        ]
+        let text = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            language: .en,
+            period: .last7Days,
+            includesBreakdown: true,
+            now: now,
+            calendar: calendar
+        )
+        // Breakdown section header plus per-day model lines (ccusage --breakdown style).
+        XCTAssertTrue(text.contains("Breakdown"))
+        XCTAssertTrue(text.contains("  opencode-sonnet: 3K tok · $0.06"))
+        XCTAssertTrue(text.contains("  claude-sonnet: 2K tok · $0.04"))
+        // Without the flag the breakdown section is absent.
+        let plain = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            language: .en,
+            period: .last7Days,
+            includesBreakdown: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertFalse(plain.contains("Breakdown"))
+        XCTAssertFalse(plain.contains("  opencode-sonnet: 3K tok"))
+    }
+
+    func testCLIReportBreakdownMarkdownUsesFencedBlock() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "breakdown-md", dataSource: .localLog),
+        ]
+        let md = TokenPilotCLIService.reportMarkdownText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesBreakdown: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(md.contains("**Breakdown**"))
+        XCTAssertTrue(md.contains("```"))
+        XCTAssertTrue(md.contains("  opencode-sonnet: 3K tok · $0.06"))
     }
 
     func testCLIReportSinceUntilFiltersEventsToDateRange() {

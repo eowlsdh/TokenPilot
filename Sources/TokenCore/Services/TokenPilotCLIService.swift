@@ -16,7 +16,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
     case summary
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false)
     case audit
     case help
 }
@@ -88,6 +88,7 @@ public enum TokenPilotCLIService {
         var days: Int?
         var includesCost = true
         var timeZone: TimeZone?
+        var includesBreakdown = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -133,12 +134,14 @@ public enum TokenPilotCLIService {
                 format = .markdown
             case "--no-cost":
                 includesCost = false
+            case "--breakdown":
+                includesBreakdown = true
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone))
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -277,7 +280,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--no-cost]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--svg|--md] [--no-cost]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--svg|--md] [--no-cost] [--breakdown]
           TokenPilot audit
           TokenPilot help
 
@@ -287,7 +290,8 @@ public enum TokenPilotCLIService {
         active days, daily average, busiest day and hour, and most-used provider. report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
-        SVG and --md emits a copy-pasteable Markdown table. --since/--until slice the window to
+        SVG and --md emits a copy-pasteable Markdown table. --breakdown adds a per-day, per-model
+        breakdown section (ccusage --breakdown style). --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
         override --period. --timezone groups dates by an IANA timezone (for example UTC or
         Asia/Seoul) instead of the system timezone. --no-cost omits estimated cost from
@@ -448,6 +452,7 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         includesCost: Bool = true,
+        includesBreakdown: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -497,6 +502,13 @@ public enum TokenPilotCLIService {
             lines.append(localized("Daily breakdown", language: language))
             lines.append(contentsOf: dailyLines)
         }
+        if includesBreakdown {
+            let breakdownLines = dailyModelBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, days: days, now: now, calendar: calendar, includesCost: includesCost)
+            if !breakdownLines.isEmpty {
+                lines.append(localized("Breakdown", language: language))
+                lines.append(contentsOf: breakdownLines)
+            }
+        }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }
@@ -514,6 +526,7 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         includesCost: Bool = true,
+        includesBreakdown: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -597,6 +610,24 @@ public enum TokenPilotCLIService {
                 addText(line, size: 12, fill: "#9b9b9b")
             }
         }
+        if includesBreakdown {
+            let breakdownLines = dailyModelBreakdownLines(
+                events: events.filter { enabledSet.contains($0.provider) },
+                period: period,
+                since: since,
+                until: until,
+                days: days,
+                now: now,
+                calendar: calendar,
+                includesCost: includesCost
+            )
+            if !breakdownLines.isEmpty {
+                addText("Breakdown", size: 14, weight: "bold", fill: "#ffffff")
+                for line in breakdownLines {
+                    addText(line, size: 12, fill: "#9b9b9b")
+                }
+            }
+        }
         addText("Local activity, not provider quota", size: 11, fill: "#666666")
         lines.append("</svg>")
         return lines.joined(separator: "\n")
@@ -615,6 +646,7 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         includesCost: Bool = true,
+        includesBreakdown: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -687,6 +719,26 @@ public enum TokenPilotCLIService {
                 for share in shares {
                     lines.append("| \(share.provider.displayName) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) |")
                 }
+            }
+        }
+        if includesBreakdown {
+            let breakdownLines = dailyModelBreakdownLines(
+                events: events.filter { enabledSet.contains($0.provider) },
+                period: period,
+                since: since,
+                until: until,
+                days: days,
+                now: now,
+                calendar: calendar,
+                includesCost: includesCost
+            )
+            if !breakdownLines.isEmpty {
+                lines.append("")
+                lines.append("**Breakdown**")
+                lines.append("")
+                lines.append("```")
+                lines.append(contentsOf: breakdownLines)
+                lines.append("```")
             }
         }
         lines.append("")
@@ -765,6 +817,65 @@ public enum TokenPilotCLIService {
             }
             return line
         }
+    }
+
+    /// Per-day, per-model token/cost lines for the `--breakdown` report section
+    /// (ccusage `--breakdown` style). Each active day lists its models, heaviest first.
+    private static func dailyModelBreakdownLines(
+        events: [UsageEvent],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        now: Date,
+        calendar: Calendar,
+        includesCost: Bool = true
+    ) -> [String] {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "MM-dd"
+        let inWindow = events.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
+        let byDay = Dictionary(grouping: inWindow) { calendar.startOfDay(for: $0.timestamp) }
+
+        var lines: [String] = []
+        for day in byDay.keys.sorted() {
+            let dayEvents = byDay[day] ?? []
+            let dayTokens = dayEvents.reduce(0) { $0 + $1.totalTokens }
+            var dayLine = "\(dayFormatter.string(from: day)): \(TokenPilotFormatters.compactNumber(dayTokens)) " + localized("tok", language: .en)
+            if includesCost {
+                let dayCost = dayEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
+                if dayCost > 0 {
+                    let amount = NSDecimalNumber(decimal: dayCost).doubleValue
+                    dayLine += " · $\(String(format: "%.2f", amount))"
+                }
+            }
+            lines.append(dayLine)
+            let byModel = Dictionary(grouping: dayEvents) { event in
+                event.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+            }
+            let modelLines = byModel.keys.sorted { lhs, rhs in
+                let lhsTokens = byModel[lhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                let rhsTokens = byModel[rhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                if lhsTokens != rhsTokens { return lhsTokens > rhsTokens }
+                return lhs < rhs
+            }.map { model -> String in
+                let modelEvents = byModel[model] ?? []
+                let tokens = modelEvents.reduce(0) { $0 + $1.totalTokens }
+                var modelLine = "  \(model): \(TokenPilotFormatters.compactNumber(tokens)) \(localized("tok", language: .en))"
+                if includesCost {
+                    let cost = modelEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
+                    if cost > 0 {
+                        let amount = NSDecimalNumber(decimal: cost).doubleValue
+                        modelLine += " · $\(String(format: "%.2f", amount))"
+                    }
+                }
+                return modelLine
+            }
+            lines.append(contentsOf: modelLines)
+        }
+        return lines
     }
 
     /// Ranks models by token share and returns the top `limit` as plain lines.
