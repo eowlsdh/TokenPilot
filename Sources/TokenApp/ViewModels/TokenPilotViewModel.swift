@@ -46,6 +46,7 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var exportFormat: UsageExportFormat = .json
     @Published var capacityAssessments: [CapacityAssessment] = []
     @Published var capacityPresentations: [CapacityPresentation] = []
+    @Published var capacityEvidenceRecords: [CapacityEvidenceRecord] = []
     @Published var capacityRefreshErrors: [CapacityRefreshError] = []
     @Published var capacityRuntimeRecoveryRequired = false
     @Published private var capacityAlertRuntimeControl = CapacityRuntimeControl()
@@ -388,6 +389,10 @@ final class TokenPilotViewModel: ObservableObject {
 
     var cacheEfficiency: CacheEfficiencySummary {
         CacheEfficiencyService.summary(events: overviewUsage.events)
+    }
+
+    var contextHealthAssessments: [ContextHealthAssessment] {
+        ContextHealthService().assess(records: capacityEvidenceRecords)
     }
 
     var fiveHourBlocks: [FiveHourUsageBlock] {
@@ -1069,6 +1074,7 @@ final class TokenPilotViewModel: ObservableObject {
         if !result.capacityObservations.isEmpty {
             _ = await capacityEvidenceStore.record(result.capacityObservations)
         }
+        capacityEvidenceRecords = (await capacityEvidenceStore.loadSnapshot()).records
 
         let runtimeLoad = await capacityRuntimeStore.load()
         capacityRuntimeRecoveryRequired = runtimeLoad.recoveryStatus.recoveryRequired

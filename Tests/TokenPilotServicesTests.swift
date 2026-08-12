@@ -6703,6 +6703,99 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Local activity, not provider quota"))
     }
 
+    // MARK: - ContextHealthService
+
+    func testContextHealthClassifiesLevelsAndDelta() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let series = try CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent)
+        let early = try CapacityObservation(
+            seriesID: series,
+            observedAt: now.addingTimeInterval(-3_600),
+            value: try CapacityValue(usedPercent: 55),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let latest = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            value: try CapacityValue(usedPercent: 72),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let records = try [early, latest].map { try CapacityEvidenceRecord(observation: $0) }
+
+        let assessments = ContextHealthService().assess(records: records, now: now)
+        XCTAssertEqual(assessments.count, 1)
+        let assessment = try XCTUnwrap(assessments.first)
+        XCTAssertEqual(assessment.provider, .kiro)
+        XCTAssertEqual(assessment.usedPercent, 72)
+        XCTAssertEqual(assessment.level, .elevated)
+        XCTAssertEqual(assessment.recentDelta, 17)
+        XCTAssertTrue(assessment.isFillingFast)
+    }
+
+    func testContextHealthMarksFastFillAndBloat() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let series = try CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent)
+        let early = try CapacityObservation(
+            seriesID: series,
+            observedAt: now.addingTimeInterval(-3_600),
+            value: try CapacityValue(usedPercent: 60),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let latest = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            value: try CapacityValue(usedPercent: 85),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let records = try [early, latest].map { try CapacityEvidenceRecord(observation: $0) }
+
+        let assessments = ContextHealthService().assess(records: records, now: now)
+        let assessment = try XCTUnwrap(assessments.first)
+        XCTAssertEqual(assessment.level, .bloat)
+        XCTAssertEqual(assessment.recentDelta, 25)
+        XCTAssertTrue(assessment.isFillingFast)
+    }
+
+    func testContextHealthIgnoresNonContextRecords() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let percentSeries = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300)
+        let observation = try CapacityObservation(
+            seriesID: percentSeries,
+            observedAt: now,
+            value: try CapacityValue(usedPercent: 60),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        let records = [try CapacityEvidenceRecord(observation: observation)]
+
+        let assessments = ContextHealthService().assess(records: records, now: now)
+        XCTAssertTrue(assessments.isEmpty)
+    }
+
     private func statusPayload(indicator: String, description: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "page": ["id": "test"],

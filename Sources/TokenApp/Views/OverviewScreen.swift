@@ -219,6 +219,9 @@ struct OverviewScreen: View {
                 if model.budgetGuardrails.hasAnyBudget {
                     BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
                 }
+                if !model.contextHealthAssessments.isEmpty {
+                    ContextHealthCard(assessments: model.contextHealthAssessments, model: model)
+                }
 
                 if hasNoOverviewData {
                     emptyOverviewState
@@ -308,6 +311,90 @@ struct DailyGoalCard: View {
             "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
             "\(TokenPilotFormatters.compactNumber(goal.targetTokens))"
         )
+    }
+}
+
+struct ContextHealthCard: View {
+    let assessments: [ContextHealthAssessment]
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Context health"), systemImage: "rectangle.compress.vertical")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local signals, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                ForEach(assessments) { assessment in
+                    contextHealthRow(assessment)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.t("Context health"))
+    }
+
+    private func contextHealthRow(_ assessment: ContextHealthAssessment) -> some View {
+        HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+            Text(model.providerDisplayName(assessment.provider))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+
+            if let usedPercent = assessment.usedPercent {
+                Text("\(usedPercent)%")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(levelColor(assessment.level))
+                    .lineLimit(1)
+            }
+
+            Text(levelText(assessment.level))
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(levelColor(assessment.level))
+                .lineLimit(1)
+
+            if assessment.isFillingFast {
+                Text(model.t("Filling fast"))
+                    .font(TokenPilotDesign.Typography.micro)
+                    .foregroundStyle(TokenPilotDesign.status(.warning))
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(model.providerDisplayName(assessment.provider)), \(levelText(assessment.level)), \(usedPercentText(assessment))")
+    }
+
+    private func levelText(_ level: ContextHealthLevel) -> String {
+        switch level {
+        case .healthy: return model.t("Healthy")
+        case .elevated: return model.t("Elevated")
+        case .bloat: return model.t("Bloat")
+        }
+    }
+
+    private func levelColor(_ level: ContextHealthLevel) -> Color {
+        switch level {
+        case .healthy: return TokenPilotDesign.calm
+        case .elevated: return TokenPilotDesign.status(.warning)
+        case .bloat: return TokenPilotDesign.status(.danger)
+        }
+    }
+
+    private func usedPercentText(_ assessment: ContextHealthAssessment) -> String {
+        guard let usedPercent = assessment.usedPercent else { return model.t("No data") }
+        return "\(usedPercent)%"
     }
 }
 
