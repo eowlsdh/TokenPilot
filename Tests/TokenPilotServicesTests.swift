@@ -692,6 +692,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--project", "project-a"]), .success(.summary(project: "project-a")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--no-cost"]), .success(.summary(includesCost: false)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--no-cost", "--json"]), .success(.summary(includesCost: false, includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--breakdown"]), .success(.summary(includesBreakdown: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "today", "--days", "14", "--no-cost", "--breakdown", "--json"]), .success(.summary(period: .today, days: 14, includesBreakdown: true, includesCost: false, includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--json", "--sections", "today,last7Days"]), .success(.summary(sections: [.today, .last7Days], includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--json", "--sections", "today"]), .success(.summary(sections: [.today], includesJSON: true)))
         // --sections requires --json and cannot be combined with custom windows.
@@ -2065,6 +2067,74 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(todayModels.first?["tokens"] as? Int, 6_000)
         // Without --breakdown the field is absent entirely.
         let plain = try TokenPilotCLIService.statsJSON(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesBreakdown: false,
+            now: now,
+            calendar: calendar
+        )
+        let plainJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
+        XCTAssertNil(plainJSON["dailyModelBreakdown"])
+    }
+
+    func testCLISummaryBreakdownEmitsDailyModelRows() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        let todayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: now)!,
+            inputTokens: 6_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.12),
+            source: "summary-breakdown-test",
+            dataSource: .localLog
+        )
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let yesterdayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: yesterday)!,
+            inputTokens: 2_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.04),
+            source: "summary-breakdown-test",
+            dataSource: .localLog
+        )
+        // --breakdown adds a per-day, per-model section (ccusage --breakdown style).
+        let text = TokenPilotCLIService.summaryText(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            includesBreakdown: true,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Daily breakdown"))
+        XCTAssertTrue(text.contains("opencode-sonnet"))
+        XCTAssertFalse(text.contains("summary-breakdown-test"))
+
+        // JSON payload carries the same per-day rows under dailyModelBreakdown.
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesBreakdown: true,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let rows = try XCTUnwrap(json["dailyModelBreakdown"] as? [[String: Any]])
+        XCTAssertEqual(rows.count, 2)
+        let todayRow = try XCTUnwrap(rows.first { $0["date"] as? String == "08-13" })
+        let todayModels = try XCTUnwrap(todayRow["models"] as? [[String: Any]])
+        XCTAssertEqual(todayModels.count, 1)
+        XCTAssertEqual(todayModels.first?["model"] as? String, "opencode-sonnet")
+        XCTAssertEqual(todayModels.first?["tokens"] as? Int, 6_000)
+        // Without --breakdown the field is absent entirely.
+        let plain = try TokenPilotCLIService.summaryJSON(
             events: [todayEvent, yesterdayEvent],
             enabledProviders: [.opencode],
             period: .last7Days,
