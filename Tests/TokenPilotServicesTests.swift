@@ -6060,6 +6060,81 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertNil(service.projection(observation: past, now: now))
     }
+
+    func testPacingZoneClassifiesBurnRatioAgainstSustainableRate() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let service = CapacityPaceService()
+        let seriesID = try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300)
+
+        func observation(usedPercent: Int, resetAt: Date) throws -> CapacityObservation {
+            try CapacityObservation(
+                seriesID: seriesID,
+                observedAt: now,
+                resetAt: resetAt,
+                value: try CapacityValue(usedPercent: usedPercent),
+                authority: .providerReported,
+                stability: .supported,
+                freshnessPolicy: .init(maximumAge: 900),
+                comparability: .comparable,
+                parserRevision: "test",
+                now: now
+            )
+        }
+
+        // 60% used over 3 elapsed hours of a 5h window -> 20%/hour burn, 2h left in window.
+        // Sustainable rate for the remaining 40% over 2h is 20%/hour -> ratio 1.0 -> hot.
+        let hot = try observation(usedPercent: 60, resetAt: now.addingTimeInterval(2 * 3600))
+        let hotAssessment = try XCTUnwrap(service.pacingZone(observation: hot, now: now))
+        XCTAssertEqual(hotAssessment.zone, .hot)
+        XCTAssertEqual(hotAssessment.burnRatio, 1.0, accuracy: 0.001)
+        XCTAssertEqual(hotAssessment.hoursUntilReset, 2, accuracy: 0.001)
+
+        // 20% used over 3 elapsed hours of a 5h window -> 6.67%/hour burn, 2h left.
+        // Sustainable rate for remaining 80% over 2h is 40%/hour -> ratio 0.167 -> safe.
+        let safe = try observation(usedPercent: 20, resetAt: now.addingTimeInterval(2 * 3600))
+        let safeAssessment = try XCTUnwrap(service.pacingZone(observation: safe, now: now))
+        XCTAssertEqual(safeAssessment.zone, .safe)
+        XCTAssertLessThan(safeAssessment.burnRatio, 0.5)
+
+        // 50% used over 3 elapsed hours of a 5h window -> 16.67%/hour burn, 2h left.
+        // Sustainable rate for remaining 50% over 2h is 25%/hour -> ratio 0.667 -> steady.
+        let steady = try observation(usedPercent: 50, resetAt: now.addingTimeInterval(2 * 3600))
+        let steadyAssessment = try XCTUnwrap(service.pacingZone(observation: steady, now: now))
+        XCTAssertEqual(steadyAssessment.zone, .steady)
+        XCTAssertEqual(steadyAssessment.burnRatio, 16.6667 / 25.0, accuracy: 0.001)
+    }
+
+    func testPacingZoneReturnsNilWhenProjectionUnavailable() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let service = CapacityPaceService()
+        // Non-percent observation: no projection -> no zone.
+        let balance = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+            observedAt: now,
+            value: try CapacityValue(money: 5, currency: "USD"),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.pacingZone(observation: balance, now: now))
+        // Reset in the past: hoursUntilReset <= 0 -> nil.
+        let pastReset = try CapacityObservation(
+            seriesID: try CapacitySeriesID(provider: .claude, providerWindowID: "five-hour", kind: .fixedReset, unit: .percent, durationMinutes: 300),
+            observedAt: now,
+            resetAt: now.addingTimeInterval(-3_600),
+            value: try CapacityValue(usedPercent: 30),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: .init(maximumAge: 900),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: now
+        )
+        XCTAssertNil(service.pacingZone(observation: pastReset, now: now))
+    }
 }
 
 private struct FixedCapacityClock: CapacityEvidenceClock {

@@ -218,7 +218,7 @@ struct CurrentCapacitySignalCard: View {
             if !paceText.isEmpty {
                 Text(paceText)
                     .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .foregroundStyle(item.paceZoneColor)
                     .lineLimit(1)
                     .minimumScaleFactor(0.74)
             }

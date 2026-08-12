@@ -327,12 +327,41 @@ struct CapacityDisplayItem: Identifiable {
         CapacityPaceService().projection(observation: assessment.observation)
     }
 
+    var paceZone: CapacityPacingZoneAssessment? {
+        CapacityPaceService().pacingZone(observation: assessment.observation)
+    }
+
     func paceText(language: TokenPilotLanguage) -> String {
         guard let projection = paceProjection else { return "" }
-        return String(
+        let zonePrefix: String
+        if let zone = paceZone?.zone {
+            zonePrefix = localized(zoneLabel(zone), language: language) + " · "
+        } else {
+            zonePrefix = ""
+        }
+        return zonePrefix + String(
             format: localized("At this pace, exhausts in ~%@ (est.)", language: language),
             TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt)
         )
+    }
+
+    var paceZoneColor: Color {
+        switch paceZone?.zone {
+        case .hot:
+            return TokenPilotDesign.status(.danger)
+        case .steady:
+            return TokenPilotDesign.status(.warning)
+        case .safe, nil:
+            return TokenPilotDesign.status(.calm)
+        }
+    }
+
+    private func zoneLabel(_ zone: CapacityPacingZone) -> String {
+        switch zone {
+        case .safe: return "Safe pace"
+        case .steady: return "Steady pace"
+        case .hot: return "Hot pace"
+        }
     }
 
     var progressColor: Color {
@@ -637,7 +666,7 @@ struct UsageSummaryCard: View {
                     compactSummaryLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
                     let paceText = item.paceText(language: language)
                     if !paceText.isEmpty {
-                        compactSummaryLine(paceText, color: TokenPilotDesign.text(.tertiary))
+                        compactSummaryLine(paceText, color: item.paceZoneColor)
                     }
                 }
 
@@ -932,7 +961,7 @@ struct ProviderCapacityRow: View {
             compactProviderLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
             let paceText = item.paceText(language: language)
             if !paceText.isEmpty {
-                compactProviderLine(paceText, color: TokenPilotDesign.text(.tertiary))
+                compactProviderLine(paceText, color: item.paceZoneColor)
             }
             providerMetadataLine(item.metadataSummary(language: language))
         }
