@@ -410,12 +410,22 @@ public enum TokenPilotCLIService {
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "MM-dd"
         let inWindow = events.filter { $0.timestamp >= start && $0.timestamp <= now }
-        let dayTokens = Dictionary(grouping: inWindow) { event in
+        let grouped = Dictionary(grouping: inWindow) { event in
             calendar.startOfDay(for: event.timestamp)
-        }.mapValues { $0.reduce(0) { $0 + $1.totalTokens } }
+        }
+        let dayTokens = grouped.mapValues { $0.reduce(0) { $0 + $1.totalTokens } }
+        let dayCosts = grouped.compactMapValues { events -> Decimal? in
+            let costs = events.compactMap(\.estimatedCostUSD)
+            guard !costs.isEmpty else { return nil }
+            return costs.reduce(Decimal(0), +)
+        }
         return dayTokens.keys.sorted().map { day in
-            let tokens = dayTokens[day] ?? 0
-            return "\(dayFormatter.string(from: day)): \(TokenPilotFormatters.compactNumber(tokens)) " + localized("tok", language: .en)
+            var line = "\(dayFormatter.string(from: day)): \(TokenPilotFormatters.compactNumber(dayTokens[day] ?? 0)) " + localized("tok", language: .en)
+            if let cost = dayCosts[day], cost > 0 {
+                let amount = NSDecimalNumber(decimal: cost).doubleValue
+                line += " · $\(String(format: "%.2f", amount))"
+            }
+            return line
         }
     }
 

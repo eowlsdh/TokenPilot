@@ -589,6 +589,27 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Local activity, not provider quota"))
     }
 
+    func testCLIReportIncludesDailyCostBreakdown() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.25), source: "report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-60), inputTokens: 1_000, outputTokens: 0, estimatedCostUSD: Decimal(0.05), source: "report-test", dataSource: .localLog),
+        ]
+        let text = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        // The daily breakdown line for today aggregates the two costs into $0.30.
+        let dayLine = text.components(separatedBy: "\n").first { $0.contains("· $0.30") }
+        XCTAssertNotNil(dayLine)
+        XCTAssertTrue(dayLine?.contains("tok") == true)
+    }
+
     func testCLIReportSVGContainsAggregatesAndEscapes() {
         let now = Date()
         let calendar = Calendar.current
