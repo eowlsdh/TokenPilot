@@ -207,7 +207,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             }
             let segments = percentRenderCandidates(for: candidate, in: candidates)
                 .prefix(2)
-                .map { percentSegment(for: $0) }
+                .map { percentSegment(for: $0) + resetSuffix(for: $0, now: now) }
             guard !segments.isEmpty else { return "\(candidate.snapshot.provider.shortName) · \(modeLabel)" }
             return segments.joined(separator: " · ")
         case .money:
@@ -1408,6 +1408,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
         let remaining = candidate.remainingPercent ?? 0
         let suffix = candidate.suffix.isEmpty || candidate.suffix == label ? "" : " \(candidate.suffix)"
         return "\(label) \(remaining)%\(suffix)"
+    }
+
+    /// Compact reset countdown appended to a percent segment, e.g. "·2h" or "·45m".
+    /// Mirrors Brim's reset timer at a glance; empty when reset is past or absent.
+    private func resetSuffix(for candidate: Candidate, now: Date) -> String {
+        guard let resetAt = candidate.resetAt, resetAt > now else { return "" }
+        return "·" + TokenPilotFormatters.compactRemainingTime(until: resetAt, now: now)
     }
 
     /// Returns the primary provider's today-token/cost segment when the user

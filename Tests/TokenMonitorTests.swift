@@ -128,7 +128,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18% · 7d 53%")
+        XCTAssertEqual(title, "5h 18%·2h · 7d 53%·5h")
     }
 
     func testMenuBarPrimaryMetricTodayTokensOverridesPercentWhenPresent() {
@@ -201,7 +201,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18% · 7d 53%")
+        XCTAssertEqual(title, "5h 18%·2h · 7d 53%·5h")
     }
 
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
@@ -247,7 +247,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "7d 68% EXP")
+        XCTAssertEqual(title, "7d 68% EXP·5h")
     }
 
     func testMenuBarTitleShowsAntigravityBridgeContextRemainingPercent() {

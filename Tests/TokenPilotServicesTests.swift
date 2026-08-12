@@ -2800,7 +2800,7 @@ final class TokenPilotServicesTests: XCTestCase {
             "codex/primary/rolling/percent/15",
             "codex/secondary/rolling/percent/240"
         ])
-        XCTAssertEqual(title, "15m 40% EXP · 4h 75% EXP")
+        XCTAssertEqual(title, "15m 40% EXP·243d · 4h 75% EXP·243d")
     }
 
     func testCodexAppServerRateLimitsCanDeriveUsageFromUsedAndLimitFields() async throws {
@@ -4998,7 +4998,7 @@ final class TokenPilotServicesTests: XCTestCase {
         ]
 
         let title = service.title(snapshots: snapshots, settings: settings, modeLabel: "LIVE", now: now)
-        XCTAssertEqual(title, "5h 12% · 7d 38%")
+        XCTAssertEqual(title, "5h 12% · 7d 38%·5h")
         XCTAssertFalse(title.contains("12K"))
     }
 
