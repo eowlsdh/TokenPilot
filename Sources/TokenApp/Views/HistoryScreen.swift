@@ -93,6 +93,9 @@ struct HistoryScreen: View {
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
+                    if model.monthlyTrend.contains(where: { $0.tokens > 0 }) {
+                        HistoryMonthlyTrendCard(bars: model.monthlyTrend, model: model)
+                    }
                     HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
                     if !model.historyUsage.modelBreakdown.isEmpty {
                         HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
@@ -619,6 +622,123 @@ private struct HistoryTrendBar: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+struct HistoryMonthlyTrendCard: View {
+    let bars: [MonthlyUsageBar]
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var peakTokens: Int {
+        max(bars.map(\.tokens).max() ?? 0, 1)
+    }
+
+    private var total: Int {
+        bars.reduce(0) { $0 + $1.tokens }
+    }
+
+    private var activeMonths: Int {
+        bars.filter { $0.tokens > 0 }.count
+    }
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Monthly trend"), systemImage: "chart.bar.xaxis")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    SemanticChip(
+                        label: TokenPilotFormatters.compactNumber(total),
+                        systemImage: "number",
+                        role: .neutral
+                    )
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
+                        ForEach(bars) { bar in
+                            HistoryMonthlyBar(bar: bar, peakTokens: peakTokens, isPeak: bar.tokens == peakTokens && bar.tokens > 0, model: model)
+                        }
+                    }
+                }
+                .frame(height: 38)
+
+                Text(summaryText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var summaryText: String {
+        "\(activeMonths)/\(bars.count) \(model.t("active months")) · \(model.t("Local activity, not provider quota"))"
+    }
+
+    private var accessibilitySummary: String {
+        let detail = bars
+            .map { "\($0.monthLabel) \(TokenPilotFormatters.compactNumber($0.tokens))" }
+            .joined(separator: ", ")
+        return "\(model.t("Monthly trend")), \(TokenPilotFormatters.compactNumber(total)), \(detail)"
+    }
+}
+
+private struct HistoryMonthlyBar: View {
+    let bar: MonthlyUsageBar
+    let peakTokens: Int
+    let isPeak: Bool
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var fillRatio: Double {
+        guard bar.tokens > 0 else { return 0 }
+        return max(Double(bar.tokens) / Double(peakTokens), 0.06)
+    }
+
+    var body: some View {
+        VStack(spacing: 3) {
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                        .fill(isPeak ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
+                        .frame(height: max(geometry.size.height * fillRatio, bar.tokens > 0 ? 2 : 1))
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            Text(monthLabelText)
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(bar.monthLabel), \(TokenPilotFormatters.compactNumber(bar.tokens)) \(model.t("tok"))")
+    }
+
+    private var monthLabelText: String {
+        let parts = bar.monthLabel.split(separator: "-")
+        guard parts.count == 2, let year = parts.first, let month = parts.last else { return bar.monthLabel }
+        let shortMonth = monthName(Int(month))
+        return "\(shortMonth) '\(year.suffix(2))"
+    }
+
+    private func monthName(_ month: Int?) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MMM"
+        guard let month, (1...12).contains(month) else { return "" }
+        var components = DateComponents()
+        components.month = month
+        let date = Calendar(identifier: .gregorian).date(from: components) ?? Date()
+        return formatter.string(from: date)
     }
 }
 

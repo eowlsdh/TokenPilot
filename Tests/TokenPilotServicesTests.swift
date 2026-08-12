@@ -6568,6 +6568,44 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertNil(empty.peakHour)
     }
 
+    // MARK: - MonthlyTrendService
+
+    func testMonthlyTrendBucketsByCalendarMonthAndFillsWindow() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 500, outputTokens: 0, source: "monthly-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .month, value: -2, to: now)!, inputTokens: 300, outputTokens: 0, source: "monthly-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .month, value: -13, to: now)!, inputTokens: 900, outputTokens: 0, source: "monthly-test", dataSource: .localLog),
+        ]
+
+        let bars = MonthlyTrendService.monthlyBars(events: events, months: 12, now: now, calendar: calendar)
+        XCTAssertEqual(bars.count, 12)
+        XCTAssertEqual(bars.last?.monthLabel, "2030-03")
+        XCTAssertEqual(bars.last?.tokens, 500)
+        // 2 months back is inside the 12-month window.
+        XCTAssertTrue(bars.contains { $0.monthLabel == "2030-01" && $0.tokens == 300 })
+        // 13 months back is outside the window.
+        XCTAssertFalse(bars.contains { $0.tokens == 900 })
+        // Zero months between stay visible.
+        XCTAssertEqual(bars.count, 12)
+        let total = bars.reduce(0) { $0 + $1.tokens }
+        XCTAssertEqual(total, 800)
+    }
+
+    func testMonthlyTrendEmptyAndSingleMonth() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+
+        let empty = MonthlyTrendService.monthlyBars(events: [], months: 6, now: now, calendar: calendar)
+        XCTAssertEqual(empty.count, 6)
+        XCTAssertTrue(empty.allSatisfy { $0.tokens == 0 })
+
+        let single = MonthlyTrendService.monthlyBars(events: [], months: 1, now: now, calendar: calendar)
+        XCTAssertEqual(single.count, 1)
+        XCTAssertEqual(single.first?.monthLabel, "2030-03")
+    }
+
     private func statusPayload(indicator: String, description: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "page": ["id": "test"],

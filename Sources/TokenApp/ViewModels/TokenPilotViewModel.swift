@@ -399,6 +399,10 @@ final class TokenPilotViewModel: ObservableObject {
         return HourlyActivitySummary(buckets: buckets)
     }
 
+    var monthlyTrend: [MonthlyUsageBar] {
+        MonthlyTrendService.monthlyBars(events: historyUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }
