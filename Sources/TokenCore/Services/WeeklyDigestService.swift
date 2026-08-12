@@ -79,8 +79,24 @@ public enum WeeklyDigestService {
                 "\(localized(topProvider.displayName, language: language)) (\(percent)%)"
             )
         }
+        if let topModel = topModel(in: weekEvents, totalTokens: totalTokens) {
+            lines.append("\(localized("Top model", language: language)): \(topModel)")
+        }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// The model with the most tokens this week, as a display label with its share.
+    private static func topModel(in events: [UsageEvent], totalTokens: Int) -> String? {
+        let byModel = Dictionary(grouping: events.compactMap { event -> (String, Int)? in
+            guard let model = event.model, !model.isEmpty else { return nil }
+            return (model, event.totalTokens)
+        }, by: \.0)
+        let tokensByModel = byModel.mapValues { $0.reduce(0) { $0 + $1.1 } }
+            .filter { $0.value > 0 }
+        guard let top = tokensByModel.max(by: { $0.value < $1.value }) else { return nil }
+        let percent = totalTokens > 0 ? Int((Double(top.value) / Double(totalTokens) * 100).rounded()) : 0
+        return "\(top.key) (\(percent)%)"
     }
 
     private static func localized(_ key: String, language: TokenPilotLanguage) -> String {

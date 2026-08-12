@@ -1107,6 +1107,29 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(text.contains("999"))
     }
 
+    func testWeeklyDigestIncludesTopModel() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let monday = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9))
+        )
+        // model-a has the most tokens this week.
+        let events = [
+            UsageEvent(provider: .opencode, model: "model-a", timestamp: monday, inputTokens: 800, outputTokens: 0, source: "report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "model-b", timestamp: monday, inputTokens: 200, outputTokens: 0, source: "report-test", dataSource: .localLog),
+        ]
+
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: monday,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Top model: model-a (80%)"))
+    }
+
     func testWeeklyDigestTextLocalizedKorean() {
         let text = WeeklyDigestService.digestText(
             events: [],
