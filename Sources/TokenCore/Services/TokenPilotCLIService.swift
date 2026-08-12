@@ -19,7 +19,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil)
-    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false)
+    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil)
     case help
 }
 
@@ -234,6 +234,7 @@ public enum TokenPilotCLIService {
         var includesJSON = false
         var active = false
         var recent = false
+        var timeZone: TimeZone?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -244,12 +245,19 @@ public enum TokenPilotCLIService {
                 active = true
             case "--recent":
                 recent = true
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent))
+        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -570,7 +578,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
-          TokenPilot blocks [--json] [--active] [--recent]
+          TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -610,7 +618,8 @@ public enum TokenPilotCLIService {
         summary as structured JSON for scripting (toktrack audit --json style). blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
-        whose reset has not elapsed and --recent keeps only freshly observed blocks. --json emits them as
+        whose reset has not elapsed, --recent keeps only freshly observed blocks, and --timezone
+        localizes the reset times. --json emits them as
         structured JSON. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.

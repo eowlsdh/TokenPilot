@@ -725,6 +725,9 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--active"]), .success(.blocks(active: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--recent"]), .success(.blocks(recent: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--json", "--active", "--recent"]), .success(.blocks(includesJSON: true, active: true, recent: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone", "UTC"]), .success(.blocks(timeZone: TimeZone(identifier: "UTC"))))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone", "Mars/Olympus"]), .failure(.invalidTimezone("Mars/Olympus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone"]), .failure(.missingValue(forFlag: "--timezone")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
