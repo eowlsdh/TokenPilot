@@ -6260,6 +6260,68 @@ final class TokenPilotServicesTests: XCTestCase {
             "50% usage below an 90% threshold must not alert"
         )
     }
+
+    // MARK: - UsageStreakService
+
+    func testUsageStreakCountsConsecutiveActiveDays() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Activity on today, yesterday, and 2 days ago -> current streak 3.
+        let events = [-2, -1, 0].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "streak-test", dataSource: .localLog)
+        }
+        let streak = UsageStreakService.streak(events: events, now: now, calendar: calendar)
+        XCTAssertEqual(streak.currentDays, 3)
+        XCTAssertEqual(streak.longestDays, 3)
+        XCTAssertEqual(streak.currentStart, calendar.startOfDay(for: day(-2)))
+    }
+
+    func testUsageStreakBreaksOnGapAndKeepsLongest() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Run of 5 (offsets -10...-6), then a gap, then 2 consecutive (offsets -1, 0).
+        var offsets = Array(-10...(-6))
+        offsets.append(contentsOf: [-1, 0])
+        let events = offsets.map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "streak-test", dataSource: .localLog)
+        }
+        let streak = UsageStreakService.streak(events: events, now: now, calendar: calendar)
+        XCTAssertEqual(streak.currentDays, 2)
+        XCTAssertEqual(streak.longestDays, 5)
+        XCTAssertEqual(streak.longestStart, calendar.startOfDay(for: day(-10)))
+    }
+
+    func testUsageStreakTreatsTodayIdleAsContinuingFromYesterday() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Activity on yesterday and 2 days ago, none today -> current streak still 2.
+        let events = [-2, -1].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "streak-test", dataSource: .localLog)
+        }
+        let streak = UsageStreakService.streak(events: events, now: now, calendar: calendar)
+        XCTAssertEqual(streak.currentDays, 2)
+    }
+
+    func testUsageStreakReturnsZeroWithoutActivity() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let streak = UsageStreakService.streak(events: [], now: now, calendar: calendar)
+        XCTAssertEqual(streak.currentDays, 0)
+        XCTAssertEqual(streak.longestDays, 0)
+        XCTAssertFalse(streak.hasActivity)
+    }
 }
 
 private struct FixedCapacityClock: CapacityEvidenceClock {

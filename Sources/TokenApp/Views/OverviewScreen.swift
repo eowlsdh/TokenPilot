@@ -213,6 +213,9 @@ struct OverviewScreen: View {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 UsageSummaryCard(model: model)
                 DailyGoalCard(goal: model.dailyGoal, model: model)
+                if model.usageStreak.hasActivity {
+                    UsageStreakCard(streak: model.usageStreak, model: model)
+                }
                 if model.budgetGuardrails.hasAnyBudget {
                     BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
                 }
@@ -304,6 +307,54 @@ struct DailyGoalCard: View {
             "\(model.t("Daily goal")): " +
             "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
             "\(TokenPilotFormatters.compactNumber(goal.targetTokens))"
+        )
+    }
+}
+
+struct UsageStreakCard: View {
+    let streak: UsageStreak
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Activity streak"), systemImage: "flame.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text("\(TokenPilotFormatters.compactNumber(streak.currentDays)) \(model.t("days"))")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.calm)
+                        .lineLimit(1)
+                }
+
+                Text(streakSummaryText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+
+                Text(model.t("Local activity, not provider quota"))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(model.t("Activity streak")): " +
+            "\(TokenPilotFormatters.compactNumber(streak.currentDays)) \(model.t("days"))"
+        )
+    }
+
+    private var streakSummaryText: String {
+        String(
+            format: model.t("Longest: %@ days"),
+            TokenPilotFormatters.compactNumber(streak.longestDays)
         )
     }
 }

@@ -380,6 +380,10 @@ final class TokenPilotViewModel: ObservableObject {
         )
     }
 
+    var usageStreak: UsageStreak {
+        UsageStreakService.streak(events: overviewUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }
