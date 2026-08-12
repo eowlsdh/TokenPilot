@@ -736,6 +736,30 @@ final class TokenPilotServicesTests: XCTestCase {
         )
     }
 
+    func testCLIParseReportInstances() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances"]),
+            .success(.report(period: .last7Days, format: .json, instances: true))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--json", "--instances", "--breakdown"]),
+            .success(.report(period: .today, format: .json, includesBreakdown: true, instances: true))
+        )
+        // --instances requires --json and conflicts with --project/--sections.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--instances"]),
+            .failure(.invalidCombination("--instances requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances", "--project", "my-workspace"]),
+            .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances", "--sections", "today,last7Days"]),
+            .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
+        )
+    }
+
     func testCLIParseProjectOnStatsAndExport() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--project", "my-workspace"]), .success(.stats(period: .last7Days, project: "my-workspace")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--project", "my-workspace"]), .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, project: "my-workspace")))
@@ -1017,6 +1041,40 @@ final class TokenPilotServicesTests: XCTestCase {
         // No per-event source labels leak into the envelope.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("sections-test"))
+    }
+
+    func testCLIReportJSONInstancesGroupsByProject() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        // project-a carries 3K tokens, project-b 2K; the combined row is 5K.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "instances-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-60), inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "instances-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            instances: true,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Combined row stays the union of both projects.
+        XCTAssertEqual(json["totalTokens"] as? Int, 5_000)
+        // projects carries one full payload per workspace label (ccusage --instances style).
+        let projects = try XCTUnwrap(json["projects"] as? [[String: Any]])
+        XCTAssertEqual(projects.count, 2)
+        let projectA = try XCTUnwrap(projects.first { $0["project"] as? String == "project-a" })
+        let projectAPayload = try XCTUnwrap(projectA["payload"] as? [String: Any])
+        XCTAssertEqual(projectAPayload["totalTokens"] as? Int, 3_000)
+        let projectB = try XCTUnwrap(projects.first { $0["project"] as? String == "project-b" })
+        let projectBPayload = try XCTUnwrap(projectB["payload"] as? [String: Any])
+        XCTAssertEqual(projectBPayload["totalTokens"] as? Int, 2_000)
+        // No per-event source labels leak into the payload.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("instances-test"))
     }
 
     func testCLIReportBreakdownAddsPerDayPerModelSection() {

@@ -17,7 +17,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil)
     case summary
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
     case help
 }
@@ -115,6 +115,7 @@ public enum TokenPilotCLIService {
         var project: String?
         var sections: [HistoryPeriod]?
         var weekStartDay: WeekStartDay?
+        var instances = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -175,6 +176,8 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidWeekStartDay(flags[index]))
                 }
                 weekStartDay = parsed
+            case "--instances":
+                instances = true
             case "--svg":
                 format = .svg
             case "--md":
@@ -199,7 +202,13 @@ public enum TokenPilotCLIService {
         if weekStartDay != nil, since != nil || until != nil || days != nil || sections != nil {
             return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay))
+        if instances, format != .json {
+            return .failure(.invalidCombination("--instances requires --json output."))
+        }
+        if instances, project != nil || sections != nil {
+            return .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
+        }
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, instances: instances))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -373,7 +382,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
           TokenPilot help
 
@@ -388,6 +397,8 @@ public enum TokenPilotCLIService {
         structured JSON payload for scripting (ccusage --json style). --breakdown adds a per-day, per-model
         breakdown section (ccusage --breakdown style). --sections (JSON only) emits the requested
         periods in one envelope with a totals object last (ccusage --sections style).
+        --instances (JSON only) groups the payload by workspace label with each project carrying
+        its own report alongside the combined row (ccusage --instances style).
         --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
         override --period. --start-of-week aligns the window start to the most recent matching
@@ -935,6 +946,7 @@ public enum TokenPilotCLIService {
         includesBreakdown: Bool = false,
         project: String? = nil,
         sections: [HistoryPeriod]? = nil,
+        instances: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
@@ -985,6 +997,32 @@ public enum TokenPilotCLIService {
             now: now,
             calendar: calendar
         )
+        if instances {
+            // ccusage `--instances` style: group usage by project label, with each
+            // project carrying its own full payload alongside the combined row.
+            let labels = Set(events.compactMap(\.projectLabel)).sorted()
+            let groups = labels.map { label in
+                ReportProjectGroup(
+                    project: label,
+                    payload: reportPayload(
+                        events: events,
+                        enabledProviders: enabledProviders,
+                        period: period,
+                        since: since,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        includesBreakdown: includesBreakdown,
+                        project: label,
+                        now: now,
+                        calendar: calendar
+                    )
+                )
+            }
+            var enriched = payload
+            enriched.projects = groups
+            return try encoder.encode(enriched)
+        }
         return try encoder.encode(payload)
     }
 
@@ -1471,6 +1509,12 @@ private struct TokenPilotReportJSON: Codable {
     var dailyBreakdown: [ReportDailyRow]
     var dailyModelBreakdown: [ReportModelRow]?
     var providerBreakdown: [ReportProviderBreakdownRow]
+    var projects: [ReportProjectGroup]?
+}
+
+private struct ReportProjectGroup: Codable {
+    var project: String
+    var payload: TokenPilotReportJSON
 }
 
 private struct ReportProviderBreakdownRow: Codable {
