@@ -383,6 +383,10 @@ final class TokenPilotViewModel: ObservableObject {
         )
     }
 
+    var budgetPaceProjection: BudgetPaceProjection? {
+        BudgetPaceService().projection(progress: budgetGuardrails.daily)
+    }
+
     var usageStreak: UsageStreak {
         UsageStreakService.streak(events: overviewUsage.events)
     }

@@ -320,6 +320,7 @@ public enum TokenPilotLocalizer {
         "Remaining percent": [.en: "Remaining percent", .ko: "남은 백분율", .ja: "残りパーセント", .zhHans: "剩余百分比", .zhHant: "剩餘百分比"],
         "Today cost": [.en: "Today cost", .ko: "오늘 비용", .ja: "今日のコスト", .zhHans: "今日成本", .zhHant: "今日成本"],
         "What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists.": [.en: "What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists.", .ko: "기본 제공자의 메뉴 막대 값 표시 방식을 정합니다. 로컬 값이 없으면 오늘 토큰/비용 대신 남은 백분율로 표시됩니다.", .ja: "プライマリプロバイダのメニューバー値の表示方法を指定します。ローカル値がない場合、今日のトークン/コストは残りパーセントにフォールバックします。", .zhHans: "选择主要提供方菜单栏数值的显示方式。没有本地值时，今日令牌/成本会回退为剩余百分比。", .zhHant: "選擇主要提供方選單欄數值的顯示方式。沒有本地值時，今日令牌/成本會回退為剩餘百分比。"],
+        "At this pace, daily budget exhausts in ~%@ (est.)": [.en: "At this pace, daily budget exhausts in ~%@ (est.)", .ko: "이 속도로 일일 예산이 약 %@ 후 소진 (추정)", .ja: "このペースで1日の予算は約%@後に枯渇（推定）", .zhHans: "按此速度，每日预算约 %@ 后耗尽（估计）", .zhHant: "按此速度，每日預算約 %@ 後耗盡（估計）"],
         "Switch screens with ⌘1, ⌘2, ⌘3": [.en: "Switch screens with ⌘1, ⌘2, ⌘3", .ko: "⌘1, ⌘2, ⌘3으로 화면 전환", .ja: "⌘1、⌘2、⌘3 で画面を切り替え", .zhHans: "使用 ⌘1、⌘2、⌘3 切换屏幕", .zhHant: "使用 ⌘1、⌘2、⌘3 切換螢幕"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],

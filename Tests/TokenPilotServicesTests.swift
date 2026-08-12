@@ -6224,6 +6224,42 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(progress.crossedThreshold)
     }
 
+    // MARK: - BudgetPaceService
+
+    func testBudgetPaceProjectsExhaustionFromElapsedDayShare() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        // 6,000 of a 12,000 budget over 12 elapsed hours -> 500/hour -> remaining 6,000 -> 12h.
+        let progress = BudgetGuardrailProgress(tokens: 6_000, budgetTokens: 12_000, percent: 50, crossedThreshold: false)
+
+        let projection = try XCTUnwrap(BudgetPaceService().projection(progress: progress, now: now, calendar: calendar))
+        XCTAssertEqual(projection.usedTokens, 6_000)
+        XCTAssertEqual(projection.budgetTokens, 12_000)
+        XCTAssertEqual(projection.tokensPerHour, 500, accuracy: 0.001)
+        XCTAssertEqual(projection.hoursUntilExhaustion, 12, accuracy: 0.01)
+        XCTAssertEqual(projection.estimatedExhaustionAt.timeIntervalSince(now), 12 * 3600, accuracy: 10)
+    }
+
+    func testBudgetPaceReturnsNilForDisabledEmptyExhaustedAndTinyElapsed() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let service = BudgetPaceService()
+
+        let disabled = BudgetGuardrailProgress(tokens: 100, budgetTokens: 0, percent: 0, crossedThreshold: false)
+        XCTAssertNil(service.projection(progress: disabled, now: now, calendar: calendar))
+
+        let empty = BudgetGuardrailProgress(tokens: 0, budgetTokens: 10_000, percent: 0, crossedThreshold: false)
+        XCTAssertNil(service.projection(progress: empty, now: now, calendar: calendar))
+
+        let exhausted = BudgetGuardrailProgress(tokens: 10_000, budgetTokens: 10_000, percent: 100, crossedThreshold: true)
+        XCTAssertNil(service.projection(progress: exhausted, now: now, calendar: calendar))
+
+        // Just after midnight: less than 30 minutes elapsed -> no stable rate yet.
+        let early = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 0, minute: 10))!
+        let earlyProgress = BudgetGuardrailProgress(tokens: 500, budgetTokens: 10_000, percent: 5, crossedThreshold: false)
+        XCTAssertNil(service.projection(progress: earlyProgress, now: early, calendar: calendar))
+    }
+
     func testBudgetGuardrailDisabledWindowReturnsZeroProgress() throws {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let calendar = Calendar(identifier: .gregorian)

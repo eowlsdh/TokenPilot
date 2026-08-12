@@ -488,6 +488,18 @@ struct BudgetGuardrailCard: View {
                 }
 
                 budgetLine(budget.daily, title: model.t("Today"), language: model.settings.localization.language)
+                if let projection = model.budgetPaceProjection {
+                    Text(
+                        String(
+                            format: model.t("At this pace, daily budget exhausts in ~%@ (est.)"),
+                            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt)
+                        )
+                    )
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(projectionColor(projection))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                }
                 if budget.weekly.budgetTokens > 0 {
                     budgetLine(budget.weekly, title: model.t("This week"), language: model.settings.localization.language)
                 }
@@ -545,6 +557,16 @@ struct BudgetGuardrailCard: View {
             return TokenPilotDesign.status(.warning)
         }
         return TokenPilotDesign.trust
+    }
+
+    private func projectionColor(_ projection: BudgetPaceProjection) -> Color {
+        if projection.hoursUntilExhaustion < 2 {
+            return TokenPilotDesign.status(.danger)
+        }
+        if projection.hoursUntilExhaustion < 6 {
+            return TokenPilotDesign.status(.warning)
+        }
+        return TokenPilotDesign.text(.secondary)
     }
 }
 

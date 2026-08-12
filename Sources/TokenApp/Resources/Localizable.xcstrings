@@ -11127,6 +11127,34 @@
         }
       }
     },
+    "At this pace, daily budget exhausts in ~%@ (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 속도로 일일 예산이 약 %@ 후 소진 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "At this pace, daily budget exhausts in ~%@ (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按此速度，每日预算约 %@ 后耗尽（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "このペースで1日の予算は約%@後に枯渇（推定）"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {
