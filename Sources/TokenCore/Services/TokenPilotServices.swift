@@ -1180,6 +1180,17 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         }
     }
 
+    /// Persists a fresh `AppSettings()` (factory defaults) and returns it.
+    /// Keychain-stored credentials are left untouched; only preferences reset.
+    public func resetToDefaults() -> AppSettings {
+        let defaults = AppSettings()
+        lock.withLock {
+            guard let data = try? encoder.encode(normalize(defaults)) else { return }
+            self.defaults.set(data, forKey: key)
+        }
+        return defaults
+    }
+
     private func normalize(_ settings: AppSettings) -> AppSettings {
         var copy = settings
         let existingIDs = Set(copy.alertRules.map(\.id))

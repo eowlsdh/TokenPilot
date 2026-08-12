@@ -203,6 +203,10 @@ struct SettingsScreen: View {
                         .buttonStyle(.bordered)
                     Button(model.t("Import Settings")) { model.importSettings() }
                         .buttonStyle(.bordered)
+                    Spacer()
+                    Button(model.t("Reset Settings")) { model.resetSettings() }
+                        .buttonStyle(.bordered)
+                        .tint(TokenPilotDesign.status(.danger))
                 }
             }
         }

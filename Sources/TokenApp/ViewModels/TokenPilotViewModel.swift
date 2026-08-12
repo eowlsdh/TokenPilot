@@ -1809,6 +1809,23 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    /// Resets all preferences to factory defaults. Keychain-stored credentials
+    /// are left untouched; only in-app settings reset.
+    func resetSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let alert = NSAlert()
+        alert.messageText = t("Reset settings?")
+        alert.informativeText = t("All preferences return to factory defaults. Keychain-stored credentials are kept.")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: t("Reset"))
+        alert.addButton(withTitle: t("Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        settings = settingsStore.resetToDefaults()
+        bannerMessage = t("Settings reset")
+    }
+
     func parseCodexStatus() {
         var parsed = CodexStatusParser.safeParse(
             settings.codexManual.pastedStatusOutput,

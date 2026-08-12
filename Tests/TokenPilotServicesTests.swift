@@ -1189,6 +1189,30 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(loaded.weeklyDigestEnabled)
     }
 
+    func testSettingsStoreResetToDefaults() {
+        let suite = "TokenPilotSettingsResetTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = TokenPilotSettingsStore(defaults: defaults)
+
+        var custom = AppSettings()
+        custom.refreshIntervalSeconds = 300
+        custom.weeklyDigestEnabled = true
+        custom.weekStartDay = .sunday
+        custom.challengeTargetTokens = 500_000
+        store.save(custom)
+
+        let reset = store.resetToDefaults()
+        XCTAssertEqual(reset.refreshIntervalSeconds, 60)
+        XCTAssertFalse(reset.weeklyDigestEnabled)
+        XCTAssertEqual(reset.weekStartDay, .monday)
+        XCTAssertEqual(reset.challengeTargetTokens, 10_000)
+
+        let reloaded = store.load()
+        XCTAssertEqual(reloaded.refreshIntervalSeconds, 60)
+        XCTAssertEqual(reloaded.weekStartDay, .monday)
+    }
+
     func testLegacySettingsDecodeKeepsNewDefaults() throws {
         let decoded = try JSONDecoder().decode(
             AppSettings.self,
