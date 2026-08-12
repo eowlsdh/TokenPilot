@@ -1625,9 +1625,22 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(json["busiestDay"] as? String, "08-13")
         XCTAssertEqual(json["busiestHour"] as? Int, 15)
         XCTAssertEqual(json["mostUsedProvider"] as? String, "opencode")
-        // Aggregates only: no per-event model or source leaks.
+        // Per-provider model breakdown (ccusage --by-agent style): each provider lists
+        // its models and per-provider totals sum exactly to the combined row.
+        let providers = try XCTUnwrap(json["providers"] as? [[String: Any]])
+        XCTAssertEqual(providers.count, 1)
+        let opencodeRow = try XCTUnwrap(providers.first)
+        XCTAssertEqual(opencodeRow["provider"] as? String, "opencode")
+        XCTAssertEqual(opencodeRow["tokens"] as? Int, 8_000)
+        XCTAssertEqual(opencodeRow["requestCount"] as? Int, 2)
+        let opencodeRowCost = try XCTUnwrap(opencodeRow["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(opencodeRowCost.doubleValue, 0.16, accuracy: 0.001)
+        let models = try XCTUnwrap(opencodeRow["models"] as? [[String: Any]])
+        XCTAssertEqual(models.count, 1)
+        XCTAssertEqual(models.first?["model"] as? String, "opencode-sonnet")
+        XCTAssertEqual(models.first?["tokens"] as? Int, 8_000)
+        // Source labels still never leak; model names are legitimate breakdown data.
         let serialized = String(data: data, encoding: .utf8) ?? ""
-        XCTAssertFalse(serialized.contains("opencode-sonnet"))
         XCTAssertFalse(serialized.contains("stats-test"))
 
         // --no-cost omits the cost field entirely (toktrack stats --json --no-cost style).
@@ -1641,6 +1654,11 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         let noCostJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: noCost) as? [String: Any])
         XCTAssertNil(noCostJSON["estimatedCostUSD"])
+        // The provider breakdown also hides cost when --no-cost is set.
+        let noCostProviders = try XCTUnwrap(noCostJSON["providers"] as? [[String: Any]])
+        XCTAssertNil(noCostProviders.first?["estimatedCostUSD"])
+        let noCostModels = try XCTUnwrap(noCostProviders.first?["models"] as? [[String: Any]])
+        XCTAssertNil(noCostModels.first?["estimatedCostUSD"])
     }
 
     func testCLIStatsJSONSectionsEmitsEnvelope() throws {
@@ -1692,9 +1710,16 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(totals["requestCount"] as? Int, 3)
         let totalCost = try XCTUnwrap(totals["estimatedCostUSD"] as? NSNumber)
         XCTAssertEqual(totalCost.doubleValue, 0.28, accuracy: 0.001)
-        // Aggregates only: no per-event model or source leaks.
+        // Each section carries its own per-provider model breakdown; the Today section
+        // holds only today's event while the 7-day section holds both events.
+        let todayProviders = try XCTUnwrap(sections[0]["providers"] as? [[String: Any]])
+        XCTAssertEqual(todayProviders.count, 1)
+        XCTAssertEqual(todayProviders.first?["tokens"] as? Int, 6_000)
+        let weekProviders = try XCTUnwrap(sections[1]["providers"] as? [[String: Any]])
+        XCTAssertEqual(weekProviders.count, 1)
+        XCTAssertEqual(weekProviders.first?["tokens"] as? Int, 8_000)
+        // Source labels still never leak; model names are legitimate breakdown data.
         let serialized = String(data: data, encoding: .utf8) ?? ""
-        XCTAssertFalse(serialized.contains("opencode-sonnet"))
         XCTAssertFalse(serialized.contains("stats-sections-test"))
     }
 

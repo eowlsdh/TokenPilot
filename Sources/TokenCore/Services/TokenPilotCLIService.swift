@@ -459,7 +459,8 @@ public enum TokenPilotCLIService {
         today/last7Days/thisMonth and --json emits the same summary as structured JSON for
         scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
-        the same statistics as structured JSON for scripting (toktrack stats --json style), and
+        the same statistics as structured JSON for scripting (toktrack stats --json style) with a
+        per-provider model breakdown (ccusage --by-agent style), and
         --sections (JSON only) emits stats for several periods in one envelope. report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
@@ -777,6 +778,25 @@ public enum TokenPilotCLIService {
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "MM-dd"
+        let modelSharesByProvider = Dictionary(grouping: usage.modelBreakdown.filter { $0.tokens > 0 }) { $0.provider }
+        let providers = enabledSet.compactMap { provider -> StatsProviderBreakdownJSON? in
+            let shares = modelSharesByProvider[provider] ?? []
+            guard !shares.isEmpty else { return nil }
+            let costs = shares.compactMap(\.estimatedCostUSD)
+            return StatsProviderBreakdownJSON(
+                provider: provider.displayName,
+                tokens: shares.reduce(0) { $0 + $1.tokens },
+                requestCount: shares.reduce(0) { $0 + $1.requestCount },
+                estimatedCostUSD: includesCost && !costs.isEmpty ? costs.reduce(Decimal(0), +) : nil,
+                models: shares.sorted { $0.tokens > $1.tokens }.map { share in
+                    StatsModelEntryJSON(
+                        model: share.model,
+                        tokens: share.tokens,
+                        estimatedCostUSD: includesCost ? share.estimatedCostUSD : nil
+                    )
+                }
+            )
+        }
         return StatsPayloadJSON(
             generatedAt: now,
             period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
@@ -787,7 +807,8 @@ public enum TokenPilotCLIService {
             dailyAverage: dailyAverage,
             busiestDay: busiestDay.flatMap { $0.value.isEmpty ? nil : dayFormatter.string(from: $0.key) },
             busiestHour: metrics.busiestHour,
-            mostUsedProvider: metrics.mostUsedProvider?.displayName
+            mostUsedProvider: metrics.mostUsedProvider?.displayName,
+            providers: providers
         )
     }
 
@@ -1938,6 +1959,21 @@ private struct StatsPayloadJSON: Codable {
     var busiestDay: String?
     var busiestHour: Int?
     var mostUsedProvider: String?
+    var providers: [StatsProviderBreakdownJSON]
+}
+
+private struct StatsProviderBreakdownJSON: Codable {
+    var provider: String
+    var tokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+    var models: [StatsModelEntryJSON]
+}
+
+private struct StatsModelEntryJSON: Codable {
+    var model: String
+    var tokens: Int
+    var estimatedCostUSD: Decimal?
 }
 
 private struct StatsSectionsEnvelopeJSON: Codable {
