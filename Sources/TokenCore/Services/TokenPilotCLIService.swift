@@ -9,6 +9,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool)
     case summary
     case report(period: HistoryPeriod)
+    case audit
     case help
 }
 
@@ -37,7 +38,7 @@ public enum TokenPilotCLIService {
     public static func isCLIInvocation(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
         return first == "export" || first == "summary" || first == "report" ||
-            first == "help" || first == "-h" || first == "--help"
+            first == "audit" || first == "help" || first == "-h" || first == "--help"
     }
 
     public static func parse(arguments: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -51,6 +52,8 @@ public enum TokenPilotCLIService {
             return .success(.summary)
         case "report":
             return parseReport(Array(arguments.dropFirst()))
+        case "audit":
+            return .success(.audit)
         case "export":
             return parseExport(Array(arguments.dropFirst()))
         default:
@@ -124,13 +127,15 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--out <path>] [--capacity]
           TokenPilot summary
           TokenPilot report [--period today|last7Days|thisMonth]
+          TokenPilot audit
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints today's local usage totals. report prints a shareable usage receipt with a
-        per-day breakdown and cache efficiency. Exports and reports never include prompts,
-        responses, local paths, chat IDs, webhooks, or provider credentials.
+        per-day breakdown and cache efficiency. audit reports local history coverage so you can
+        spot gaps left by providers that prune their own logs. Exports, reports, and audits never
+        include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
     }
 
@@ -244,6 +249,44 @@ public enum TokenPilotCLIService {
             lines.append(localized("Daily breakdown", language: language))
             lines.append(contentsOf: dailyLines)
         }
+        lines.append(localized("Local activity, not provider quota", language: language))
+        return lines.joined(separator: "\n")
+    }
+
+    /// Plain-text local-history coverage report (toktrack-audit style).
+    ///
+    /// Reports how much of the trailing retention window has recorded activity,
+    /// the oldest/newest stored days, and gap statistics so users can spot data
+    /// holes left by providers that prune their own logs. Aggregates only.
+    public static func auditText(
+        events: [UsageEvent],
+        language: TokenPilotLanguage,
+        windowDays: Int = 45,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let coverage = UsageCoverageService.coverage(events: events, windowDays: windowDays, now: now, calendar: calendar)
+        let percent = Int((coverage.coverageRatio * 100).rounded())
+
+        var lines: [String] = []
+        lines.append("TokenPilot · \(localized("Audit", language: language))")
+        lines.append(
+            "\(localized("Coverage", language: language)): \(percent)% " +
+            "\(localized("of last %d days", language: language).replacingOccurrences(of: "%d", with: "\(coverage.windowDays)"))"
+        )
+        lines.append("\(localized("Active days", language: language)): \(coverage.activeDays)")
+        if let oldest = coverage.oldestEventDay, let newest = coverage.newestEventDay {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = calendar
+            formatter.dateFormat = "yyyy-MM-dd"
+            lines.append("\(localized("Oldest stored", language: language)): \(formatter.string(from: oldest))")
+            lines.append("\(localized("Newest stored", language: language)): \(formatter.string(from: newest))")
+        } else {
+            lines.append(localized("No stored local activity", language: language))
+        }
+        lines.append("\(localized("Gap runs", language: language)): \(coverage.gapRunCount)")
+        lines.append("\(localized("Longest gap", language: language)): \(coverage.longestGapDays) \(localized("days", language: language))")
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }

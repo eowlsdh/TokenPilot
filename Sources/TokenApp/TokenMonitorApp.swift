@@ -59,6 +59,15 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
+        case .success(.audit):
+            let events = UsageHistoryStore().loadEvents()
+            print(
+                TokenPilotCLIService.auditText(
+                    events: events,
+                    language: .en
+                )
+            )
+            return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity)):
             return await runExport(
                 format: format,

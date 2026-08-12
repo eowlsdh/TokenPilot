@@ -6646,6 +6646,63 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(empty.hasAnyActivity)
     }
 
+    // MARK: - UsageCoverageService
+
+    func testUsageCoverageCountsActiveDaysAndGaps() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Activity today, yesterday, and 5 days ago. In a 7-day window
+        // (offsets -6..0) the inactive runs are day -6 and days -4..-2.
+        let events = [0, -1, -5].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog)
+        }
+
+        let coverage = UsageCoverageService.coverage(events: events, windowDays: 7, now: now, calendar: calendar)
+        XCTAssertEqual(coverage.windowDays, 7)
+        XCTAssertEqual(coverage.activeDays, 3)
+        XCTAssertEqual(coverage.gapRunCount, 2)
+        XCTAssertEqual(coverage.longestGapDays, 3)
+        XCTAssertEqual(coverage.oldestEventDay, calendar.startOfDay(for: day(-5)))
+        XCTAssertEqual(coverage.newestEventDay, calendar.startOfDay(for: day(0)))
+    }
+
+    func testUsageCoverageEmptyHistory() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let coverage = UsageCoverageService.coverage(events: [], windowDays: 45, now: now, calendar: calendar)
+        XCTAssertEqual(coverage.activeDays, 0)
+        XCTAssertEqual(coverage.coverageRatio, 0)
+        XCTAssertNil(coverage.oldestEventDay)
+        XCTAssertNil(coverage.newestEventDay)
+        XCTAssertEqual(coverage.gapRunCount, 0)
+        XCTAssertEqual(coverage.longestGapDays, 0)
+    }
+
+    func testCLIAuditTextReportsCoverage() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        let events = [0, -1].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog)
+        }
+        let text = TokenPilotCLIService.auditText(
+            events: events,
+            language: .en,
+            windowDays: 7,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("TokenPilot · Audit"))
+        XCTAssertTrue(text.contains("Active days: 2"))
+        XCTAssertTrue(text.contains("Local activity, not provider quota"))
+    }
+
     private func statusPayload(indicator: String, description: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "page": ["id": "test"],
