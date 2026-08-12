@@ -504,6 +504,25 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(result, .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: true)))
     }
 
+    func testCLIParseExportSectionsFlag() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sections", "today,last7Days"]),
+            .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, sections: [.today, .last7Days]))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sections", "today", "--format", "csv"]),
+            .failure(.invalidCombination("--sections requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sections", "today", "--since", "2026-08-01"]),
+            .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sections", "bogus"]),
+            .failure(.invalidPeriod("bogus"))
+        )
+    }
+
     func testCapacityRecordRoundTripFeedsCLICapacityExportSection() throws {
         let now = Date()
         let series = try CapacitySeriesID(
@@ -789,7 +808,7 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertEqual(
             TokenPilotCLIService.parse(arguments: ["export", "--start-of-week", "monday", "--since", "2026-08-01"]),
-            .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
+            .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
         )
     }
 
@@ -1450,6 +1469,66 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(csv.contains("0.50"))
         // CSV keeps the schema columns but blanks the cost value in the total row.
         XCTAssertTrue(csv.contains("cost_usd"))
+    }
+
+    func testCLIExportSectionsEnvelopeTotals() throws {
+        let now = Date()
+        let calendar = Calendar.current
+        // Events are anchored in the past relative to `now` so the export service's
+        // live re-aggregation (`sanitizedUsageForExport`) keeps them in the window.
+        let todayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: now.addingTimeInterval(-3_600),
+            inputTokens: 6_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.12),
+            source: "sections-export-test",
+            dataSource: .localLog
+        )
+        let yesterdayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: now.addingTimeInterval(-86_400),
+            inputTokens: 2_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.04),
+            source: "sections-export-test",
+            dataSource: .localLog
+        )
+        let events = [todayEvent, yesterdayEvent]
+        let snapshots = [ProviderSnapshot(provider: .opencode, events: events)]
+        let exporter = UsageExportService()
+        // Build one payload per requested period the same way runExport does.
+        let payloads = [HistoryPeriod.today, .last7Days].map { section in
+            let window = TokenPilotCLIService.explicitDateRange(period: section, since: nil, until: nil, days: nil, calendar: calendar)
+            let usage = AggregationService().aggregate(snapshots: snapshots, period: section, customRange: window, now: now)
+            return exporter.makeJSONPayload(usage: usage, snapshots: snapshots, dataMode: "CLI", generatedAt: now, includesCost: true)
+        }
+        let data = try exporter.makeSectionsJSON(payloads: payloads, generatedAt: now, includesCost: true)
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Envelope carries an ordered sections array and a totals object last.
+        let sections = try XCTUnwrap(envelope["sections"] as? [[String: Any]])
+        XCTAssertEqual(sections.count, 2)
+        XCTAssertEqual(sections[0]["period"] as? String, "today")
+        XCTAssertEqual(sections[1]["period"] as? String, "last7Days")
+        // Each section carries its own metrics; the Today section holds only today's event.
+        let todayMetrics = try XCTUnwrap(sections[0]["metrics"] as? [String: Any])
+        XCTAssertEqual(todayMetrics["totalTokens"] as? Int, 6_000)
+        let weekMetrics = try XCTUnwrap(sections[1]["metrics"] as? [String: Any])
+        XCTAssertEqual(weekMetrics["totalTokens"] as? Int, 8_000)
+        // Totals sum across sections: 6K + 8K tokens, 1 + 2 requests, cost 0.12 + 0.16.
+        let totals = try XCTUnwrap(envelope["totals"] as? [String: Any])
+        XCTAssertEqual(totals["totalTokens"] as? Int, 14_000)
+        XCTAssertEqual(totals["requestCount"] as? Int, 3)
+        let totalCost = try XCTUnwrap(totals["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(totalCost.doubleValue, 0.28, accuracy: 0.001)
+        // --no-cost blanks the envelope totals without hiding the sections themselves.
+        let noCostData = try exporter.makeSectionsJSON(payloads: payloads, generatedAt: now, includesCost: false)
+        let noCostEnvelope = try XCTUnwrap(JSONSerialization.jsonObject(with: noCostData) as? [String: Any])
+        let noCostTotals = try XCTUnwrap(noCostEnvelope["totals"] as? [String: Any])
+        XCTAssertNil(noCostTotals["estimatedCostUSD"])
+        XCTAssertEqual(noCostTotals["totalTokens"] as? Int, 14_000)
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {

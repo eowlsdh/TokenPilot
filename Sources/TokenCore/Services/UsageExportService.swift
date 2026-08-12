@@ -59,9 +59,33 @@ public final class UsageExportService {
         capacityAssessments: [CapacityAssessment] = [],
         includesCost: Bool = true
     ) throws -> Data {
+        let payload = makeJSONPayload(
+            usage: usage,
+            snapshots: snapshots,
+            dataMode: dataMode,
+            generatedAt: generatedAt,
+            capacityAssessments: capacityAssessments,
+            includesCost: includesCost
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
+    }
+
+    /// Builds the JSON export payload struct so callers can assemble multi-period
+    /// envelopes (`--sections` style) without decoding/re-encoding intermediate JSON.
+    public func makeJSONPayload(
+        usage: AggregatedUsage,
+        snapshots: [ProviderSnapshot],
+        dataMode: String,
+        generatedAt: Date = Date(),
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true
+    ) -> UsageExportPayload {
         let sanitized = sanitizedUsageForExport(usage)
         let exportUsage = includesCost ? sanitized : costStripped(sanitized)
-        let payload = UsageExportPayload(
+        return UsageExportPayload(
             generatedAt: generatedAt,
             period: usage.period,
             dataMode: dataMode,
@@ -82,10 +106,30 @@ public final class UsageExportService {
                 )
             }
         )
+    }
+
+    /// Encodes one export payload per requested period in a single envelope with a
+    /// totals object last (ccusage `--sections` style).
+    public func makeSectionsJSON(
+        payloads: [UsageExportPayload],
+        generatedAt: Date = Date(),
+        includesCost: Bool = true
+    ) throws -> Data {
+        let envelope = UsageExportEnvelope(
+            generatedAt: generatedAt,
+            sections: payloads,
+            totals: UsageExportTotals(
+                totalTokens: payloads.reduce(0) { $0 + $1.metrics.totalTokens },
+                requestCount: payloads.reduce(0) { $0 + $1.metrics.requestCount },
+                estimatedCostUSD: includesCost
+                    ? payloads.compactMap { $0.metrics.estimatedCostUSD > 0 ? $0.metrics.estimatedCostUSD : nil }.reduce(Decimal(0), +)
+                    : nil
+            )
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
+        return try encoder.encode(envelope)
     }
 
     private func sanitizedUsageForExport(_ usage: AggregatedUsage) -> AggregatedUsage {
@@ -526,4 +570,30 @@ public struct EventExport: Codable, Equatable, Sendable {
 
 private func decimalString(_ value: Decimal) -> String {
     NSDecimalNumber(decimal: value).stringValue
+}
+
+/// Multi-period export envelope (ccusage `--sections` style): one export payload per
+/// requested period plus a totals object last, mirroring the report/stats envelopes.
+public struct UsageExportEnvelope: Codable, Equatable, Sendable {
+    public var generatedAt: Date
+    public var sections: [UsageExportPayload]
+    public var totals: UsageExportTotals
+
+    public init(generatedAt: Date, sections: [UsageExportPayload], totals: UsageExportTotals) {
+        self.generatedAt = generatedAt
+        self.sections = sections
+        self.totals = totals
+    }
+}
+
+public struct UsageExportTotals: Codable, Equatable, Sendable {
+    public var totalTokens: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
+
+    public init(totalTokens: Int, requestCount: Int, estimatedCostUSD: Decimal?) {
+        self.totalTokens = totalTokens
+        self.requestCount = requestCount
+        self.estimatedCostUSD = estimatedCostUSD
+    }
 }

@@ -249,7 +249,7 @@ private enum TokenPilotCLIRunner {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent))
             }
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections)):
             return await runExport(
                 format: format,
                 period: period,
@@ -261,7 +261,8 @@ private enum TokenPilotCLIRunner {
                 includesCost: includesCost,
                 timeZone: timeZone,
                 project: project,
-                weekStartDay: weekStartDay
+                weekStartDay: weekStartDay,
+                sections: sections
             )
         }
     }
@@ -286,7 +287,8 @@ private enum TokenPilotCLIRunner {
         includesCost: Bool,
         timeZone: TimeZone?,
         project: String?,
-        weekStartDay: WeekStartDay?
+        weekStartDay: WeekStartDay?,
+        sections: [HistoryPeriod]?
     ) async -> Int32 {
         let allEvents = UsageHistoryStore().loadEvents()
         let events = project.map { label in allEvents.filter { $0.projectLabel == label } } ?? allEvents
@@ -297,25 +299,44 @@ private enum TokenPilotCLIRunner {
             )
         }
         let calendar = cliCalendar(for: timeZone)
-        let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
-        let window = TokenPilotCLIService.explicitDateRange(period: period, since: effectiveSince, until: until, days: days, calendar: calendar)
-        let usage = AggregationService().aggregate(
-            snapshots: snapshots,
-            period: period,
-            customRange: window
-        )
+        let exporter = UsageExportService()
         do {
             let assessments = includesCapacity
                 ? await loadLatestCapacityAssessments()
                 : []
-            let data = try UsageExportService().export(
-                usage: usage,
-                snapshots: snapshots,
-                dataMode: "CLI",
-                format: format,
-                capacityAssessments: assessments,
-                includesCost: includesCost
-            )
+            let data: Data
+            if let sections {
+                // ccusage `--sections` style: one export payload per requested period
+                // in an envelope with a totals object last.
+                let payloads = sections.map { section in
+                    let sectionWindow = TokenPilotCLIService.explicitDateRange(period: section, since: nil, until: nil, days: nil, calendar: calendar)
+                    let sectionUsage = AggregationService().aggregate(snapshots: snapshots, period: section, customRange: sectionWindow)
+                    return exporter.makeJSONPayload(
+                        usage: sectionUsage,
+                        snapshots: snapshots,
+                        dataMode: "CLI",
+                        capacityAssessments: assessments,
+                        includesCost: includesCost
+                    )
+                }
+                data = try exporter.makeSectionsJSON(payloads: payloads, includesCost: includesCost)
+            } else {
+                let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
+                let window = TokenPilotCLIService.explicitDateRange(period: period, since: effectiveSince, until: until, days: days, calendar: calendar)
+                let usage = AggregationService().aggregate(
+                    snapshots: snapshots,
+                    period: period,
+                    customRange: window
+                )
+                data = try exporter.export(
+                    usage: usage,
+                    snapshots: snapshots,
+                    dataMode: "CLI",
+                    format: format,
+                    capacityAssessments: assessments,
+                    includesCost: includesCost
+                )
+            }
             if let outputPath {
                 try data.write(to: URL(fileURLWithPath: outputPath))
             } else {
