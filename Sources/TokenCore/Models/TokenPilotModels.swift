@@ -59,6 +59,41 @@ public enum MenuBarProviderGrouping: String, Codable, CaseIterable, Sendable {
     case separate = "Separate"
 }
 
+/// The weekday that starts a local weekly window (budget progress, weekly digest).
+///
+/// Benchmarked against TokenBar's "Week Start Day" setting and ccusage's week
+/// alignment. Local windows are Monday-based by default to match the calendar
+/// week; Sunday is offered to align with some provider dashboards.
+public enum WeekStartDay: Int, Codable, CaseIterable, Sendable {
+    case sunday = 1
+    case monday = 2
+    case tuesday = 3
+    case wednesday = 4
+    case thursday = 5
+    case friday = 6
+    case saturday = 7
+
+    /// Maps to `Calendar`'s weekday component (1 = Sunday ... 7 = Saturday).
+    public var calendarWeekday: Int { rawValue }
+
+    public var label: String {
+        switch self {
+        case .sunday: return "Sunday"
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        case .saturday: return "Saturday"
+        }
+    }
+
+    /// Days before the given weekday to roll back to this week's start.
+    public func daysBefore(_ weekday: Int) -> Int {
+        (weekday - rawValue + 7) % 7
+    }
+}
+
 /// What the primary provider's detailed/compact menu bar segment shows.
 ///
 /// Benchmarked against TokenBar's menu-bar title options (remaining quota vs
@@ -1201,6 +1236,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarHotkeyEnabled: Bool
     public var weeklyDigestEnabled: Bool
     public var dailyDigestEnabled: Bool
+    public var weekStartDay: WeekStartDay
     public var budget: BudgetGuardrailSettings
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
@@ -1249,6 +1285,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarHotkeyEnabled: Bool = false,
         weeklyDigestEnabled: Bool = false,
         dailyDigestEnabled: Bool = false,
+        weekStartDay: WeekStartDay = .monday,
         budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) {
         self.claudeEnabled = claudeEnabled
@@ -1293,6 +1330,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
         self.weeklyDigestEnabled = weeklyDigestEnabled
         self.dailyDigestEnabled = dailyDigestEnabled
+        self.weekStartDay = weekStartDay
         self.budget = budget
     }
     public mutating func normalizeMenuBarComposition() {
@@ -1380,6 +1418,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarHotkeyEnabled
         case weeklyDigestEnabled
         case dailyDigestEnabled
+        case weekStartDay
         case budget
     }
 
@@ -1428,6 +1467,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
             weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false,
             dailyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .dailyDigestEnabled) ?? false,
+            weekStartDay: Self.decodeWeekStartDay(from: container),
             budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )
         self.normalizeMenuBarComposition()
@@ -1462,6 +1502,14 @@ public struct AppSettings: Codable, Equatable, Sendable {
             return .remainingPercent
         }
         return MenuBarPrimaryMetric(rawValue: rawValue) ?? .remainingPercent
+    }
+
+    private static func decodeWeekStartDay(from container: KeyedDecodingContainer<CodingKeys>) -> WeekStartDay {
+        guard let rawValue = try? container.decodeIfPresent(Int.self, forKey: .weekStartDay),
+              let day = WeekStartDay(rawValue: rawValue) else {
+            return .monday
+        }
+        return day
     }
 
     public static var defaultAlertRules: [AlertRule] {

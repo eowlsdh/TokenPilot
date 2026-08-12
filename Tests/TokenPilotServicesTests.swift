@@ -857,6 +857,73 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(DailyGoalService.progress(tokens: 500, targetTokens: 0).targetTokens, 1)
     }
 
+    // MARK: - WeekStartDay
+
+    func testWeekStartDayDaysBefore() {
+        // Calendar weekday: Sun=1, Mon=2, Tue=3, Wed=4, Thu=5, Fri=6, Sat=7.
+        // daysBefore(weekday) = days to roll back from `weekday` to this week's start.
+        XCTAssertEqual(WeekStartDay.monday.daysBefore(1), 6)
+        XCTAssertEqual(WeekStartDay.monday.daysBefore(2), 0)
+        XCTAssertEqual(WeekStartDay.sunday.daysBefore(1), 0)
+        XCTAssertEqual(WeekStartDay.saturday.daysBefore(4), 4)
+        XCTAssertEqual(WeekStartDay.tuesday.daysBefore(2), 6)
+    }
+
+    func testBudgetGuardrailWeeklyProgressHonorsWeekStartDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        // Friday 2026-08-14. Sunday-start week begins 2026-08-09; Monday-start begins 2026-08-10.
+        let friday = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 14, hour: 12))
+        )
+        let sundayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 9)))
+        let mondayStart = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10)))
+
+        let settings = BudgetGuardrailSettings(weeklyTokens: 100_000)
+        let service = BudgetGuardrailService()
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: sundayStart.addingTimeInterval(3_600), inputTokens: 10_000, outputTokens: 0, source: "week-test", dataSource: .localLog)
+        ]
+
+        let sundayWeek = service.weeklyProgress(events: events, settings: settings, now: friday, calendar: calendar, weekStartDay: .sunday)
+        XCTAssertEqual(sundayWeek.tokens, 10_000)
+
+        let mondayWeek = service.weeklyProgress(events: events, settings: settings, now: friday, calendar: calendar, weekStartDay: .monday)
+        XCTAssertEqual(mondayWeek.tokens, 0)
+    }
+
+    func testWeeklyDigestHonorsWeekStartDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let sunday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 9, hour: 18)))
+        let friday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 14, hour: 18)))
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: sunday.addingTimeInterval(3_600), inputTokens: 5_000, outputTokens: 0, source: "week-test", dataSource: .localLog)
+        ]
+
+        let sundayText = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: friday,
+            calendar: calendar,
+            weekStartDay: .sunday
+        )
+        XCTAssertTrue(sundayText.contains("Total tokens: 5K"))
+
+        let mondayText = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: friday,
+            calendar: calendar,
+            weekStartDay: .monday
+        )
+        XCTAssertTrue(mondayText.contains("Total tokens: 0"))
+    }
+
     func testWeeklyDigestGateFireWindow() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

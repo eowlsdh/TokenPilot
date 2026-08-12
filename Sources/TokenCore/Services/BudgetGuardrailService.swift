@@ -64,9 +64,10 @@ public struct BudgetGuardrailService: Sendable {
         events: [UsageEvent],
         settings: BudgetGuardrailSettings,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        weekStartDay: WeekStartDay = .monday
     ) -> BudgetGuardrailProgress {
-        guard let weekStart = weeklyStart(of: now, calendar: calendar) else {
+        guard let weekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) else {
             return BudgetGuardrailProgress(tokens: 0, budgetTokens: settings.weeklyTokens, percent: 0, crossedThreshold: false)
         }
         return progress(
@@ -114,8 +115,9 @@ public struct BudgetGuardrailService: Sendable {
         )
     }
 
-    private func weeklyStart(of date: Date, calendar: Calendar) -> Date? {
-        let daysFromMonday = (calendar.component(.weekday, from: date) + 5) % 7
-        return calendar.date(byAdding: .day, value: -daysFromMonday, to: calendar.startOfDay(for: date))
+    private func weeklyStart(of date: Date, calendar: Calendar, weekStartDay: WeekStartDay) -> Date? {
+        let weekday = calendar.component(.weekday, from: date)
+        let daysBack = weekStartDay.daysBefore(weekday)
+        return calendar.date(byAdding: .day, value: -daysBack, to: calendar.startOfDay(for: date))
     }
 }

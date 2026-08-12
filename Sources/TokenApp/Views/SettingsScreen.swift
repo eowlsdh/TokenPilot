@@ -163,6 +163,25 @@ struct SettingsScreen: View {
                 TokenPilotSeparator()
 
                 HStack(alignment: .firstTextBaseline) {
+                    Text(model.t("Week starts on"))
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    Picker(model.t("Week starts on"), selection: $model.settings.weekStartDay) {
+                        ForEach(WeekStartDay.allCases, id: \.self) { day in
+                            Text(model.t(day.label)).tag(day)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(maxWidth: 130)
+                }
+                Text(model.t("Sets the day that starts local weekly windows (weekly budget and weekly digest)."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                TokenPilotSeparator()
+
+                HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Version"))
                         .font(.caption.weight(.semibold))
                     Spacer(minLength: 8)

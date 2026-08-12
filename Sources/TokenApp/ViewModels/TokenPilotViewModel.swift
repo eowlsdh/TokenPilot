@@ -381,7 +381,7 @@ final class TokenPilotViewModel: ObservableObject {
         let events = overviewUsage.events
         return BudgetGuardrailSnapshot(
             daily: service.dailyProgress(events: events, settings: settings.budget),
-            weekly: service.weeklyProgress(events: events, settings: settings.budget),
+            weekly: service.weeklyProgress(events: events, settings: settings.budget, weekStartDay: settings.weekStartDay),
             monthly: service.monthlyProgress(events: events, settings: settings.budget)
         )
     }
@@ -967,13 +967,14 @@ final class TokenPilotViewModel: ObservableObject {
         }
         lastWeeklyDigestAttemptDay = now
         let lastSent = weeklyDigestStore.loadLastSent()
-        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent) else { return }
+        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, weekStartDay: settings.weekStartDay) else { return }
         let events = usageHistoryStore.loadEvents()
         let text = WeeklyDigestService.digestText(
             events: events,
             enabledProviders: settings.enabledProviders,
             language: settings.localization.language,
-            now: now
+            now: now,
+            weekStartDay: settings.weekStartDay
         )
         do {
             try await localNotificationService.send(title: t("Weekly digest"), body: text)

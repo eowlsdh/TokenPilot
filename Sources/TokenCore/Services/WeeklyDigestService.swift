@@ -11,21 +11,23 @@ public struct WeeklyDigestSchedule: Equatable, Sendable {
     }
 }
 
-private func weeklyMondayStart(of date: Date, calendar: Calendar) -> Date? {
-    let daysFromMonday = (calendar.component(.weekday, from: date) + 5) % 7
-    return calendar.date(byAdding: .day, value: -daysFromMonday, to: calendar.startOfDay(for: date))
+private func weeklyStart(of date: Date, calendar: Calendar, weekStartDay: WeekStartDay) -> Date? {
+    let weekday = calendar.component(.weekday, from: date)
+    let daysBack = weekStartDay.daysBefore(weekday)
+    return calendar.date(byAdding: .day, value: -daysBack, to: calendar.startOfDay(for: date))
 }
 
 public enum WeeklyDigestGate {
-    /// True only inside the Monday fire window (09:00–10:00 by default) and only when the digest
-    /// has not already been sent for the current week.
+    /// True only inside the weekly fire window (09:00–10:00 on the configured week-start day by default)
+    /// and only when the digest has not already been sent for the current week.
     public static func isInFireWindow(
         now: Date,
         lastSentAt: Date?,
         calendar: Calendar = .current,
-        schedule: WeeklyDigestSchedule = WeeklyDigestSchedule()
+        schedule: WeeklyDigestSchedule = WeeklyDigestSchedule(),
+        weekStartDay: WeekStartDay = .monday
     ) -> Bool {
-        guard let weekStart = weeklyMondayStart(of: now, calendar: calendar),
+        guard let weekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay),
               let fire = calendar.date(bySettingHour: schedule.hour, minute: schedule.minute, second: 0, of: weekStart) else {
             return false
         }
@@ -43,10 +45,11 @@ public enum WeeklyDigestService {
         enabledProviders: [Provider],
         language: TokenPilotLanguage,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        weekStartDay: WeekStartDay = .monday
     ) -> String {
         let enabled = Set(enabledProviders)
-        let weekStart = weeklyMondayStart(of: now, calendar: calendar) ?? calendar.startOfDay(for: now)
+        let weekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) ?? calendar.startOfDay(for: now)
         let weekEvents = events.filter {
             enabled.contains($0.provider) && $0.timestamp >= weekStart && $0.timestamp <= now
         }
