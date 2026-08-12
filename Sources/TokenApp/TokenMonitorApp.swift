@@ -190,6 +190,23 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
+        case .success(.blocks(let includesJSON)):
+            let assessments = await loadLatestCapacityAssessments()
+            if includesJSON {
+                do {
+                    let data = try TokenPilotCLIService.blocksJSON(assessments: assessments)
+                    FileHandle.standardOutput.write(data)
+                    if data.last != 0x0A {
+                        FileHandle.standardOutput.write(Data([0x0A]))
+                    }
+                } catch {
+                    writeError("TokenPilot: blocks failed: \(error.localizedDescription)")
+                    return 1
+                }
+            } else {
+                print(TokenPilotCLIService.blocksText(assessments: assessments))
+            }
+            return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay)):
             return await runExport(
                 format: format,

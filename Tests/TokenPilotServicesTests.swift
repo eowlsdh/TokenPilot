@@ -650,6 +650,12 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
+    func testCLIParseBlocksCommand() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks"]), .success(.blocks()))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--json"]), .success(.blocks(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
+    }
+
     func testCLIParseStatsCommand() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats"]), .success(.stats(period: .last7Days)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today"]), .success(.stats(period: .today)))
@@ -8309,6 +8315,52 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("coverage-test"))
+    }
+
+    func testCLIBlocksTextAndJSONReportWindowStatus() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        let observation = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 62),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "blocksV1",
+            now: now
+        )
+        let record = try CapacityEvidenceRecord(observation: observation)
+        let assessment = CapacityAssessmentService().assess(try record.observationForAssessment(now: now), now: now)
+
+        let text = TokenPilotCLIService.blocksText(assessments: [assessment], now: now, calendar: calendar)
+        XCTAssertTrue(text.contains("TokenPilot · Blocks"))
+        XCTAssertTrue(text.contains("Claude Code (five-hour)"))
+        XCTAssertTrue(text.contains("62% used"))
+        XCTAssertTrue(text.contains("38% remaining"))
+        XCTAssertTrue(text.contains("resets"))
+
+        let data = try TokenPilotCLIService.blocksJSON(assessments: [assessment], now: now, calendar: calendar)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let blocks = try XCTUnwrap(json["blocks"] as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 1)
+        let row = try XCTUnwrap(blocks.first)
+        XCTAssertEqual(row["provider"] as? String, "Claude Code")
+        XCTAssertEqual(row["windowID"] as? String, "five-hour")
+        XCTAssertEqual(row["usedPercent"] as? Int, 62)
+        XCTAssertEqual(row["remainingPercent"] as? Int, 38)
+        // Aggregates only: no parser revision leaks.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("blocksV1"))
     }
 
     // MARK: - ContextHealthService

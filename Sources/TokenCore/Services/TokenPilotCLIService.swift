@@ -19,6 +19,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
+    case blocks(includesJSON: Bool = false)
     case help
 }
 
@@ -62,7 +63,7 @@ public enum TokenPilotCLIService {
     public static func isCLIInvocation(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
         return first == "export" || first == "summary" || first == "stats" || first == "report" ||
-            first == "audit" || first == "help" || first == "-h" || first == "--help"
+            first == "audit" || first == "blocks" || first == "help" || first == "-h" || first == "--help"
     }
 
     public static func parse(arguments: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -80,6 +81,8 @@ public enum TokenPilotCLIService {
             return parseReport(Array(arguments.dropFirst()))
         case "audit":
             return parseAudit(Array(arguments.dropFirst()))
+        case "blocks":
+            return parseBlocks(Array(arguments.dropFirst()))
         case "export":
             return parseExport(Array(arguments.dropFirst()))
         default:
@@ -101,6 +104,22 @@ public enum TokenPilotCLIService {
             index += 1
         }
         return .success(.audit(includesJSON: includesJSON))
+    }
+
+    private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var includesJSON = false
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--json":
+                includesJSON = true
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.blocks(includesJSON: includesJSON))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -384,6 +403,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
+          TokenPilot blocks [--json]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -409,7 +429,10 @@ public enum TokenPilotCLIService {
         --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs; --json emits the same coverage
-        summary as structured JSON for scripting (toktrack audit --json style). Exports, reports,
+        summary as structured JSON for scripting (toktrack audit --json style). blocks lists the
+        current limit-window blocks (provider, window, used/remaining percent, reset time) from
+        stored capacity evidence, mirroring ccusage's blocks command; --json emits them as
+        structured JSON. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
@@ -1234,6 +1257,68 @@ public enum TokenPilotCLIService {
         return try encoder.encode(payload)
     }
 
+    /// Current limit-window blocks over stored capacity evidence (ccusage `blocks` style).
+    ///
+    /// Renders each series as a provider + window block with used/remaining
+    /// percent and the reset time, so users can see at a glance which billing
+    /// window is closest to exhaustion. Aggregates only; no credentials.
+    public static func blocksText(
+        assessments: [CapacityAssessment],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        var lines: [String] = []
+        lines.append("TokenPilot · \(localized("Blocks", language: .en))")
+        for assessment in assessments {
+            let observation = assessment.observation
+            let series = observation.seriesID
+            guard let usedPercent = observation.value.usedPercent else { continue }
+            let remaining = min(max(100 - usedPercent, 0), 100)
+            var line = "\(localized(series.provider.displayName, language: .en)) (\(series.providerWindowID)): " +
+                "\(usedPercent)% \(localized("used", language: .en)) · \(remaining)% \(localized("remaining", language: .en))"
+            if let resetAt = observation.resetAt {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.calendar = calendar
+                formatter.dateFormat = "HH:mm"
+                line += " · \(localized("resets", language: .en)) \(formatter.string(from: resetAt))"
+            }
+            lines.append(line)
+        }
+        lines.append(localized("Local activity, not provider quota", language: .en))
+        return lines.joined(separator: "\n")
+    }
+
+    /// Machine-readable limit-window blocks payload (ccusage `blocks --json` style).
+    ///
+    /// Emits the same blocks as `blocksText` as structured JSON so scripts can
+    /// watch window exhaustion. Cost and credentials never appear.
+    public static func blocksJSON(
+        assessments: [CapacityAssessment],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> Data {
+        let payload = BlocksPayloadJSON(
+            generatedAt: now,
+            blocks: assessments.compactMap { assessment -> BlocksRowJSON? in
+                let observation = assessment.observation
+                let series = observation.seriesID
+                guard let usedPercent = observation.value.usedPercent else { return nil }
+                return BlocksRowJSON(
+                    provider: series.provider.displayName,
+                    windowID: series.providerWindowID,
+                    usedPercent: usedPercent,
+                    remainingPercent: min(max(100 - usedPercent, 0), 100),
+                    resetAt: observation.resetAt
+                )
+            }
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
+    }
+
     private static func dailyBreakdownLines(
         events: [UsageEvent],
         period: HistoryPeriod,
@@ -1588,6 +1673,19 @@ private struct AuditDayRow: Codable {
     var date: String
     var active: Bool
     var tokens: Int
+}
+
+private struct BlocksPayloadJSON: Codable {
+    var generatedAt: Date
+    var blocks: [BlocksRowJSON]
+}
+
+private struct BlocksRowJSON: Codable {
+    var provider: String
+    var windowID: String
+    var usedPercent: Int
+    var remainingPercent: Int
+    var resetAt: Date?
 }
 
 private struct StatsPayloadJSON: Codable {
