@@ -131,6 +131,79 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(title, "5h 18% · 7d 53%")
     }
 
+    func testMenuBarPrimaryMetricTodayTokensOverridesPercentWhenPresent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayTokens: 12_500,
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayTokens
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "Cl 12.5Ktok")
+    }
+
+    func testMenuBarPrimaryMetricTodayCostOverridesPercentWhenPresent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayCostUSD: Decimal(1.25),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayCost
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "Cl $1.2500")
+    }
+
+    func testMenuBarPrimaryMetricFallsBackToPercentWhenLocalValueAbsent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayTokens: 0,
+            todayCostUSD: nil,
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayTokens
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "5h 18% · 7d 53%")
+    }
+
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
         let now = Date(timeIntervalSince1970: 1_000_000)
         let snapshot = ProviderSnapshot(

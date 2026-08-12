@@ -724,7 +724,12 @@ final class DebugFixtureFreshnessTests: XCTestCase {
 
     func testEventsAnchoredLikeTheFixturePopulateEveryHistoryPeriod() {
         let now = Date()
-        let anchor = now.addingTimeInterval(-300)
+        // Anchor inside today without landing in the future: the max of today's
+        // midnight and 5 minutes ago. Just after midnight (00:00-00:05) a naive
+        // `now - 300s` falls into the previous day; a fixed midnight+1h anchor
+        // would be in the future and get filtered out by the aggregator.
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        let anchor = max(startOfToday, now.addingTimeInterval(-300))
         var snapshot = ProviderSnapshot(provider: .claude, dataSource: .officialStatusline)
         snapshot.events = [
             Self.event(at: anchor, tokens: 5_000, model: "claude-sonnet"),

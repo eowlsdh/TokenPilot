@@ -770,6 +770,10 @@ final class TokenPilotViewModel: ObservableObject {
         settings.menuBarDisplayStyle = style
     }
 
+    func setMenuBarPrimaryMetric(_ metric: MenuBarPrimaryMetric) {
+        settings.menuBarPrimaryMetric = metric
+    }
+
     func setLaunchAtLogin(_ enabled: Bool) {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }

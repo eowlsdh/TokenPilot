@@ -298,6 +298,20 @@ struct SettingsScreen: View {
                         }
                         .pickerStyle(.menu)
                         .accessibilityLabel(model.t("Menu bar layout"))
+
+                        if model.settings.menuBarDisplayStyle != .iconOnly &&
+                            model.settings.menuBarDisplayStyle != .providerMetrics {
+                            Picker(model.t("Menu bar metric"), selection: menuBarPrimaryMetricBinding) {
+                                Text(model.t("Remaining percent")).tag(MenuBarPrimaryMetric.remainingPercent)
+                                Text(model.t("Today tokens")).tag(MenuBarPrimaryMetric.todayTokens)
+                                Text(model.t("Today cost")).tag(MenuBarPrimaryMetric.todayCost)
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityLabel(model.t("Menu bar metric"))
+                            Text(model.t("What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists."))
+                                .font(.caption2)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                        }
                         if model.settings.menuBarDisplayStyle == .providerMetrics {
                             Picker(model.t("Menu bar providers"), selection: menuBarProviderGroupingBinding) {
                                 Text(model.t("Combined item")).tag(MenuBarProviderGrouping.combined)
@@ -1636,6 +1650,12 @@ struct SettingsScreen: View {
         Binding(
             get: { model.settings.menuBarDisplayStyle },
             set: { model.setMenuBarDisplayStyle($0) }
+        )
+    }
+    private var menuBarPrimaryMetricBinding: Binding<MenuBarPrimaryMetric> {
+        Binding(
+            get: { model.settings.menuBarPrimaryMetric },
+            set: { model.setMenuBarPrimaryMetric($0) }
         )
     }
     private var menuBarProviderGroupingBinding: Binding<MenuBarProviderGrouping> {

@@ -202,6 +202,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
 
         switch candidate.kind {
         case .percent:
+            if let metricSegment = primaryMetricSegment(for: candidate, settings: settings) {
+                return metricSegment
+            }
             let segments = percentRenderCandidates(for: candidate, in: candidates)
                 .prefix(2)
                 .map { percentSegment(for: $0) }
@@ -1405,6 +1408,24 @@ public final class MenuBarStatusService: @unchecked Sendable {
         let remaining = candidate.remainingPercent ?? 0
         let suffix = candidate.suffix.isEmpty || candidate.suffix == label ? "" : " \(candidate.suffix)"
         return "\(label) \(remaining)%\(suffix)"
+    }
+
+    /// Returns the primary provider's today-token/cost segment when the user
+    /// chose a non-default `MenuBarPrimaryMetric` and the local value exists;
+    /// nil means the caller should fall back to the remaining-percent segment.
+    private func primaryMetricSegment(for candidate: Candidate, settings: AppSettings) -> String? {
+        let shortName = candidate.snapshot.provider.shortName
+        switch settings.menuBarPrimaryMetric {
+        case .remainingPercent:
+            return nil
+        case .todayTokens:
+            guard candidate.snapshot.todayTokens > 0 else { return nil }
+            let tokenUnit = TokenPilotLocalizer.localized("tok", language: settings.localization.language)
+            return "\(shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens))\(tokenUnit)"
+        case .todayCost:
+            guard let cost = candidate.snapshot.todayCostUSD, cost > 0 else { return nil }
+            return "\(shortName) \(TokenPilotFormatters.cost(cost))"
+        }
     }
 
     private func durationLabel(minutes: Int?) -> String {

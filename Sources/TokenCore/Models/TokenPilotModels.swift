@@ -59,6 +59,17 @@ public enum MenuBarProviderGrouping: String, Codable, CaseIterable, Sendable {
     case separate = "Separate"
 }
 
+/// What the primary provider's detailed/compact menu bar segment shows.
+///
+/// Benchmarked against TokenBar's menu-bar title options (remaining quota vs
+/// today's tokens vs cost). `remainingPercent` is the default; the other two
+/// fall back to remaining percent when the matching local value is absent.
+public enum MenuBarPrimaryMetric: String, Codable, CaseIterable, Sendable {
+    case remainingPercent = "Remaining percent"
+    case todayTokens = "Today tokens"
+    case todayCost = "Today cost"
+}
+
 
 public enum DataConfidence: String, Codable, CaseIterable, Identifiable, Sendable {
     case high
@@ -1161,6 +1172,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarProviderGrouping: MenuBarProviderGrouping
     public var menuBarMetricProviders: Set<Provider>
     public var menuBarDisplayStyle: MenuBarDisplayStyle
+    public var menuBarPrimaryMetric: MenuBarPrimaryMetric
     public var menuBarSecondaryDisplayTarget: Provider?
     public var menuBarShowsSecondaryProvider: Bool
     public var claudeStatusFilePath: String
@@ -1227,6 +1239,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarProviderGrouping: MenuBarProviderGrouping = .separate,
         menuBarMetricProviders: Set<Provider> = Set(Provider.allCases),
         menuBarDisplayStyle: MenuBarDisplayStyle = .detailed,
+        menuBarPrimaryMetric: MenuBarPrimaryMetric = .remainingPercent,
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
         challengeTargetTokens: Int = 10_000,
@@ -1249,6 +1262,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarProviderGrouping = menuBarProviderGrouping
         self.menuBarMetricProviders = menuBarMetricProviders
         self.menuBarDisplayStyle = menuBarDisplayStyle
+        self.menuBarPrimaryMetric = menuBarPrimaryMetric
         self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
         self.claudeStatusFilePath = claudeStatusFilePath
@@ -1334,6 +1348,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarProviderGrouping
         case menuBarMetricProviders
         case menuBarDisplayStyle
+        case menuBarPrimaryMetric
         case menuBarSecondaryDisplayTarget
         case menuBarShowsSecondaryProvider
         case claudeStatusFilePath
@@ -1400,6 +1415,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarProviderGrouping: Self.decodeMenuBarProviderGrouping(from: container),
             menuBarMetricProviders: Self.decodeMenuBarMetricProviders(from: container),
             menuBarDisplayStyle: Self.decodeMenuBarDisplayStyle(from: container),
+            menuBarPrimaryMetric: Self.decodeMenuBarPrimaryMetric(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
@@ -1434,6 +1450,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
             return Set(Provider.allCases)
         }
         return Set(rawValues.compactMap(Provider.init(rawValue:)))
+    }
+
+    private static func decodeMenuBarPrimaryMetric(from container: KeyedDecodingContainer<CodingKeys>) -> MenuBarPrimaryMetric {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .menuBarPrimaryMetric) else {
+            return .remainingPercent
+        }
+        return MenuBarPrimaryMetric(rawValue: rawValue) ?? .remainingPercent
     }
 
     public static var defaultAlertRules: [AlertRule] {
