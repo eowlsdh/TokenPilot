@@ -773,6 +773,16 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["audit", "--json", "--csv"]),
             .failure(.invalidCombination("--csv cannot be combined with --json."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--json", "--instances"]), .success(.audit(includesJSON: true, instances: true)))
+        // --instances groups coverage per project and only makes sense as JSON.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--instances"]),
+            .failure(.invalidCombination("--instances requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--json", "--instances", "--project", "project-a"]),
+            .failure(.invalidCombination("--instances cannot be combined with --project."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9308,6 +9318,47 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("coverage-test"))
+    }
+
+    func testCLIAuditJSONInstancesEmitsProjectGroups() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // Two workspaces: project-a is active today, project-b yesterday.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "instances-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 400, outputTokens: 0, source: "instances-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let data = try TokenPilotCLIService.auditJSON(
+            events: events,
+            windowDays: 7,
+            instances: true,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Combined coverage still carries both active days.
+        XCTAssertEqual(json["activeDays"] as? Int, 2)
+        // ccusage --instances style: each project carries its own coverage payload.
+        let projects = try XCTUnwrap(json["projects"] as? [[String: Any]])
+        XCTAssertEqual(projects.count, 2)
+        let projectA = try XCTUnwrap(projects.first { $0["project"] as? String == "project-a" })
+        let payloadA = try XCTUnwrap(projectA["payload"] as? [String: Any])
+        XCTAssertEqual(payloadA["activeDays"] as? Int, 1)
+        let daysA = try XCTUnwrap(payloadA["days"] as? [[String: Any]])
+        let todayA = try XCTUnwrap(daysA.first { $0["date"] as? String == "2030-03-17" })
+        XCTAssertEqual(todayA["tokens"] as? Int, 500)
+        // Project-b's payload isolates its own coverage.
+        let projectB = try XCTUnwrap(projects.first { $0["project"] as? String == "project-b" })
+        let payloadB = try XCTUnwrap(projectB["payload"] as? [String: Any])
+        let daysB = try XCTUnwrap(payloadB["days"] as? [[String: Any]])
+        let yesterdayB = try XCTUnwrap(daysB.first { $0["date"] as? String == "2030-03-16" })
+        XCTAssertEqual(yesterdayB["tokens"] as? Int, 400)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("instances-test"))
     }
 
     func testCLIAuditWindowSelectorsScopeCoverage() throws {

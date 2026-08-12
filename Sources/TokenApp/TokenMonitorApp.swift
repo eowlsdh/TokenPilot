@@ -249,7 +249,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.audit(let includesJSON, let since, let until, let days, let timeZone, let project, let sections, let includesCSV)):
+        case .success(.audit(let includesJSON, let since, let until, let days, let timeZone, let project, let sections, let includesCSV, let instances)):
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
             if includesCSV {
@@ -272,6 +272,7 @@ private enum TokenPilotCLIRunner {
                         days: days,
                         project: project,
                         sections: sections,
+                        instances: instances,
                         calendar: calendar
                     )
                     FileHandle.standardOutput.write(data)
