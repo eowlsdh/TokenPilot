@@ -6562,6 +6562,43 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(emptyTrend.isDegrading)
     }
 
+    // MARK: - ThroughputService
+
+    func testThroughputComputesTokensPerMinuteOverWindow() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        // 3,000 tokens across 30 minutes -> 100 tok/min.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-30 * 60), inputTokens: 1_000, outputTokens: 0, source: "throughput-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-15 * 60), inputTokens: 2_000, outputTokens: 0, source: "throughput-test", dataSource: .localLog),
+        ]
+
+        let reading = ThroughputService().reading(events: events, windowMinutes: 60, now: now)
+        XCTAssertTrue(reading.hasActivity)
+        XCTAssertEqual(reading.windowTokens, 3_000)
+        XCTAssertEqual(reading.tokensPerMinute, 100, accuracy: 0.001)
+        XCTAssertEqual(reading.windowMinutes, 60)
+    }
+
+    func testThroughputUsesOldestEventForElapsedWindow() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        // 6,000 tokens across the oldest event at -40 min (window 60) -> elapsed 40 -> 150 tok/min.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-40 * 60), inputTokens: 4_000, outputTokens: 0, source: "throughput-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-20 * 60), inputTokens: 2_000, outputTokens: 0, source: "throughput-test", dataSource: .localLog),
+        ]
+
+        let reading = ThroughputService().reading(events: events, windowMinutes: 60, now: now)
+        XCTAssertEqual(reading.tokensPerMinute, 150, accuracy: 0.001)
+    }
+
+    func testThroughputReturnsNoActivityWithoutTokens() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let empty = ThroughputService().reading(events: [], windowMinutes: 60, now: now)
+        XCTAssertFalse(empty.hasActivity)
+        XCTAssertEqual(empty.tokensPerMinute, 0)
+        XCTAssertEqual(empty.windowTokens, 0)
+    }
+
     // MARK: - FiveHourBlocksService
 
     func testFiveHourBlocksBucketsAlignedToLocalMidnight() throws {

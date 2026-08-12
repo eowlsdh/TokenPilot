@@ -325,6 +325,7 @@ public enum TokenPilotLocalizer {
         "day streak": [.en: "day streak", .ko: "일 연속", .ja: "日連続", .zhHans: "天连续", .zhHant: "天連續"],
         "requests": [.en: "requests", .ko: "요청", .ja: "リクエスト", .zhHans: "请求", .zhHant: "請求"],
         "Cache hit rate is degrading": [.en: "Cache hit rate is degrading", .ko: "캐시 적중률이 하락하고 있습니다", .ja: "キャッシュヒット率が低下しています", .zhHans: "缓存命中率正在下降", .zhHant: "緩存命中率正在下降"],
+        "~%@ tok/min over the last %d min (est.)": [.en: "~%@ tok/min over the last %d min (est.)", .ko: "지난 %d분 동안 약 %@ tok/분 (추정)", .ja: "直近 %d 分で約 %@ tok/分（推定）", .zhHans: "过去 %d 分钟约 %@ tok/分钟（估计）", .zhHant: "過去 %d 分鐘約 %@ tok/分鐘（估計）"],
         "Switch screens with ⌘1, ⌘2, ⌘3": [.en: "Switch screens with ⌘1, ⌘2, ⌘3", .ko: "⌘1, ⌘2, ⌘3으로 화면 전환", .ja: "⌘1、⌘2、⌘3 で画面を切り替え", .zhHans: "使用 ⌘1、⌘2、⌘3 切换屏幕", .zhHant: "使用 ⌘1、⌘2、⌘3 切換螢幕"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],

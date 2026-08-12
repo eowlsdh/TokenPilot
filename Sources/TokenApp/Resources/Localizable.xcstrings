@@ -11267,6 +11267,34 @@
         }
       }
     },
+    "~%@ tok/min over the last %d min (est.)": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지난 %d분 동안 약 %@ tok/분 (추정)"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "~%@ tok/min over the last %d min (est.)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "过去 %d 分钟约 %@ tok/分钟（估计）"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直近 %d 分で約 %@ tok/分（推定）"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {

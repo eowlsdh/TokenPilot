@@ -403,6 +403,10 @@ final class TokenPilotViewModel: ObservableObject {
         CacheTrendService.trend(events: historyUsage.events)
     }
 
+    var throughputReading: ThroughputReading {
+        ThroughputService().reading(events: overviewUsage.events)
+    }
+
     var contextHealthAssessments: [ContextHealthAssessment] {
         ContextHealthService().assess(records: capacityEvidenceRecords)
     }

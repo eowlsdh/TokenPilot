@@ -1000,6 +1000,10 @@ struct UsageSummaryCard: View {
                     if !paceText.isEmpty {
                         compactSummaryLine(paceText, color: item.paceZoneColor)
                     }
+                    let throughput = model.throughputReading
+                    if throughput.hasActivity {
+                        compactSummaryLine(throughputText(throughput), color: TokenPilotDesign.text(.secondary))
+                    }
                 }
 
                 liveMetadata(for: item)
@@ -1011,6 +1015,22 @@ struct UsageSummaryCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: item))
+    }
+
+    private func throughputText(_ reading: ThroughputReading) -> String {
+        let perMinute: String
+        if reading.tokensPerMinute >= 1_000 {
+            perMinute = "\(Int(reading.tokensPerMinute / 1_000))K"
+        } else if reading.tokensPerMinute >= 1 {
+            perMinute = String(format: "%.1f", reading.tokensPerMinute)
+        } else {
+            perMinute = "<1"
+        }
+        return String(
+            format: localized("~%@ tok/min over the last %d min (est.)", language: language),
+            perMinute,
+            reading.windowMinutes
+        )
     }
 
     private func liveMetadata(for item: CapacityDisplayItem) -> some View {
