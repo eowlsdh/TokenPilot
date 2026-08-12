@@ -832,6 +832,16 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["blocks", "--json", "--csv"]),
             .failure(.invalidCombination("--csv cannot be combined with --json."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--md"]), .success(.blocks(includesMarkdown: true)))
+        // --md is a distinct output format and cannot be combined with --json or --csv.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["blocks", "--json", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["blocks", "--csv", "--md"]),
+            .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9677,6 +9687,42 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(lines[1].hasPrefix("Claude Code,five-hour,62,38,"))
         // Aggregates only: no parser revision leaks.
         XCTAssertFalse(csv.contains("blocksV1"))
+    }
+
+    func testCLIBlocksMarkdownEmitsTable() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        let observation = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 62),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "blocksV1",
+            now: now
+        )
+        let record = try CapacityEvidenceRecord(observation: observation)
+        let assessment = CapacityAssessmentService().assess(try record.observationForAssessment(now: now), now: now)
+
+        let markdown = TokenPilotCLIService.blocksMarkdownText(assessments: [assessment], now: now, calendar: calendar)
+        // Document opens with a window table: provider, window, used/remaining, resets.
+        XCTAssertTrue(markdown.hasPrefix("## TokenPilot · Blocks"))
+        XCTAssertTrue(markdown.contains("| Provider | Window | Used | Remaining | Resets |"))
+        XCTAssertTrue(markdown.contains("| Claude Code | five-hour | 62% | 38% | 13:00 |"))
+        // Honest-label footer mirrors the text summary.
+        XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
+        // Aggregates only: no parser revision leaks.
+        XCTAssertFalse(markdown.contains("blocksV1"))
     }
 
     func testCLIBlocksActiveAndRecentFilters() throws {

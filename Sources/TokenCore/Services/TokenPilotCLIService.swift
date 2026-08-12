@@ -20,7 +20,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false)
-    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false)
+    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case help
 }
 
@@ -307,6 +307,7 @@ public enum TokenPilotCLIService {
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var includesJSON = false
         var includesCSV = false
+        var includesMarkdown = false
         var active = false
         var recent = false
         var timeZone: TimeZone?
@@ -321,6 +322,8 @@ public enum TokenPilotCLIService {
                 includesJSON = true
             case "--csv":
                 includesCSV = true
+            case "--md":
+                includesMarkdown = true
             case "--active":
                 active = true
             case "--recent":
@@ -364,7 +367,10 @@ public enum TokenPilotCLIService {
         if includesCSV, includesJSON {
             return .failure(.invalidCombination("--csv cannot be combined with --json."))
         }
-        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone, since: since, until: until, days: days, includesCSV: includesCSV))
+        if includesMarkdown, includesJSON || includesCSV {
+            return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
+        }
+        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone, since: since, until: until, days: days, includesCSV: includesCSV, includesMarkdown: includesMarkdown))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -717,7 +723,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot blocks [--json|--csv] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
+          TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -773,7 +779,8 @@ public enum TokenPilotCLIService {
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
         whose reset has not elapsed, --recent keeps only freshly observed blocks, --timezone
         localizes the reset times, and --since/--until/--days scope the observations. --json emits them as
-        structured JSON, and --csv emits the same blocks as rows for spreadsheets. Exports, reports,
+        structured JSON, and --csv emits the same blocks as rows for spreadsheets, and --md emits them
+        as a Markdown document for notes and PR descriptions. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
@@ -2759,6 +2766,44 @@ public enum TokenPilotCLIService {
             let reset = observation.resetAt.map { formatter.string(from: $0) } ?? ""
             lines.append("\(csvEscape(series.provider.displayName)),\(csvEscape(series.providerWindowID)),\(usedPercent),\(remaining),\(csvEscape(reset))")
         }
+        return lines.joined(separator: "\n")
+    }
+
+    /// Markdown limit-window blocks over stored capacity evidence (ccusage `--markdown` style).
+    ///
+    /// Emits the same blocks as `blocksText` — provider, window, used/remaining
+    /// percent, and reset time — as a Markdown document for notes and PR
+    /// descriptions. Cost and credentials never appear.
+    public static func blocksMarkdownText(
+        assessments: [CapacityAssessment],
+        active: Bool = false,
+        recent: Bool = false,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let blocks = filteredBlocks(assessments, active: active, recent: recent, since: since, until: until, days: days, now: now, calendar: calendar)
+        var lines: [String] = []
+        lines.append("## TokenPilot · Blocks")
+        lines.append("")
+        lines.append("| Provider | Window | Used | Remaining | Resets |")
+        lines.append("|---|---|---|---|---|")
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "HH:mm"
+        for assessment in blocks {
+            let observation = assessment.observation
+            let series = observation.seriesID
+            guard let usedPercent = observation.value.usedPercent else { continue }
+            let remaining = min(max(100 - usedPercent, 0), 100)
+            let reset = observation.resetAt.map { formatter.string(from: $0) } ?? "—"
+            lines.append("| \(localized(series.provider.displayName, language: .en)) | \(series.providerWindowID) | \(usedPercent)% | \(remaining)% | \(reset) |")
+        }
+        lines.append("")
+        lines.append("_Local activity, not provider quota._")
         return lines.joined(separator: "\n")
     }
 
