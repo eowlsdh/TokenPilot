@@ -15,7 +15,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
-    case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, includesCost: Bool = true, includesJSON: Bool = false)
+    case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCost: Bool = true, includesJSON: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil)
@@ -153,6 +153,7 @@ public enum TokenPilotCLIService {
         var days: Int?
         var timeZone: TimeZone?
         var project: String?
+        var sections: [HistoryPeriod]?
         var includesCost = true
         var includesJSON = false
         var index = 0
@@ -198,6 +199,16 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--sections":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                let names = flags[index].split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+                let parsed = names.map { HistoryPeriod(rawValue: $0) }
+                guard !parsed.contains(nil) else {
+                    let invalid = names.enumerated().first { parsed[$0.offset] == nil }?.element ?? flags[index]
+                    return .failure(.invalidPeriod(invalid))
+                }
+                sections = parsed.compactMap { $0 }
             case "--no-cost":
                 includesCost = false
             case "--json":
@@ -210,7 +221,13 @@ public enum TokenPilotCLIService {
         if days != nil, since != nil || until != nil {
             return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
         }
-        return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, project: project, includesCost: includesCost, includesJSON: includesJSON))
+        if sections != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
+        }
+        if sections != nil, !includesJSON {
+            return .failure(.invalidCombination("--sections requires --json output."))
+        }
+        return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections, includesCost: includesCost, includesJSON: includesJSON))
     }
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -549,7 +566,7 @@ public enum TokenPilotCLIService {
 
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth]
-          TokenPilot summary [--period today|last7Days|thisMonth] [--no-cost] [--json]
+          TokenPilot summary [--period today|last7Days|thisMonth] [--no-cost] [--json] [--sections today,last7Days,thisMonth]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
@@ -562,8 +579,9 @@ public enum TokenPilotCLIService {
         totals object last (ccusage --sections style). summary
         prints local usage totals for the selected period (default today); --period selects
         today/last7Days/thisMonth, --since/--until/--days/--timezone/--project narrow the
-        window like export, --no-cost omits estimated cost, and --json emits the same summary as structured JSON for
-        scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
+        window like export, --no-cost omits estimated cost, --json emits the same summary as structured JSON for
+        scripting (toktrack stats --json style), and --sections (JSON only) emits summaries for
+        several periods in one envelope. stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
         the same statistics as structured JSON for scripting (toktrack stats --json style) with a
         per-provider model breakdown (ccusage --by-agent style), --breakdown adds a per-day, per-model
@@ -675,9 +693,73 @@ public enum TokenPilotCLIService {
         days: Int? = nil,
         includesCost: Bool = true,
         project: String? = nil,
+        sections: [HistoryPeriod]? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        if let sections {
+            // ccusage `--sections` style: each requested period emitted in one envelope
+            // with a totals object last, matching the report/stats/export envelopes.
+            let sectionPayloads = sections.map { section in
+                summaryPayload(
+                    events: events,
+                    snapshots: snapshots,
+                    enabledProviders: enabledProviders,
+                    period: section,
+                    since: nil,
+                    until: nil,
+                    days: nil,
+                    includesCost: includesCost,
+                    project: project,
+                    now: now,
+                    calendar: calendar
+                )
+            }
+            let envelope = SummarySectionsEnvelopeJSON(
+                generatedAt: now,
+                sections: sectionPayloads,
+                totals: SummaryTotalsJSON(
+                    totalTokens: sectionPayloads.reduce(0) { $0 + $1.totalTokens },
+                    requestCount: sectionPayloads.reduce(0) { $0 + $1.requestCount },
+                    estimatedCostUSD: includesCost
+                        ? sectionPayloads.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
+                        : nil
+                )
+            )
+            return try encoder.encode(envelope)
+        }
+        let payload = summaryPayload(
+            events: events,
+            snapshots: snapshots,
+            enabledProviders: enabledProviders,
+            period: period,
+            since: since,
+            until: until,
+            days: days,
+            includesCost: includesCost,
+            project: project,
+            now: now,
+            calendar: calendar
+        )
+        return try encoder.encode(payload)
+    }
+
+    private static func summaryPayload(
+        events: [UsageEvent],
+        snapshots: [ProviderSnapshot] = [],
+        enabledProviders: [Provider],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        includesCost: Bool,
+        project: String?,
+        now: Date,
+        calendar: Calendar
+    ) -> SummaryPayloadJSON {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
@@ -705,7 +787,7 @@ public enum TokenPilotCLIService {
                 )
             }
 
-        let payload = SummaryPayloadJSON(
+        return SummaryPayloadJSON(
             generatedAt: now,
             period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
             totalTokens: metrics.totalTokens,
@@ -722,10 +804,6 @@ public enum TokenPilotCLIService {
             },
             remainingCapacity: remainingCapacity
         )
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
     }
 
     /// Derived usage statistics over the window (toktrack-stats style).
@@ -2205,6 +2283,18 @@ private struct SummaryRemainingJSON: Codable {
     var provider: String
     var window: String
     var remainingPercent: Int
+}
+
+private struct SummarySectionsEnvelopeJSON: Codable {
+    var generatedAt: Date
+    var sections: [SummaryPayloadJSON]
+    var totals: SummaryTotalsJSON
+}
+
+private struct SummaryTotalsJSON: Codable {
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
 }
 
 private struct ReportSectionsEnvelopeJSON: Codable {
