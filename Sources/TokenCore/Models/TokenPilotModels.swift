@@ -1188,6 +1188,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var refreshIntervalSeconds: Int
     public var menuBarHotkeyEnabled: Bool
     public var weeklyDigestEnabled: Bool
+    public var budget: BudgetGuardrailSettings
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
     public static let legacyGeminiTelemetryPath = "~/.gemini/telemetry.log"
@@ -1232,7 +1233,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
         launchAtLogin: Bool = false,
         refreshIntervalSeconds: Int = 60,
         menuBarHotkeyEnabled: Bool = false,
-        weeklyDigestEnabled: Bool = false
+        weeklyDigestEnabled: Bool = false,
+        budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
@@ -1274,6 +1276,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.refreshIntervalSeconds = refreshIntervalSeconds
         self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
         self.weeklyDigestEnabled = weeklyDigestEnabled
+        self.budget = budget
     }
     public mutating func normalizeMenuBarComposition() {
         if let primary = menuBarDisplayTarget, !isProviderEnabled(primary) {
@@ -1358,6 +1361,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case refreshIntervalSeconds
         case menuBarHotkeyEnabled
         case weeklyDigestEnabled
+        case budget
     }
 
     public init(from decoder: Decoder) throws {
@@ -1402,7 +1406,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
-            weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false
+            weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false,
+            budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )
         self.normalizeMenuBarComposition()
     }
@@ -1439,6 +1444,34 @@ public struct AppSettings: Codable, Equatable, Sendable {
             AlertRule(provider: .codex, window: .weekly),
             AlertRule(provider: .gemini, window: .dailyRequests)
         ]
+    }
+}
+
+/// Optional local token budgets for the day, week, and month windows.
+///
+/// These are local-activity budgets, never provider quota: a budget of 0 is
+/// disabled, and reaching a budget does not change what the provider reports.
+public struct BudgetGuardrailSettings: Codable, Equatable, Sendable {
+    public var dailyTokens: Int
+    public var weeklyTokens: Int
+    public var monthlyTokens: Int
+    /// Threshold percent (1...100) at which a budget-crossing macOS notification fires.
+    public var alertThresholdPercent: Int
+
+    public init(
+        dailyTokens: Int = 0,
+        weeklyTokens: Int = 0,
+        monthlyTokens: Int = 0,
+        alertThresholdPercent: Int = 80
+    ) {
+        self.dailyTokens = max(dailyTokens, 0)
+        self.weeklyTokens = max(weeklyTokens, 0)
+        self.monthlyTokens = max(monthlyTokens, 0)
+        self.alertThresholdPercent = min(max(alertThresholdPercent, 1), 100)
+    }
+
+    public var hasAnyBudget: Bool {
+        dailyTokens > 0 || weeklyTokens > 0 || monthlyTokens > 0
     }
 }
 

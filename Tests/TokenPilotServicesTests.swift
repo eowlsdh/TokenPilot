@@ -6135,6 +6135,131 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertNil(service.pacingZone(observation: pastReset, now: now))
     }
+
+    // MARK: - BudgetGuardrailService
+
+    func testBudgetGuardrailDailyProgressComputesPercentAndThreshold() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let service = BudgetGuardrailService()
+        let today = now
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today
+        let settings = BudgetGuardrailSettings(dailyTokens: 10_000, alertThresholdPercent: 80)
+
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: today, inputTokens: 6_000, outputTokens: 2_000, source: "budget-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: today.addingTimeInterval(60), inputTokens: 1_000, outputTokens: 0, source: "budget-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: yesterday, inputTokens: 9_000, outputTokens: 0, source: "budget-test", dataSource: .localLog),
+        ]
+
+        let progress = service.dailyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertEqual(progress.tokens, 9_000)
+        XCTAssertEqual(progress.budgetTokens, 10_000)
+        XCTAssertEqual(progress.percent, 90)
+        XCTAssertTrue(progress.crossedThreshold)
+    }
+
+    func testBudgetGuardrailDisabledWindowReturnsZeroProgress() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let service = BudgetGuardrailService()
+        let settings = BudgetGuardrailSettings(dailyTokens: 0, weeklyTokens: 0, monthlyTokens: 0)
+
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 5_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
+        ]
+
+        let daily = service.dailyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertEqual(daily.budgetTokens, 0)
+        XCTAssertEqual(daily.percent, 0)
+        XCTAssertFalse(daily.crossedThreshold)
+
+        let weekly = service.weeklyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertEqual(weekly.budgetTokens, 0)
+        XCTAssertEqual(weekly.percent, 0)
+
+        let monthly = service.monthlyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertEqual(monthly.budgetTokens, 0)
+        XCTAssertEqual(monthly.percent, 0)
+    }
+
+    func testBudgetGuardrailWeeklyAndMonthlyScopeWindows() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        let service = BudgetGuardrailService()
+        let settings = BudgetGuardrailSettings(weeklyTokens: 100_000, monthlyTokens: 500_000)
+
+        let lastWeek = calendar.date(byAdding: .day, value: -8, to: now) ?? now
+        let lastMonth = calendar.date(byAdding: .month, value: -1, to: now) ?? now
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 10_000, outputTokens: 0, source: "budget-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: lastWeek, inputTokens: 60_000, outputTokens: 0, source: "budget-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: lastMonth, inputTokens: 90_000, outputTokens: 0, source: "budget-test", dataSource: .localLog),
+        ]
+
+        let weekly = service.weeklyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        // Only events within the current week (now) count; lastWeek is outside.
+        XCTAssertEqual(weekly.tokens, 10_000)
+        XCTAssertEqual(weekly.percent, 10)
+
+        let monthly = service.monthlyProgress(events: events, settings: settings, now: now, calendar: calendar)
+        // lastWeek (03-09) is still inside the current month (starts 03-01); lastMonth (02-17) is outside.
+        XCTAssertEqual(monthly.tokens, 70_000)
+        XCTAssertEqual(monthly.percent, 14)
+    }
+
+    func testBudgetAlertServiceReportsCrossingOncePerCycle() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let settings = BudgetGuardrailSettings(dailyTokens: 10_000, alertThresholdPercent: 80)
+
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 9_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
+        ]
+
+        let store = BudgetAlertDedupStore(defaults: UserDefaults(suiteName: "budget-alert-test-\(UUID().uuidString)")!)
+        store.markDelivered([])
+        let service = BudgetAlertService(store: store)
+
+        let first = service.crossingCandidates(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(first.first?.window, .daily)
+        XCTAssertEqual(first.first?.percent, 90)
+        XCTAssertTrue(first.first?.dedupeKey.hasPrefix("budget.daily.") ?? false)
+
+        service.markDelivered(first)
+
+        let second = service.crossingCandidates(events: events, settings: settings, now: now, calendar: calendar)
+        XCTAssertTrue(second.isEmpty, "crossing should alert only once per cycle")
+
+        // A later date is a new cycle and can alert again when usage resumes that day.
+        let later = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+        let nextDayEvents = [
+            UsageEvent(provider: .opencode, timestamp: later, inputTokens: 9_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
+        ]
+        let nextDay = service.crossingCandidates(events: nextDayEvents, settings: settings, now: later, calendar: calendar)
+        XCTAssertEqual(nextDay.count, 1)
+    }
+
+    func testBudgetAlertServiceSkipsDisabledAndUnderThreshold() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let calendar = Calendar(identifier: .gregorian)
+        let store = BudgetAlertDedupStore(defaults: UserDefaults(suiteName: "budget-alert-test-\(UUID().uuidString)")!)
+        let service = BudgetAlertService(store: store)
+
+        let disabled = BudgetGuardrailSettings()
+        XCTAssertTrue(service.crossingCandidates(events: [], settings: disabled, now: now, calendar: calendar).isEmpty)
+
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 5_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
+        ]
+        let highThreshold = BudgetGuardrailSettings(dailyTokens: 10_000, alertThresholdPercent: 90)
+        XCTAssertTrue(
+            service.crossingCandidates(events: events, settings: highThreshold, now: now, calendar: calendar).isEmpty,
+            "50% usage below an 90% threshold must not alert"
+        )
+    }
 }
 
 private struct FixedCapacityClock: CapacityEvidenceClock {

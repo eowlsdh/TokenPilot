@@ -213,6 +213,9 @@ struct OverviewScreen: View {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 UsageSummaryCard(model: model)
                 DailyGoalCard(goal: model.dailyGoal, model: model)
+                if model.budgetGuardrails.hasAnyBudget {
+                    BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
+                }
 
                 if hasNoOverviewData {
                     emptyOverviewState
@@ -302,6 +305,88 @@ struct DailyGoalCard: View {
             "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
             "\(TokenPilotFormatters.compactNumber(goal.targetTokens))"
         )
+    }
+}
+
+struct BudgetGuardrailCard: View {
+    let budget: BudgetGuardrailSnapshot
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Budget guardrails"), systemImage: "creditcard.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                budgetLine(budget.daily, title: model.t("Today"), language: model.settings.localization.language)
+                if budget.weekly.budgetTokens > 0 {
+                    budgetLine(budget.weekly, title: model.t("This week"), language: model.settings.localization.language)
+                }
+                if budget.monthly.budgetTokens > 0 {
+                    budgetLine(budget.monthly, title: model.t("This month"), language: model.settings.localization.language)
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Budget guardrails")): " +
+            "\(TokenPilotFormatters.compactNumber(budget.daily.tokens)) / " +
+            "\(TokenPilotFormatters.compactNumber(budget.daily.budgetTokens))"
+        )
+    }
+
+    @ViewBuilder
+    private func budgetLine(_ progress: BudgetGuardrailProgress, title: String, language: TokenPilotLanguage) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
+                Text(title)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+
+                Text(
+                    "\(TokenPilotFormatters.compactNumber(progress.tokens)) / " +
+                    "\(TokenPilotFormatters.compactNumber(progress.budgetTokens)) " +
+                    model.t("tok")
+                )
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(budgetColor(progress))
+                .lineLimit(1)
+                .minimumScaleFactor(0.78)
+            }
+
+            ProgressLine(
+                percent: progress.percent,
+                color: budgetColor(progress),
+                accessibilityLabel: title,
+                accessibilityValue: "\(progress.percent)%"
+            )
+        }
+    }
+
+    private func budgetColor(_ progress: BudgetGuardrailProgress) -> Color {
+        if progress.budgetTokens == 0 { return TokenPilotDesign.text(.tertiary) }
+        if progress.crossedThreshold {
+            return TokenPilotDesign.status(.danger)
+        }
+        if progress.percent >= 80 {
+            return TokenPilotDesign.status(.warning)
+        }
+        return TokenPilotDesign.trust
     }
 }
 

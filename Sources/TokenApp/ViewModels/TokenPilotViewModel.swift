@@ -85,6 +85,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
     private let weeklyDigestStore = WeeklyDigestStore()
+    private let budgetAlertService = BudgetAlertService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
@@ -366,6 +367,16 @@ final class TokenPilotViewModel: ObservableObject {
         DailyGoalService.progress(
             tokens: overviewUsage.metrics.totalTokens,
             targetTokens: settings.challengeTargetTokens
+        )
+    }
+
+    var budgetGuardrails: BudgetGuardrailSnapshot {
+        let service = BudgetGuardrailService()
+        let events = overviewUsage.events
+        return BudgetGuardrailSnapshot(
+            daily: service.dailyProgress(events: events, settings: settings.budget),
+            weekly: service.weeklyProgress(events: events, settings: settings.budget),
+            monthly: service.monthlyProgress(events: events, settings: settings.budget)
         )
     }
 
@@ -880,6 +891,39 @@ final class TokenPilotViewModel: ObservableObject {
         } catch {}
     }
 
+    private func checkBudgetAlerts() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              settings.budget.hasAnyBudget else {
+            return
+        }
+        let candidates = budgetAlertService.crossingCandidates(
+            events: overviewUsage.events,
+            settings: settings.budget,
+            now: Date()
+        )
+        guard !candidates.isEmpty else { return }
+        for candidate in candidates {
+            let windowLabel: String
+            switch candidate.window {
+            case .daily: windowLabel = t("Today")
+            case .weekly: windowLabel = t("This week")
+            case .monthly: windowLabel = t("This month")
+            }
+            let body = String(
+                format: t("Budget %@: %@ / %@ tok reached %d%% (est.)"),
+                windowLabel,
+                TokenPilotFormatters.compactNumber(candidate.tokens),
+                TokenPilotFormatters.compactNumber(candidate.budgetTokens),
+                candidate.percent
+            )
+            do {
+                try await localNotificationService.send(title: t("Budget guardrails"), body: body)
+            } catch {}
+        }
+        budgetAlertService.markDelivered(candidates)
+    }
+
     private func shouldRunDataRefresh(at now: Date) -> Bool {
         guard !refreshInProgress else { return false }
         guard let lastRefreshFinishedAt else { return true }
@@ -957,6 +1001,7 @@ final class TokenPilotViewModel: ObservableObject {
         )
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
+        await checkBudgetAlerts()
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {

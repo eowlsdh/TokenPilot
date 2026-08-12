@@ -129,6 +129,39 @@ struct SettingsScreen: View {
 
                 TokenPilotSeparator()
 
+                Text(model.t("Budget guardrails"))
+                    .font(.caption.weight(.semibold))
+                Text(model.t("Optional local token budgets per window. A budget of 0 disables that window. Reaching a budget never changes what a provider reports."))
+                    .font(.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                Stepper(
+                    String(format: model.t("Daily budget: %d tokens"), model.settings.budget.dailyTokens),
+                    value: budgetBinding(\.dailyTokens),
+                    in: 0...100_000_000,
+                    step: 1_000
+                )
+                Stepper(
+                    String(format: model.t("Weekly budget: %d tokens"), model.settings.budget.weeklyTokens),
+                    value: budgetBinding(\.weeklyTokens),
+                    in: 0...1_000_000_000,
+                    step: 10_000
+                )
+                Stepper(
+                    String(format: model.t("Monthly budget: %d tokens"), model.settings.budget.monthlyTokens),
+                    value: budgetBinding(\.monthlyTokens),
+                    in: 0...1_000_000_000,
+                    step: 50_000
+                )
+                Stepper(
+                    String(format: model.t("Alert at %d%% of a budget"), model.settings.budget.alertThresholdPercent),
+                    value: budgetBinding(\.alertThresholdPercent),
+                    in: 1...100,
+                    step: 5
+                )
+
+                TokenPilotSeparator()
+
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Version"))
                         .font(.caption.weight(.semibold))
@@ -165,6 +198,17 @@ struct SettingsScreen: View {
         Binding(
             get: { model.settings.launchAtLogin },
             set: { model.setLaunchAtLogin($0) }
+        )
+    }
+
+    private func budgetBinding(_ keyPath: WritableKeyPath<BudgetGuardrailSettings, Int>) -> Binding<Int> {
+        Binding(
+            get: { model.settings.budget[keyPath: keyPath] },
+            set: { newValue in
+                var budget = model.settings.budget
+                budget[keyPath: keyPath] = newValue
+                model.settings.budget = budget
+            }
         )
     }
 
