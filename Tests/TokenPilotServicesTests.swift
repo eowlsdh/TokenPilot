@@ -6648,6 +6648,36 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(summary.hasAnyActivity)
     }
 
+    // MARK: - ProviderCacheEfficiencyService
+
+    func testProviderCacheEfficiencyRanksProvidersByContextReads() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        // opencode: 7K cacheRead / 10K reads = 70%. claude: 1K / 10K = 10%.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, cacheReadTokens: 7_000, source: "cache-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 9_000, cacheReadTokens: 1_000, source: "cache-test", dataSource: .localLog),
+        ]
+
+        let summary = ProviderCacheEfficiencyService().summary(events: events, now: now)
+        XCTAssertEqual(summary.providers.count, 2)
+        XCTAssertTrue(summary.hasAnyActivity)
+
+        let opencode = try XCTUnwrap(summary.providers.first { $0.provider == .opencode })
+        XCTAssertEqual(opencode.hitRate, 0.7, accuracy: 0.001)
+        let claude = try XCTUnwrap(summary.providers.first { $0.provider == .claude })
+        XCTAssertEqual(claude.hitRate, 0.1, accuracy: 0.001)
+    }
+
+    func testProviderCacheEfficiencyExcludesProvidersWithoutReads() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, outputTokens: 500, source: "cache-test", dataSource: .localLog)
+        ]
+        let summary = ProviderCacheEfficiencyService().summary(events: events, now: now)
+        XCTAssertTrue(summary.providers.isEmpty)
+        XCTAssertFalse(summary.hasAnyActivity)
+    }
+
     // MARK: - CacheTrendService
 
     func testCacheTrendComputesDailyRatesAndDetectsDegradation() throws {

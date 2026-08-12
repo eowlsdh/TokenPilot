@@ -84,6 +84,9 @@ struct HistoryScreen: View {
                     if model.cacheEfficiency.hasCacheActivity {
                         HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
                     }
+                    if model.providerCacheEfficiency.hasAnyActivity {
+                        HistoryProviderCacheCard(summary: model.providerCacheEfficiency, model: model)
+                    }
                     if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
                         HistoryBudgetHistoryCard(trend: model.budgetHistoryTrend, model: model)
                     }
@@ -1512,6 +1515,81 @@ struct HistoryBudgetHistoryCard: View {
         if day.exceeded { return TokenPilotDesign.status(.danger) }
         if day.percent >= 80 { return TokenPilotDesign.status(.warning) }
         return TokenPilotDesign.trust
+    }
+}
+
+struct HistoryProviderCacheCard: View {
+    let summary: ProviderCacheEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cache by provider"), systemImage: "square.stack.3d.up")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                VStack(spacing: TokenPilotDesign.Spacing.sm) {
+                    ForEach(summary.providers.prefix(6)) { row in
+                        providerRow(row)
+                    }
+                }
+
+                Text(model.t("Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.t("Cache by provider"))
+    }
+
+    private func providerRow(_ row: ProviderCacheEfficiency) -> some View {
+        HStack(spacing: TokenPilotDesign.Spacing.sm) {
+            Text(model.providerDisplayName(row.provider))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: 90, alignment: .leading)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(TokenPilotDesign.surface(.separator))
+                        .frame(width: proxy.size.width)
+                    Capsule()
+                        .fill(hitRateColor(row.hitRate))
+                        .frame(width: max(proxy.size.width * CGFloat(row.hitRate), 2))
+                }
+            }
+            .frame(height: 8)
+
+            Text("\(Int((row.hitRate * 100).rounded()))%")
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundStyle(hitRateColor(row.hitRate))
+                .frame(width: 34, alignment: .trailing)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(model.providerDisplayName(row.provider)), \(Int((row.hitRate * 100).rounded()))%")
+    }
+
+    private func hitRateColor(_ rate: Double) -> Color {
+        if rate >= 0.6 { return TokenPilotDesign.calm }
+        if rate >= 0.3 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.status(.danger)
     }
 }
 

@@ -406,6 +406,10 @@ final class TokenPilotViewModel: ObservableObject {
         CacheTrendService.trend(events: historyUsage.events)
     }
 
+    var providerCacheEfficiency: ProviderCacheEfficiencySummary {
+        ProviderCacheEfficiencyService().summary(events: historyUsage.events)
+    }
+
     var throughputReading: ThroughputReading {
         ThroughputService().reading(events: overviewUsage.events)
     }

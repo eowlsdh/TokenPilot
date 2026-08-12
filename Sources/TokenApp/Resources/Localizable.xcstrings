@@ -11575,6 +11575,62 @@
         }
       }
     },
+    "Cache by provider": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자별 캐시"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cache by provider"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按提供方缓存"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダ別キャッシュ"
+          }
+        }
+      }
+    },
+    "Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "제공자별로 캐시에서 처리된 컨텍스트 읽기 비율입니다. 로컬 활동이며 캐시 할인율은 제공자별로 다릅니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "各提供方由缓存处理的上下文读取占比。本地活动；缓存折扣率因提供方而异。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロバイダごとのキャッシュから処理されたコンテキスト読み取りの割合です。ローカル活動であり、キャッシュ割引率はプロバイダによって異なります。"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {
