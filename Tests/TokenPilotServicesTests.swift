@@ -986,6 +986,23 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(WeeklyDigestGate.isInFireWindow(now: monday9.addingTimeInterval(5 * 60), lastSentAt: lastWeekMonday, calendar: calendar))
     }
 
+    func testWeeklyDigestGateHonorsCustomSchedule() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        // Custom schedule 15:30: only fires inside the 15:30–16:30 window.
+        let schedule = WeeklyDigestSchedule(hour: 15, minute: 30)
+        let monday1530 = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 15, minute: 30))
+        )
+
+        XCTAssertTrue(WeeklyDigestGate.isInFireWindow(now: monday1530.addingTimeInterval(5 * 60), lastSentAt: nil, calendar: calendar, schedule: schedule))
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday1530.addingTimeInterval(-60), lastSentAt: nil, calendar: calendar, schedule: schedule))
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday1530.addingTimeInterval(2 * 3_600), lastSentAt: nil, calendar: calendar, schedule: schedule))
+        // The default 09:00 schedule does not fire at 15:30.
+        XCTAssertFalse(WeeklyDigestGate.isInFireWindow(now: monday1530.addingTimeInterval(5 * 60), lastSentAt: nil, calendar: calendar))
+    }
+
     func testWeeklyDigestTextAggregatesWeekToDateOnly() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))

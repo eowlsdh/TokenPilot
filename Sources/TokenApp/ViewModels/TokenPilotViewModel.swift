@@ -944,7 +944,8 @@ final class TokenPilotViewModel: ObservableObject {
         }
         lastDailyDigestAttemptDay = now
         let lastSent = dailyDigestStore.loadLastSent()
-        guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent) else { return }
+        let schedule = DailyDigestSchedule(hour: settings.dailyDigestHour, minute: settings.dailyDigestMinute)
+        guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule) else { return }
         let events = usageHistoryStore.loadEvents()
         let text = DailyDigestService.digestText(
             events: events,
@@ -967,7 +968,8 @@ final class TokenPilotViewModel: ObservableObject {
         }
         lastWeeklyDigestAttemptDay = now
         let lastSent = weeklyDigestStore.loadLastSent()
-        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, weekStartDay: settings.weekStartDay) else { return }
+        let schedule = WeeklyDigestSchedule(hour: settings.weeklyDigestHour, minute: settings.weeklyDigestMinute)
+        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule, weekStartDay: settings.weekStartDay) else { return }
         let events = usageHistoryStore.loadEvents()
         let text = WeeklyDigestService.digestText(
             events: events,

@@ -1236,6 +1236,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarHotkeyEnabled: Bool
     public var weeklyDigestEnabled: Bool
     public var dailyDigestEnabled: Bool
+    public var weeklyDigestHour: Int
+    public var weeklyDigestMinute: Int
+    public var dailyDigestHour: Int
+    public var dailyDigestMinute: Int
     public var weekStartDay: WeekStartDay
     public var budget: BudgetGuardrailSettings
 
@@ -1285,6 +1289,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarHotkeyEnabled: Bool = false,
         weeklyDigestEnabled: Bool = false,
         dailyDigestEnabled: Bool = false,
+        weeklyDigestHour: Int = 9,
+        weeklyDigestMinute: Int = 0,
+        dailyDigestHour: Int = 18,
+        dailyDigestMinute: Int = 0,
         weekStartDay: WeekStartDay = .monday,
         budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) {
@@ -1330,6 +1338,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
         self.weeklyDigestEnabled = weeklyDigestEnabled
         self.dailyDigestEnabled = dailyDigestEnabled
+        self.weeklyDigestHour = min(max(weeklyDigestHour, 0), 23)
+        self.weeklyDigestMinute = min(max(weeklyDigestMinute, 0), 59)
+        self.dailyDigestHour = min(max(dailyDigestHour, 0), 23)
+        self.dailyDigestMinute = min(max(dailyDigestMinute, 0), 59)
         self.weekStartDay = weekStartDay
         self.budget = budget
     }
@@ -1418,6 +1430,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarHotkeyEnabled
         case weeklyDigestEnabled
         case dailyDigestEnabled
+        case weeklyDigestHour
+        case weeklyDigestMinute
+        case dailyDigestHour
+        case dailyDigestMinute
         case weekStartDay
         case budget
     }
@@ -1467,6 +1483,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
             weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false,
             dailyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .dailyDigestEnabled) ?? false,
+            weeklyDigestHour: try container.decodeIfPresent(Int.self, forKey: .weeklyDigestHour) ?? 9,
+            weeklyDigestMinute: try container.decodeIfPresent(Int.self, forKey: .weeklyDigestMinute) ?? 0,
+            dailyDigestHour: try container.decodeIfPresent(Int.self, forKey: .dailyDigestHour) ?? 18,
+            dailyDigestMinute: try container.decodeIfPresent(Int.self, forKey: .dailyDigestMinute) ?? 0,
             weekStartDay: Self.decodeWeekStartDay(from: container),
             budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )

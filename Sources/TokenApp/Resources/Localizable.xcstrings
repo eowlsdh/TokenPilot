@@ -12107,6 +12107,118 @@
         }
       }
     },
+    "Weekly digest time": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "주간 다이제스트 시간"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weekly digest time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每周摘要时间"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "週間ダイジェスト時刻"
+          }
+        }
+      }
+    },
+    "Daily digest time": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일일 다이제스트 시간"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily digest time"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每日摘要时间"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デイリーダイジェスト時刻"
+          }
+        }
+      }
+    },
+    "Summarizes this week's local usage on the week-start day at the chosen time while TokenPilot is running.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot이 실행 중일 때 주 시작일에 선택한 시간에 이번 주 로컬 사용량을 요약합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarizes this week's local usage on the week-start day at the chosen time while TokenPilot is running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 TokenPilot 运行时，于每周开始日的选定时间总结本周的本地用量。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilotが実行中の場合、週の開始日に選択した時刻で今週のローカル使用量を要約します。"
+          }
+        }
+      }
+    },
+    "Summarizes today's local usage each day at the chosen time while TokenPilot is running.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilot이 실행 중일 때 매일 선택한 시간에 오늘의 로컬 사용량을 요약합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarizes today's local usage each day at the chosen time while TokenPilot is running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 TokenPilot 运行时，每天于选定时间总结当天的本地用量。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "TokenPilotが実行中の場合、毎日選択した時刻で今日のローカル使用量を要約します。"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {

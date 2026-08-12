@@ -246,6 +246,13 @@ struct SettingsScreen: View {
         )
     }
 
+    private func digestTime(hour: Int, minute: Int) -> Date {
+        var components = DateComponents()
+        components.hour = min(max(hour, 0), 23)
+        components.minute = min(max(minute, 0), 59)
+        return Calendar.current.date(from: components) ?? Date()
+    }
+
     private var sourceSettings: some View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
             sourceHealthDisclosure
@@ -856,14 +863,54 @@ struct SettingsScreen: View {
                     .disabled(!model.settings.globalNotificationsEnabled)
                 Toggle(model.t("Weekly digest"), isOn: $model.settings.weeklyDigestEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
-                Text(model.t("Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running."))
+                Text(model.t("Summarizes this week's local usage on the week-start day at the chosen time while TokenPilot is running."))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(model.t("Weekly digest time"))
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    DatePicker(
+                        model.t("Weekly digest time"),
+                        selection: Binding(
+                            get: { digestTime(hour: model.settings.weeklyDigestHour, minute: model.settings.weeklyDigestMinute) },
+                            set: { newDate in
+                                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                                model.settings.weeklyDigestHour = components.hour ?? 9
+                                model.settings.weeklyDigestMinute = components.minute ?? 0
+                            }
+                        ),
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .frame(maxWidth: 110)
+                }
+                .disabled(!model.settings.weeklyDigestEnabled || !model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
                 Toggle(model.t("Daily digest"), isOn: $model.settings.dailyDigestEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
-                Text(model.t("Summarizes today's local usage every evening at 18:00 while TokenPilot is running."))
+                Text(model.t("Summarizes today's local usage each day at the chosen time while TokenPilot is running."))
                     .font(.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(model.t("Daily digest time"))
+                        .font(.caption.weight(.semibold))
+                    Spacer(minLength: 8)
+                    DatePicker(
+                        model.t("Daily digest time"),
+                        selection: Binding(
+                            get: { digestTime(hour: model.settings.dailyDigestHour, minute: model.settings.dailyDigestMinute) },
+                            set: { newDate in
+                                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                                model.settings.dailyDigestHour = components.hour ?? 18
+                                model.settings.dailyDigestMinute = components.minute ?? 0
+                            }
+                        ),
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .frame(maxWidth: 110)
+                }
+                .disabled(!model.settings.dailyDigestEnabled || !model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
                 Toggle(model.t("Telegram notifications"), isOn: $model.settings.telegramNotificationsEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled)
                 Toggle(model.t("Discord notifications"), isOn: $model.settings.discordNotificationsEnabled)
