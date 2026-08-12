@@ -16,7 +16,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, includesCost: Bool = true, includesJSON: Bool = false)
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false)
@@ -455,6 +455,7 @@ public enum TokenPilotCLIService {
         var days: Int?
         var includesCost = true
         var timeZone: TimeZone?
+        var includesBreakdown = false
         var project: String?
         var includesJSON = false
         var weekStartDay: WeekStartDay?
@@ -521,6 +522,8 @@ public enum TokenPilotCLIService {
                 sections = parsed.compactMap { $0 }
             case "--no-cost":
                 includesCost = false
+            case "--breakdown":
+                includesBreakdown = true
             case "--json":
                 includesJSON = true
             default:
@@ -537,7 +540,7 @@ public enum TokenPilotCLIService {
         if sections != nil, !includesJSON {
             return .failure(.invalidCombination("--sections requires --json output."))
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay, sections: sections))
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay, sections: sections))
     }
 
     public static var helpText: String {
@@ -547,7 +550,7 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth]
           TokenPilot summary [--period today|last7Days|thisMonth] [--no-cost] [--json]
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json] [--sections today,last7Days,thisMonth]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json]
           TokenPilot blocks [--json] [--active] [--recent]
@@ -563,7 +566,8 @@ public enum TokenPilotCLIService {
         scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
         the same statistics as structured JSON for scripting (toktrack stats --json style) with a
-        per-provider model breakdown (ccusage --by-agent style), and
+        per-provider model breakdown (ccusage --by-agent style), --breakdown adds a per-day, per-model
+        breakdown section (ccusage --breakdown style), and
         --sections (JSON only) emits stats for several periods in one envelope. report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
@@ -738,6 +742,7 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         includesCost: Bool = true,
+        includesBreakdown: Bool = false,
         project: String? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
@@ -790,6 +795,13 @@ public enum TokenPilotCLIService {
         if let mostUsedProvider = metrics.mostUsedProvider {
             lines.append("\(localized("Most used provider", language: language)): \(localized(mostUsedProvider.displayName, language: language))")
         }
+        if includesBreakdown {
+            let breakdownLines = dailyModelBreakdownLines(events: scopedEvents.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, days: days, now: now, calendar: calendar, includesCost: includesCost)
+            if !breakdownLines.isEmpty {
+                lines.append(localized("Daily breakdown", language: language))
+                lines.append(contentsOf: breakdownLines)
+            }
+        }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }
@@ -807,6 +819,7 @@ public enum TokenPilotCLIService {
         until: Date? = nil,
         days: Int? = nil,
         includesCost: Bool = true,
+        includesBreakdown: Bool = false,
         project: String? = nil,
         sections: [HistoryPeriod]? = nil,
         now: Date = Date(),
@@ -827,6 +840,7 @@ public enum TokenPilotCLIService {
                     until: nil,
                     days: nil,
                     includesCost: includesCost,
+                    includesBreakdown: includesBreakdown,
                     project: project,
                     now: now,
                     calendar: calendar
@@ -853,6 +867,7 @@ public enum TokenPilotCLIService {
             until: until,
             days: days,
             includesCost: includesCost,
+            includesBreakdown: includesBreakdown,
             project: project,
             now: now,
             calendar: calendar
@@ -868,6 +883,7 @@ public enum TokenPilotCLIService {
         until: Date?,
         days: Int?,
         includesCost: Bool,
+        includesBreakdown: Bool,
         project: String?,
         now: Date,
         calendar: Calendar
@@ -898,6 +914,32 @@ public enum TokenPilotCLIService {
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "MM-dd"
+        let dailyModelBreakdown: [ReportModelRow]?
+        if includesBreakdown {
+            dailyModelBreakdown = dayGroups.keys.sorted().map { day -> ReportModelRow in
+                let dayEvents = dayGroups[day] ?? []
+                let byModel = Dictionary(grouping: dayEvents) { event in
+                    event.model?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+                }
+                let models = byModel.keys.sorted { lhs, rhs in
+                    let lhsTokens = byModel[lhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                    let rhsTokens = byModel[rhs]?.reduce(0) { $0 + $1.totalTokens } ?? 0
+                    if lhsTokens != rhsTokens { return lhsTokens > rhsTokens }
+                    return lhs < rhs
+                }.map { model -> ReportModelEntry in
+                    let modelEvents = byModel[model] ?? []
+                    let cost = includesCost ? modelEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +) : nil
+                    return ReportModelEntry(
+                        model: model,
+                        tokens: modelEvents.reduce(0) { $0 + $1.totalTokens },
+                        estimatedCostUSD: cost
+                    )
+                }
+                return ReportModelRow(date: dayFormatter.string(from: day), models: models)
+            }
+        } else {
+            dailyModelBreakdown = nil
+        }
         let modelSharesByProvider = Dictionary(grouping: usage.modelBreakdown.filter { $0.tokens > 0 }) { $0.provider }
         let providers = enabledSet.compactMap { provider -> StatsProviderBreakdownJSON? in
             let shares = modelSharesByProvider[provider] ?? []
@@ -928,6 +970,7 @@ public enum TokenPilotCLIService {
             busiestDay: busiestDay.flatMap { $0.value.isEmpty ? nil : dayFormatter.string(from: $0.key) },
             busiestHour: metrics.busiestHour,
             mostUsedProvider: metrics.mostUsedProvider?.displayName,
+            dailyModelBreakdown: dailyModelBreakdown,
             providers: providers
         )
     }
@@ -2110,6 +2153,7 @@ private struct StatsPayloadJSON: Codable {
     var busiestDay: String?
     var busiestHour: Int?
     var mostUsedProvider: String?
+    var dailyModelBreakdown: [ReportModelRow]?
     var providers: [StatsProviderBreakdownJSON]
 }
 
