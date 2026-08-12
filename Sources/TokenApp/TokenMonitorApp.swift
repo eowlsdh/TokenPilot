@@ -47,17 +47,28 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.report(let period)):
+        case .success(.report(let period, let format)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
-            print(
-                TokenPilotCLIService.reportText(
-                    events: events,
-                    enabledProviders: settings.enabledProviders,
-                    language: .en,
-                    period: period
+            switch format {
+            case .svg:
+                print(
+                    TokenPilotCLIService.reportSVGText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period
+                    )
                 )
-            )
+            case .text:
+                print(
+                    TokenPilotCLIService.reportText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        language: .en,
+                        period: period
+                    )
+                )
+            }
             return 0
         case .success(.audit):
             let events = UsageHistoryStore().loadEvents()

@@ -5,10 +5,16 @@ import Foundation
 /// The CLI is intentionally a read-only view over locally stored usage events: it never reads
 /// provider credentials, never starts the AppKit app, and every exported payload goes through
 /// the same redaction pipeline as GUI export.
+/// Output format for the `report` command.
+public enum TokenPilotReportFormat: String, Equatable, Sendable {
+    case text
+    case svg
+}
+
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool)
     case summary
-    case report(period: HistoryPeriod)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat)
     case audit
     case help
 }
@@ -63,6 +69,7 @@ public enum TokenPilotCLIService {
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var period = HistoryPeriod.last7Days
+        var format = TokenPilotReportFormat.text
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -74,12 +81,14 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidPeriod(flags[index]))
                 }
                 period = parsed
+            case "--svg":
+                format = .svg
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.report(period: period))
+        return .success(.report(period: period, format: format))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -126,14 +135,15 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--out <path>] [--capacity]
           TokenPilot summary
-          TokenPilot report [--period today|last7Days|thisMonth]
+          TokenPilot report [--period today|last7Days|thisMonth] [--svg]
           TokenPilot audit
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints today's local usage totals. report prints a shareable usage receipt with a
-        per-day breakdown and cache efficiency. audit reports local history coverage so you can
+        per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
+        SVG. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs. Exports, reports, and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
@@ -250,6 +260,84 @@ public enum TokenPilotCLIService {
             lines.append(contentsOf: dailyLines)
         }
         lines.append(localized("Local activity, not provider quota", language: language))
+        return lines.joined(separator: "\n")
+    }
+
+    /// Shareable SVG receipt over stored local activity (toktrack `report --svg` style).
+    ///
+    /// Renders the same aggregates as `reportText` (period, totals, cost, cache
+    /// hit rate, provider shares, daily breakdown) as a standalone dark SVG.
+    /// Only aggregates reach the markup; raw event fields never appear.
+    public static func reportSVGText(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .last7Days,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let enabledSet = Set(enabledProviders)
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let metrics = usage.metrics
+        let periodEvents = events.filter { event in
+            enabledSet.contains(event.provider) && isInPeriod(event.timestamp, period: period, now: now, calendar: calendar)
+        }
+        let cache = CacheEfficiencyService.summary(events: periodEvents, now: now, calendar: calendar)
+
+        let width = 640
+        let rowHeight = 24
+        var y = 48
+        var lines: [String] = []
+
+        func addText(_ text: String, size: Int, weight: String = "normal", fill: String = "#e6e6e6") {
+            let escaped = text
+                .replacingOccurrences(of: "&", with: "&amp;")
+                .replacingOccurrences(of: "<", with: "&lt;")
+                .replacingOccurrences(of: ">", with: "&gt;")
+            lines.append("<text x=\"24\" y=\"\(y)\" font-family=\"-apple-system, sans-serif\" font-size=\"\(size)\" font-weight=\"\(weight)\" fill=\"\(fill)\">\(escaped)</text>")
+            y += rowHeight
+        }
+
+        lines.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(y + 40)\" viewBox=\"0 0 \(width) \(y + 40)\">")
+        lines.append("<rect width=\"100%\" height=\"100%\" fill=\"#1c1c1e\"/>")
+        addText("TokenPilot · Report", size: 18, weight: "bold", fill: "#ffffff")
+        addText("Period: \(periodLabel(period, language: .en))", size: 13)
+        addText("Total tokens: \(TokenPilotFormatters.compactNumber(metrics.totalTokens))", size: 13)
+        addText("Requests: \(TokenPilotFormatters.compactNumber(metrics.requestCount))", size: 13)
+        if metrics.estimatedCostUSD > 0 {
+            let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
+            addText("Estimated cost: $\(String(format: "%.2f", amount))", size: 13)
+        }
+        if cache.hasCacheActivity {
+            let hitPercent = Int((cache.cacheHitRate * 100).rounded())
+            addText("Cache hit rate: \(hitPercent)%", size: 13)
+        }
+        for share in usage.providerShare where share.tokens > 0 {
+            addText(
+                "\(share.provider.displayName): \(TokenPilotFormatters.compactNumber(share.tokens)) tok (\(share.percent)%)",
+                size: 13,
+                fill: "#a5c8ff"
+            )
+        }
+        let dailyLines = dailyBreakdownLines(
+            events: events.filter { enabledSet.contains($0.provider) },
+            period: period,
+            now: now,
+            calendar: calendar
+        )
+        if !dailyLines.isEmpty {
+            addText("Daily breakdown", size: 14, weight: "bold", fill: "#ffffff")
+            for line in dailyLines {
+                addText(line, size: 12, fill: "#9b9b9b")
+            }
+        }
+        addText("Local activity, not provider quota", size: 11, fill: "#666666")
+        lines.append("</svg>")
         return lines.joined(separator: "\n")
     }
 

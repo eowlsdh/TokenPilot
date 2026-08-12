@@ -555,9 +555,11 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIParseReportDefaultsAndFlags() {
-        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report"]), .success(.report(period: .last7Days)))
-        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today"]), .success(.report(period: .today)))
-        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "thisMonth"]), .success(.report(period: .thisMonth)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report"]), .success(.report(period: .last7Days, format: .text)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today"]), .success(.report(period: .today, format: .text)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "thisMonth"]), .success(.report(period: .thisMonth, format: .text)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--svg"]), .success(.report(period: .last7Days, format: .svg)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--svg"]), .success(.report(period: .today, format: .svg)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
@@ -585,6 +587,33 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Daily breakdown"))
         XCTAssertTrue(text.contains("opencode"))
         XCTAssertTrue(text.contains("Local activity, not provider quota"))
+    }
+
+    func testCLIReportSVGContainsAggregatesAndEscapes() {
+        let now = Date()
+        let calendar = Calendar.current
+        let dayAgo = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 1_000, cacheReadTokens: 6_000, source: "report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: dayAgo, inputTokens: 2_000, outputTokens: 0, source: "report-test", dataSource: .localLog),
+        ]
+        let svg = TokenPilotCLIService.reportSVGText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(svg.hasPrefix("<svg xmlns=\"http://www.w3.org/2000/svg\""))
+        XCTAssertTrue(svg.hasSuffix("</svg>"))
+        XCTAssertTrue(svg.contains("TokenPilot · Report"))
+        XCTAssertTrue(svg.contains("Total tokens: 12K"))
+        XCTAssertTrue(svg.contains("Cache hit rate: 55%"))
+        XCTAssertTrue(svg.contains("Daily breakdown"))
+        XCTAssertTrue(svg.contains("Local activity, not provider quota"))
+        // Aggregates only: no raw event fields leak into the markup.
+        XCTAssertFalse(svg.contains("report-test"))
+        XCTAssertFalse(svg.contains("inputTokens"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {
