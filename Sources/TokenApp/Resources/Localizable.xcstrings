@@ -11374,7 +11374,63 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "設定された1日の予算に対する1日ごとのローカルトークンです。プロバイダ의割り当てではありません。"
+            "value": "設定された1日の予算に対する1日ごとのローカルトークンです。プロバイダの割り当てではありません。"
+          }
+        }
+      }
+    },
+    "Daily digest": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일일 다이제스트"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily digest"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每日摘要"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デイリーダイジェスト"
+          }
+        }
+      }
+    },
+    "Summarizes today's local usage every evening at 18:00 while TokenPilot is running.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "매일 저녁 18:00에 TokenPilot이 실행 중일 때 오늘의 로컬 사용량을 요약합니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Summarizes today's local usage every evening at 18:00 while TokenPilot is running."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每天 18:00 在 TokenPilot 运行时总结当天的本地用量。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "毎日18:00にTokenPilotが実行中の場合、今日のローカル使用量を要約します。"
           }
         }
       }

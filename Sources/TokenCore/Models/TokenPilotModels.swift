@@ -1200,6 +1200,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var refreshIntervalSeconds: Int
     public var menuBarHotkeyEnabled: Bool
     public var weeklyDigestEnabled: Bool
+    public var dailyDigestEnabled: Bool
     public var budget: BudgetGuardrailSettings
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
@@ -1247,6 +1248,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         refreshIntervalSeconds: Int = 60,
         menuBarHotkeyEnabled: Bool = false,
         weeklyDigestEnabled: Bool = false,
+        dailyDigestEnabled: Bool = false,
         budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) {
         self.claudeEnabled = claudeEnabled
@@ -1290,6 +1292,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.refreshIntervalSeconds = refreshIntervalSeconds
         self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
         self.weeklyDigestEnabled = weeklyDigestEnabled
+        self.dailyDigestEnabled = dailyDigestEnabled
         self.budget = budget
     }
     public mutating func normalizeMenuBarComposition() {
@@ -1376,6 +1379,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case refreshIntervalSeconds
         case menuBarHotkeyEnabled
         case weeklyDigestEnabled
+        case dailyDigestEnabled
         case budget
     }
 
@@ -1423,6 +1427,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
             weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false,
+            dailyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .dailyDigestEnabled) ?? false,
             budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )
         self.normalizeMenuBarComposition()

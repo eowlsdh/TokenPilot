@@ -329,6 +329,8 @@ public enum TokenPilotLocalizer {
         "Budget history": [.en: "Budget history", .ko: "예산 기록", .ja: "予算履歴", .zhHans: "预算记录", .zhHant: "預算記錄"],
         "exceeded": [.en: "exceeded", .ko: "초과", .ja: "超過", .zhHans: "超出", .zhHant: "超出"],
         "Daily local tokens vs the configured daily budget. Not provider quota.": [.en: "Daily local tokens vs the configured daily budget. Not provider quota.", .ko: "설정된 일일 예산 대비 일별 로컬 토큰입니다. 제공자 할당량이 아닙니다.", .ja: "設定された1日の予算に対する1日ごとのローカルトークンです。プロバイダの割り当てではありません。", .zhHans: "每日本地令牌与配置的每日预算对比。不是提供方配额。", .zhHant: "每日本地令牌與配置的每日預算對比。不是提供方配額。"],
+        "Daily digest": [.en: "Daily digest", .ko: "일일 다이제스트", .ja: "デイリーダイジェスト", .zhHans: "每日摘要", .zhHant: "每日摘要"],
+        "Summarizes today's local usage every evening at 18:00 while TokenPilot is running.": [.en: "Summarizes today's local usage every evening at 18:00 while TokenPilot is running.", .ko: "매일 저녁 18:00에 TokenPilot이 실행 중일 때 오늘의 로컬 사용량을 요약합니다.", .ja: "毎日18:00にTokenPilotが実行中の場合、今日のローカル使用量を要約します。", .zhHans: "每天 18:00 在 TokenPilot 运行时总结当天的本地用量。", .zhHant: "每天 18:00 在 TokenPilot 執行時總結當天的本地用量。"],
         "Switch screens with ⌘1, ⌘2, ⌘3": [.en: "Switch screens with ⌘1, ⌘2, ⌘3", .ko: "⌘1, ⌘2, ⌘3으로 화면 전환", .ja: "⌘1、⌘2、⌘3 で画面を切り替え", .zhHans: "使用 ⌘1、⌘2、⌘3 切换屏幕", .zhHant: "使用 ⌘1、⌘2、⌘3 切換螢幕"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],

@@ -930,6 +930,81 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(store.loadLastSent(), date)
     }
 
+    func testDailyDigestGateFireWindow() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let sixPM = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+
+        XCTAssertTrue(DailyDigestGate.isInFireWindow(now: sixPM.addingTimeInterval(5 * 60), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(DailyDigestGate.isInFireWindow(now: sixPM.addingTimeInterval(-60), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(DailyDigestGate.isInFireWindow(now: sixPM.addingTimeInterval(2 * 3_600), lastSentAt: nil, calendar: calendar))
+        XCTAssertFalse(DailyDigestGate.isInFireWindow(now: sixPM.addingTimeInterval(5 * 60), lastSentAt: sixPM, calendar: calendar))
+
+        let yesterday = sixPM.addingTimeInterval(-24 * 3_600)
+        XCTAssertTrue(DailyDigestGate.isInFireWindow(now: sixPM.addingTimeInterval(5 * 60), lastSentAt: yesterday, calendar: calendar))
+    }
+
+    func testDailyDigestTextAggregatesTodayOnly() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+        let today = now.addingTimeInterval(-3_600)
+        let yesterday = now.addingTimeInterval(-24 * 3_600)
+        let events = [
+            UsageEvent(
+                provider: .claude,
+                timestamp: today,
+                inputTokens: 100,
+                outputTokens: 23,
+                requestCount: 2,
+                estimatedCostUSD: Decimal(0.30),
+                source: "statusline",
+                dataSource: .officialStatusline
+            ),
+            UsageEvent(
+                provider: .codex,
+                timestamp: yesterday,
+                inputTokens: 400,
+                outputTokens: 56,
+                requestCount: 1,
+                estimatedCostUSD: Decimal(0.20),
+                source: "session-jsonl",
+                dataSource: .localLog
+            ),
+        ]
+
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: [.claude, .codex],
+            language: .en,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Total tokens: 123"))
+        XCTAssertTrue(text.contains("Requests: 2"))
+        XCTAssertTrue(text.contains("Estimated cost: $0.30"))
+        XCTAssertTrue(text.contains("Local activity, not provider quota"))
+        XCTAssertFalse(text.contains("456"))
+    }
+
+    func testDailyDigestStoreRoundtrip() {
+        let suite = "TokenPilotDailyDigestTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = DailyDigestStore(defaults: defaults)
+
+        XCTAssertNil(store.loadLastSent())
+        let date = Date()
+        store.saveLastSent(date)
+        XCTAssertEqual(store.loadLastSent(), date)
+    }
+
     func testRefreshIntervalDefaultsAndClamp() {
         XCTAssertEqual(AppSettings().refreshIntervalSeconds, 60)
         XCTAssertFalse(AppSettings().menuBarHotkeyEnabled)

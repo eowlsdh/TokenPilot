@@ -88,6 +88,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
     private let weeklyDigestStore = WeeklyDigestStore()
+    private let dailyDigestStore = DailyDigestStore()
     private let budgetAlertService = BudgetAlertService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
@@ -115,6 +116,7 @@ final class TokenPilotViewModel: ObservableObject {
     private var settingsRefreshTask: Task<Void, Never>?
     private var experimentalShutdownTask: Task<Void, Never>?
     private var lastWeeklyDigestAttemptDay: Date?
+    private var lastDailyDigestAttemptDay: Date?
 #if DEBUG
     private let debugFixtureMode: Bool
 #endif
@@ -923,8 +925,32 @@ final class TokenPilotViewModel: ObservableObject {
     private func handleAutoRefreshTick() async {
         menuBarNow = Date()
         await checkWeeklyDigest(now: menuBarNow)
+        await checkDailyDigest(now: menuBarNow)
         guard shouldRunDataRefresh(at: menuBarNow) else { return }
         await refresh(reason: .automaticTimer)
+    }
+
+    private func checkDailyDigest(now: Date) async {
+        guard settings.dailyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              !Calendar.current.isDate(now, inSameDayAs: lastDailyDigestAttemptDay ?? .distantPast) else {
+            return
+        }
+        lastDailyDigestAttemptDay = now
+        let lastSent = dailyDigestStore.loadLastSent()
+        guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now
+        )
+        do {
+            try await localNotificationService.send(title: t("Daily digest"), body: text)
+            dailyDigestStore.saveLastSent(now)
+        } catch {}
     }
 
     private func checkWeeklyDigest(now: Date) async {
