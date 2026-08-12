@@ -47,6 +47,18 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
+        case .success(.report(let period)):
+            let settings = TokenPilotSettingsStore().load()
+            let events = UsageHistoryStore().loadEvents()
+            print(
+                TokenPilotCLIService.reportText(
+                    events: events,
+                    enabledProviders: settings.enabledProviders,
+                    language: .en,
+                    period: period
+                )
+            )
+            return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity)):
             return await runExport(
                 format: format,

@@ -8,6 +8,7 @@ import Foundation
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool)
     case summary
+    case report(period: HistoryPeriod)
     case help
 }
 
@@ -35,8 +36,8 @@ public enum TokenPilotCLIService {
     /// True when the first argument is a CLI command, so the app entry point can skip AppKit.
     public static func isCLIInvocation(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
-        return first == "export" || first == "summary" || first == "help" ||
-            first == "-h" || first == "--help"
+        return first == "export" || first == "summary" || first == "report" ||
+            first == "help" || first == "-h" || first == "--help"
     }
 
     public static func parse(arguments: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -48,11 +49,34 @@ public enum TokenPilotCLIService {
             return .success(.help)
         case "summary":
             return .success(.summary)
+        case "report":
+            return parseReport(Array(arguments.dropFirst()))
         case "export":
             return parseExport(Array(arguments.dropFirst()))
         default:
             return .failure(.unknownCommand(command))
         }
+    }
+
+    private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var period = HistoryPeriod.last7Days
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--period":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = HistoryPeriod(rawValue: flags[index]) else {
+                    return .failure(.invalidPeriod(flags[index]))
+                }
+                period = parsed
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.report(period: period))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -99,12 +123,14 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--out <path>] [--capacity]
           TokenPilot summary
+          TokenPilot report [--period today|last7Days|thisMonth]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
-        prints today's local usage totals. Exports never include prompts, responses, local paths,
-        chat IDs, webhooks, or provider credentials.
+        prints today's local usage totals. report prints a shareable usage receipt with a
+        per-day breakdown and cache efficiency. Exports and reports never include prompts,
+        responses, local paths, chat IDs, webhooks, or provider credentials.
         """
     }
 
@@ -164,6 +190,99 @@ public enum TokenPilotCLIService {
 
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// Shareable plain-text receipt over stored local activity (toktrack-report style).
+    ///
+    /// Unlike `summaryText`, the receipt adds a per-day breakdown and cache
+    /// efficiency so it reads as a standalone usage report. Only aggregates
+    /// reach the output; raw event fields never appear.
+    public static func reportText(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        language: TokenPilotLanguage,
+        period: HistoryPeriod = .last7Days,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let enabledSet = Set(enabledProviders)
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let metrics = usage.metrics
+        let periodEvents = events.filter { event in
+            enabledSet.contains(event.provider) && isInPeriod(event.timestamp, period: period, now: now, calendar: calendar)
+        }
+        let cache = CacheEfficiencyService.summary(events: periodEvents, now: now, calendar: calendar)
+
+        var lines: [String] = []
+        lines.append("TokenPilot · \(localized("Report", language: language))")
+        lines.append("\(localized("Period", language: language)): \(periodLabel(period, language: language))")
+        lines.append("\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(metrics.totalTokens))")
+        lines.append("\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(metrics.requestCount))")
+        if metrics.estimatedCostUSD > 0 {
+            let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
+            lines.append("\(localized("Estimated cost", language: language)): \(String(format: "$%.2f", amount))")
+        }
+        if cache.hasCacheActivity {
+            let hitPercent = Int((cache.cacheHitRate * 100).rounded())
+            lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
+        }
+        for share in usage.providerShare where share.tokens > 0 {
+            lines.append(
+                "\(localized(share.provider.displayName, language: language)): " +
+                "\(TokenPilotFormatters.compactNumber(share.tokens)) " +
+                "\(localized("tok", language: language)) (\(share.percent)%)"
+            )
+        }
+        let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, now: now, calendar: calendar)
+        if !dailyLines.isEmpty {
+            lines.append(localized("Daily breakdown", language: language))
+            lines.append(contentsOf: dailyLines)
+        }
+        lines.append(localized("Local activity, not provider quota", language: language))
+        return lines.joined(separator: "\n")
+    }
+
+    private static func dailyBreakdownLines(
+        events: [UsageEvent],
+        period: HistoryPeriod,
+        now: Date,
+        calendar: Calendar
+    ) -> [String] {
+        guard let start = periodStart(period, now: now, calendar: calendar) else { return [] }
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "MM-dd"
+        let inWindow = events.filter { $0.timestamp >= start && $0.timestamp <= now }
+        let dayTokens = Dictionary(grouping: inWindow) { event in
+            calendar.startOfDay(for: event.timestamp)
+        }.mapValues { $0.reduce(0) { $0 + $1.totalTokens } }
+        return dayTokens.keys.sorted().map { day in
+            let tokens = dayTokens[day] ?? 0
+            return "\(dayFormatter.string(from: day)): \(TokenPilotFormatters.compactNumber(tokens)) " + localized("tok", language: .en)
+        }
+    }
+
+    private static func isInPeriod(_ date: Date, period: HistoryPeriod, now: Date, calendar: Calendar) -> Bool {
+        guard let start = periodStart(period, now: now, calendar: calendar) else { return false }
+        return date >= start && date <= now
+    }
+
+    private static func periodStart(_ period: HistoryPeriod, now: Date, calendar: Calendar) -> Date? {
+        switch period {
+        case .today:
+            return calendar.startOfDay(for: now)
+        case .last7Days:
+            return calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))
+        case .thisMonth:
+            return calendar.dateInterval(of: .month, for: now)?.start
+        }
     }
 
     private static func periodLabel(_ period: HistoryPeriod, language: TokenPilotLanguage) -> String {

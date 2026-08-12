@@ -477,6 +477,7 @@ final class TokenPilotServicesTests: XCTestCase {
     func testCLIInvocationDetection() {
         XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["export"]))
         XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["summary"]))
+        XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["report"]))
         XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["help"]))
         XCTAssertTrue(TokenPilotCLIService.isCLIInvocation(["--help"]))
         XCTAssertFalse(TokenPilotCLIService.isCLIInvocation([]))
@@ -551,6 +552,39 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
+    }
+
+    func testCLIParseReportDefaultsAndFlags() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report"]), .success(.report(period: .last7Days)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today"]), .success(.report(period: .today)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "thisMonth"]), .success(.report(period: .thisMonth)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
+    }
+
+    func testCLIReportTextIncludesDailyBreakdownAndCacheEfficiency() {
+        let now = Date()
+        let calendar = Calendar.current
+        let dayAgo = calendar.date(byAdding: .day, value: -1, to: now) ?? now
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 1_000, cacheReadTokens: 6_000, source: "report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: dayAgo, inputTokens: 2_000, outputTokens: 0, source: "report-test", dataSource: .localLog),
+        ]
+        let text = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("TokenPilot · Report"))
+        XCTAssertTrue(text.contains("Total tokens: 12K"))
+        // Cache hit rate over the period events: 6000 / (3000+2000 + 6000) = 55%.
+        XCTAssertTrue(text.contains("Cache hit rate: 55%"))
+        XCTAssertTrue(text.contains("Daily breakdown"))
+        XCTAssertTrue(text.contains("opencode"))
+        XCTAssertTrue(text.contains("Local activity, not provider quota"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {
