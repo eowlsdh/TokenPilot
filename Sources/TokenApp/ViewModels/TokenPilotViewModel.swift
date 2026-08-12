@@ -407,6 +407,13 @@ final class TokenPilotViewModel: ObservableObject {
         ThroughputService().reading(events: overviewUsage.events)
     }
 
+    var budgetHistoryTrend: BudgetHistoryTrend {
+        BudgetHistoryService().trend(
+            events: historyUsage.events,
+            dailyBudgetTokens: settings.budget.dailyTokens
+        )
+    }
+
     var contextHealthAssessments: [ContextHealthAssessment] {
         ContextHealthService().assess(records: capacityEvidenceRecords)
     }

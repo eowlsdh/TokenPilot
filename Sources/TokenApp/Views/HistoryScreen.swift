@@ -84,6 +84,9 @@ struct HistoryScreen: View {
                     if model.cacheEfficiency.hasCacheActivity {
                         HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
                     }
+                    if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
+                        HistoryBudgetHistoryCard(trend: model.budgetHistoryTrend, model: model)
+                    }
                     if model.costEfficiency.hasAnyActivity {
                         HistoryCostEfficiencyCard(efficiency: model.costEfficiency, model: model)
                     }
@@ -1441,6 +1444,74 @@ struct HistoryCostEfficiencyCard: View {
     private var totalCostText: String {
         guard let total = efficiency.totalCostUSD else { return "—" }
         return TokenPilotFormatters.cost(total)
+    }
+}
+
+struct HistoryBudgetHistoryCard: View {
+    let trend: BudgetHistoryTrend
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Budget history"), systemImage: "chart.bar.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text("\(trend.exceededCount) \(model.t("exceeded"))")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(trend.exceededCount > 0 ? TokenPilotDesign.status(.warning) : TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(trend.days) { day in
+                            VStack(spacing: 2) {
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(budgetBarColor(day))
+                                    .frame(width: 10, height: budgetBarHeight(day))
+                                Text(day.dayLabel)
+                                    .font(.system(size: 7, design: .monospaced))
+                                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                                    .lineLimit(1)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(day.dayLabel), \(TokenPilotFormatters.compactNumber(day.tokens)) \(model.t("tok")), \(day.percent)%")
+                        }
+                    }
+                }
+                .frame(height: 34)
+                .padding(.top, 2)
+
+                Text(model.t("Daily local tokens vs the configured daily budget. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Budget history")): \(trend.exceededCount) \(model.t("exceeded")), \(trend.activeDayCount) \(model.t("active days"))"
+        )
+    }
+
+    private func budgetBarHeight(_ day: DailyBudgetUsage) -> CGFloat {
+        guard day.hasActivity else { return 2 }
+        return max(CGFloat(day.percent) * 0.3, 2)
+    }
+
+    private func budgetBarColor(_ day: DailyBudgetUsage) -> Color {
+        guard day.hasActivity else { return TokenPilotDesign.surface(.separator).opacity(0.5) }
+        if day.exceeded { return TokenPilotDesign.status(.danger) }
+        if day.percent >= 80 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.trust
     }
 }
 

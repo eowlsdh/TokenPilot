@@ -11295,6 +11295,90 @@
         }
       }
     },
+    "Budget history": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예산 기록"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Budget history"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "预算记录"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "予算履歴"
+          }
+        }
+      }
+    },
+    "exceeded": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "초과"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "exceeded"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超出"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "超過"
+          }
+        }
+      }
+    },
+    "Daily local tokens vs the configured daily budget. Not provider quota.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정된 일일 예산 대비 일별 로컬 토큰입니다. 제공자 할당량이 아닙니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Daily local tokens vs the configured daily budget. Not provider quota."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "每日本地令牌与配置的每日预算对比。不是提供方配额。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定された1日の予算に対する1日ごとのローカルトークンです。プロバイダ의割り当てではありません。"
+          }
+        }
+      }
+    },
     "Switch screens with ⌘1, ⌘2, ⌘3": {
       "localizations": {
         "ko": {

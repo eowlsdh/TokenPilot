@@ -6599,6 +6599,52 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(empty.windowTokens, 0)
     }
 
+    // MARK: - BudgetHistoryService
+
+    func testBudgetHistoryTracksDailyUsageAgainstBudget() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Today: 12K of a 10K budget -> exceeded. Yesterday: 5K -> 50%.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 12_000, outputTokens: 0, source: "budget-history-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 5_000, outputTokens: 0, source: "budget-history-test", dataSource: .localLog),
+        ]
+
+        let trend = BudgetHistoryService().trend(events: events, dailyBudgetTokens: 10_000, days: 3, now: now, calendar: calendar)
+        XCTAssertEqual(trend.days.count, 3)
+        XCTAssertEqual(trend.activeDayCount, 2)
+        XCTAssertEqual(trend.exceededCount, 1)
+
+        let today = trend.days.last
+        XCTAssertEqual(today?.percent, 100)
+        XCTAssertTrue(today?.exceeded == true)
+
+        let yesterday = trend.days[trend.days.count - 2]
+        XCTAssertEqual(yesterday.percent, 50)
+        XCTAssertFalse(yesterday.exceeded)
+
+        let emptyDay = trend.days.first
+        XCTAssertFalse(emptyDay?.hasActivity == true)
+        XCTAssertEqual(emptyDay?.percent, 0)
+    }
+
+    func testBudgetHistoryDisabledBudgetYieldsZeroPercent() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 5_000, outputTokens: 0, source: "budget-history-test", dataSource: .localLog)
+        ]
+
+        let trend = BudgetHistoryService().trend(events: events, dailyBudgetTokens: 0, days: 3, now: now, calendar: calendar)
+        XCTAssertEqual(trend.exceededCount, 0)
+        XCTAssertTrue(trend.days.allSatisfy { $0.percent == 0 && !$0.exceeded })
+        XCTAssertEqual(trend.activeDayCount, 1)
+    }
+
     // MARK: - FiveHourBlocksService
 
     func testFiveHourBlocksBucketsAlignedToLocalMidnight() throws {
