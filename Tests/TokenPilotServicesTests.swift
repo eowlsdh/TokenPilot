@@ -694,6 +694,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["summary", "--json", "--sections", "today,bogus"]),
             .failure(.invalidPeriod("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--start-of-week", "monday"]), .success(.summary(weekStartDay: .monday)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--start-of-week", "funday"]), .failure(.invalidWeekStartDay("funday")))
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--start-of-week", "monday", "--since", "2026-08-01"]),
+            .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -1402,6 +1408,31 @@ final class TokenPilotServicesTests: XCTestCase {
         let stale = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 6, hour: 10))!, inputTokens: 5_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
         let current = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 10))!, inputTokens: 2_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
         let text = TokenPilotCLIService.reportText(
+            events: [stale, current],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            since: weekStart,
+            now: now,
+            calendar: calendar
+        )
+        // Only the current-week 2K event counts; the previous-week 5K event is outside the window.
+        XCTAssertTrue(text.contains("Total tokens: 2K"))
+        XCTAssertTrue(text.contains("Requests: 1"))
+        XCTAssertFalse(text.contains("5K"))
+    }
+
+    func testCLISummaryStartOfWeekAlignsWindowToMonday() {
+        let calendar = Calendar(identifier: .gregorian)
+        // 2026-08-13 is a Thursday; Monday-aligned week start is 2026-08-10.
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12, minute: 0))!
+        let weekStart = TokenPilotCLIService.weekStartDate(.monday, now: now, calendar: calendar)
+        XCTAssertEqual(calendar.component(.weekday, from: weekStart), 2)
+        XCTAssertTrue(calendar.isDate(weekStart, inSameDayAs: calendar.date(from: DateComponents(year: 2026, month: 8, day: 10))!))
+        // An event before the week start (previous Thursday) is excluded; a current-week event counts.
+        let stale = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 6, hour: 10))!, inputTokens: 5_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
+        let current = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 10))!, inputTokens: 2_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
+        let text = TokenPilotCLIService.summaryText(
             events: [stale, current],
             enabledProviders: [.opencode],
             language: .en,
