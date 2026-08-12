@@ -813,6 +813,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["stats", "--json", "--instances", "--project", "project-a"]),
             .failure(.invalidCombination("--instances cannot be combined with --project."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--csv"]), .success(.stats(includesCSV: true)))
+        // --csv is a distinct output format and cannot be combined with --json.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--json", "--csv"]),
+            .failure(.invalidCombination("--csv cannot be combined with --json."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today,last7Days,thisMonth"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today, .last7Days, .thisMonth])))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today])))
         // --sections requires --json and cannot be combined with custom windows.
@@ -1881,6 +1887,39 @@ final class TokenPilotServicesTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertTrue(noCost.contains("Today,3000,2,"))
+        XCTAssertFalse(noCost.contains("0.06"))
+    }
+
+    func testCLIStatsCSVEmitsSummaryRow() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "csv-stats-test", dataSource: .localLog),
+        ]
+        let csv = TokenPilotCLIService.statsCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        // Header uses the export CSV column convention; summary row then provider shares.
+        let lines = csv.split(separator: "\n")
+        XCTAssertEqual(lines.first, "period,tokens,requests,cost_usd")
+        XCTAssertTrue(lines.contains("Last 7 days,3000,2,0.06"))
+        XCTAssertTrue(lines.contains("opencode,3000,2,0.06"))
+
+        // --no-cost blanks the cost column while keeping the other columns.
+        let noCost = TokenPilotCLIService.statsCSVText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(noCost.contains("Last 7 days,3000,2,"))
         XCTAssertFalse(noCost.contains("0.06"))
     }
 
