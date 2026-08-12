@@ -15,7 +15,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil)
-    case summary(period: HistoryPeriod = .today, includesJSON: Bool = false)
+    case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false)
@@ -108,6 +108,11 @@ public enum TokenPilotCLIService {
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var period = HistoryPeriod.today
+        var since: Date?
+        var until: Date?
+        var days: Int?
+        var timeZone: TimeZone?
+        var project: String?
         var includesJSON = false
         var index = 0
         while index < flags.count {
@@ -120,6 +125,38 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidPeriod(flags[index]))
                 }
                 period = parsed
+            case "--since":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                since = parsed
+            case "--until":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
+            case "--project":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                project = flags[index]
             case "--json":
                 includesJSON = true
             default:
@@ -127,7 +164,10 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.summary(period: period, includesJSON: includesJSON))
+        if days != nil, since != nil || until != nil {
+            return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
+        }
+        return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, project: project, includesJSON: includesJSON))
     }
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -456,7 +496,8 @@ public enum TokenPilotCLIService {
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints local usage totals for the selected period (default today); --period selects
-        today/last7Days/thisMonth and --json emits the same summary as structured JSON for
+        today/last7Days/thisMonth, --since/--until/--days/--timezone/--project narrow the
+        window like export, and --json emits the same summary as structured JSON for
         scripting (toktrack stats --json style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --json emits
         the same statistics as structured JSON for scripting (toktrack stats --json style) with a
@@ -501,21 +542,28 @@ public enum TokenPilotCLIService {
         enabledProviders: [Provider],
         language: TokenPilotLanguage,
         period: HistoryPeriod = .today,
-        now: Date = Date()
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
     ) -> String {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
-                events: events.filter { $0.provider == provider }
+                events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
         let metrics = usage.metrics
 
         var lines: [String] = []
         lines.append("TokenPilot")
-        lines.append("\(localized("Period", language: language)): \(periodLabel(period, language: language))")
+        lines.append("\(localized("Period", language: language)): \(periodLabel(period, since: since, until: until, days: days, language: language, now: now, calendar: calendar))")
         lines.append("\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(metrics.totalTokens))")
         lines.append("\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(metrics.requestCount))")
         if metrics.estimatedCostUSD > 0 {
@@ -554,16 +602,23 @@ public enum TokenPilotCLIService {
         snapshots: [ProviderSnapshot] = [],
         enabledProviders: [Provider],
         period: HistoryPeriod = .today,
-        now: Date = Date()
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
     ) throws -> Data {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
-                events: events.filter { $0.provider == provider }
+                events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
         let metrics = usage.metrics
 
         let menuBarService = MenuBarStatusService()
@@ -583,7 +638,7 @@ public enum TokenPilotCLIService {
 
         let payload = SummaryPayloadJSON(
             generatedAt: now,
-            period: periodLabel(period, language: .en),
+            period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
             totalTokens: metrics.totalTokens,
             requestCount: metrics.requestCount,
             estimatedCostUSD: metrics.estimatedCostUSD > 0 ? metrics.estimatedCostUSD : nil,

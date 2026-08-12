@@ -639,11 +639,26 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIParseSummaryAndHelp() {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")
+        let until = formatter.date(from: "2026-08-13")
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary()))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--json"]), .success(.summary(includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "last7Days"]), .success(.summary(period: .last7Days)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "thisMonth", "--json"]), .success(.summary(period: .thisMonth, includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "2026-08-01"]), .success(.summary(since: since)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--until", "2026-08-13"]), .success(.summary(until: until)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "2026-08-01", "--until", "2026-08-13", "--json"]), .success(.summary(since: since, until: until, includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--days", "3"]), .success(.summary(days: 3)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--days", "3", "--since", "2026-08-01"]), .failure(.invalidCombination("--days cannot be combined with --since or --until.")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--timezone", "UTC"]), .success(.summary(timeZone: TimeZone(identifier: "UTC"))))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--project", "project-a"]), .success(.summary(project: "project-a")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
@@ -1530,6 +1545,68 @@ final class TokenPilotServicesTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
         XCTAssertEqual(json["period"] as? String, "This month")
         XCTAssertEqual(json["totalTokens"] as? Int, 5_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+    }
+
+    func testCLISummaryWindowSelectorsFilterEvents() throws {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")!
+        let until = formatter.date(from: "2026-08-13")!
+        // Two events inside the window, one well outside (before since, same provider).
+        let inWindow = [
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -1, to: until)!, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "range-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -2, to: until)!, inputTokens: 1_000, outputTokens: 0, estimatedCostUSD: Decimal(0.02), source: "range-test", dataSource: .localLog),
+        ]
+        let outside = [
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -20, to: since)!, inputTokens: 50_000, outputTokens: 0, estimatedCostUSD: Decimal(1.00), source: "range-test", dataSource: .localLog),
+        ]
+        let text = TokenPilotCLIService.summaryText(
+            events: inWindow + outside,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            since: since,
+            until: until,
+            now: until.addingTimeInterval(86_400),
+            calendar: calendar
+        )
+        // Only the two in-window events count; the 50K event is outside the range.
+        XCTAssertTrue(text.contains("Total tokens: 3K"))
+        XCTAssertTrue(text.contains("Requests: 2"))
+        // The explicit date window is reflected in the period label.
+        XCTAssertTrue(text.contains("2026-08-01 → 2026-08-13"))
+
+        // --days narrows the window the same way it does for report.
+        let daysText = TokenPilotCLIService.summaryText(
+            events: inWindow + outside,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            days: 3,
+            now: until,
+            calendar: calendar
+        )
+        XCTAssertTrue(daysText.contains("Total tokens: 3K"))
+        XCTAssertTrue(daysText.contains("Requests: 2"))
+        XCTAssertFalse(daysText.contains("50K"))
+
+        // JSON payload honors the explicit window in its period label and totals.
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: inWindow + outside,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            since: since,
+            until: until,
+            now: until.addingTimeInterval(86_400),
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["period"] as? String, "2026-08-01 → 2026-08-13")
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000)
         XCTAssertEqual(json["requestCount"] as? Int, 2)
     }
 
