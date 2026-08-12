@@ -759,18 +759,19 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--json", "--instances", "--breakdown"]),
             .success(.report(period: .today, format: .json, includesBreakdown: true, instances: true))
         )
-        // --instances requires --json and conflicts with --project/--sections.
+        // --instances combines with --sections (each period carries its own project grouping).
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances", "--sections", "today,last7Days"]),
+            .success(.report(period: .last7Days, format: .json, sections: [.today, .last7Days], instances: true))
+        )
+        // --instances requires --json and still conflicts with --project.
         XCTAssertEqual(
             TokenPilotCLIService.parse(arguments: ["report", "--instances"]),
             .failure(.invalidCombination("--instances requires --json output."))
         )
         XCTAssertEqual(
             TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances", "--project", "my-workspace"]),
-            .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
-        )
-        XCTAssertEqual(
-            TokenPilotCLIService.parse(arguments: ["report", "--json", "--instances", "--sections", "today,last7Days"]),
-            .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
+            .failure(.invalidCombination("--instances cannot be combined with --project."))
         )
     }
 
@@ -1089,6 +1090,42 @@ final class TokenPilotServicesTests: XCTestCase {
         // No per-event source labels leak into the payload.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("instances-test"))
+    }
+
+    func testCLIReportJSONSectionsWithInstancesCarriesProjectsPerSection() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "sections-instances-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-60), inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "sections-instances-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            sections: [.today, .last7Days],
+            instances: true,
+            now: now,
+            calendar: calendar
+        )
+        let envelope = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let sections = try XCTUnwrap(envelope["sections"] as? [[String: Any]])
+        XCTAssertEqual(sections.count, 2)
+        // Every period carries its own project grouping (ccusage --sections --by-agent).
+        for section in sections {
+            let projects = try XCTUnwrap(section["projects"] as? [[String: Any]])
+            XCTAssertEqual(projects.count, 2)
+            let projectA = try XCTUnwrap(projects.first { $0["project"] as? String == "project-a" })
+            let projectAPayload = try XCTUnwrap(projectA["payload"] as? [String: Any])
+            XCTAssertEqual(projectAPayload["totalTokens"] as? Int, 3_000)
+        }
+        // Combined row per section is the union of both projects.
+        XCTAssertEqual(sections[0]["totalTokens"] as? Int, 5_000)
+        XCTAssertEqual(sections[1]["totalTokens"] as? Int, 5_000)
+        // No per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("sections-instances-test"))
     }
 
     func testCLIReportBreakdownAddsPerDayPerModelSection() {

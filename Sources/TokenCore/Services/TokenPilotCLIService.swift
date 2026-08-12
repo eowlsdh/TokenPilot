@@ -254,8 +254,8 @@ public enum TokenPilotCLIService {
         if instances, format != .json {
             return .failure(.invalidCombination("--instances requires --json output."))
         }
-        if instances, project != nil || sections != nil {
-            return .failure(.invalidCombination("--instances cannot be combined with --project or --sections."))
+        if instances, project != nil {
+            return .failure(.invalidCombination("--instances cannot be combined with --project."))
         }
         return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, instances: instances))
     }
@@ -450,7 +450,8 @@ public enum TokenPilotCLIService {
         breakdown section (ccusage --breakdown style). --sections (JSON only) emits the requested
         periods in one envelope with a totals object last (ccusage --sections style).
         --instances (JSON only) groups the payload by workspace label with each project carrying
-        its own report alongside the combined row (ccusage --instances style).
+        its own report alongside the combined row (ccusage --instances style); it combines with
+        --sections so every period carries its own project grouping.
         --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
         override --period. --start-of-week aligns the window start to the most recent matching
@@ -1072,7 +1073,7 @@ public enum TokenPilotCLIService {
             // ccusage `--sections` style: each requested period emitted in one envelope,
             // with a totals object last so dashboards fetch all granularities in one call.
             let sectionPayloads = sections.map { section in
-                reportPayload(
+                var payload = reportPayload(
                     events: events,
                     enabledProviders: enabledProviders,
                     period: section,
@@ -1085,6 +1086,21 @@ public enum TokenPilotCLIService {
                     now: now,
                     calendar: calendar
                 )
+                if instances {
+                    payload.projects = projectGroups(
+                        events: events,
+                        enabledProviders: enabledProviders,
+                        period: section,
+                        since: nil,
+                        until: nil,
+                        days: nil,
+                        includesCost: includesCost,
+                        includesBreakdown: includesBreakdown,
+                        now: now,
+                        calendar: calendar
+                    )
+                }
+                return payload
             }
             let envelope = ReportSectionsEnvelopeJSON(
                 generatedAt: now,
@@ -1115,30 +1131,56 @@ public enum TokenPilotCLIService {
         if instances {
             // ccusage `--instances` style: group usage by project label, with each
             // project carrying its own full payload alongside the combined row.
-            let labels = Set(events.compactMap(\.projectLabel)).sorted()
-            let groups = labels.map { label in
-                ReportProjectGroup(
-                    project: label,
-                    payload: reportPayload(
-                        events: events,
-                        enabledProviders: enabledProviders,
-                        period: period,
-                        since: since,
-                        until: until,
-                        days: days,
-                        includesCost: includesCost,
-                        includesBreakdown: includesBreakdown,
-                        project: label,
-                        now: now,
-                        calendar: calendar
-                    )
-                )
-            }
             var enriched = payload
-            enriched.projects = groups
+            enriched.projects = projectGroups(
+                events: events,
+                enabledProviders: enabledProviders,
+                period: period,
+                since: since,
+                until: until,
+                days: days,
+                includesCost: includesCost,
+                includesBreakdown: includesBreakdown,
+                now: now,
+                calendar: calendar
+            )
             return try encoder.encode(enriched)
         }
         return try encoder.encode(payload)
+    }
+
+    /// Per-project group payloads for `--instances` (ccusage `--by-agent` style).
+    private static func projectGroups(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        includesCost: Bool,
+        includesBreakdown: Bool,
+        now: Date,
+        calendar: Calendar
+    ) -> [ReportProjectGroup] {
+        let labels = Set(events.compactMap(\.projectLabel)).sorted()
+        return labels.map { label in
+            ReportProjectGroup(
+                project: label,
+                payload: reportPayload(
+                    events: events,
+                    enabledProviders: enabledProviders,
+                    period: period,
+                    since: since,
+                    until: until,
+                    days: days,
+                    includesCost: includesCost,
+                    includesBreakdown: includesBreakdown,
+                    project: label,
+                    now: now,
+                    calendar: calendar
+                )
+            )
+        }
     }
 
     private static func reportPayload(
