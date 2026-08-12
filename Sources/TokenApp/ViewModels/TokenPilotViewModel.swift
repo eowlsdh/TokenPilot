@@ -42,6 +42,7 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var dataSourceMode: DataSourceMode = .disconnected
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
+    @Published var providerStatusReports: [Provider: ProviderStatusReport] = [:]
     @Published var exportFormat: UsageExportFormat = .json
     @Published var capacityAssessments: [CapacityAssessment] = []
     @Published var capacityPresentations: [CapacityPresentation] = []
@@ -82,6 +83,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let aggregationService = AggregationService()
     private let menuBarStatusService = MenuBarStatusService()
     private let connectionService = DataSourceConnectionService()
+    private let providerStatusService = ProviderStatusService()
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
     private let weeklyDigestStore = WeeklyDigestStore()
@@ -1407,6 +1409,44 @@ final class TokenPilotViewModel: ObservableObject {
             applyDataSources(initialSources)
             bannerMessage = t("Connection check complete.")
         }
+        await refreshProviderStatuses()
+    }
+
+    /// Fetches official status-page readings for enabled providers that publish one.
+    /// Reads use a TTL cache and never block a refresh pass; failures keep the
+    /// previous cached reading or report unknown.
+    func refreshProviderStatuses() async {
+        let enabled = Set(settings.enabledProviders)
+        let providers = ProviderStatusService.statuspageEndpoints.keys.filter { enabled.contains($0) }
+        var reports: [Provider: ProviderStatusReport] = providerStatusReports
+        for provider in providers {
+            let report = await providerStatusService.refreshStatus(for: provider)
+            reports[provider] = report
+        }
+        providerStatusReports = reports
+    }
+
+    func providerStatusText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Not checked") }
+        switch report.health {
+        case .operational: return t("Operational")
+        case .degraded: return t("Degraded")
+        case .outage: return t("Outage")
+        case .unknown: return t("Unknown")
+        }
+    }
+
+    func providerStatusDetailText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Run a check to read the official status page") }
+        var parts: [String] = []
+        if !report.description.isEmpty {
+            parts.append(report.description)
+        }
+        if let format = TokenPilotRelativeTimestamp.format(from: report.checkedAt, now: Date()) {
+            let updated = format.arg.map { String(format: t(format.key), $0) } ?? t(format.key)
+            parts.append(updated)
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {

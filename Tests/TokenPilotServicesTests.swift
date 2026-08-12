@@ -1,3 +1,5 @@
+import Foundation
+import os
 import XCTest
 @testable import TokenCore
 
@@ -6421,6 +6423,117 @@ final class TokenPilotServicesTests: XCTestCase {
         // 21:30 -> block [20:00, 25:00)
         let late = midnight.addingTimeInterval(21.5 * 3600)
         XCTAssertEqual(FiveHourBlocksService.blockStart(of: late, calendar: calendar), midnight.addingTimeInterval(20 * 3600))
+    }
+
+    // MARK: - ProviderStatusService
+
+    func testProviderStatusParserMapsIndicators() throws {
+        let parser = ProviderStatusParser()
+
+        let operational = try parser.parse(try statusPayload(indicator: "none", description: "All Systems Operational"))
+        XCTAssertEqual(operational.health, .operational)
+        XCTAssertEqual(operational.description, "All Systems Operational")
+
+        let minor = try parser.parse(try statusPayload(indicator: "minor", description: "Partial Service Outage"))
+        XCTAssertEqual(minor.health, .degraded)
+
+        let major = try parser.parse(try statusPayload(indicator: "major", description: "Major Outage"))
+        XCTAssertEqual(major.health, .degraded)
+
+        let critical = try parser.parse(try statusPayload(indicator: "critical", description: "Critical Outage"))
+        XCTAssertEqual(critical.health, .outage)
+
+        let unknown = try parser.parse(try statusPayload(indicator: "weird", description: ""))
+        XCTAssertEqual(unknown.health, .unknown)
+    }
+
+    func testProviderStatusParserRejectsNonStatuspagePayload() {
+        let parser = ProviderStatusParser()
+        XCTAssertThrowsError(try parser.parse(Data("{}".utf8)))
+        XCTAssertThrowsError(try parser.parse(Data("not json".utf8)))
+    }
+
+    func testProviderStatusServiceFetchesCachesAndFallsBack() async throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let operationalData = try statusPayload(indicator: "none", description: "All Systems Operational")
+        let outageData = try statusPayload(indicator: "critical", description: "Critical Outage")
+
+        let client = StubProviderStatusHTTPClient(responses: [
+            .init(status: 200, data: operationalData),
+            .init(status: 500, data: Data()),
+        ])
+        let defaults = UserDefaults(suiteName: "provider-status-test-\(UUID().uuidString)")!
+        let service = ProviderStatusService(
+            httpClient: client,
+            session: URLSession(configuration: .ephemeral),
+            defaults: defaults,
+            ttl: 3_600
+        )
+
+        // First fetch succeeds and caches.
+        let first = await service.refreshStatus(for: .claude, now: now)
+        XCTAssertEqual(first.health, .operational)
+        XCTAssertEqual(first.description, "All Systems Operational")
+
+        // A second fetch within TTL serves the cached reading without a network call.
+        let cached = await service.refreshStatus(for: .claude, now: now.addingTimeInterval(60))
+        XCTAssertEqual(cached.health, .operational)
+        XCTAssertEqual(client.callCount, 1)
+
+        // A fetch after TTL retries; the HTTP failure falls back to the cached value.
+        let afterTTL = await service.refreshStatus(for: .claude, now: now.addingTimeInterval(3_700))
+        XCTAssertEqual(afterTTL.health, .operational)
+    }
+
+    func testProviderStatusServiceReportsUnknownWithoutEndpoint() async {
+        let client = StubProviderStatusHTTPClient(responses: [])
+        let service = ProviderStatusService(
+            httpClient: client,
+            session: URLSession(configuration: .ephemeral),
+            defaults: UserDefaults(suiteName: "provider-status-test-\(UUID().uuidString)")!
+        )
+        let report = await service.refreshStatus(for: .opencode)
+        XCTAssertEqual(report.health, .unknown)
+        XCTAssertTrue(report.description.isEmpty)
+    }
+
+    private func statusPayload(indicator: String, description: String) throws -> Data {
+        try JSONSerialization.data(withJSONObject: [
+            "page": ["id": "test"],
+            "status": ["indicator": indicator, "description": description],
+        ])
+    }
+}
+
+private final class StubProviderStatusHTTPClient: ProviderStatusHTTPClient, @unchecked Sendable {
+    struct StubResponse: Sendable {
+        let status: Int
+        let data: Data
+    }
+
+    private let responses: [StubResponse]
+    private let counterLock = OSAllocatedUnfairLock(initialState: 0)
+
+    init(responses: [StubResponse]) {
+        self.responses = responses
+    }
+
+    var callCount: Int {
+        counterLock.withLock { $0 }
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let callIndex = counterLock.withLock { count -> Int in
+            defer { count += 1 }
+            return count
+        }
+        guard callIndex < responses.count else {
+            throw ProviderStatusError.invalidHTTPResponse
+        }
+        let response = responses[callIndex]
+        let url = request.url ?? URL(string: "https://status.example.com")!
+        let http = HTTPURLResponse(url: url, statusCode: response.status, httpVersion: nil, headerFields: nil)!
+        return (response.data, http)
     }
 }
 

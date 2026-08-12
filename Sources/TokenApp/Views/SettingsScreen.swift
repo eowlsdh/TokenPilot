@@ -414,6 +414,18 @@ struct SettingsScreen: View {
                     providerDiagnosticRow(diagnostic)
                 }
 
+                TokenPilotSeparator()
+
+                Text(model.t("Provider service status"))
+                    .font(.caption.weight(.semibold))
+                Text(model.t("Official status pages, refreshed with a check. May be delayed; local source health is above."))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+
+                ForEach(statusPageProviders, id: \.self) { provider in
+                    providerStatusRow(provider)
+                }
+
                 Button(model.t("Check all providers")) { Task { await model.checkAllConnections() } }
                     .buttonStyle(.borderedProminent)
                     .tint(TokenPilotDesign.calm)
@@ -1719,6 +1731,44 @@ struct SettingsScreen: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
+    private func providerStatusRow(_ provider: Provider) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.providerDisplayName(provider))
+                    .font(.caption.weight(.semibold))
+                Text(model.providerStatusDetailText(provider))
+                    .font(.caption2)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+            }
+            Spacer(minLength: 0)
+            Text(model.providerStatusText(provider))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(providerStatusColor(provider))
+        }
+        .padding(9)
+        .background {
+            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private func providerStatusColor(_ provider: Provider) -> Color {
+        guard let report = model.providerStatusReports[provider] else {
+            return TokenPilotDesign.textSecondary
+        }
+        switch report.health {
+        case .operational: return TokenPilotDesign.calm
+        case .degraded: return TokenPilotDesign.status(.warning)
+        case .outage: return TokenPilotDesign.status(.danger)
+        case .unknown: return TokenPilotDesign.textTertiary
+        }
+    }
+
+    private var statusPageProviders: [Provider] {
+        Array(ProviderStatusService.statuspageEndpoints.keys)
+            .sorted { $0.rawValue < $1.rawValue }
+    }
+
     private func providerToggle(_ provider: Provider) -> some View {
         Toggle(
             model.providerDisplayName(provider),
