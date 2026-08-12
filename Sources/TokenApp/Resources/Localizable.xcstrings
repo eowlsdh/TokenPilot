@@ -11015,6 +11015,34 @@
         }
       }
     },
+    "Switch screens with ⌘1, ⌘2, ⌘3": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘1, ⌘2, ⌘3으로 화면 전환"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Switch screens with ⌘1, ⌘2, ⌘3"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 ⌘1、⌘2、⌘3 切换屏幕"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘1、⌘2、⌘3 で画面を切り替え"
+          }
+        }
+      }
+    },
     "Last updated": {
       "localizations": {
         "ko": {

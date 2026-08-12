@@ -33,6 +33,7 @@ struct TokenPilotRootView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
+        .overlay { screenShortcutButtons }
         .environment(\.tokenPilotLanguage, model.settings.localization.language)
         .environment(\.locale, Locale(identifier: model.settings.localization.language.localeIdentifier ?? Locale.current.identifier))
         .padding(TokenPilotDesign.Spacing.xl)
@@ -42,6 +43,24 @@ struct TokenPilotRootView: View {
             VisualEffectBackground(material: .sidebar, blendingMode: .behindWindow)
                 .overlay(TokenPilotDesign.glassTint)
         )
+    }
+
+    /// Invisible keyboard shortcuts for screen switching (⌘1 Overview, ⌘2 History, ⌘3 Settings).
+    /// Mirrors TokenBar's ⌘N tab navigation while keeping the segmented picker as the visual control.
+    private var screenShortcutButtons: some View {
+        ZStack {
+            Button(action: { model.selectedScreen = .overview }) { EmptyView() }
+                .keyboardShortcut("1", modifiers: .command)
+                .accessibilityHidden(true)
+            Button(action: { model.selectedScreen = .history }) { EmptyView() }
+                .keyboardShortcut("2", modifiers: .command)
+                .accessibilityHidden(true)
+            Button(action: { model.selectedScreen = .settings }) { EmptyView() }
+                .keyboardShortcut("3", modifiers: .command)
+                .accessibilityHidden(true)
+        }
+        .frame(width: 0, height: 0)
+        .hidden()
     }
 
     private var header: some View {
@@ -112,6 +131,7 @@ struct TokenPilotRootView: View {
         .labelsHidden()
         .frame(height: 30)
         .accessibilityLabel(model.t("Screen"))
+        .help(model.t("Switch screens with ⌘1, ⌘2, ⌘3"))
         .focusable()
     }
 

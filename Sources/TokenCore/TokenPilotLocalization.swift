@@ -316,6 +316,7 @@ public enum TokenPilotLocalizer {
         "Elevated": [.en: "Elevated", .ko: "상승", .ja: "上昇", .zhHans: "偏高", .zhHant: "偏高"],
         "Bloat": [.en: "Bloat", .ko: "비대", .ja: "肥大", .zhHans: "膨胀", .zhHant: "膨脹"],
         "Filling fast": [.en: "Filling fast", .ko: "빠르게 채워짐", .ja: "急速に増加", .zhHans: "快速填充", .zhHant: "快速填充"],
+        "Switch screens with ⌘1, ⌘2, ⌘3": [.en: "Switch screens with ⌘1, ⌘2, ⌘3", .ko: "⌘1, ⌘2, ⌘3으로 화면 전환", .ja: "⌘1、⌘2、⌘3 で画面を切り替え", .zhHans: "使用 ⌘1、⌘2、⌘3 切换屏幕", .zhHant: "使用 ⌘1、⌘2、⌘3 切換螢幕"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],
         "Choose…": [.en: "Choose…", .ko: "선택…", .ja: "選択…", .zhHans: "选择…", .zhHant: "選擇…"],
