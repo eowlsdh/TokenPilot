@@ -384,6 +384,10 @@ final class TokenPilotViewModel: ObservableObject {
         UsageStreakService.streak(events: overviewUsage.events)
     }
 
+    var cacheEfficiency: CacheEfficiencySummary {
+        CacheEfficiencyService.summary(events: overviewUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }

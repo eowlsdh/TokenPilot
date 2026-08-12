@@ -81,6 +81,9 @@ struct HistoryScreen: View {
                     HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)
                 } else {
                     HistoryUsageSummaryCard(model: model)
+                    if model.cacheEfficiency.hasCacheActivity {
+                        HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
+                    }
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
@@ -1073,6 +1076,75 @@ struct HistoryUsageSummaryCard: View {
             "\(model.t("Most used")) \(mostUsed)",
             "\(model.t("Busiest hour")) \(busiestHour)"
         ].joined(separator: ", ")
+    }
+}
+
+struct HistoryCacheEfficiencyCard: View {
+    let efficiency: CacheEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cache efficiency"), systemImage: "arrow.triangle.2.circlepath")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(hitRateText)
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .monospacedDigit()
+                        .foregroundStyle(hitRateColor)
+                        .lineLimit(1)
+                }
+
+                ProgressLine(
+                    percent: hitRatePercent,
+                    color: hitRateColor,
+                    accessibilityLabel: model.t("Cache hit rate"),
+                    accessibilityValue: "\(hitRatePercent)%"
+                )
+
+                HStack(spacing: TokenPilotDesign.Spacing.lg) {
+                    Text("\(model.t("Read")) \(TokenPilotFormatters.compactNumber(efficiency.cacheReadTokens))")
+                    Text("\(model.t("Write")) \(TokenPilotFormatters.compactNumber(efficiency.cacheCreationTokens))")
+                }
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+
+                Text(model.t("Share of context reads served from cache. Local activity; cache discount ratios vary by provider."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(model.t("Cache efficiency")): \(hitRateText), " +
+            "\(model.t("Read")) \(TokenPilotFormatters.compactNumber(efficiency.cacheReadTokens)), " +
+            "\(model.t("Write")) \(TokenPilotFormatters.compactNumber(efficiency.cacheCreationTokens))"
+        )
+    }
+
+    private var hitRatePercent: Int {
+        Int((efficiency.cacheHitRate * 100).rounded())
+    }
+
+    private var hitRateText: String {
+        "\(hitRatePercent)%"
+    }
+
+    private var hitRateColor: Color {
+        switch hitRatePercent {
+        case 60...: return TokenPilotDesign.calm
+        case 30..<60: return TokenPilotDesign.status(.warning)
+        default: return TokenPilotDesign.textTertiary
+        }
     }
 }
 

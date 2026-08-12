@@ -6322,6 +6322,53 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(streak.longestDays, 0)
         XCTAssertFalse(streak.hasActivity)
     }
+
+    // MARK: - CacheEfficiencyService
+
+    func testCacheEfficiencyComputesHitRateFromReadShare() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 1_000, cacheReadTokens: 7_000, cacheCreationTokens: 2_000, source: "cache-test", dataSource: .localLog)
+        ]
+        let summary = CacheEfficiencyService.summary(events: events, now: now)
+        XCTAssertEqual(summary.inputTokens, 3_000)
+        XCTAssertEqual(summary.outputTokens, 1_000)
+        XCTAssertEqual(summary.cacheReadTokens, 7_000)
+        XCTAssertEqual(summary.cacheCreationTokens, 2_000)
+        // Hit rate = cacheRead / (input + cacheRead) = 7000 / 10000 = 0.7
+        XCTAssertEqual(summary.cacheHitRate, 0.7, accuracy: 0.001)
+        XCTAssertTrue(summary.hasCacheActivity)
+        XCTAssertEqual(summary.totalTokens, 13_000)
+    }
+
+    func testCacheEfficiencyAggregatesAcrossEventsAndClamps() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 1_000, source: "cache-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 1_000, outputTokens: 0, cacheReadTokens: 0, source: "cache-test", dataSource: .localLog)
+        ]
+        let summary = CacheEfficiencyService.summary(events: events, now: now)
+        // Hit rate = cacheRead / (input + cacheRead) = 1000 / (2000 + 1000) = 0.333
+        XCTAssertEqual(summary.cacheHitRate, 1.0 / 3.0, accuracy: 0.001)
+        XCTAssertEqual(summary.inputTokens, 2_000)
+        XCTAssertEqual(summary.cacheReadTokens, 1_000)
+    }
+
+    func testCacheEfficiencyReturnsZeroForNoActivityAndNoReads() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let empty = CacheEfficiencyService.summary(events: [], now: now)
+        XCTAssertEqual(empty.cacheHitRate, 0)
+        XCTAssertFalse(empty.hasAnyActivity)
+        XCTAssertFalse(empty.hasCacheActivity)
+
+        let outputOnly = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 0, outputTokens: 500, source: "cache-test", dataSource: .localLog)
+        ]
+        let summary = CacheEfficiencyService.summary(events: outputOnly, now: now)
+        XCTAssertEqual(summary.cacheHitRate, 0)
+        XCTAssertFalse(summary.hasCacheActivity)
+        XCTAssertTrue(summary.hasAnyActivity)
+    }
 }
 
 private struct FixedCapacityClock: CapacityEvidenceClock {
