@@ -67,6 +67,12 @@ public final class UsageExportService {
             capacityAssessments: capacityAssessments,
             includesCost: includesCost
         )
+        return try encodeJSONPayload(payload)
+    }
+
+    /// Encodes a pre-built payload struct, so callers can attach per-project groups
+    /// (`--instances` style) before serializing without a decode/re-encode round trip.
+    public func encodeJSONPayload(_ payload: UsageExportPayload) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
@@ -342,6 +348,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
     public var snapshots: [SnapshotExport]
     public var events: [EventExport]
     public var capacity: CapacityExportSection?
+    public var projects: [ExportProjectGroup]?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -355,6 +362,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         case snapshots
         case events
         case capacity
+        case projects
     }
 
     public init(
@@ -369,7 +377,8 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         events: [EventExport],
         capacity: CapacityExportSection? = nil,
         localActivity: LocalActivityExport? = nil,
-        modelBreakdown: [ModelUsageShare] = []
+        modelBreakdown: [ModelUsageShare] = [],
+        projects: [ExportProjectGroup]? = nil
     ) {
         let resolvedLocalActivity = localActivity ?? LocalActivityExport(
             sevenDayBars: sevenDayBars,
@@ -387,6 +396,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         self.snapshots = snapshots
         self.events = events
         self.capacity = capacity
+        self.projects = projects
     }
 
     public init(from decoder: Decoder) throws {
@@ -407,6 +417,17 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         snapshots = try container.decodeIfPresent([SnapshotExport].self, forKey: .snapshots) ?? []
         events = try container.decodeIfPresent([EventExport].self, forKey: .events) ?? []
         capacity = try container.decodeIfPresent(CapacityExportSection.self, forKey: .capacity)
+        projects = try container.decodeIfPresent([ExportProjectGroup].self, forKey: .projects)
+    }
+}
+
+public struct ExportProjectGroup: Codable, Equatable, Sendable {
+    public var project: String
+    public var payload: UsageExportPayload
+
+    public init(project: String, payload: UsageExportPayload) {
+        self.project = project
+        self.payload = payload
     }
 }
 

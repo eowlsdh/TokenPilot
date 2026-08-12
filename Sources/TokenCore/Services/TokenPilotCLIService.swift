@@ -14,7 +14,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
-    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
+    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
@@ -401,6 +401,7 @@ public enum TokenPilotCLIService {
         var project: String?
         var weekStartDay: WeekStartDay?
         var sections: [HistoryPeriod]?
+        var instances = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -476,6 +477,8 @@ public enum TokenPilotCLIService {
                 includesCapacity = true
             case "--no-cost":
                 includesCost = false
+            case "--instances":
+                instances = true
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -490,7 +493,13 @@ public enum TokenPilotCLIService {
         if weekStartDay != nil, since != nil || until != nil || days != nil || sections != nil {
             return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
         }
-        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, weekStartDay: weekStartDay, sections: sections))
+        if instances, format != .json {
+            return .failure(.invalidCombination("--instances requires --json output."))
+        }
+        if instances, project != nil {
+            return .failure(.invalidCombination("--instances cannot be combined with --project."))
+        }
+        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, weekStartDay: weekStartDay, sections: sections, instances: instances))
     }
 
     private static func parseStats(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -602,7 +611,7 @@ public enum TokenPilotCLIService {
         TokenPilot - local-first AI usage monitor
 
         Usage:
-          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth]
+          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
@@ -613,7 +622,8 @@ public enum TokenPilotCLIService {
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series.
         --sections (JSON only) emits one export payload per requested period in an envelope with a
-        totals object last (ccusage --sections style). summary
+        totals object last (ccusage --sections style), and --instances (JSON only) groups exports by
+        workspace label with each project carrying its own payload (ccusage --instances style). summary
         prints local usage totals for the selected period (default today); --period selects
         today/last7Days/thisMonth, --since/--until/--days/--timezone/--project narrow the
         window like export, --start-of-week aligns last7Days/thisMonth to a week start,

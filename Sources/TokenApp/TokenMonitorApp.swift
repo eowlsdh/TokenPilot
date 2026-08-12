@@ -258,7 +258,7 @@ private enum TokenPilotCLIRunner {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, calendar: calendar))
             }
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances)):
             return await runExport(
                 format: format,
                 period: period,
@@ -271,7 +271,8 @@ private enum TokenPilotCLIRunner {
                 timeZone: timeZone,
                 project: project,
                 weekStartDay: weekStartDay,
-                sections: sections
+                sections: sections,
+                instances: instances
             )
         }
     }
@@ -297,7 +298,8 @@ private enum TokenPilotCLIRunner {
         timeZone: TimeZone?,
         project: String?,
         weekStartDay: WeekStartDay?,
-        sections: [HistoryPeriod]?
+        sections: [HistoryPeriod]?,
+        instances: Bool
     ) async -> Int32 {
         let allEvents = UsageHistoryStore().loadEvents()
         let events = project.map { label in allEvents.filter { $0.projectLabel == label } } ?? allEvents
@@ -318,33 +320,65 @@ private enum TokenPilotCLIRunner {
                 // ccusage `--sections` style: one export payload per requested period
                 // in an envelope with a totals object last.
                 let payloads = sections.map { section in
-                    let sectionWindow = TokenPilotCLIService.explicitDateRange(period: section, since: nil, until: nil, days: nil, calendar: calendar)
-                    let sectionUsage = AggregationService().aggregate(snapshots: snapshots, period: section, customRange: sectionWindow)
-                    return exporter.makeJSONPayload(
-                        usage: sectionUsage,
+                    var payload = exporter.makeJSONPayload(
+                        usage: usageFor(events: events, period: section, since: nil, until: nil, days: nil, calendar: calendar),
                         snapshots: snapshots,
                         dataMode: "CLI",
                         capacityAssessments: assessments,
                         includesCost: includesCost
                     )
+                    if instances {
+                        // ccusage `--instances` style: each project carries its own payload.
+                        payload.projects = exportProjectGroups(
+                            events: events,
+                            period: section,
+                            since: nil,
+                            until: nil,
+                            days: nil,
+                            includesCost: includesCost,
+                            calendar: calendar,
+                            exporter: exporter,
+                            capacityAssessments: assessments
+                        )
+                    }
+                    return payload
                 }
                 data = try exporter.makeSectionsJSON(payloads: payloads, includesCost: includesCost)
             } else {
                 let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
-                let window = TokenPilotCLIService.explicitDateRange(period: period, since: effectiveSince, until: until, days: days, calendar: calendar)
-                let usage = AggregationService().aggregate(
-                    snapshots: snapshots,
-                    period: period,
-                    customRange: window
-                )
-                data = try exporter.export(
-                    usage: usage,
-                    snapshots: snapshots,
-                    dataMode: "CLI",
-                    format: format,
-                    capacityAssessments: assessments,
-                    includesCost: includesCost
-                )
+                let usage = usageFor(events: events, period: period, since: effectiveSince, until: until, days: days, calendar: calendar)
+                if instances {
+                    var payload = exporter.makeJSONPayload(
+                        usage: usage,
+                        snapshots: snapshots,
+                        dataMode: "CLI",
+                        capacityAssessments: assessments,
+                        includesCost: includesCost
+                    )
+                    // ccusage `--instances` style: group usage by project label, with each
+                    // project carrying its own full payload alongside the combined row.
+                    payload.projects = exportProjectGroups(
+                        events: events,
+                        period: period,
+                        since: effectiveSince,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        calendar: calendar,
+                        exporter: exporter,
+                        capacityAssessments: assessments
+                    )
+                    data = try exporter.encodeJSONPayload(payload)
+                } else {
+                    data = try exporter.export(
+                        usage: usage,
+                        snapshots: snapshots,
+                        dataMode: "CLI",
+                        format: format,
+                        capacityAssessments: assessments,
+                        includesCost: includesCost
+                    )
+                }
             }
             if let outputPath {
                 try data.write(to: URL(fileURLWithPath: outputPath))
@@ -358,6 +392,53 @@ private enum TokenPilotCLIRunner {
         } catch {
             writeError("TokenPilot: export failed: \(error.localizedDescription)")
             return 1
+        }
+    }
+
+    /// Aggregates the given events over the requested window with provider snapshots.
+    private static func usageFor(
+        events: [UsageEvent],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        calendar: Calendar
+    ) -> AggregatedUsage {
+        let snapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let window = TokenPilotCLIService.explicitDateRange(period: period, since: since, until: until, days: days, calendar: calendar)
+        return AggregationService().aggregate(snapshots: snapshots, period: period, customRange: window)
+    }
+
+    /// ccusage `--instances` style: one full export payload per workspace label.
+    private static func exportProjectGroups(
+        events: [UsageEvent],
+        period: HistoryPeriod,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        includesCost: Bool,
+        calendar: Calendar,
+        exporter: UsageExportService,
+        capacityAssessments: [CapacityAssessment]
+    ) -> [ExportProjectGroup] {
+        let labels = Set(events.compactMap(\.projectLabel)).sorted()
+        return labels.map { label in
+            let scopedEvents = events.filter { $0.projectLabel == label }
+            let payload = exporter.makeJSONPayload(
+                usage: usageFor(events: scopedEvents, period: period, since: since, until: until, days: days, calendar: calendar),
+                snapshots: Provider.allCases.map { provider in
+                    ProviderSnapshot(provider: provider, events: scopedEvents.filter { $0.provider == provider })
+                },
+                dataMode: "CLI",
+                capacityAssessments: capacityAssessments,
+                includesCost: includesCost
+            )
+            return ExportProjectGroup(project: label, payload: payload)
         }
     }
 

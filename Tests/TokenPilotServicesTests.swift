@@ -521,6 +521,19 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["export", "--sections", "bogus"]),
             .failure(.invalidPeriod("bogus"))
         )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--instances"]),
+            .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, instances: true))
+        )
+        // --instances requires --json and cannot be combined with --project.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--instances", "--format", "csv"]),
+            .failure(.invalidCombination("--instances requires --json output."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--instances", "--project", "project-a"]),
+            .failure(.invalidCombination("--instances cannot be combined with --project."))
+        )
     }
 
     func testCapacityRecordRoundTripFeedsCLICapacityExportSection() throws {
@@ -1670,6 +1683,69 @@ final class TokenPilotServicesTests: XCTestCase {
         let noCostTotals = try XCTUnwrap(noCostEnvelope["totals"] as? [String: Any])
         XCTAssertNil(noCostTotals["estimatedCostUSD"])
         XCTAssertEqual(noCostTotals["totalTokens"] as? Int, 14_000)
+    }
+
+    func testCLIExportJSONInstancesGroupsByProject() throws {
+        let now = Date()
+        let calendar = Calendar.current
+        // Events are anchored in the past relative to `now` so the export service's
+        // live re-aggregation (`sanitizedUsageForExport`) keeps them in the window.
+        // project-a carries 3K tokens, project-b 2K; the combined row is 5K.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-3_600), inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "instances-export-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-7_200), inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "instances-export-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let exporter = UsageExportService()
+        // Combined row stays the union of both projects.
+        let combinedUsage = AggregationService().aggregate(
+            snapshots: [ProviderSnapshot(provider: .opencode, events: events)],
+            period: .last7Days,
+            now: now
+        )
+        let combined = exporter.makeJSONPayload(
+            usage: combinedUsage,
+            snapshots: [ProviderSnapshot(provider: .opencode, events: events)],
+            dataMode: "CLI",
+            generatedAt: now,
+            includesCost: true
+        )
+        XCTAssertEqual(combined.metrics.totalTokens, 5_000)
+        // projects carries one full payload per workspace label (ccusage --instances style).
+        let labels = Set(events.compactMap(\.projectLabel)).sorted()
+        var payload = combined
+        payload.projects = labels.map { label in
+            let scopedEvents = events.filter { $0.projectLabel == label }
+            let usage = AggregationService().aggregate(
+                snapshots: [ProviderSnapshot(provider: .opencode, events: scopedEvents)],
+                period: .last7Days,
+                now: now
+            )
+            return ExportProjectGroup(
+                project: label,
+                payload: exporter.makeJSONPayload(
+                    usage: usage,
+                    snapshots: [ProviderSnapshot(provider: .opencode, events: scopedEvents)],
+                    dataMode: "CLI",
+                    generatedAt: now,
+                    includesCost: true
+                )
+            )
+        }
+        let data = try exporter.encodeJSONPayload(payload)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // The export payload nests totals under metrics (unlike report/stats/summary).
+        let combinedMetrics = try XCTUnwrap(json["metrics"] as? [String: Any])
+        XCTAssertEqual(combinedMetrics["totalTokens"] as? Int, 5_000)
+        let projects = try XCTUnwrap(json["projects"] as? [[String: Any]])
+        XCTAssertEqual(projects.count, 2)
+        let projectA = try XCTUnwrap(projects.first { $0["project"] as? String == "project-a" })
+        let projectAPayload = try XCTUnwrap(projectA["payload"] as? [String: Any])
+        let projectAMetrics = try XCTUnwrap(projectAPayload["metrics"] as? [String: Any])
+        XCTAssertEqual(projectAMetrics["totalTokens"] as? Int, 3_000)
+        let projectB = try XCTUnwrap(projects.first { $0["project"] as? String == "project-b" })
+        let projectBPayload = try XCTUnwrap(projectB["payload"] as? [String: Any])
+        let projectBMetrics = try XCTUnwrap(projectBPayload["metrics"] as? [String: Any])
+        XCTAssertEqual(projectBMetrics["totalTokens"] as? Int, 2_000)
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {
