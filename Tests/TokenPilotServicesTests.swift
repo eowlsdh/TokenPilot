@@ -644,6 +644,12 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
     }
 
+    func testCLIParseAuditJSONFlag() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit"]), .success(.audit()))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--json"]), .success(.audit(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
+    }
+
     func testCLIParseStatsCommand() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats"]), .success(.stats(period: .last7Days)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today"]), .success(.stats(period: .today)))
@@ -8014,6 +8020,35 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("TokenPilot · Audit"))
         XCTAssertTrue(text.contains("Active days: 2"))
         XCTAssertTrue(text.contains("Local activity, not provider quota"))
+    }
+
+    func testCLIAuditJSONPayloadMatchesCoverage() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // Today and yesterday are active; the other five window days are gaps.
+        let events = [0, -1].map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog)
+        }
+        let data = try TokenPilotCLIService.auditJSON(
+            events: events,
+            windowDays: 7,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["windowDays"] as? Int, 7)
+        XCTAssertEqual(json["activeDays"] as? Int, 2)
+        XCTAssertEqual(json["coveragePercent"] as? Int, 29)
+        XCTAssertEqual(json["gapRunCount"] as? Int, 1)
+        XCTAssertEqual(json["longestGapDays"] as? Int, 5)
+        XCTAssertEqual(json["oldestEventDay"] as? String, "2030-03-16")
+        XCTAssertEqual(json["newestEventDay"] as? String, "2030-03-17")
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("coverage-test"))
     }
 
     // MARK: - ContextHealthService

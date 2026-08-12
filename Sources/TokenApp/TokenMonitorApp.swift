@@ -140,14 +140,27 @@ private enum TokenPilotCLIRunner {
                 }
             }
             return 0
-        case .success(.audit):
+        case .success(.audit(let includesJSON)):
             let events = UsageHistoryStore().loadEvents()
-            print(
-                TokenPilotCLIService.auditText(
-                    events: events,
-                    language: .en
+            if includesJSON {
+                do {
+                    let data = try TokenPilotCLIService.auditJSON(events: events)
+                    FileHandle.standardOutput.write(data)
+                    if data.last != 0x0A {
+                        FileHandle.standardOutput.write(Data([0x0A]))
+                    }
+                } catch {
+                    writeError("TokenPilot: audit failed: \(error.localizedDescription)")
+                    return 1
+                }
+            } else {
+                print(
+                    TokenPilotCLIService.auditText(
+                        events: events,
+                        language: .en
+                    )
                 )
-            )
+            }
             return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project)):
             return await runExport(

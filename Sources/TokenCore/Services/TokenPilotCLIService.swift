@@ -18,7 +18,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case summary
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil)
-    case audit
+    case audit(includesJSON: Bool = false)
     case help
 }
 
@@ -73,12 +73,28 @@ public enum TokenPilotCLIService {
         case "report":
             return parseReport(Array(arguments.dropFirst()))
         case "audit":
-            return .success(.audit)
+            return parseAudit(Array(arguments.dropFirst()))
         case "export":
             return parseExport(Array(arguments.dropFirst()))
         default:
             return .failure(.unknownCommand(command))
         }
+    }
+
+    private static func parseAudit(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var includesJSON = false
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--json":
+                includesJSON = true
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.audit(includesJSON: includesJSON))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -299,7 +315,7 @@ public enum TokenPilotCLIService {
           TokenPilot summary
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown]
-          TokenPilot audit
+          TokenPilot audit [--json]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -317,7 +333,9 @@ public enum TokenPilotCLIService {
         workspace label (ccusage --project style; opencode workspace folder names today).
         --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
-        spot gaps left by providers that prune their own logs. Exports, reports, and audits never
+        spot gaps left by providers that prune their own logs; --json emits the same coverage
+        summary as structured JSON for scripting (toktrack audit --json style). Exports, reports,
+        and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
     }
@@ -924,6 +942,37 @@ public enum TokenPilotCLIService {
         return lines.joined(separator: "\n")
     }
 
+    /// Machine-readable audit payload over stored local history (toktrack `audit --json` style).
+    ///
+    /// Emits the same coverage summary as `auditText` as structured JSON so
+    /// scripts can diff coverage over time. Aggregates only; no raw events.
+    public static func auditJSON(
+        events: [UsageEvent],
+        windowDays: Int = 45,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> Data {
+        let coverage = UsageCoverageService.coverage(events: events, windowDays: windowDays, now: now, calendar: calendar)
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+        let payload = AuditCoverageJSON(
+            generatedAt: now,
+            windowDays: coverage.windowDays,
+            coveragePercent: Int((coverage.coverageRatio * 100).rounded()),
+            activeDays: coverage.activeDays,
+            oldestEventDay: coverage.oldestEventDay.map { dayFormatter.string(from: $0) },
+            newestEventDay: coverage.newestEventDay.map { dayFormatter.string(from: $0) },
+            gapRunCount: coverage.gapRunCount,
+            longestGapDays: coverage.longestGapDays
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
+    }
+
     private static func dailyBreakdownLines(
         events: [UsageEvent],
         period: HistoryPeriod,
@@ -1226,4 +1275,15 @@ private struct ReportModelEntry: Codable {
     var model: String
     var tokens: Int
     var estimatedCostUSD: Decimal?
+}
+
+private struct AuditCoverageJSON: Codable {
+    var generatedAt: Date
+    var windowDays: Int
+    var coveragePercent: Int
+    var activeDays: Int
+    var oldestEventDay: String?
+    var newestEventDay: String?
+    var gapRunCount: Int
+    var longestGapDays: Int
 }
