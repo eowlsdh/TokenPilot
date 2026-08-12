@@ -47,7 +47,7 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.report(let period, let format, let since, let until, let includesCost)):
+        case .success(.report(let period, let format, let since, let until, let days, let includesCost)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             switch format {
@@ -59,6 +59,7 @@ private enum TokenPilotCLIRunner {
                         period: period,
                         since: since,
                         until: until,
+                        days: days,
                         includesCost: includesCost
                     )
                 )
@@ -70,6 +71,7 @@ private enum TokenPilotCLIRunner {
                         period: period,
                         since: since,
                         until: until,
+                        days: days,
                         includesCost: includesCost
                     )
                 )
@@ -82,6 +84,7 @@ private enum TokenPilotCLIRunner {
                         period: period,
                         since: since,
                         until: until,
+                        days: days,
                         includesCost: includesCost
                     )
                 )
@@ -96,7 +99,7 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let includesCost)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost)):
             return await runExport(
                 format: format,
                 period: period,
@@ -104,6 +107,7 @@ private enum TokenPilotCLIRunner {
                 includesCapacity: includesCapacity,
                 since: since,
                 until: until,
+                days: days,
                 includesCost: includesCost
             )
         }
@@ -116,6 +120,7 @@ private enum TokenPilotCLIRunner {
         includesCapacity: Bool,
         since: Date?,
         until: Date?,
+        days: Int?,
         includesCost: Bool
     ) async -> Int32 {
         let events = UsageHistoryStore().loadEvents()
@@ -125,7 +130,7 @@ private enum TokenPilotCLIRunner {
                 events: events.filter { $0.provider == provider }
             )
         }
-        let window = TokenPilotCLIService.explicitDateRange(period: period, since: since, until: until)
+        let window = TokenPilotCLIService.explicitDateRange(period: period, since: since, until: until, days: days)
         let usage = AggregationService().aggregate(
             snapshots: snapshots,
             period: period,

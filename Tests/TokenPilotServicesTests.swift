@@ -548,6 +548,9 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--until", "yesterday"]), .failure(.invalidDate("yesterday")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--days", "zero"]), .failure(.invalidDays("zero")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "0"]), .failure(.invalidDays("0")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "-3"]), .failure(.invalidDays("-3")))
     }
 
     func testCLIParseSinceUntilDates() {
@@ -596,6 +599,21 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(
             TokenPilotCLIService.parse(arguments: ["export", "--capacity", "--no-cost"]),
             .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: true, includesCost: false))
+        )
+    }
+
+    func testCLIParseDaysWindow() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--days", "14"]),
+            .success(.report(period: .last7Days, format: .text, days: 14))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--days", "30", "--svg"]),
+            .success(.report(period: .today, format: .svg, days: 30))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--days", "90", "--no-cost"]),
+            .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, days: 90, includesCost: false))
         )
     }
 
@@ -806,6 +824,29 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Requests: 2"))
         // The explicit date window is reflected in the period label.
         XCTAssertTrue(text.contains("2026-08-01 → 2026-08-13"))
+    }
+
+    func testCLIReportDaysWindowFiltersAndLabels() {
+        let now = Date()
+        let calendar = Calendar.current
+        // Three days ago is inside a 14-day window; 30 days ago is outside.
+        let recent = UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -3, to: now)!, inputTokens: 4_000, outputTokens: 0, estimatedCostUSD: Decimal(0.08), source: "days-test", dataSource: .localLog)
+        let stale = UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .day, value: -30, to: now)!, inputTokens: 20_000, outputTokens: 0, estimatedCostUSD: Decimal(0.40), source: "days-test", dataSource: .localLog)
+        let text = TokenPilotCLIService.reportText(
+            events: [recent, stale],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            days: 14,
+            now: now,
+            calendar: calendar
+        )
+        // Only the 3-day-old event counts; the 30-day-old event is outside the window.
+        XCTAssertTrue(text.contains("Total tokens: 4K"))
+        XCTAssertTrue(text.contains("Requests: 1"))
+        XCTAssertFalse(text.contains("20K"))
+        // The relative window is reflected in the period label.
+        XCTAssertTrue(text.contains("Last 14 days"))
     }
 
     func testCLIReportNoCostOmitsCostFigures() {

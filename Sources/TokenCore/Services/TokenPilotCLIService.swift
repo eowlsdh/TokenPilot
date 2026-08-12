@@ -13,9 +13,9 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
-    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, includesCost: Bool = true)
+    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
     case summary
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, includesCost: Bool = true)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
     case audit
     case help
 }
@@ -25,6 +25,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidFormat(String)
     case invalidPeriod(String)
     case invalidDate(String)
+    case invalidDays(String)
     case missingValue(forFlag: String)
 
     public var errorDescription: String? {
@@ -37,6 +38,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported period '\(period)'. Use today, last7Days, or thisMonth."
         case .invalidDate(let date):
             return "Unsupported date '\(date)'. Use yyyy-MM-dd (for example 2026-08-13)."
+        case .invalidDays(let days):
+            return "Unsupported day count '\(days)'. Use a positive integer (for example --days 14)."
         case .missingValue(let flag):
             return "Missing value for '\(flag)'."
         }
@@ -76,6 +79,7 @@ public enum TokenPilotCLIService {
         var format = TokenPilotReportFormat.text
         var since: Date?
         var until: Date?
+        var days: Int?
         var includesCost = true
         var index = 0
         while index < flags.count {
@@ -102,6 +106,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidDate(flags[index]))
                 }
                 until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
             case "--svg":
                 format = .svg
             case "--md":
@@ -113,7 +124,7 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.report(period: period, format: format, since: since, until: until, includesCost: includesCost))
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -123,6 +134,7 @@ public enum TokenPilotCLIService {
         var includesCapacity = false
         var since: Date?
         var until: Date?
+        var days: Int?
         var includesCost = true
         var index = 0
         while index < flags.count {
@@ -156,6 +168,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidDate(flags[index]))
                 }
                 until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
             case "--out":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -169,7 +188,7 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, includesCost: includesCost))
+        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost))
     }
 
     public static var helpText: String {
@@ -177,9 +196,9 @@ public enum TokenPilotCLIService {
         TokenPilot - local-first AI usage monitor
 
         Usage:
-          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--out <path>] [--capacity] [--no-cost]
+          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--svg|--md] [--no-cost]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--svg|--md] [--no-cost]
           TokenPilot audit
           TokenPilot help
 
@@ -188,7 +207,8 @@ public enum TokenPilotCLIService {
         prints today's local usage totals. report prints a shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG and --md emits a copy-pasteable Markdown table. --since/--until slice the window to
-        explicit dates (yyyy-MM-dd), overriding --period. --no-cost omits estimated cost from
+        explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
+        override --period. --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs. Exports, reports, and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
@@ -276,11 +296,12 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        days: Int? = nil,
         includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        let window = reportWindow(period: period, since: since, until: until, now: now, calendar: calendar)
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
@@ -297,7 +318,7 @@ public enum TokenPilotCLIService {
 
         var lines: [String] = []
         lines.append("TokenPilot · \(localized("Report", language: language))")
-        lines.append("\(localized("Period", language: language)): \(periodLabel(period, since: since, until: until, language: language, now: now, calendar: calendar))")
+        lines.append("\(localized("Period", language: language)): \(periodLabel(period, since: since, until: until, days: days, language: language, now: now, calendar: calendar))")
         lines.append("\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(metrics.totalTokens))")
         lines.append("\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(metrics.requestCount))")
         if includesCost && metrics.estimatedCostUSD > 0 {
@@ -321,7 +342,7 @@ public enum TokenPilotCLIService {
             lines.append(localized("Top projects", language: language))
             lines.append(contentsOf: projectLines)
         }
-        let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, now: now, calendar: calendar, includesCost: includesCost)
+        let dailyLines = dailyBreakdownLines(events: events.filter { enabledSet.contains($0.provider) }, period: period, since: since, until: until, days: days, now: now, calendar: calendar, includesCost: includesCost)
         if !dailyLines.isEmpty {
             lines.append(localized("Daily breakdown", language: language))
             lines.append(contentsOf: dailyLines)
@@ -341,11 +362,12 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        days: Int? = nil,
         includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        let window = reportWindow(period: period, since: since, until: until, now: now, calendar: calendar)
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
@@ -377,7 +399,7 @@ public enum TokenPilotCLIService {
         lines.append("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"\(width)\" height=\"\(y + 40)\" viewBox=\"0 0 \(width) \(y + 40)\">")
         lines.append("<rect width=\"100%\" height=\"100%\" fill=\"#1c1c1e\"/>")
         addText("TokenPilot · Report", size: 18, weight: "bold", fill: "#ffffff")
-        addText("Period: \(periodLabel(period, since: since, until: until, language: .en, now: now, calendar: calendar))", size: 13)
+        addText("Period: \(periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar))", size: 13)
         addText("Total tokens: \(TokenPilotFormatters.compactNumber(metrics.totalTokens))", size: 13)
         addText("Requests: \(TokenPilotFormatters.compactNumber(metrics.requestCount))", size: 13)
         if includesCost && metrics.estimatedCostUSD > 0 {
@@ -414,6 +436,7 @@ public enum TokenPilotCLIService {
             period: period,
             since: since,
             until: until,
+            days: days,
             now: now,
             calendar: calendar,
             includesCost: includesCost
@@ -440,11 +463,12 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod = .last7Days,
         since: Date? = nil,
         until: Date? = nil,
+        days: Int? = nil,
         includesCost: Bool = true,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        let window = reportWindow(period: period, since: since, until: until, now: now, calendar: calendar)
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
@@ -464,7 +488,7 @@ public enum TokenPilotCLIService {
         lines.append("")
         lines.append("| Metric | Value |")
         lines.append("|---|---|")
-        lines.append("| Period | \(periodLabel(period, since: since, until: until, language: .en, now: now, calendar: calendar)) |")
+        lines.append("| Period | \(periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar)) |")
         lines.append("| Total tokens | \(TokenPilotFormatters.compactNumber(metrics.totalTokens)) |")
         lines.append("| Requests | \(TokenPilotFormatters.compactNumber(metrics.requestCount)) |")
         if includesCost && metrics.estimatedCostUSD > 0 {
@@ -563,11 +587,12 @@ public enum TokenPilotCLIService {
         period: HistoryPeriod,
         since: Date?,
         until: Date?,
+        days: Int?,
         now: Date,
         calendar: Calendar,
         includesCost: Bool = true
     ) -> [String] {
-        let window = reportWindow(period: period, since: since, until: until, now: now, calendar: calendar)
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
@@ -658,18 +683,21 @@ public enum TokenPilotCLIService {
     }
 
     /// Effective window bounds for a report/export. Explicit `--since`/`--until` dates take
-    /// precedence over the named period; `endExclusive` is the day after `until` so the whole
-    /// `until` day is included.
+    /// precedence over `--days`, which takes precedence over the named period; `endExclusive`
+    /// is the day after `until` so the whole `until` day is included.
     private static func reportWindow(
         period: HistoryPeriod,
         since: Date?,
         until: Date?,
+        days: Int?,
         now: Date,
         calendar: Calendar
     ) -> (start: Date, endExclusive: Date) {
         let start: Date
         if let since {
             start = calendar.startOfDay(for: since)
+        } else if let days {
+            start = calendar.date(byAdding: .day, value: -(days - 1), to: calendar.startOfDay(for: now)) ?? calendar.startOfDay(for: now)
         } else {
             start = periodStart(period, now: now, calendar: calendar) ?? now
         }
@@ -687,37 +715,42 @@ public enum TokenPilotCLIService {
         window.start...(window.endExclusive.addingTimeInterval(-0.001))
     }
 
-    /// Closed date range implied by CLI `--since`/`--until` values, or nil when neither is set.
+    /// Closed date range implied by CLI `--since`/`--until`/`--days` values, or nil when none is set.
     /// The app entry point uses this to apply the same window to `export` aggregation.
     public static func explicitDateRange(
         period: HistoryPeriod,
         since: Date?,
         until: Date?,
+        days: Int?,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> ClosedRange<Date>? {
-        guard since != nil || until != nil else { return nil }
-        return range(from: reportWindow(period: period, since: since, until: until, now: now, calendar: calendar))
+        guard since != nil || until != nil || days != nil else { return nil }
+        return range(from: reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar))
     }
 
     private static func periodLabel(
         _ period: HistoryPeriod,
         since: Date?,
         until: Date?,
+        days: Int?,
         language: TokenPilotLanguage,
         now: Date,
         calendar: Calendar
     ) -> String {
-        guard since != nil || until != nil else {
-            return periodLabel(period, language: language)
+        if since != nil || until != nil {
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = calendar
+            formatter.dateFormat = "yyyy-MM-dd"
+            let sinceText = since.map { formatter.string(from: $0) } ?? "…"
+            let untilText = until.map { formatter.string(from: $0) } ?? "…"
+            return "\(sinceText) → \(untilText)"
         }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.calendar = calendar
-        formatter.dateFormat = "yyyy-MM-dd"
-        let sinceText = since.map { formatter.string(from: $0) } ?? "…"
-        let untilText = until.map { formatter.string(from: $0) } ?? "…"
-        return "\(sinceText) → \(untilText)"
+        if let days {
+            return "Last \(days) days"
+        }
+        return periodLabel(period, language: language)
     }
 
     private static func periodLabel(_ period: HistoryPeriod, language: TokenPilotLanguage) -> String {
