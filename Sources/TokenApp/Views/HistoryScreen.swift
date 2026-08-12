@@ -84,6 +84,9 @@ struct HistoryScreen: View {
                     if model.cacheEfficiency.hasCacheActivity {
                         HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
                     }
+                    if model.costEfficiency.hasAnyActivity {
+                        HistoryCostEfficiencyCard(efficiency: model.costEfficiency, model: model)
+                    }
                     if !model.fiveHourBlocks.isEmpty {
                         HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
                     }
@@ -1362,6 +1365,82 @@ struct HistoryFiveHourBlocksCard: View {
         case 0.33..<0.66: return TokenPilotDesign.status(.warning)
         default: return TokenPilotDesign.trust
         }
+    }
+}
+
+struct HistoryCostEfficiencyCard: View {
+    let efficiency: CostEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cost efficiency"), systemImage: "centsign.circle")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let costPerRequest = efficiency.costPerRequestUSD {
+                        Text("\(TokenPilotFormatters.cost(costPerRequest)) / \(model.t("request"))")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md),
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md),
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md)
+                    ],
+                    alignment: .leading,
+                    spacing: TokenPilotDesign.Spacing.md
+                ) {
+                    HistoryUsageMetricTile(
+                        label: model.t("Per request"),
+                        value: tokensPerRequestText
+                    )
+                    HistoryUsageMetricTile(
+                        label: model.t("Output share"),
+                        value: "\(outputRatioPercent)%"
+                    )
+                    HistoryUsageMetricTile(
+                        label: model.t("Total cost"),
+                        value: totalCostText
+                    )
+                }
+
+                Text(model.t("Averages over local activity; recorded cost only. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Cost efficiency")), \(model.t("Per request")) \(tokensPerRequestText), " +
+            "\(model.t("Output share")) \(outputRatioPercent)%, \(model.t("Total cost")) \(totalCostText)"
+        )
+    }
+
+    private var tokensPerRequestText: String {
+        guard efficiency.requestCount > 0 else { return "—" }
+        return TokenPilotFormatters.compactNumber(Int(efficiency.tokensPerRequest.rounded())) + " " + model.t("tok")
+    }
+
+    private var outputRatioPercent: Int {
+        Int((efficiency.outputTokenRatio * 100).rounded())
+    }
+
+    private var totalCostText: String {
+        guard let total = efficiency.totalCostUSD else { return "—" }
+        return TokenPilotFormatters.cost(total)
     }
 }
 

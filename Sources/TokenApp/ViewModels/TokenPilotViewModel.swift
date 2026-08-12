@@ -403,6 +403,10 @@ final class TokenPilotViewModel: ObservableObject {
         MonthlyTrendService.monthlyBars(events: historyUsage.events)
     }
 
+    var costEfficiency: CostEfficiencySummary {
+        CostEfficiencyService.summary(events: historyUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }

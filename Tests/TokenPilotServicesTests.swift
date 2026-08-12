@@ -6606,6 +6606,46 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(single.first?.monthLabel, "2030-03")
     }
 
+    // MARK: - CostEfficiencyService
+
+    func testCostEfficiencyComputesPerRequestMetrics() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 1_000, outputTokens: 1_000, requestCount: 2, estimatedCostUSD: Decimal(0.20), source: "cost-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(60), inputTokens: 2_000, outputTokens: 0, requestCount: 1, source: "cost-test", dataSource: .localLog),
+        ]
+
+        let summary = CostEfficiencyService.summary(events: events, now: now)
+        XCTAssertEqual(summary.totalTokens, 4_000)
+        XCTAssertEqual(summary.requestCount, 3)
+        XCTAssertEqual(summary.totalCostUSD, Decimal(0.20))
+        // cost / request over all requests = 0.20 / 3
+        XCTAssertEqual(summary.costPerRequestUSD, Decimal(0.20) / Decimal(3))
+        // tokens / request = 4000 / 3
+        XCTAssertEqual(summary.tokensPerRequest, 4_000.0 / 3.0, accuracy: 0.001)
+        // output share = 1000 / 4000
+        XCTAssertEqual(summary.outputTokenRatio, 0.25, accuracy: 0.001)
+        XCTAssertTrue(summary.hasAnyActivity)
+    }
+
+    func testCostEfficiencyIgnoresEventsWithoutCostAndEmpty() throws {
+        let now = Date(timeIntervalSince1970: 1_900_000_000)
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 500, outputTokens: 0, requestCount: 2, source: "cost-test", dataSource: .localLog)
+        ]
+
+        let summary = CostEfficiencyService.summary(events: events, now: now)
+        XCTAssertNil(summary.totalCostUSD)
+        XCTAssertNil(summary.costPerRequestUSD)
+        XCTAssertEqual(summary.tokensPerRequest, 250, accuracy: 0.001)
+        XCTAssertEqual(summary.outputTokenRatio, 0)
+
+        let empty = CostEfficiencyService.summary(events: [], now: now)
+        XCTAssertEqual(empty.requestCount, 0)
+        XCTAssertEqual(empty.tokensPerRequest, 0)
+        XCTAssertFalse(empty.hasAnyActivity)
+    }
+
     private func statusPayload(indicator: String, description: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "page": ["id": "test"],
