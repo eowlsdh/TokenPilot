@@ -18,7 +18,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
-    case audit(includesJSON: Bool = false)
+    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false)
     case help
 }
@@ -92,18 +92,58 @@ public enum TokenPilotCLIService {
 
     private static func parseAudit(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var includesJSON = false
+        var since: Date?
+        var until: Date?
+        var days: Int?
+        var timeZone: TimeZone?
+        var project: String?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
             switch flag {
             case "--json":
                 includesJSON = true
+            case "--since":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                since = parsed
+            case "--until":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
+            case "--project":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                project = flags[index]
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.audit(includesJSON: includesJSON))
+        if days != nil, since != nil || until != nil {
+            return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
+        }
+        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project))
     }
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -521,7 +561,8 @@ public enum TokenPilotCLIService {
         workspace label (ccusage --project style; opencode workspace folder names today).
         --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
-        spot gaps left by providers that prune their own logs; --json emits the same coverage
+        spot gaps left by providers that prune their own logs; --since/--until/--days/--timezone/--project
+        scope the audited window and events, and --json emits the same coverage
         summary as structured JSON for scripting (toktrack audit --json style). blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
@@ -1467,10 +1508,23 @@ public enum TokenPilotCLIService {
         events: [UsageEvent],
         language: TokenPilotLanguage,
         windowDays: Int = 45,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        let coverage = UsageCoverageService.coverage(events: events, windowDays: windowDays, now: now, calendar: calendar)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let coverage: UsageCoverageSummary
+        if since != nil || until != nil || days != nil {
+            let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
+            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let inWindowEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
+            coverage = UsageCoverageService.coverage(events: inWindowEvents, windowDays: spanDays, now: window.endExclusive.addingTimeInterval(-1), calendar: calendar)
+        } else {
+            coverage = UsageCoverageService.coverage(events: scopedEvents, windowDays: windowDays, now: now, calendar: calendar)
+        }
         let percent = Int((coverage.coverageRatio * 100).rounded())
 
         var lines: [String] = []
@@ -1503,22 +1557,40 @@ public enum TokenPilotCLIService {
     public static func auditJSON(
         events: [UsageEvent],
         windowDays: Int = 45,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
-        let coverage = UsageCoverageService.coverage(events: events, windowDays: windowDays, now: now, calendar: calendar)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let coverage: UsageCoverageSummary
+        let anchor: Date
+        let auditedEvents: [UsageEvent]
+        if since != nil || until != nil || days != nil {
+            let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
+            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            auditedEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
+            anchor = window.endExclusive.addingTimeInterval(-1)
+            coverage = UsageCoverageService.coverage(events: auditedEvents, windowDays: spanDays, now: anchor, calendar: calendar)
+        } else {
+            auditedEvents = scopedEvents
+            anchor = now
+            coverage = UsageCoverageService.coverage(events: auditedEvents, windowDays: windowDays, now: now, calendar: calendar)
+        }
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
         dayFormatter.dateFormat = "yyyy-MM-dd"
-        let startOfToday = calendar.startOfDay(for: now)
+        let startOfToday = calendar.startOfDay(for: anchor)
         let windowStart = calendar.date(byAdding: .day, value: -(coverage.windowDays - 1), to: startOfToday) ?? startOfToday
-        let activeDays = Set(events.map { calendar.startOfDay(for: $0.timestamp) })
+        let activeDays = Set(auditedEvents.map { calendar.startOfDay(for: $0.timestamp) })
         // toktrack `audit --json` per-day breakdown: one row per window day with
         // whether activity was recorded and how many tokens that day carried.
         let days = (0..<coverage.windowDays).map { offset in
             let day = calendar.date(byAdding: .day, value: offset, to: windowStart) ?? startOfToday
-            let dayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
+            let dayEvents = auditedEvents.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
             return AuditDayRow(
                 date: dayFormatter.string(from: day),
                 active: activeDays.contains(day),

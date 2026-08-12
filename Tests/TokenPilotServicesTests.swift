@@ -665,8 +665,21 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIParseAuditJSONFlag() {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")
+        let until = formatter.date(from: "2026-08-13")
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit"]), .success(.audit()))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--json"]), .success(.audit(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--since", "2026-08-01"]), .success(.audit(since: since)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--until", "2026-08-13"]), .success(.audit(until: until)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--days", "14"]), .success(.audit(days: 14)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--days", "14", "--since", "2026-08-01"]), .failure(.invalidCombination("--days cannot be combined with --since or --until.")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--timezone", "UTC"]), .success(.audit(timeZone: TimeZone(identifier: "UTC"))))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--project", "project-a"]), .success(.audit(project: "project-a")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -8611,6 +8624,61 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("coverage-test"))
+    }
+
+    func testCLIAuditWindowSelectorsScopeCoverage() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        let inWindow = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog),
+        ]
+        let outside = [
+            UsageEvent(provider: .opencode, timestamp: day(-10), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog),
+        ]
+        // --since/--until scope the audited window: the 10-days-ago event is outside.
+        let text = TokenPilotCLIService.auditText(
+            events: inWindow + outside,
+            language: .en,
+            since: day(-2),
+            until: day(0),
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Active days: 2"))
+        XCTAssertTrue(text.contains("of last 3 days"))
+
+        // JSON payload reflects the scoped window in its per-day breakdown rows.
+        let data = try TokenPilotCLIService.auditJSON(
+            events: inWindow + outside,
+            since: day(-2),
+            until: day(0),
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["windowDays"] as? Int, 3)
+        XCTAssertEqual(json["activeDays"] as? Int, 2)
+        let days = try XCTUnwrap(json["days"] as? [[String: Any]])
+        XCTAssertEqual(days.count, 3)
+
+        // --project restricts the audited events to one workspace label.
+        let scoped = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let projectText = TokenPilotCLIService.auditText(
+            events: scoped,
+            language: .en,
+            windowDays: 7,
+            project: "project-a",
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(projectText.contains("Active days: 1"))
     }
 
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {

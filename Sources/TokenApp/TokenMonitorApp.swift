@@ -197,11 +197,19 @@ private enum TokenPilotCLIRunner {
                 }
             }
             return 0
-        case .success(.audit(let includesJSON)):
+        case .success(.audit(let includesJSON, let since, let until, let days, let timeZone, let project)):
             let events = UsageHistoryStore().loadEvents()
+            let calendar = cliCalendar(for: timeZone)
             if includesJSON {
                 do {
-                    let data = try TokenPilotCLIService.auditJSON(events: events)
+                    let data = try TokenPilotCLIService.auditJSON(
+                        events: events,
+                        since: since,
+                        until: until,
+                        days: days,
+                        project: project,
+                        calendar: calendar
+                    )
                     FileHandle.standardOutput.write(data)
                     if data.last != 0x0A {
                         FileHandle.standardOutput.write(Data([0x0A]))
@@ -214,7 +222,12 @@ private enum TokenPilotCLIRunner {
                 print(
                     TokenPilotCLIService.auditText(
                         events: events,
-                        language: .en
+                        language: .en,
+                        since: since,
+                        until: until,
+                        days: days,
+                        project: project,
+                        calendar: calendar
                     )
                 )
             }
