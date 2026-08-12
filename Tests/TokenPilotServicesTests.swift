@@ -677,6 +677,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--days", "3", "--since", "2026-08-01"]), .failure(.invalidCombination("--days cannot be combined with --since or --until.")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--timezone", "UTC"]), .success(.summary(timeZone: TimeZone(identifier: "UTC"))))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--project", "project-a"]), .success(.summary(project: "project-a")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--no-cost"]), .success(.summary(includesCost: false)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--no-cost", "--json"]), .success(.summary(includesCost: false, includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -1593,6 +1595,46 @@ final class TokenPilotServicesTests: XCTestCase {
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("claude-sonnet"))
         XCTAssertFalse(serialized.contains("statusline"))
+    }
+
+    func testCLISummaryNoCostBlanksCostFields() throws {
+        let now = Date()
+        let event = UsageEvent(
+            provider: .claude,
+            model: "claude-sonnet",
+            timestamp: now,
+            inputTokens: 100,
+            outputTokens: 50,
+            requestCount: 3,
+            estimatedCostUSD: Decimal(0.12),
+            source: "statusline",
+            dataSource: .officialStatusline
+        )
+        // --no-cost drops the estimated-cost line and share cost from the text summary.
+        let text = TokenPilotCLIService.summaryText(
+            events: [event],
+            enabledProviders: [.claude],
+            language: .en,
+            period: .today,
+            includesCost: false,
+            now: now
+        )
+        XCTAssertTrue(text.contains("Total tokens: 150"))
+        XCTAssertTrue(text.contains("Requests: 3"))
+        XCTAssertFalse(text.contains("$0.12"))
+
+        // JSON payload nils both the payload cost and the per-share cost.
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: [event],
+            enabledProviders: [.claude],
+            period: .today,
+            includesCost: false,
+            now: now
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertNil(json["estimatedCostUSD"])
+        let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
+        XCTAssertNil(shares.first?["estimatedCostUSD"])
     }
 
     func testCLISummaryPeriodSelectsWindow() throws {
