@@ -47,23 +47,46 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let project)):
+        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let project, let includesJSON)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
-            print(
-                TokenPilotCLIService.statsText(
-                    events: events,
-                    enabledProviders: settings.enabledProviders,
-                    language: .en,
-                    period: period,
-                    since: since,
-                    until: until,
-                    days: days,
-                    includesCost: includesCost,
-                    project: project,
-                    calendar: cliCalendar(for: timeZone)
+            if includesJSON {
+                do {
+                    let data = try TokenPilotCLIService.statsJSON(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period,
+                        since: since,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        project: project,
+                        calendar: cliCalendar(for: timeZone)
+                    )
+                    FileHandle.standardOutput.write(data)
+                    if data.last != 0x0A {
+                        FileHandle.standardOutput.write(Data([0x0A]))
+                    }
+                } catch {
+                    writeError("TokenPilot: stats failed: \(error.localizedDescription)")
+                    return 1
+                }
+            } else {
+                print(
+                    TokenPilotCLIService.statsText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        language: .en,
+                        period: period,
+                        since: since,
+                        until: until,
+                        days: days,
+                        includesCost: includesCost,
+                        project: project,
+                        calendar: cliCalendar(for: timeZone)
+                    )
                 )
-            )
+            }
             return 0
         case .success(.report(let period, let format, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project)):
             let settings = TokenPilotSettingsStore().load()

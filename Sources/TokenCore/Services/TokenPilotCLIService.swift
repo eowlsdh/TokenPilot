@@ -16,7 +16,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil)
     case summary
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil)
     case audit(includesJSON: Bool = false)
     case help
@@ -253,6 +253,7 @@ public enum TokenPilotCLIService {
         var includesCost = true
         var timeZone: TimeZone?
         var project: String?
+        var includesJSON = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -298,12 +299,14 @@ public enum TokenPilotCLIService {
                 project = flags[index]
             case "--no-cost":
                 includesCost = false
+            case "--json":
+                includesJSON = true
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project))
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON))
     }
 
     public static var helpText: String {
@@ -313,7 +316,7 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost] [--json]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown]
           TokenPilot audit [--json]
           TokenPilot help
@@ -321,7 +324,8 @@ public enum TokenPilotCLIService {
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints today's local usage totals. stats prints derived usage statistics for the window:
-        active days, daily average, busiest day and hour, and most-used provider. report prints a
+        active days, daily average, busiest day and hour, and most-used provider; --json emits
+        the same statistics as structured JSON for scripting (toktrack stats --json style). report prints a
         shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG, --md emits a copy-pasteable Markdown table, and --json emits the same receipt as a
@@ -462,6 +466,67 @@ public enum TokenPilotCLIService {
         }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
+    }
+
+    /// Machine-readable stats payload over the window (toktrack `stats --json` style).
+    ///
+    /// Emits the same derived statistics as `statsText` as structured JSON so
+    /// scripts can consume active days, daily average, busiest day/hour, and
+    /// most-used provider. Cost is omitted when `includesCost` is false.
+    public static func statsJSON(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .last7Days,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        includesCost: Bool = true,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) throws -> Data {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let enabledSet = Set(enabledProviders)
+        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: scopedEvents.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let metrics = usage.metrics
+        let periodEvents = scopedEvents.filter { event in
+            enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
+        }
+        let activeDayStarts = Set(periodEvents.map { calendar.startOfDay(for: $0.timestamp) })
+        let activeDays = activeDayStarts.count
+        let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+        let dailyAverage = metrics.totalTokens / spanDays
+        let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
+        let busiestDay = dayGroups.max { lhs, rhs in
+            lhs.value.reduce(0) { $0 + $1.totalTokens } < rhs.value.reduce(0) { $0 + $1.totalTokens }
+        }
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.calendar = calendar
+        dayFormatter.dateFormat = "MM-dd"
+        let payload = StatsPayloadJSON(
+            generatedAt: now,
+            period: periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar),
+            totalTokens: metrics.totalTokens,
+            requestCount: metrics.requestCount,
+            estimatedCostUSD: includesCost && metrics.estimatedCostUSD > 0 ? metrics.estimatedCostUSD : nil,
+            activeDays: activeDays,
+            dailyAverage: dailyAverage,
+            busiestDay: busiestDay.flatMap { $0.value.isEmpty ? nil : dayFormatter.string(from: $0.key) },
+            busiestHour: metrics.busiestHour,
+            mostUsedProvider: metrics.mostUsedProvider?.displayName
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
     }
 
     /// One provider share line, appending request count and recorded cost when present.
@@ -1286,4 +1351,17 @@ private struct AuditCoverageJSON: Codable {
     var newestEventDay: String?
     var gapRunCount: Int
     var longestGapDays: Int
+}
+
+private struct StatsPayloadJSON: Codable {
+    var generatedAt: Date
+    var period: String
+    var totalTokens: Int
+    var requestCount: Int
+    var estimatedCostUSD: Decimal?
+    var activeDays: Int
+    var dailyAverage: Int
+    var busiestDay: String?
+    var busiestHour: Int?
+    var mostUsedProvider: String?
 }

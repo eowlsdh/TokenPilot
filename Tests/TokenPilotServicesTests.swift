@@ -656,6 +656,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "thisMonth"]), .success(.stats(period: .thisMonth)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--days", "30"]), .success(.stats(period: .last7Days, days: 30)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today", "--days", "14", "--no-cost"]), .success(.stats(period: .today, days: 14, includesCost: false)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json"]), .success(.stats(period: .last7Days, includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today", "--days", "14", "--no-cost", "--json"]), .success(.stats(period: .today, days: 14, includesCost: false, includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--days", "zero"]), .failure(.invalidDays("zero")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--bogus"]), .failure(.unknownCommand("--bogus")))
@@ -1247,6 +1249,67 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates-only: no per-event model or source leaks.
         XCTAssertFalse(text.contains("opencode-sonnet"))
         XCTAssertFalse(text.contains("stats-test"))
+    }
+
+    func testCLIStatsJSONPayloadMatchesTextStatistics() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        let todayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: now)!,
+            inputTokens: 6_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.12),
+            source: "stats-test",
+            dataSource: .localLog
+        )
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let yesterdayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: yesterday)!,
+            inputTokens: 2_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.04),
+            source: "stats-test",
+            dataSource: .localLog
+        )
+        let data = try TokenPilotCLIService.statsJSON(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: true,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["period"] as? String, "Last 7 days")
+        XCTAssertEqual(json["totalTokens"] as? Int, 8_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        let cost = try XCTUnwrap(json["estimatedCostUSD"] as? NSNumber)
+        XCTAssertEqual(cost.doubleValue, 0.16, accuracy: 0.001)
+        XCTAssertEqual(json["activeDays"] as? Int, 2)
+        XCTAssertEqual(json["dailyAverage"] as? Int, 8_000 / 7)
+        XCTAssertEqual(json["busiestDay"] as? String, "08-13")
+        XCTAssertEqual(json["busiestHour"] as? Int, 15)
+        XCTAssertEqual(json["mostUsedProvider"] as? String, "opencode")
+        // Aggregates only: no per-event model or source leaks.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("opencode-sonnet"))
+        XCTAssertFalse(serialized.contains("stats-test"))
+
+        // --no-cost omits the cost field entirely (toktrack stats --json --no-cost style).
+        let noCost = try TokenPilotCLIService.statsJSON(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            includesCost: false,
+            now: now,
+            calendar: calendar
+        )
+        let noCostJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: noCost) as? [String: Any])
+        XCTAssertNil(noCostJSON["estimatedCostUSD"])
     }
 
     func testCLISummaryTextIncludesCapacityRemaining() {
