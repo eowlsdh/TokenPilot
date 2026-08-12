@@ -47,21 +47,23 @@ private enum TokenPilotCLIRunner {
                 )
             )
             return 0
-        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let project, let includesJSON)):
+        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let project, let includesJSON, let weekStartDay)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
+            let calendar = cliCalendar(for: timeZone)
+            let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
             if includesJSON {
                 do {
                     let data = try TokenPilotCLIService.statsJSON(
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
                         project: project,
-                        calendar: cliCalendar(for: timeZone)
+                        calendar: calendar
                     )
                     FileHandle.standardOutput.write(data)
                     if data.last != 0x0A {
@@ -78,20 +80,21 @@ private enum TokenPilotCLIRunner {
                         enabledProviders: settings.enabledProviders,
                         language: .en,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
                         project: project,
-                        calendar: cliCalendar(for: timeZone)
+                        calendar: calendar
                     )
                 )
             }
             return 0
-        case .success(.report(let period, let format, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let sections)):
+        case .success(.report(let period, let format, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let sections, let weekStartDay)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
+            let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
             switch format {
             case .svg:
                 print(
@@ -99,7 +102,7 @@ private enum TokenPilotCLIRunner {
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
@@ -114,7 +117,7 @@ private enum TokenPilotCLIRunner {
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
@@ -130,7 +133,7 @@ private enum TokenPilotCLIRunner {
                         enabledProviders: settings.enabledProviders,
                         language: .en,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
@@ -145,7 +148,7 @@ private enum TokenPilotCLIRunner {
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         period: period,
-                        since: since,
+                        since: effectiveSince,
                         until: until,
                         days: days,
                         includesCost: includesCost,
@@ -186,7 +189,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay)):
             return await runExport(
                 format: format,
                 period: period,
@@ -197,7 +200,8 @@ private enum TokenPilotCLIRunner {
                 days: days,
                 includesCost: includesCost,
                 timeZone: timeZone,
-                project: project
+                project: project,
+                weekStartDay: weekStartDay
             )
         }
     }
@@ -221,7 +225,8 @@ private enum TokenPilotCLIRunner {
         days: Int?,
         includesCost: Bool,
         timeZone: TimeZone?,
-        project: String?
+        project: String?,
+        weekStartDay: WeekStartDay?
     ) async -> Int32 {
         let allEvents = UsageHistoryStore().loadEvents()
         let events = project.map { label in allEvents.filter { $0.projectLabel == label } } ?? allEvents
@@ -232,7 +237,8 @@ private enum TokenPilotCLIRunner {
             )
         }
         let calendar = cliCalendar(for: timeZone)
-        let window = TokenPilotCLIService.explicitDateRange(period: period, since: since, until: until, days: days, calendar: calendar)
+        let effectiveSince = weekStartDay.map { TokenPilotCLIService.weekStartDate($0, calendar: calendar) } ?? since
+        let window = TokenPilotCLIService.explicitDateRange(period: period, since: effectiveSince, until: until, days: days, calendar: calendar)
         let usage = AggregationService().aggregate(
             snapshots: snapshots,
             period: period,

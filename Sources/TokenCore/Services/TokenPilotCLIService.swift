@@ -14,10 +14,10 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
-    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil)
+    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil)
     case summary
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil)
     case audit(includesJSON: Bool = false)
     case help
 }
@@ -29,6 +29,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidDate(String)
     case invalidDays(String)
     case invalidTimezone(String)
+    case invalidWeekStartDay(String)
     case invalidCombination(String)
     case missingValue(forFlag: String)
 
@@ -46,6 +47,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported day count '\(days)'. Use a positive integer (for example --days 14)."
         case .invalidTimezone(let zone):
             return "Unsupported timezone '\(zone)'. Use an IANA identifier (for example UTC or Asia/Seoul)."
+        case .invalidWeekStartDay(let day):
+            return "Unsupported week start day '\(day)'. Use sunday, monday, tuesday, wednesday, thursday, friday, or saturday."
         case .invalidCombination(let message):
             return message
         case .missingValue(let flag):
@@ -111,6 +114,7 @@ public enum TokenPilotCLIService {
         var includesBreakdown = false
         var project: String?
         var sections: [HistoryPeriod]?
+        var weekStartDay: WeekStartDay?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -164,6 +168,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidPeriod(invalid))
                 }
                 sections = parsed.compactMap { $0 }
+            case "--start-of-week":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseWeekStartDay(flags[index]) else {
+                    return .failure(.invalidWeekStartDay(flags[index]))
+                }
+                weekStartDay = parsed
             case "--svg":
                 format = .svg
             case "--md":
@@ -185,7 +196,10 @@ public enum TokenPilotCLIService {
         if sections != nil, format != .json {
             return .failure(.invalidCombination("--sections requires --json output."))
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections))
+        if weekStartDay != nil, since != nil || until != nil || days != nil || sections != nil {
+            return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
+        }
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -199,6 +213,7 @@ public enum TokenPilotCLIService {
         var includesCost = true
         var timeZone: TimeZone?
         var project: String?
+        var weekStartDay: WeekStartDay?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -249,6 +264,13 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--start-of-week":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseWeekStartDay(flags[index]) else {
+                    return .failure(.invalidWeekStartDay(flags[index]))
+                }
+                weekStartDay = parsed
             case "--out":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -262,7 +284,10 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project))
+        if weekStartDay != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
+        }
+        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, weekStartDay: weekStartDay))
     }
 
     private static func parseStats(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -274,6 +299,7 @@ public enum TokenPilotCLIService {
         var timeZone: TimeZone?
         var project: String?
         var includesJSON = false
+        var weekStartDay: WeekStartDay?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -317,6 +343,13 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--start-of-week":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseWeekStartDay(flags[index]) else {
+                    return .failure(.invalidWeekStartDay(flags[index]))
+                }
+                weekStartDay = parsed
             case "--no-cost":
                 includesCost = false
             case "--json":
@@ -326,7 +359,10 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON))
+        if weekStartDay != nil, since != nil || until != nil || days != nil {
+            return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
+        }
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay))
     }
 
     public static var helpText: String {
@@ -334,10 +370,10 @@ public enum TokenPilotCLIService {
         TokenPilot - local-first AI usage monitor
 
         Usage:
-          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--out <path>] [--capacity] [--no-cost]
+          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--no-cost] [--json]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--json]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth]
           TokenPilot audit [--json]
           TokenPilot help
 
@@ -354,7 +390,9 @@ public enum TokenPilotCLIService {
         periods in one envelope with a totals object last (ccusage --sections style).
         --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
-        override --period. --timezone groups dates by an IANA timezone (for example UTC or
+        override --period. --start-of-week aligns the window start to the most recent matching
+        weekday (monday, sunday, ...) instead of the system default, matching ccusage's
+        --start-of-week option. --timezone groups dates by an IANA timezone (for example UTC or
         Asia/Seoul) instead of the system timezone. --project restricts the report/export to one
         workspace label (ccusage --project style; opencode workspace folder names today).
         --no-cost omits estimated cost from
@@ -1300,6 +1338,25 @@ public enum TokenPilotCLIService {
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.isLenient = false
         return formatter.date(from: value)
+    }
+
+    /// Parses a CLI `--start-of-week` day name (sunday...saturday) into `WeekStartDay`.
+    private static func parseWeekStartDay(_ value: String) -> WeekStartDay? {
+        WeekStartDay.allCases.first { $0.label.lowercased() == value.lowercased() }
+    }
+
+    /// Start of the current week aligned to the requested weekday, used to convert
+    /// CLI `--start-of-week` into the `since` bound for report/export/stats windows.
+    public static func weekStartDate(
+        _ day: WeekStartDay,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> Date {
+        let target = day.calendarWeekday
+        let today = calendar.startOfDay(for: now)
+        let currentWeekday = calendar.component(.weekday, from: today)
+        let daysBack = (currentWeekday - target + 7) % 7
+        return calendar.date(byAdding: .day, value: -daysBack, to: today) ?? today
     }
 
     /// Effective window bounds for a report/export. Explicit `--since`/`--until` dates take

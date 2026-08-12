@@ -707,6 +707,35 @@ final class TokenPilotServicesTests: XCTestCase {
         )
     }
 
+    func testCLIParseStartOfWeek() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--start-of-week", "monday"]),
+            .success(.report(period: .last7Days, format: .text, weekStartDay: .monday))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--json", "--start-of-week", "sunday"]),
+            .success(.stats(period: .last7Days, includesJSON: true, weekStartDay: .sunday))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--start-of-week", "thursday"]),
+            .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, weekStartDay: .thursday))
+        )
+        // Invalid day name is rejected.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--start-of-week", "funday"]),
+            .failure(.invalidWeekStartDay("funday"))
+        )
+        // --start-of-week cannot be combined with custom windows.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--start-of-week", "monday", "--days", "14"]),
+            .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, --days, or --sections."))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--start-of-week", "monday", "--since", "2026-08-01"]),
+            .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
+        )
+    }
+
     func testCLIParseProjectOnStatsAndExport() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--project", "my-workspace"]), .success(.stats(period: .last7Days, project: "my-workspace")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--project", "my-workspace"]), .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, project: "my-workspace")))
@@ -1167,6 +1196,31 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(tokyoText.contains("01-02: 1K tok"))
         XCTAssertFalse(utcText.contains("01-02: 1K tok"))
         XCTAssertFalse(tokyoText.contains("01-01: 1K tok"))
+    }
+
+    func testCLIReportStartOfWeekAlignsWindowToMonday() {
+        let calendar = Calendar(identifier: .gregorian)
+        // 2026-08-13 is a Thursday; Monday-aligned week start is 2026-08-10.
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12, minute: 0))!
+        let weekStart = TokenPilotCLIService.weekStartDate(.monday, now: now, calendar: calendar)
+        XCTAssertEqual(calendar.component(.weekday, from: weekStart), 2)
+        XCTAssertTrue(calendar.isDate(weekStart, inSameDayAs: calendar.date(from: DateComponents(year: 2026, month: 8, day: 10))!))
+        // An event before the week start (previous Thursday) is excluded; a current-week event counts.
+        let stale = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 6, hour: 10))!, inputTokens: 5_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
+        let current = UsageEvent(provider: .opencode, timestamp: calendar.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 10))!, inputTokens: 2_000, outputTokens: 0, source: "week-start-test", dataSource: .localLog)
+        let text = TokenPilotCLIService.reportText(
+            events: [stale, current],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            since: weekStart,
+            now: now,
+            calendar: calendar
+        )
+        // Only the current-week 2K event counts; the previous-week 5K event is outside the window.
+        XCTAssertTrue(text.contains("Total tokens: 2K"))
+        XCTAssertTrue(text.contains("Requests: 1"))
+        XCTAssertFalse(text.contains("5K"))
     }
 
     func testCLIReportNoCostOmitsCostFigures() {
