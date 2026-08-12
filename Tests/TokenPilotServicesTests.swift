@@ -1130,6 +1130,28 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Top model: model-a (80%)"))
     }
 
+    func testWeeklyDigestIncludesCacheHitRate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let monday = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 9))
+        )
+        // 6K cache reads / 10K context reads = 60% hit rate.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: monday, inputTokens: 4_000, cacheReadTokens: 6_000, source: "report-test", dataSource: .localLog),
+        ]
+
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: monday,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Cache hit rate: 60%"))
+    }
+
     func testWeeklyDigestTextLocalizedKorean() {
         let text = WeeklyDigestService.digestText(
             events: [],
@@ -1237,6 +1259,28 @@ final class TokenPilotServicesTests: XCTestCase {
             calendar: calendar
         )
         XCTAssertTrue(text.contains("Top model: model-a (80%)"))
+    }
+
+    func testDailyDigestIncludesCacheHitRate() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        let now = try XCTUnwrap(
+            calendar.date(from: DateComponents(year: 2026, month: 8, day: 10, hour: 18))
+        )
+        // 5K cache reads / 10K context reads = 50% hit rate.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 5_000, cacheReadTokens: 5_000, source: "report-test", dataSource: .localLog),
+        ]
+
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Cache hit rate: 50%"))
     }
 
     func testDailyDigestStoreRoundtrip() {

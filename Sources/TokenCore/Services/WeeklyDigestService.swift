@@ -82,6 +82,11 @@ public enum WeeklyDigestService {
         if let topModel = topModel(in: weekEvents, totalTokens: totalTokens) {
             lines.append("\(localized("Top model", language: language)): \(topModel)")
         }
+        let cache = CacheEfficiencyService.summary(events: weekEvents)
+        if cache.hasCacheActivity {
+            let hitPercent = Int((cache.cacheHitRate * 100).rounded())
+            lines.append("\(localized("Cache hit rate", language: language)): \(hitPercent)%")
+        }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }
