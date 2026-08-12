@@ -665,8 +665,17 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md"]), .success(.report(period: .today, format: .markdown)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--breakdown"]), .success(.report(period: .last7Days, format: .text, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project", "my-workspace"]), .success(.report(period: .last7Days, format: .text, project: "my-workspace")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--project", "my-workspace", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true, project: "my-workspace")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project"]), .failure(.missingValue(forFlag: "--project")))
+    }
+
+    func testCLIParseProjectOnStatsAndExport() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--project", "my-workspace"]), .success(.stats(period: .last7Days, project: "my-workspace")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--format", "csv", "--project", "my-workspace"]), .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, project: "my-workspace")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--project"]), .failure(.missingValue(forFlag: "--project")))
     }
 
     func testCLIReportTextIncludesDailyBreakdownAndCacheEfficiency() {
@@ -935,6 +944,42 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(text.contains("20K"))
         // The relative window is reflected in the period label.
         XCTAssertTrue(text.contains("Last 14 days"))
+    }
+
+    func testCLIReportProjectFiltersToWorkspaceLabel() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 5_000, outputTokens: 0, estimatedCostUSD: Decimal(0.10), source: "proj-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "proj-test", dataSource: .localLog, projectLabel: "project-b"),
+        ]
+        let scoped = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            project: "project-a",
+            now: now,
+            calendar: calendar
+        )
+        // Only project-a's 5K event counts; project-b's 2K event is excluded.
+        XCTAssertTrue(scoped.contains("Total tokens: 5K"))
+        XCTAssertTrue(scoped.contains("Requests: 1"))
+        XCTAssertFalse(scoped.contains("2K"))
+        // Project ranking now reflects only the scoped label.
+        XCTAssertTrue(scoped.contains("project-a"))
+        XCTAssertFalse(scoped.contains("project-b"))
+
+        let unscoped = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(unscoped.contains("Total tokens: 7K"))
+        XCTAssertTrue(unscoped.contains("project-b"))
     }
 
     func testCLIReportTimezoneShiftsDayGrouping() {
