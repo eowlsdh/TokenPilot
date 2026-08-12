@@ -35,7 +35,7 @@ private enum TokenPilotCLIRunner {
         case .success(.help):
             print(TokenPilotCLIService.helpText)
             return 0
-        case .success(.summary(let includesJSON)):
+        case .success(.summary(let period, let includesJSON)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             if includesJSON {
@@ -43,7 +43,7 @@ private enum TokenPilotCLIRunner {
                     let data = try TokenPilotCLIService.summaryJSON(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        period: .today
+                        period: period
                     )
                     FileHandle.standardOutput.write(data)
                     if data.last != 0x0A {
@@ -59,7 +59,7 @@ private enum TokenPilotCLIRunner {
                         events: events,
                         enabledProviders: settings.enabledProviders,
                         language: .en,
-                        period: .today
+                        period: period
                     )
                 )
             }

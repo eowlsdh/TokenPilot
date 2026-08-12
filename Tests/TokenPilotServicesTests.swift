@@ -641,6 +641,9 @@ final class TokenPilotServicesTests: XCTestCase {
     func testCLIParseSummaryAndHelp() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary"]), .success(.summary()))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--json"]), .success(.summary(includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "last7Days"]), .success(.summary(period: .last7Days)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "thisMonth", "--json"]), .success(.summary(period: .thisMonth, includesJSON: true)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
@@ -1431,6 +1434,51 @@ final class TokenPilotServicesTests: XCTestCase {
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("claude-sonnet"))
         XCTAssertFalse(serialized.contains("statusline"))
+    }
+
+    func testCLISummaryPeriodSelectsWindow() throws {
+        let calendar = Calendar.current
+        let now = Date()
+        // Six days ago sits at the inclusive edge of the last7Days window.
+        let sixDaysAgo = calendar.date(byAdding: .day, value: -6, to: now)!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "period-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: sixDaysAgo, inputTokens: 2_000, outputTokens: 0, estimatedCostUSD: Decimal(0.04), source: "period-test", dataSource: .localLog),
+        ]
+        // last7Days includes both events and is labeled "Last 7 days".
+        let text = TokenPilotCLIService.summaryText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now
+        )
+        XCTAssertTrue(text.contains("Period: Last 7 days"))
+        XCTAssertTrue(text.contains("Total tokens: 5K"))
+        XCTAssertTrue(text.contains("Requests: 2"))
+
+        // today excludes the six-days-ago event.
+        let todayText = TokenPilotCLIService.summaryText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .today,
+            now: now
+        )
+        XCTAssertTrue(todayText.contains("Total tokens: 3K"))
+        XCTAssertTrue(todayText.contains("Requests: 1"))
+
+        // JSON payload reflects the selected period label.
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .thisMonth,
+            now: now
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        XCTAssertEqual(json["period"] as? String, "This month")
+        XCTAssertEqual(json["totalTokens"] as? Int, 5_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
     }
 
     func testCLIStatsTextDerivesWindowStatistics() {
