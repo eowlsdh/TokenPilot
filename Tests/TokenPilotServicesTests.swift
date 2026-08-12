@@ -767,6 +767,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["audit", "--json", "--sections", "today,bogus"]),
             .failure(.invalidPeriod("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--csv"]), .success(.audit(includesCSV: true)))
+        // --csv is a distinct output format and cannot be combined with --json.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--json", "--csv"]),
+            .failure(.invalidCombination("--csv cannot be combined with --json."))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9386,6 +9392,35 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("sections-audit-test"))
+    }
+
+    func testCLIAuditCSVEmitsPerDayRows() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // Today carries one event; yesterday carries another, so both are active rows.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "csv-audit-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 500, outputTokens: 0, source: "csv-audit-test", dataSource: .localLog),
+        ]
+        let csv = TokenPilotCLIService.auditCSVText(
+            events: events,
+            windowDays: 7,
+            now: now,
+            calendar: calendar
+        )
+        // Header lists date, active, tokens per window day.
+        let lines = csv.split(separator: "\n")
+        XCTAssertEqual(lines.first, "date,active,tokens")
+        XCTAssertEqual(lines.count, 8) // header + 7 window days
+        XCTAssertTrue(lines.contains("2030-03-17,1,500"))
+        XCTAssertTrue(lines.contains("2030-03-16,1,500"))
+        // Gap days are inactive with zero tokens.
+        XCTAssertTrue(lines.contains("2030-03-12,0,0"))
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(csv.contains("csv-audit-test"))
     }
 
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {

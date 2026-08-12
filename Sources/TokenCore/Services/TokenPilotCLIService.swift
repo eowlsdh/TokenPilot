@@ -19,7 +19,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
-    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil)
+    case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil)
     case help
 }
@@ -99,6 +99,7 @@ public enum TokenPilotCLIService {
         var timeZone: TimeZone?
         var project: String?
         var sections: [HistoryPeriod]?
+        var includesCSV = false
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -147,6 +148,8 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidPeriod(invalid))
                 }
                 sections = parsed.compactMap { $0 }
+            case "--csv":
+                includesCSV = true
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -161,7 +164,10 @@ public enum TokenPilotCLIService {
         if sections != nil, !includesJSON {
             return .failure(.invalidCombination("--sections requires --json output."))
         }
-        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections))
+        if includesCSV, includesJSON {
+            return .failure(.invalidCombination("--csv cannot be combined with --json."))
+        }
+        return .success(.audit(includesJSON: includesJSON, since: since, until: until, days: days, timeZone: timeZone, project: project, sections: sections, includesCSV: includesCSV))
     }
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -677,7 +683,7 @@ public enum TokenPilotCLIService {
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot audit [--json] [--sections today,last7Days,thisMonth]
+          TokenPilot audit [--json|--csv] [--sections today,last7Days,thisMonth]
           TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
           TokenPilot help
 
@@ -723,7 +729,8 @@ public enum TokenPilotCLIService {
         reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs; --since/--until/--days/--timezone/--project
         scope the audited window and events, --json emits the same coverage
-        summary as structured JSON for scripting (toktrack audit --json style), and --sections (JSON only)
+        summary as structured JSON for scripting (toktrack audit --json style), --csv emits the same
+        coverage as per-day rows for spreadsheets (toktrack audit --csv style), and --sections (JSON only)
         emits coverage for several periods in one envelope. blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
@@ -2129,6 +2136,39 @@ public enum TokenPilotCLIService {
         lines.append("\(localized("Gap runs", language: language)): \(coverage.gapRunCount)")
         lines.append("\(localized("Longest gap", language: language)): \(coverage.longestGapDays) \(localized("days", language: language))")
         lines.append(localized("Local activity, not provider quota", language: language))
+        return lines.joined(separator: "\n")
+    }
+
+    /// Machine-readable audit CSV over stored local history (toktrack `audit --csv` style).
+    ///
+    /// Emits the same per-day coverage breakdown as `auditJSON` — one row per
+    /// window day with whether activity was recorded and how many tokens that day
+    /// carried. Aggregates only; no raw events.
+    public static func auditCSVText(
+        events: [UsageEvent],
+        windowDays: Int = 45,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        project: String? = nil,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let payload = auditPayload(
+            events: events,
+            project: project,
+            windowDays: windowDays,
+            period: nil,
+            since: since,
+            until: until,
+            days: days,
+            now: now,
+            calendar: calendar
+        )
+        var lines: [String] = ["date,active,tokens"]
+        for row in payload.days {
+            lines.append("\(csvEscape(row.date)),\(row.active ? 1 : 0),\(row.tokens)")
+        }
         return lines.joined(separator: "\n")
     }
 
