@@ -296,7 +296,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days)):
+        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV)):
             let assessments = await loadLatestCapacityAssessments()
             let calendar = cliCalendar(for: timeZone)
             if includesJSON {
@@ -310,6 +310,8 @@ private enum TokenPilotCLIRunner {
                     writeError("TokenPilot: blocks failed: \(error.localizedDescription)")
                     return 1
                 }
+            } else if includesCSV {
+                print(TokenPilotCLIService.blocksCSVText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
             } else {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
             }
