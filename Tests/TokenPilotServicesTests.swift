@@ -560,6 +560,8 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "thisMonth"]), .success(.report(period: .thisMonth, format: .text)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--svg"]), .success(.report(period: .last7Days, format: .svg)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--svg"]), .success(.report(period: .today, format: .svg)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--md"]), .success(.report(period: .last7Days, format: .markdown)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md"]), .success(.report(period: .today, format: .markdown)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
@@ -685,6 +687,41 @@ final class TokenPilotServicesTests: XCTestCase {
         let topLine = lines.first { $0.hasPrefix("project-a:") }
         XCTAssertNotNil(topLine)
         XCTAssertTrue(topLine?.contains("$0.10") == true)
+    }
+
+    func testCLIReportMarkdownOutputIsCopyPasteableAndAggregatesOnly() {
+        let now = Date()
+        let calendar = Calendar.current
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.10), source: "md-test", dataSource: .localLog, projectLabel: "project-a"),
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-60), inputTokens: 1_000, outputTokens: 0, estimatedCostUSD: Decimal(0.05), source: "md-test", dataSource: .localLog, projectLabel: "project-a"),
+        ]
+        let md = TokenPilotCLIService.reportMarkdownText(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        // Markdown table structure: header, separator, and rows are pipe-delimited.
+        XCTAssertTrue(md.hasPrefix("## TokenPilot · Report"))
+        XCTAssertTrue(md.contains("| Metric | Value |"))
+        XCTAssertTrue(md.contains("|---|---|"))
+        XCTAssertTrue(md.contains("| Total tokens | 4K |"))
+        XCTAssertTrue(md.contains("| Requests | 2 |"))
+        XCTAssertTrue(md.contains("| Estimated cost | $0.15 |"))
+        // Provider and top-model tables are pipe-delimited too.
+        XCTAssertTrue(md.contains("**Top models**"))
+        XCTAssertTrue(md.contains("| Model | Tokens | Cost |"))
+        XCTAssertTrue(md.contains("opencode-sonnet"))
+        XCTAssertTrue(md.contains("**Providers**"))
+        XCTAssertTrue(md.contains("| Provider | Tokens | Requests | Cost |"))
+        XCTAssertTrue(md.contains("opencode"))
+        // Honest labeling footer.
+        XCTAssertTrue(md.contains("_Local activity, not provider quota._"))
+        // Aggregates-only redaction: no per-event source labels or project folders leak.
+        XCTAssertFalse(md.contains("md-test"))
+        XCTAssertFalse(md.contains("project-a"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {

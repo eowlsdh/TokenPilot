@@ -59,6 +59,14 @@ private enum TokenPilotCLIRunner {
                         period: period
                     )
                 )
+            case .markdown:
+                print(
+                    TokenPilotCLIService.reportMarkdownText(
+                        events: events,
+                        enabledProviders: settings.enabledProviders,
+                        period: period
+                    )
+                )
             case .text:
                 print(
                     TokenPilotCLIService.reportText(

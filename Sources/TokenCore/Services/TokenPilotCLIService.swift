@@ -9,6 +9,7 @@ import Foundation
 public enum TokenPilotReportFormat: String, Equatable, Sendable {
     case text
     case svg
+    case markdown
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
@@ -83,6 +84,8 @@ public enum TokenPilotCLIService {
                 period = parsed
             case "--svg":
                 format = .svg
+            case "--md":
+                format = .markdown
             default:
                 return .failure(.unknownCommand(flag))
             }
@@ -135,7 +138,7 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--out <path>] [--capacity]
           TokenPilot summary
-          TokenPilot report [--period today|last7Days|thisMonth] [--svg]
+          TokenPilot report [--period today|last7Days|thisMonth] [--svg|--md]
           TokenPilot audit
           TokenPilot help
 
@@ -143,7 +146,7 @@ public enum TokenPilotCLIService {
         with --out. --capacity appends the latest stored capacity evidence per series. summary
         prints today's local usage totals. report prints a shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
-        SVG. audit reports local history coverage so you can
+        SVG and --md emits a copy-pasteable Markdown table. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs. Exports, reports, and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
         """
@@ -369,6 +372,77 @@ public enum TokenPilotCLIService {
         }
         addText("Local activity, not provider quota", size: 11, fill: "#666666")
         lines.append("</svg>")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Copy-pasteable Markdown summary over stored local activity (CodeBurn-style).
+    ///
+    /// Emits a compact markdown table of totals, top models, and provider
+    /// shares so the receipt can be pasted into a PR, doc, or chat. Only
+    /// aggregates reach the output; raw event fields never appear.
+    public static func reportMarkdownText(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        period: HistoryPeriod = .last7Days,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let enabledSet = Set(enabledProviders)
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, now: now)
+        let metrics = usage.metrics
+        let periodEvents = events.filter { event in
+            enabledSet.contains(event.provider) && isInPeriod(event.timestamp, period: period, now: now, calendar: calendar)
+        }
+        let cache = CacheEfficiencyService.summary(events: periodEvents, now: now, calendar: calendar)
+
+        var lines: [String] = []
+        lines.append("## TokenPilot · Report")
+        lines.append("")
+        lines.append("| Metric | Value |")
+        lines.append("|---|---|")
+        lines.append("| Period | \(periodLabel(period, language: .en)) |")
+        lines.append("| Total tokens | \(TokenPilotFormatters.compactNumber(metrics.totalTokens)) |")
+        lines.append("| Requests | \(TokenPilotFormatters.compactNumber(metrics.requestCount)) |")
+        if metrics.estimatedCostUSD > 0 {
+            let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
+            lines.append("| Estimated cost | $\(String(format: "%.2f", amount)) |")
+        }
+        if cache.hasCacheActivity {
+            let hitPercent = Int((cache.cacheHitRate * 100).rounded())
+            lines.append("| Cache hit rate | \(hitPercent)% |")
+        }
+        let topModels = usage.modelBreakdown.filter { $0.tokens > 0 }.sorted { $0.tokens > $1.tokens }.prefix(3)
+        if !topModels.isEmpty {
+            lines.append("")
+            lines.append("**Top models**")
+            lines.append("")
+            lines.append("| Model | Tokens | Cost |")
+            lines.append("|---|---|---|")
+            for share in topModels {
+                let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
+                lines.append("| \(share.model) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(cost) |")
+            }
+        }
+        let shares = usage.providerShare.filter { $0.tokens > 0 }
+        if !shares.isEmpty {
+            lines.append("")
+            lines.append("**Providers**")
+            lines.append("")
+            lines.append("| Provider | Tokens | Requests | Cost |")
+            lines.append("|---|---|---|---|")
+            for share in shares {
+                let cost = share.estimatedCostUSD.map { TokenPilotFormatters.cost($0) } ?? "—"
+                lines.append("| \(share.provider.displayName) | \(TokenPilotFormatters.compactNumber(share.tokens)) | \(share.requestCount) | \(cost) |")
+            }
+        }
+        lines.append("")
+        lines.append("_Local activity, not provider quota._")
         return lines.joined(separator: "\n")
     }
 
