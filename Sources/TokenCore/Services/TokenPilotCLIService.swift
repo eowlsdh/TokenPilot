@@ -20,7 +20,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil)
-    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil)
+    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil)
     case help
 }
 
@@ -276,6 +276,9 @@ public enum TokenPilotCLIService {
         var active = false
         var recent = false
         var timeZone: TimeZone?
+        var since: Date?
+        var until: Date?
+        var days: Int?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -293,12 +296,36 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidTimezone(flags[index]))
                 }
                 timeZone = parsed
+            case "--since":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                since = parsed
+            case "--until":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
             default:
                 return .failure(.unknownCommand(flag))
             }
             index += 1
         }
-        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone))
+        if days != nil, since != nil || until != nil {
+            return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
+        }
+        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone, since: since, until: until, days: days))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -639,7 +666,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json] [--sections today,last7Days,thisMonth]
-          TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>]
+          TokenPilot blocks [--json] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -686,8 +713,8 @@ public enum TokenPilotCLIService {
         emits coverage for several periods in one envelope. blocks lists the
         current limit-window blocks (provider, window, used/remaining percent, reset time) from
         stored capacity evidence, mirroring ccusage's blocks command; --active keeps only blocks
-        whose reset has not elapsed, --recent keeps only freshly observed blocks, and --timezone
-        localizes the reset times. --json emits them as
+        whose reset has not elapsed, --recent keeps only freshly observed blocks, --timezone
+        localizes the reset times, and --since/--until/--days scope the observations. --json emits them as
         structured JSON. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
@@ -2148,10 +2175,13 @@ public enum TokenPilotCLIService {
         assessments: [CapacityAssessment],
         active: Bool = false,
         recent: Bool = false,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
-        let blocks = filteredBlocks(assessments, active: active, recent: recent, now: now)
+        let blocks = filteredBlocks(assessments, active: active, recent: recent, since: since, until: until, days: days, now: now, calendar: calendar)
         var lines: [String] = []
         lines.append("TokenPilot · \(localized("Blocks", language: .en))")
         for assessment in blocks {
@@ -2182,10 +2212,13 @@ public enum TokenPilotCLIService {
         assessments: [CapacityAssessment],
         active: Bool = false,
         recent: Bool = false,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) throws -> Data {
-        let blocks = filteredBlocks(assessments, active: active, recent: recent, now: now)
+        let blocks = filteredBlocks(assessments, active: active, recent: recent, since: since, until: until, days: days, now: now, calendar: calendar)
         let payload = BlocksPayloadJSON(
             generatedAt: now,
             blocks: blocks.compactMap { assessment -> BlocksRowJSON? in
@@ -2207,14 +2240,25 @@ public enum TokenPilotCLIService {
         return try encoder.encode(payload)
     }
 
-    /// Applies the `--active`/`--recent` block filters shared by text and JSON output.
+    /// Applies the `--active`/`--recent` block filters and the explicit observation
+    /// window shared by text and JSON output.
     private static func filteredBlocks(
         _ assessments: [CapacityAssessment],
         active: Bool,
         recent: Bool,
-        now: Date
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        now: Date,
+        calendar: Calendar
     ) -> [CapacityAssessment] {
-        assessments.filter { assessment in
+        let window = since != nil || until != nil || days != nil
+            ? reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
+            : nil
+        return assessments.filter { assessment in
+            if let window, assessment.observation.observedAt < window.start || assessment.observation.observedAt >= window.endExclusive {
+                return false
+            }
             if active {
                 if let resetAt = assessment.observation.resetAt, resetAt <= now {
                     return false

@@ -765,6 +765,13 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIParseBlocksCommand() {
+        let calendar = Calendar.current
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.dateFormat = "yyyy-MM-dd"
+        let since = formatter.date(from: "2026-08-01")
+        let until = formatter.date(from: "2026-08-13")
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks"]), .success(.blocks()))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--json"]), .success(.blocks(includesJSON: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--active"]), .success(.blocks(active: true)))
@@ -773,6 +780,10 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone", "UTC"]), .success(.blocks(timeZone: TimeZone(identifier: "UTC"))))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone", "Mars/Olympus"]), .failure(.invalidTimezone("Mars/Olympus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--timezone"]), .failure(.missingValue(forFlag: "--timezone")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--since", "2026-08-01"]), .success(.blocks(since: since)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--until", "2026-08-13"]), .success(.blocks(until: until)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--days", "14"]), .success(.blocks(days: 14)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--days", "14", "--since", "2026-08-01"]), .failure(.invalidCombination("--days cannot be combined with --since or --until.")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9427,6 +9438,73 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertTrue(recentText.contains("40% used"))
         XCTAssertFalse(recentText.contains("25% used"))
+    }
+
+    func testCLIBlocksWindowSelectorsScopeObservations() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        let makeAssessment = { (observedAt: Date, usedPercent: Int) throws -> CapacityAssessment in
+            try CapacityAssessmentService().assess(
+                try CapacityEvidenceRecord(
+                    observation: try CapacityObservation(
+                        seriesID: series,
+                        observedAt: observedAt,
+                        resetAt: now.addingTimeInterval(3_600),
+                        value: try CapacityValue(usedPercent: usedPercent),
+                        authority: .providerReported,
+                        stability: .supported,
+                        freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 86_400),
+                        comparability: .comparable,
+                        parserRevision: "windowV1",
+                        now: now
+                    )
+                ).observationForAssessment(now: now),
+                now: now
+            )
+        }
+        // One observation today (inside the window), one twelve days ago (outside).
+        let current = try makeAssessment(now, 40)
+        let old = try makeAssessment(now.addingTimeInterval(-12 * 86_400), 80)
+
+        // --days keeps only observations within the relative window.
+        let daysText = TokenPilotCLIService.blocksText(
+            assessments: [current, old],
+            days: 7,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(daysText.contains("40% used"))
+        XCTAssertFalse(daysText.contains("80% used"))
+
+        // --since/--until scope the same way on the observation timestamps.
+        let rangeText = TokenPilotCLIService.blocksText(
+            assessments: [current, old],
+            since: now.addingTimeInterval(-86_400),
+            until: now,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(rangeText.contains("40% used"))
+        XCTAssertFalse(rangeText.contains("80% used"))
+
+        // JSON payload applies the same window filter.
+        let data = try TokenPilotCLIService.blocksJSON(
+            assessments: [current, old],
+            days: 7,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let blocks = try XCTUnwrap(json["blocks"] as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks.first?["usedPercent"] as? Int, 40)
     }
 
     // MARK: - ContextHealthService
