@@ -6531,6 +6531,43 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(report.description.isEmpty)
     }
 
+    // MARK: - HourlyActivityService
+
+    func testHourlyActivityBucketsByHourAndKeepsEmptyHours() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 500, outputTokens: 0, source: "hourly-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(30 * 60), inputTokens: 300, outputTokens: 0, source: "hourly-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .hour, value: -3, to: now)!, inputTokens: 200, outputTokens: 0, source: "hourly-test", dataSource: .localLog),
+        ]
+
+        let buckets = HourlyActivityService.hourlyBuckets(events: events, now: now, calendar: calendar)
+        XCTAssertEqual(buckets.count, 24)
+        let hour9 = buckets.first { $0.hour == 9 }
+        XCTAssertEqual(hour9?.tokens, 200)
+        let hour12 = buckets.first { $0.hour == 12 }
+        XCTAssertEqual(hour12?.tokens, 800)
+        XCTAssertEqual(hour12?.requestCount, 2)
+        let hour0 = buckets.first { $0.hour == 0 }
+        XCTAssertEqual(hour0?.tokens, 0)
+    }
+
+    func testHourlyActivityPeakHourAndEmptySummary() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 100, outputTokens: 0, source: "hourly-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: calendar.date(byAdding: .hour, value: -2, to: now)!, inputTokens: 900, outputTokens: 0, source: "hourly-test", dataSource: .localLog),
+        ]
+
+        let summary = HourlyActivitySummary(buckets: HourlyActivityService.hourlyBuckets(events: events, now: now, calendar: calendar))
+        XCTAssertEqual(summary.peakHour, 10)
+
+        let empty = HourlyActivitySummary(buckets: HourlyActivityService.hourlyBuckets(events: [], now: now, calendar: calendar))
+        XCTAssertNil(empty.peakHour)
+    }
+
     private func statusPayload(indicator: String, description: String) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "page": ["id": "test"],

@@ -394,6 +394,11 @@ final class TokenPilotViewModel: ObservableObject {
         FiveHourBlocksService.blocks(events: historyUsage.events)
     }
 
+    var hourlyActivity: HourlyActivitySummary {
+        let buckets = HourlyActivityService.hourlyBuckets(events: historyUsage.events)
+        return HourlyActivitySummary(buckets: buckets)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }

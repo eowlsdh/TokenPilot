@@ -87,6 +87,9 @@ struct HistoryScreen: View {
                     if !model.fiveHourBlocks.isEmpty {
                         HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
                     }
+                    if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
+                        HistoryHourlyActivityCard(summary: model.hourlyActivity, model: model)
+                    }
                     if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                         HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                     }
@@ -1079,6 +1082,80 @@ struct HistoryUsageSummaryCard: View {
             "\(model.t("Most used")) \(mostUsed)",
             "\(model.t("Busiest hour")) \(busiestHour)"
         ].joined(separator: ", ")
+    }
+}
+
+struct HistoryHourlyActivityCard: View {
+    let summary: HourlyActivitySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Hourly activity"), systemImage: "clock.badge")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let peakHour = summary.peakHour {
+                        Text("\(model.t("Peak")) \(peakHour):00")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.calm)
+                            .lineLimit(1)
+                    }
+                }
+
+                let peak = summary.buckets.map(\.tokens).max() ?? 0
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(summary.buckets, id: \.hour) { bucket in
+                            VStack(spacing: 2) {
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(hourColor(bucket, peak: peak))
+                                    .frame(width: 8, height: hourHeight(bucket, peak: peak))
+                                if bucket.hour % 6 == 0 {
+                                    Text("\(bucket.hour)")
+                                        .font(.system(size: 7, design: .monospaced))
+                                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                                        .lineLimit(1)
+                                } else {
+                                    Color.clear.frame(height: 9)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(bucket.hour):00, \(TokenPilotFormatters.compactNumber(bucket.tokens)) \(model.t("tok"))")
+                        }
+                    }
+                }
+
+                Text(model.t("Local activity by hour of day; local time. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func hourHeight(_ bucket: HourlyActivityBucket, peak: Int) -> CGFloat {
+        guard peak > 0 else { return 2 }
+        let ratio = Double(bucket.tokens) / Double(peak)
+        return max(CGFloat(ratio) * 40, 2)
+    }
+
+    private func hourColor(_ bucket: HourlyActivityBucket, peak: Int) -> Color {
+        let ratio = peak > 0 ? Double(bucket.tokens) / Double(peak) : 0
+        if ratio == 0 { return TokenPilotDesign.surface(.separator).opacity(0.5) }
+        switch ratio {
+        case 0.66...: return TokenPilotDesign.status(.danger)
+        case 0.33..<0.66: return TokenPilotDesign.status(.warning)
+        default: return TokenPilotDesign.trust
+        }
     }
 }
 

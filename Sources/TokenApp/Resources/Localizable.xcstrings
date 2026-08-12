@@ -10315,6 +10315,62 @@
         }
       }
     },
+    "Hourly activity": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간대별 활동"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hourly activity"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "分时活动"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間帯別アクティビティ"
+          }
+        }
+      }
+    },
+    "Local activity by hour of day; local time. Not provider quota.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "시간대별 로컬 활동, 로컬 시간 기준입니다. 제공자 할당량이 아닙니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local activity by hour of day; local time. Not provider quota."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一天中的小时划分的本地活动，本地时间。不是提供方配额。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "時間帯ごとのローカル活動、ローカル時刻基準です。プロバイダの割り当てではありません。"
+          }
+        }
+      }
+    },
     "Last updated": {
       "localizations": {
         "ko": {

@@ -291,6 +291,8 @@ public enum TokenPilotLocalizer {
         "Operational": [.en: "Operational", .ko: "정상", .ja: "稼働中", .zhHans: "运行正常", .zhHant: "運行正常"],
         "Degraded": [.en: "Degraded", .ko: "성능 저하", .ja: "一部障害", .zhHans: "部分降级", .zhHant: "部分降級"],
         "Outage": [.en: "Outage", .ko: "장애", .ja: "障害", .zhHans: "中断", .zhHant: "中斷"],
+        "Hourly activity": [.en: "Hourly activity", .ko: "시간대별 활동", .ja: "時間帯別アクティビティ", .zhHans: "分时活动", .zhHant: "分時活動"],
+        "Local activity by hour of day; local time. Not provider quota.": [.en: "Local activity by hour of day; local time. Not provider quota.", .ko: "시간대별 로컬 활동, 로컬 시간 기준입니다. 제공자 할당량이 아닙니다.", .ja: "時間帯ごとのローカル活動、ローカル時刻基準です。プロバイダの割り当てではありません。", .zhHans: "按一天中的小时划分的本地活动，本地时间。不是提供方配额。", .zhHant: "按一天中的小時劃分的本地活動，本地時間。不是提供方配額。"],
         "Provider Diagnostics": [.en: "Provider Diagnostics", .ko: "제공자 진단", .ja: "プロバイダ診断", .zhHans: "提供方诊断", .zhHant: "提供方診斷"],
         "Check all providers": [.en: "Check all providers", .ko: "모든 제공자 확인", .ja: "すべてのプロバイダを確認", .zhHans: "检查所有提供方", .zhHant: "檢查所有提供方"],
         "Choose…": [.en: "Choose…", .ko: "선택…", .ja: "選択…", .zhHans: "选择…", .zhHant: "選擇…"],
