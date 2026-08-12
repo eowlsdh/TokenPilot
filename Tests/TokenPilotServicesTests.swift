@@ -551,6 +551,27 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--days", "zero"]), .failure(.invalidDays("zero")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "0"]), .failure(.invalidDays("0")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "-3"]), .failure(.invalidDays("-3")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--timezone", "Mars/Olympus"]), .failure(.invalidTimezone("Mars/Olympus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--timezone"]), .failure(.missingValue(forFlag: "--timezone")))
+    }
+
+    func testCLIParseTimezone() {
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--timezone", "UTC"]),
+            .success(.report(period: .last7Days, format: .text, timeZone: TimeZone(identifier: "UTC")))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--period", "today", "--timezone", "Asia/Tokyo"]),
+            .success(.stats(period: .today, timeZone: TimeZone(identifier: "Asia/Tokyo")))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--days", "30", "--timezone", "America/New_York", "--format", "csv"]),
+            .success(.export(format: .csv, period: .last7Days, outputPath: nil, includesCapacity: false, days: 30, timeZone: TimeZone(identifier: "America/New_York")))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--md", "--timezone", "UTC", "--no-cost"]),
+            .success(.report(period: .last7Days, format: .markdown, includesCost: false, timeZone: TimeZone(identifier: "UTC")))
+        )
     }
 
     func testCLIParseSinceUntilDates() {
@@ -858,6 +879,39 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(text.contains("20K"))
         // The relative window is reflected in the period label.
         XCTAssertTrue(text.contains("Last 14 days"))
+    }
+
+    func testCLIReportTimezoneShiftsDayGrouping() {
+        var utcCalendar = Calendar(identifier: .gregorian)
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        var tokyoCalendar = Calendar(identifier: .gregorian)
+        tokyoCalendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+        // 11 PM UTC on Jan 1 is 8 AM JST on Jan 2 (ccusage's documented timezone effect).
+        let eventTime = utcCalendar.date(from: DateComponents(year: 2026, month: 1, day: 1, hour: 23, minute: 0))!
+        let event = UsageEvent(provider: .opencode, timestamp: eventTime, inputTokens: 1_000, outputTokens: 0, source: "tz-test", dataSource: .localLog)
+        let now = utcCalendar.date(from: DateComponents(year: 2026, month: 1, day: 2, hour: 12, minute: 0))!
+
+        let utcText = TokenPilotCLIService.reportText(
+            events: [event],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: utcCalendar
+        )
+        let tokyoText = TokenPilotCLIService.reportText(
+            events: [event],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: tokyoCalendar
+        )
+        // UTC groups the event on Jan 1; Tokyo groups it on Jan 2 (JST).
+        XCTAssertTrue(utcText.contains("01-01: 1K tok"))
+        XCTAssertTrue(tokyoText.contains("01-02: 1K tok"))
+        XCTAssertFalse(utcText.contains("01-02: 1K tok"))
+        XCTAssertFalse(tokyoText.contains("01-01: 1K tok"))
     }
 
     func testCLIReportNoCostOmitsCostFigures() {

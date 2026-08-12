@@ -13,10 +13,10 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 }
 
 public enum TokenPilotCLICommand: Equatable, Sendable {
-    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
+    case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
     case summary
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil)
     case audit
     case help
 }
@@ -27,6 +27,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidPeriod(String)
     case invalidDate(String)
     case invalidDays(String)
+    case invalidTimezone(String)
     case missingValue(forFlag: String)
 
     public var errorDescription: String? {
@@ -41,6 +42,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported date '\(date)'. Use yyyy-MM-dd (for example 2026-08-13)."
         case .invalidDays(let days):
             return "Unsupported day count '\(days)'. Use a positive integer (for example --days 14)."
+        case .invalidTimezone(let zone):
+            return "Unsupported timezone '\(zone)'. Use an IANA identifier (for example UTC or Asia/Seoul)."
         case .missingValue(let flag):
             return "Missing value for '\(flag)'."
         }
@@ -84,6 +87,7 @@ public enum TokenPilotCLIService {
         var until: Date?
         var days: Int?
         var includesCost = true
+        var timeZone: TimeZone?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -116,6 +120,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidDays(flags[index]))
                 }
                 days = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
             case "--svg":
                 format = .svg
             case "--md":
@@ -127,7 +138,7 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost))
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -139,6 +150,7 @@ public enum TokenPilotCLIService {
         var until: Date?
         var days: Int?
         var includesCost = true
+        var timeZone: TimeZone?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -178,6 +190,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidDays(flags[index]))
                 }
                 days = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
             case "--out":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -191,7 +210,7 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost))
+        return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone))
     }
 
     private static func parseStats(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -200,6 +219,7 @@ public enum TokenPilotCLIService {
         var until: Date?
         var days: Int?
         var includesCost = true
+        var timeZone: TimeZone?
         var index = 0
         while index < flags.count {
             let flag = flags[index]
@@ -232,6 +252,13 @@ public enum TokenPilotCLIService {
                     return .failure(.invalidDays(flags[index]))
                 }
                 days = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
             case "--no-cost":
                 includesCost = false
             default:
@@ -239,7 +266,7 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost))
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone))
     }
 
     public static var helpText: String {
@@ -247,10 +274,10 @@ public enum TokenPilotCLIService {
         TokenPilot - local-first AI usage monitor
 
         Usage:
-          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--out <path>] [--capacity] [--no-cost]
+          TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--no-cost]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--svg|--md] [--no-cost]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--no-cost]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--svg|--md] [--no-cost]
           TokenPilot audit
           TokenPilot help
 
@@ -262,7 +289,8 @@ public enum TokenPilotCLIService {
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG and --md emits a copy-pasteable Markdown table. --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
-        override --period. --no-cost omits estimated cost from
+        override --period. --timezone groups dates by an IANA timezone (for example UTC or
+        Asia/Seoul) instead of the system timezone. --no-cost omits estimated cost from
         reports and blanks cost fields in exports. audit reports local history coverage so you can
         spot gaps left by providers that prune their own logs. Exports, reports, and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
