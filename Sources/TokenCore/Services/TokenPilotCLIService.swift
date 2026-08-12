@@ -15,6 +15,7 @@ public enum TokenPilotReportFormat: String, Equatable, Sendable {
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
     case summary
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true)
     case audit
     case help
@@ -50,7 +51,7 @@ public enum TokenPilotCLIService {
     /// True when the first argument is a CLI command, so the app entry point can skip AppKit.
     public static func isCLIInvocation(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
-        return first == "export" || first == "summary" || first == "report" ||
+        return first == "export" || first == "summary" || first == "stats" || first == "report" ||
             first == "audit" || first == "help" || first == "-h" || first == "--help"
     }
 
@@ -63,6 +64,8 @@ public enum TokenPilotCLIService {
             return .success(.help)
         case "summary":
             return .success(.summary)
+        case "stats":
+            return parseStats(Array(arguments.dropFirst()))
         case "report":
             return parseReport(Array(arguments.dropFirst()))
         case "audit":
@@ -191,6 +194,54 @@ public enum TokenPilotCLIService {
         return .success(.export(format: format, period: period, outputPath: outputPath, includesCapacity: includesCapacity, since: since, until: until, days: days, includesCost: includesCost))
     }
 
+    private static func parseStats(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var period = HistoryPeriod.last7Days
+        var since: Date?
+        var until: Date?
+        var days: Int?
+        var includesCost = true
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--period":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = HistoryPeriod(rawValue: flags[index]) else {
+                    return .failure(.invalidPeriod(flags[index]))
+                }
+                period = parsed
+            case "--since":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                since = parsed
+            case "--until":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = parseDay(flags[index]) else {
+                    return .failure(.invalidDate(flags[index]))
+                }
+                until = parsed
+            case "--days":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Int(flags[index]), parsed > 0 else {
+                    return .failure(.invalidDays(flags[index]))
+                }
+                days = parsed
+            case "--no-cost":
+                includesCost = false
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost))
+    }
+
     public static var helpText: String {
         """
         TokenPilot - local-first AI usage monitor
@@ -198,13 +249,16 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--out <path>] [--capacity] [--no-cost]
           TokenPilot summary
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--no-cost]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--svg|--md] [--no-cost]
           TokenPilot audit
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
         with --out. --capacity appends the latest stored capacity evidence per series. summary
-        prints today's local usage totals. report prints a shareable usage receipt with a
+        prints today's local usage totals. stats prints derived usage statistics for the window:
+        active days, daily average, busiest day and hour, and most-used provider. report prints a
+        shareable usage receipt with a
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG and --md emits a copy-pasteable Markdown table. --since/--until slice the window to
         explicit dates (yyyy-MM-dd) and --days N covers the last N days including today; both
@@ -265,6 +319,74 @@ public enum TokenPilotCLIService {
             )
         }
 
+        lines.append(localized("Local activity, not provider quota", language: language))
+        return lines.joined(separator: "\n")
+    }
+
+    /// Derived usage statistics over the window (toktrack-stats style).
+    ///
+    /// Reports active days, daily average, busiest day and hour, and
+    /// most-used provider in addition to the same aggregates as `summaryText`.
+    /// Only aggregates reach the output; raw event fields never appear.
+    public static func statsText(
+        events: [UsageEvent],
+        enabledProviders: [Provider],
+        language: TokenPilotLanguage,
+        period: HistoryPeriod = .last7Days,
+        since: Date? = nil,
+        until: Date? = nil,
+        days: Int? = nil,
+        includesCost: Bool = true,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String {
+        let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
+        let enabledSet = Set(enabledProviders)
+        let providerSnapshots = Provider.allCases.map { provider in
+            ProviderSnapshot(
+                provider: provider,
+                events: events.filter { $0.provider == provider }
+            )
+        }
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let metrics = usage.metrics
+        let periodEvents = events.filter { event in
+            enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
+        }
+        let activeDayStarts = Set(periodEvents.map { calendar.startOfDay(for: $0.timestamp) })
+        let activeDays = activeDayStarts.count
+        let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+        let dailyAverage = metrics.totalTokens / spanDays
+        let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
+        let busiestDay = dayGroups.max { lhs, rhs in
+            lhs.value.reduce(0) { $0 + $1.totalTokens } < rhs.value.reduce(0) { $0 + $1.totalTokens }
+        }
+
+        var lines: [String] = []
+        lines.append("TokenPilot · \(localized("Stats", language: language))")
+        lines.append("\(localized("Period", language: language)): \(periodLabel(period, since: since, until: until, days: days, language: language, now: now, calendar: calendar))")
+        lines.append("\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(metrics.totalTokens))")
+        lines.append("\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(metrics.requestCount))")
+        if includesCost && metrics.estimatedCostUSD > 0 {
+            let amount = NSDecimalNumber(decimal: metrics.estimatedCostUSD).doubleValue
+            lines.append("\(localized("Estimated cost", language: language)): \(String(format: "$%.2f", amount))")
+        }
+        lines.append("\(localized("Active days", language: language)): \(activeDays)")
+        lines.append("\(localized("Daily average", language: language)): \(TokenPilotFormatters.compactNumber(dailyAverage)) \(localized("tok", language: language))")
+        if let busiestDay, !busiestDay.value.isEmpty {
+            let dayFormatter = DateFormatter()
+            dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+            dayFormatter.calendar = calendar
+            dayFormatter.dateFormat = "MM-dd"
+            let dayTokens = busiestDay.value.reduce(0) { $0 + $1.totalTokens }
+            lines.append("\(localized("Busiest day", language: language)): \(dayFormatter.string(from: busiestDay.key)) (\(TokenPilotFormatters.compactNumber(dayTokens)) \(localized("tok", language: language)))")
+        }
+        if let busiestHour = metrics.busiestHour {
+            lines.append("\(localized("Busiest hour", language: language)): \(String(format: "%02d:00", busiestHour))")
+        }
+        if let mostUsedProvider = metrics.mostUsedProvider {
+            lines.append("\(localized("Most used provider", language: language)): \(localized(mostUsedProvider.displayName, language: language))")
+        }
         lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }

@@ -623,6 +623,17 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["-h"]), .success(.help))
     }
 
+    func testCLIParseStatsCommand() {
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats"]), .success(.stats(period: .last7Days)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today"]), .success(.stats(period: .today)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "thisMonth"]), .success(.stats(period: .thisMonth)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--days", "30"]), .success(.stats(period: .last7Days, days: 30)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "today", "--days", "14", "--no-cost"]), .success(.stats(period: .today, days: 14, includesCost: false)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--days", "zero"]), .failure(.invalidDays("zero")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--bogus"]), .failure(.unknownCommand("--bogus")))
+    }
+
     func testCLIParseReportDefaultsAndFlags() {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report"]), .success(.report(period: .last7Days, format: .text)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today"]), .success(.report(period: .today, format: .text)))
@@ -954,6 +965,55 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(text.contains("Claude"))
         XCTAssertFalse(text.contains("claude-sonnet"))
         XCTAssertFalse(text.contains("statusline"))
+    }
+
+    func testCLIStatsTextDerivesWindowStatistics() {
+        let calendar = Calendar.current
+        // Fixed 23:00 anchor so the 15:30/09:00 fixtures are always inside the window.
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 23, minute: 0, second: 0))!
+        // Two active days: today (heavier) and yesterday; busiest hour is 15:00.
+        let todayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 15, minute: 30, second: 0, of: now)!,
+            inputTokens: 6_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.12),
+            source: "stats-test",
+            dataSource: .localLog
+        )
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: now)!
+        let yesterdayEvent = UsageEvent(
+            provider: .opencode,
+            model: "opencode-sonnet",
+            timestamp: calendar.date(bySettingHour: 9, minute: 0, second: 0, of: yesterday)!,
+            inputTokens: 2_000,
+            outputTokens: 0,
+            estimatedCostUSD: Decimal(0.04),
+            source: "stats-test",
+            dataSource: .localLog
+        )
+        let text = TokenPilotCLIService.statsText(
+            events: [todayEvent, yesterdayEvent],
+            enabledProviders: [.opencode],
+            language: .en,
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertTrue(text.contains("Total tokens: 8K"))
+        XCTAssertTrue(text.contains("Requests: 2"))
+        XCTAssertTrue(text.contains("$0.16"))
+        // Two distinct active days; daily average over the 7-day window (8000/7 ≈ 1.1K).
+        XCTAssertTrue(text.contains("Active days: 2"))
+        XCTAssertTrue(text.contains("Daily average: 1.1K tok"))
+        // Busiest day (today) and busiest hour (15:00) are reported.
+        XCTAssertTrue(text.contains("Busiest day:"))
+        XCTAssertTrue(text.contains("Busiest hour: 15:00"))
+        XCTAssertTrue(text.contains("Most used provider: opencode"))
+        // Aggregates-only: no per-event model or source leaks.
+        XCTAssertFalse(text.contains("opencode-sonnet"))
+        XCTAssertFalse(text.contains("stats-test"))
     }
 
     func testCLISummaryTextIncludesCapacityRemaining() {
