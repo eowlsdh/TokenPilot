@@ -1481,6 +1481,32 @@ struct HistoryCacheEfficiencyCard: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(1)
 
+                if model.cacheTrend.days.contains(where: { $0.hasActivity }) {
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(model.cacheTrend.days, id: \.dayLabel) { day in
+                            VStack(spacing: 2) {
+                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    .fill(trendBarColor(day))
+                                    .frame(width: 10, height: trendBarHeight(day))
+                                Text(day.dayLabel)
+                                    .font(.system(size: 7, design: .monospaced))
+                                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                                    .lineLimit(1)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(day.dayLabel), \(Int((day.hitRate * 100).rounded()))%")
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+
+                if model.cacheTrend.isDegrading {
+                    Label(model.t("Cache hit rate is degrading"), systemImage: "exclamationmark.triangle.fill")
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                        .foregroundStyle(TokenPilotDesign.status(.warning))
+                        .lineLimit(1)
+                }
+
                 Text(model.t("Share of context reads served from cache. Local activity; cache discount ratios vary by provider."))
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textTertiary)
@@ -1510,6 +1536,18 @@ struct HistoryCacheEfficiencyCard: View {
         case 30..<60: return TokenPilotDesign.status(.warning)
         default: return TokenPilotDesign.textTertiary
         }
+    }
+
+    private func trendBarHeight(_ day: DailyCacheRate) -> CGFloat {
+        guard day.hasActivity else { return 2 }
+        return max(CGFloat(day.hitRate) * 24, 2)
+    }
+
+    private func trendBarColor(_ day: DailyCacheRate) -> Color {
+        guard day.hasActivity else { return TokenPilotDesign.surface(.separator).opacity(0.5) }
+        if day.hitRate >= 0.6 { return TokenPilotDesign.calm }
+        if day.hitRate >= 0.3 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.status(.danger)
     }
 }
 

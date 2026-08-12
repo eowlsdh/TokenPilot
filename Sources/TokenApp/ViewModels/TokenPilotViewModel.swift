@@ -399,6 +399,10 @@ final class TokenPilotViewModel: ObservableObject {
         CacheEfficiencyService.summary(events: overviewUsage.events)
     }
 
+    var cacheTrend: CacheTrend {
+        CacheTrendService.trend(events: historyUsage.events)
+    }
+
     var contextHealthAssessments: [ContextHealthAssessment] {
         ContextHealthService().assess(records: capacityEvidenceRecords)
     }

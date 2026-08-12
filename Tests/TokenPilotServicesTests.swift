@@ -6509,6 +6509,59 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(summary.hasAnyActivity)
     }
 
+    // MARK: - CacheTrendService
+
+    func testCacheTrendComputesDailyRatesAndDetectsDegradation() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Yesterday: 60% hit (6000/10000). Today: 30% hit (3000/10000).
+        // Average of active days = 45%, latest = 30% -> 15 points below -> degrading.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 4_000, cacheReadTokens: 6_000, source: "cache-trend-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 7_000, cacheReadTokens: 3_000, source: "cache-trend-test", dataSource: .localLog),
+        ]
+
+        let trend = CacheTrendService.trend(events: events, days: 3, now: now, calendar: calendar)
+        XCTAssertEqual(trend.days.count, 3)
+        let active = trend.days.filter(\.hasActivity)
+        XCTAssertEqual(active.count, 2)
+        XCTAssertEqual(try XCTUnwrap(trend.latestHitRate), 0.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(trend.averageHitRate), 0.45, accuracy: 0.001)
+        XCTAssertTrue(trend.isDegrading)
+    }
+
+    func testCacheTrendNoDegradationWhenRateStableOrSingleDay() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+
+        // Stable 60% both days.
+        let stable = [
+            UsageEvent(provider: .opencode, timestamp: day(-1), inputTokens: 4_000, cacheReadTokens: 6_000, source: "cache-trend-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 4_000, cacheReadTokens: 6_000, source: "cache-trend-test", dataSource: .localLog),
+        ]
+        let stableTrend = CacheTrendService.trend(events: stable, days: 3, now: now, calendar: calendar)
+        XCTAssertFalse(stableTrend.isDegrading)
+
+        // Single active day -> no degradation signal.
+        let single = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 4_000, cacheReadTokens: 6_000, source: "cache-trend-test", dataSource: .localLog)
+        ]
+        let singleTrend = CacheTrendService.trend(events: single, days: 3, now: now, calendar: calendar)
+        XCTAssertFalse(singleTrend.isDegrading)
+
+        let emptyTrend = CacheTrendService.trend(events: [], days: 3, now: now, calendar: calendar)
+        XCTAssertNil(emptyTrend.latestHitRate)
+        XCTAssertNil(emptyTrend.averageHitRate)
+        XCTAssertFalse(emptyTrend.isDegrading)
+    }
+
     // MARK: - FiveHourBlocksService
 
     func testFiveHourBlocksBucketsAlignedToLocalMidnight() throws {
