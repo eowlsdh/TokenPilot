@@ -890,6 +890,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["blocks", "--csv", "--md"]),
             .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--provider", "claude"]), .success(.blocks(provider: .claude)))
+        // --provider accepts any Provider raw value and rejects unknown names.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["blocks", "--provider", "bogus"]),
+            .failure(.invalidProvider("bogus"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["blocks", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -10366,6 +10372,65 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         XCTAssertTrue(recentText.contains("40% used"))
         XCTAssertFalse(recentText.contains("25% used"))
+    }
+
+    func testCLIBlocksProviderFiltersSeries() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        func makeAssessment(provider: Provider, providerWindowID: String, usedPercent: Int, revision: String) throws -> CapacityAssessment {
+            let series = try CapacitySeriesID(
+                provider: provider,
+                providerWindowID: providerWindowID,
+                kind: .fixedReset,
+                unit: .percent,
+                durationMinutes: providerWindowID == "five-hour" ? 300 : nil
+            )
+            return try CapacityAssessmentService().assess(
+                try CapacityEvidenceRecord(
+                    observation: try CapacityObservation(
+                        seriesID: series,
+                        observedAt: now,
+                        resetAt: now.addingTimeInterval(3_600),
+                        value: try CapacityValue(usedPercent: usedPercent),
+                        authority: .providerReported,
+                        stability: .supported,
+                        freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+                        comparability: .comparable,
+                        parserRevision: revision,
+                        now: now
+                    )
+                ).observationForAssessment(now: now),
+                now: now
+            )
+        }
+        let claude = try makeAssessment(provider: .claude, providerWindowID: "five-hour", usedPercent: 62, revision: "providerFilterV1")
+        let opencode = try makeAssessment(provider: .opencode, providerWindowID: "rate-limit", usedPercent: 40, revision: "providerFilterV1")
+
+        // --provider keeps only the matching series across every output format.
+        let text = TokenPilotCLIService.blocksText(assessments: [claude, opencode], provider: .claude, now: now, calendar: calendar)
+        XCTAssertTrue(text.contains("Claude Code (five-hour)"))
+        XCTAssertTrue(text.contains("62% used"))
+        XCTAssertFalse(text.contains("opencode"))
+        XCTAssertFalse(text.contains("40% used"))
+
+        let data = try TokenPilotCLIService.blocksJSON(assessments: [claude, opencode], provider: .claude, now: now, calendar: calendar)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let blocks = try XCTUnwrap(json["blocks"] as? [[String: Any]])
+        XCTAssertEqual(blocks.count, 1)
+        XCTAssertEqual(blocks.first?["provider"] as? String, "Claude Code")
+
+        let csv = TokenPilotCLIService.blocksCSVText(assessments: [claude, opencode], provider: .claude, now: now, calendar: calendar)
+        XCTAssertTrue(csv.contains("Claude Code,five-hour,62,38,"))
+        XCTAssertFalse(csv.contains("opencode,"))
+
+        let markdown = TokenPilotCLIService.blocksMarkdownText(assessments: [claude, opencode], provider: .claude, now: now, calendar: calendar)
+        XCTAssertTrue(markdown.contains("| Claude Code | five-hour | 62% | 38% |"))
+        XCTAssertFalse(markdown.contains("| opencode |"))
+        // Aggregates only: no parser revision leaks.
+        XCTAssertFalse(String(data: data, encoding: .utf8)?.contains("providerFilterV1") ?? true)
+        XCTAssertFalse(text.contains("providerFilterV1"))
+        XCTAssertFalse(csv.contains("providerFilterV1"))
+        XCTAssertFalse(markdown.contains("providerFilterV1"))
     }
 
     func testCLIBlocksWindowSelectorsScopeObservations() throws {

@@ -382,12 +382,12 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV, let includesMarkdown)):
+        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV, let includesMarkdown, let provider)):
             let assessments = await loadLatestCapacityAssessments()
             let calendar = cliCalendar(for: timeZone)
             if includesJSON {
                 do {
-                    let data = try TokenPilotCLIService.blocksJSON(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar)
+                    let data = try TokenPilotCLIService.blocksJSON(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar)
                     FileHandle.standardOutput.write(data)
                     if data.last != 0x0A {
                         FileHandle.standardOutput.write(Data([0x0A]))
@@ -397,11 +397,11 @@ private enum TokenPilotCLIRunner {
                     return 1
                 }
             } else if includesCSV {
-                print(TokenPilotCLIService.blocksCSVText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
+                print(TokenPilotCLIService.blocksCSVText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             } else if includesMarkdown {
-                print(TokenPilotCLIService.blocksMarkdownText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
+                print(TokenPilotCLIService.blocksMarkdownText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             } else {
-                print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
+                print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             }
             return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances, let provider, let model)):
