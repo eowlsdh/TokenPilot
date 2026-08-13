@@ -1348,6 +1348,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "MM-dd"
         let dailyModelBreakdown: [ReportModelRow]?
         if includesBreakdown {
@@ -1472,6 +1473,7 @@ public enum TokenPilotCLIService {
             let dayFormatter = DateFormatter()
             dayFormatter.locale = Locale(identifier: "en_US_POSIX")
             dayFormatter.calendar = calendar
+            dayFormatter.timeZone = calendar.timeZone
             dayFormatter.dateFormat = "MM-dd"
             let dayTokens = busiestDay.value.reduce(0) { $0 + $1.totalTokens }
             lines.append("\(localized("Busiest day", language: language)): \(dayFormatter.string(from: busiestDay.key)) (\(TokenPilotFormatters.compactNumber(dayTokens)) \(localized("tok", language: language)))")
@@ -1599,6 +1601,7 @@ public enum TokenPilotCLIService {
             let dayFormatter = DateFormatter()
             dayFormatter.locale = Locale(identifier: "en_US_POSIX")
             dayFormatter.calendar = calendar
+            dayFormatter.timeZone = calendar.timeZone
             dayFormatter.dateFormat = "MM-dd"
             let dayTokens = busiestDay.value.reduce(0) { $0 + $1.totalTokens }
             lines.append("| Busiest day | \(dayFormatter.string(from: busiestDay.key)) (\(TokenPilotFormatters.compactNumber(dayTokens)) tok) |")
@@ -1845,6 +1848,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "MM-dd"
         let dailyModelBreakdown: [ReportModelRow]?
         if includesBreakdown {
@@ -2056,6 +2060,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "yyyy-MM-dd"
         let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
 
@@ -2527,6 +2532,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "MM-dd"
 
         let dailyGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
@@ -2662,6 +2668,7 @@ public enum TokenPilotCLIService {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
             formatter.dateFormat = "yyyy-MM-dd"
             lines.append("\(localized("Oldest stored", language: language)): \(formatter.string(from: oldest))")
             lines.append("\(localized("Newest stored", language: language)): \(formatter.string(from: newest))")
@@ -2744,6 +2751,7 @@ public enum TokenPilotCLIService {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "yyyy-MM-dd"
 
         var lines: [String] = []
@@ -2936,6 +2944,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "yyyy-MM-dd"
         let startOfToday = calendar.startOfDay(for: anchor)
         let windowStart = calendar.date(byAdding: .day, value: -(coverage.windowDays - 1), to: startOfToday) ?? startOfToday
@@ -2995,6 +3004,7 @@ public enum TokenPilotCLIService {
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.calendar = calendar
+                formatter.timeZone = calendar.timeZone
                 formatter.dateFormat = "HH:mm"
                 line += " · \(localized("resets", language: .en)) \(formatter.string(from: resetAt))"
             }
@@ -3095,6 +3105,7 @@ public enum TokenPilotCLIService {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
         formatter.dateFormat = "HH:mm"
         for assessment in blocks {
             let observation = assessment.observation
@@ -3161,6 +3172,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "MM-dd"
         let inWindow = events.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
         let grouped = Dictionary(grouping: inWindow) { event in
@@ -3198,6 +3210,7 @@ public enum TokenPilotCLIService {
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "en_US_POSIX")
         dayFormatter.calendar = calendar
+        dayFormatter.timeZone = calendar.timeZone
         dayFormatter.dateFormat = "MM-dd"
         let inWindow = events.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
         let byDay = Dictionary(grouping: inWindow) { calendar.startOfDay(for: $0.timestamp) }
@@ -3385,6 +3398,7 @@ public enum TokenPilotCLIService {
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: "en_US_POSIX")
             formatter.calendar = calendar
+            formatter.timeZone = calendar.timeZone
             formatter.dateFormat = "yyyy-MM-dd"
             let sinceText = since.map { formatter.string(from: $0) } ?? "…"
             let untilText = until.map { formatter.string(from: $0) } ?? "…"
