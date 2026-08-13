@@ -119,7 +119,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV, let includesMarkdown, let provider)):
+        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV, let includesMarkdown, let provider, let model)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
@@ -136,6 +136,7 @@ private enum TokenPilotCLIRunner {
                         includesCost: includesCost,
                         project: project,
                         provider: provider,
+                        model: model,
                         calendar: calendar
                     )
                 )
@@ -152,6 +153,7 @@ private enum TokenPilotCLIRunner {
                         includesBreakdown: includesBreakdown,
                         project: project,
                         provider: provider,
+                        model: model,
                         calendar: calendar
                     )
                 )
@@ -168,6 +170,7 @@ private enum TokenPilotCLIRunner {
                         includesBreakdown: includesBreakdown,
                         project: project,
                         provider: provider,
+                        model: model,
                         sections: sections,
                         instances: instances,
                         calendar: calendar
@@ -194,6 +197,7 @@ private enum TokenPilotCLIRunner {
                         includesBreakdown: includesBreakdown,
                         project: project,
                         provider: provider,
+                        model: model,
                         calendar: calendar
                     )
                 )
