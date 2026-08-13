@@ -404,7 +404,7 @@ private enum TokenPilotCLIRunner {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             }
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances, let provider, let model)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances, let provider, let model, let sort)):
             return await runExport(
                 format: format,
                 period: period,
@@ -420,7 +420,8 @@ private enum TokenPilotCLIRunner {
                 sections: sections,
                 instances: instances,
                 provider: provider,
-                model: model
+                model: model,
+                sort: sort
             )
         }
     }
@@ -449,7 +450,8 @@ private enum TokenPilotCLIRunner {
         sections: [HistoryPeriod]?,
         instances: Bool,
         provider: Provider?,
-        model: String?
+        model: String?,
+        sort: SortKind?
     ) async -> Int32 {
         let allEvents = UsageHistoryStore().loadEvents()
         let providerEvents = provider.map { p in allEvents.filter { $0.provider == p } } ?? allEvents
@@ -477,7 +479,8 @@ private enum TokenPilotCLIRunner {
                         snapshots: snapshots,
                         dataMode: "CLI",
                         capacityAssessments: assessments,
-                        includesCost: includesCost
+                        includesCost: includesCost,
+                        sort: sort
                     )
                     if instances {
                         // ccusage `--instances` style: each project carries its own payload.
@@ -505,7 +508,8 @@ private enum TokenPilotCLIRunner {
                         snapshots: snapshots,
                         dataMode: "CLI",
                         capacityAssessments: assessments,
-                        includesCost: includesCost
+                        includesCost: includesCost,
+                        sort: sort
                     )
                     // ccusage `--instances` style: group usage by project label, with each
                     // project carrying its own full payload alongside the combined row.
@@ -528,7 +532,8 @@ private enum TokenPilotCLIRunner {
                         dataMode: "CLI",
                         format: format,
                         capacityAssessments: assessments,
-                        includesCost: includesCost
+                        includesCost: includesCost,
+                        sort: sort
                     )
                 }
             }

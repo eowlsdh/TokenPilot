@@ -40,14 +40,15 @@ public final class UsageExportService {
         format: UsageExportFormat,
         generatedAt: Date = Date(),
         capacityAssessments: [CapacityAssessment] = [],
-        includesCost: Bool = true
+        includesCost: Bool = true,
+        sort: SortKind? = nil
     ) throws -> Data {
         let exportUsage = sanitizedUsageForExport(usage)
         switch format {
         case .json:
-            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments, includesCost: includesCost)
+            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments, includesCost: includesCost, sort: sort)
         case .csv:
-            return makeCSVData(usage: exportUsage, includesCost: includesCost)
+            return makeCSVData(usage: exportUsage, includesCost: includesCost, sort: sort)
         }
     }
 
@@ -57,7 +58,8 @@ public final class UsageExportService {
         dataMode: String,
         generatedAt: Date = Date(),
         capacityAssessments: [CapacityAssessment] = [],
-        includesCost: Bool = true
+        includesCost: Bool = true,
+        sort: SortKind? = nil
     ) throws -> Data {
         let payload = makeJSONPayload(
             usage: usage,
@@ -65,7 +67,8 @@ public final class UsageExportService {
             dataMode: dataMode,
             generatedAt: generatedAt,
             capacityAssessments: capacityAssessments,
-            includesCost: includesCost
+            includesCost: includesCost,
+            sort: sort
         )
         return try encodeJSONPayload(payload)
     }
@@ -87,7 +90,8 @@ public final class UsageExportService {
         dataMode: String,
         generatedAt: Date = Date(),
         capacityAssessments: [CapacityAssessment] = [],
-        includesCost: Bool = true
+        includesCost: Bool = true,
+        sort: SortKind? = nil
     ) -> UsageExportPayload {
         let sanitized = sanitizedUsageForExport(usage)
         let exportUsage = includesCost ? sanitized : costStripped(sanitized)
@@ -97,7 +101,7 @@ public final class UsageExportService {
             dataMode: dataMode,
             metrics: exportUsage.metrics,
             sevenDayBars: exportUsage.sevenDayBars,
-            providerShare: exportUsage.providerShare,
+            providerShare: TokenPilotCLIService.sortedProviderShares(exportUsage.providerShare, sort: sort),
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
             events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:)),
             capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments),
@@ -199,7 +203,7 @@ public final class UsageExportService {
         )
     }
 
-    public func makeCSVString(usage: AggregatedUsage, includesCost: Bool = true) -> String {
+    public func makeCSVString(usage: AggregatedUsage, includesCost: Bool = true, sort: SortKind? = nil) -> String {
         let sanitized = sanitizedUsageForExport(usage)
         let exportUsage = includesCost ? sanitized : costStripped(sanitized)
         var rows: [[String]] = [[
@@ -240,7 +244,7 @@ public final class UsageExportService {
         rows.append(summaryRow(period: exportUsage.period, label: "output", outputTokens: metrics.outputTokens))
         rows.append(summaryRow(period: exportUsage.period, label: "cache", cacheTokens: metrics.cacheTokens))
 
-        for share in exportUsage.providerShare {
+        for share in TokenPilotCLIService.sortedProviderShares(exportUsage.providerShare, sort: sort) {
             rows.append([
                 "provider_share",
                 exportUsage.period.rawValue,
@@ -295,8 +299,8 @@ public final class UsageExportService {
         return rows.map { $0.map(Self.escapeCSV).joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
-    private func makeCSVData(usage: AggregatedUsage, includesCost: Bool = true) -> Data {
-        Data(makeCSVString(usage: usage, includesCost: includesCost).utf8)
+    private func makeCSVData(usage: AggregatedUsage, includesCost: Bool = true, sort: SortKind? = nil) -> Data {
+        Data(makeCSVString(usage: usage, includesCost: includesCost, sort: sort).utf8)
     }
 
     private func summaryRow(

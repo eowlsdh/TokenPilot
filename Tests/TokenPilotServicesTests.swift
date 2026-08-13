@@ -497,6 +497,18 @@ final class TokenPilotServicesTests: XCTestCase {
             result,
             .success(.export(format: .csv, period: .today, outputPath: "/tmp/tokenpilot.csv", includesCapacity: false))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--sort", "tokens"]), .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, sort: .tokens)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--sort", "requests"]), .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, sort: .requests)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--sort", "cost"]), .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, sort: .cost)))
+        // --sort accepts tokens|requests|cost and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sort", "bogus"]),
+            .failure(.invalidSort("bogus"))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--sort"]),
+            .failure(.missingValue(forFlag: "--sort"))
+        )
     }
 
     func testCLIParseExportCapacityFlag() {
@@ -2150,6 +2162,54 @@ final class TokenPilotServicesTests: XCTestCase {
         // The claude-sonnet event is excluded from the raw event rows by the model filter.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("claude-sonnet"))
+    }
+
+    func testCLIExportSortOrdersProviderShare() throws {
+        let now = Date()
+        // Three providers with distinct token/request/cost shapes so each --sort key yields a different order.
+        let events = [
+            UsageEvent(provider: .claude, timestamp: now.addingTimeInterval(-3_600), inputTokens: 1_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "sort-export-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-7_200), inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "sort-export-test", dataSource: .localLog),
+            UsageEvent(provider: .gemini, timestamp: now.addingTimeInterval(-10_800), inputTokens: 5_000, outputTokens: 0, requestCount: 1, estimatedCostUSD: Decimal(0.10), source: "sort-export-test", dataSource: .localLog),
+        ]
+        let snapshots = [Provider.claude, .opencode, .gemini].map { provider in
+            ProviderSnapshot(provider: provider, events: events.filter { $0.provider == provider })
+        }
+        let exporter = UsageExportService()
+        let usage = AggregationService().aggregate(snapshots: snapshots, period: .last7Days, now: now)
+
+        // JSON providerShare is ordered by the requested --sort key (descending tokens),
+        // with the zero-token providers trailing after the active ones.
+        let tokenData = try exporter.export(
+            usage: usage,
+            snapshots: snapshots,
+            dataMode: "CLI",
+            format: .json,
+            includesCost: true,
+            sort: .tokens
+        )
+        let tokenJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: tokenData) as? [String: Any])
+        let tokenShares = try XCTUnwrap(tokenJSON["providerShare"] as? [[String: Any]])
+        let activeTokenProviders = tokenShares.compactMap { $0["provider"] as? String }.prefix(3)
+        XCTAssertEqual(Array(activeTokenProviders), ["opencode", "gemini", "claude"])
+        XCTAssertEqual(tokenShares.first?["tokens"] as? Int, 9_000)
+
+        // CSV provider_share rows follow the same ordering (descending requests here).
+        let requestCSV = try exporter.export(
+            usage: usage,
+            snapshots: snapshots,
+            dataMode: "CLI",
+            format: .csv,
+            includesCost: true,
+            sort: .requests
+        )
+        let csvText = String(decoding: requestCSV, as: UTF8.self)
+        let providerRows = csvText.split(separator: "\n").filter { $0.hasPrefix("provider_share,") }.map(String.init)
+        let opencodeIndex = providerRows.firstIndex { $0.contains(",opencode,") } ?? 0
+        let claudeIndex = providerRows.firstIndex { $0.contains(",claude,") } ?? 0
+        let geminiIndex = providerRows.firstIndex { $0.contains(",gemini,") } ?? 0
+        XCTAssertLessThan(opencodeIndex, claudeIndex)
+        XCTAssertLessThan(claudeIndex, geminiIndex)
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {
