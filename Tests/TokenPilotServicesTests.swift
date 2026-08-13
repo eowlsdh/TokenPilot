@@ -753,6 +753,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["summary", "--provider", "bogus"]),
             .failure(.invalidProvider("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--model", "claude-sonnet"]), .success(.summary(model: "claude-sonnet")))
+        // --model accepts any model name and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--model"]),
+            .failure(.missingValue(forFlag: "--model"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -2191,6 +2197,31 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("provider-summary-test"))
+    }
+
+    func testCLISummaryModelFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // opencode-sonnet and claude-sonnet both carry events; --model must keep only opencode-sonnet.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "model-summary-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "claude-sonnet", timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "model-summary-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .today,
+            model: "opencode-sonnet",
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode-sonnet events survive the model filter.
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("model-summary-test"))
     }
 
     func testCLISummaryNoCostBlanksCostFields() throws {
