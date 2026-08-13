@@ -809,6 +809,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["audit", "--csv", "--md"]),
             .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--provider", "opencode"]), .success(.audit(provider: .opencode)))
+        // --provider accepts any Provider raw value and rejects unknown names.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--provider", "bogus"]),
+            .failure(.invalidProvider("bogus"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9559,6 +9565,38 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("instances-test"))
+    }
+
+    func testCLIAuditProviderFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // opencode and claude both carry events; --provider must keep only opencode.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "provider-audit-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, timestamp: day(-1), inputTokens: 400, outputTokens: 0, source: "provider-audit-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.auditJSON(
+            events: events,
+            windowDays: 7,
+            provider: .opencode,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode event survives the provider filter.
+        XCTAssertEqual(json["activeDays"] as? Int, 1)
+        let days = try XCTUnwrap(json["days"] as? [[String: Any]])
+        let todayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-17" })
+        XCTAssertEqual(todayRow["active"] as? Bool, true)
+        XCTAssertEqual(todayRow["tokens"] as? Int, 500)
+        let yesterdayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-16" })
+        XCTAssertEqual(yesterdayRow["active"] as? Bool, false)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("provider-audit-test"))
     }
 
     func testCLIAuditWindowSelectorsScopeCoverage() throws {
