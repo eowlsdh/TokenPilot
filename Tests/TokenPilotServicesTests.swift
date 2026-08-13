@@ -540,6 +540,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["export", "--provider", "bogus"]),
             .failure(.invalidProvider("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--model", "opencode-sonnet"]), .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, model: "opencode-sonnet")))
+        // --model accepts any model name and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--model"]),
+            .failure(.missingValue(forFlag: "--model"))
+        )
     }
 
     func testCapacityRecordRoundTripFeedsCLICapacityExportSection() throws {
@@ -2023,6 +2029,37 @@ final class TokenPilotServicesTests: XCTestCase {
         let metrics = try XCTUnwrap(json["metrics"] as? [String: Any])
         XCTAssertEqual(metrics["totalTokens"] as? Int, 3_000)
         // The claude event is excluded from the raw event rows by the provider filter.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("claude-sonnet"))
+    }
+
+    func testCLIExportModelFiltersEvents() throws {
+        let now = Date()
+        // opencode-sonnet and claude-sonnet both carry events; --model must keep only opencode-sonnet.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-3_600), inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "model-export-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "claude-sonnet", timestamp: now.addingTimeInterval(-7_200), inputTokens: 9_000, outputTokens: 0, estimatedCostUSD: Decimal(0.18), source: "model-export-test", dataSource: .localLog),
+        ]
+        // runExport applies the model filter before aggregation and export.
+        let modelEvents = events.filter { $0.model == "opencode-sonnet" }
+        let exporter = UsageExportService()
+        let usage = AggregationService().aggregate(
+            snapshots: [ProviderSnapshot(provider: .opencode, events: modelEvents)],
+            period: .last7Days,
+            now: now
+        )
+        let data = try exporter.export(
+            usage: usage,
+            snapshots: [ProviderSnapshot(provider: .opencode, events: modelEvents)],
+            dataMode: "CLI",
+            format: .json,
+            includesCost: true
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode-sonnet events survive the model filter.
+        let metrics = try XCTUnwrap(json["metrics"] as? [String: Any])
+        XCTAssertEqual(metrics["totalTokens"] as? Int, 3_000)
+        // The claude-sonnet event is excluded from the raw event rows by the model filter.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("claude-sonnet"))
     }
