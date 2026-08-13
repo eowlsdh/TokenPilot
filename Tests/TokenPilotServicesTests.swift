@@ -765,6 +765,18 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["summary", "--model"]),
             .failure(.missingValue(forFlag: "--model"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--sort", "tokens"]), .success(.summary(sort: .tokens)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--sort", "requests"]), .success(.summary(sort: .requests)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--sort", "cost"]), .success(.summary(sort: .cost)))
+        // --sort accepts tokens|requests|cost and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--sort", "bogus"]),
+            .failure(.invalidSort("bogus"))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["summary", "--sort"]),
+            .failure(.missingValue(forFlag: "--sort"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--since", "13/08/2026"]), .failure(.invalidDate("13/08/2026")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["summary", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["help"]), .success(.help))
@@ -2342,6 +2354,89 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertNil(json["estimatedCostUSD"])
         let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
         XCTAssertNil(shares.first?["estimatedCostUSD"])
+    }
+
+    func testCLISummarySortOrdersProviderShare() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // Three providers with distinct token/request/cost shapes so each --sort key yields a different order.
+        let events = [
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 1_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "sort-summary-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "sort-summary-test", dataSource: .localLog),
+            UsageEvent(provider: .gemini, timestamp: now, inputTokens: 5_000, outputTokens: 0, requestCount: 1, estimatedCostUSD: Decimal(0.10), source: "sort-summary-test", dataSource: .localLog),
+        ]
+        let enabled: [Provider] = [.claude, .opencode, .gemini]
+
+        // No sort key keeps the aggregation order (Provider.allCases order).
+        let naturalData = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: enabled,
+            period: .today,
+            now: now,
+            calendar: calendar
+        )
+        let naturalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: naturalData) as? [String: Any])
+        let naturalShares = try XCTUnwrap(naturalJSON["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(naturalShares.compactMap { $0["provider"] as? String }, ["Claude Code", "Antigravity CLI", "opencode"])
+
+        // --sort tokens: provider share ordered by tokens descending.
+        let tokenData = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: enabled,
+            period: .today,
+            sort: .tokens,
+            now: now,
+            calendar: calendar
+        )
+        let tokenJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: tokenData) as? [String: Any])
+        let tokenShares = try XCTUnwrap(tokenJSON["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(tokenShares.compactMap { $0["provider"] as? String }, ["opencode", "Antigravity CLI", "Claude Code"])
+        XCTAssertEqual(tokenShares.first?["tokens"] as? Int, 9_000)
+
+        // --sort requests: provider share ordered by request count descending.
+        let requestData = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: enabled,
+            period: .today,
+            sort: .requests,
+            now: now,
+            calendar: calendar
+        )
+        let requestJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: requestData) as? [String: Any])
+        let requestShares = try XCTUnwrap(requestJSON["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(requestShares.compactMap { $0["provider"] as? String }, ["opencode", "Claude Code", "Antigravity CLI"])
+
+        // --sort cost: provider share ordered by estimated cost descending.
+        let costData = try TokenPilotCLIService.summaryJSON(
+            events: events,
+            enabledProviders: enabled,
+            period: .today,
+            sort: .cost,
+            now: now,
+            calendar: calendar
+        )
+        let costJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: costData) as? [String: Any])
+        let costShares = try XCTUnwrap(costJSON["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(costShares.compactMap { $0["provider"] as? String }, ["opencode", "Antigravity CLI", "Claude Code"])
+
+        // Text summary shares the same ordering: opencode precedes Claude Code when sorted by tokens.
+        let text = TokenPilotCLIService.summaryText(
+            events: events,
+            enabledProviders: enabled,
+            language: .en,
+            period: .today,
+            sort: .tokens,
+            now: now,
+            calendar: calendar
+        )
+        let lines = text.split(separator: "\n").map(String.init)
+        let opencodeIndex = lines.firstIndex { $0.hasPrefix("opencode:") }
+        let claudeIndex = lines.firstIndex { $0.hasPrefix("Claude Code:") }
+        let opencodeLine = try XCTUnwrap(opencodeIndex)
+        let claudeLine = try XCTUnwrap(claudeIndex)
+        XCTAssertLessThan(opencodeLine, claudeLine)
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(text.contains("sort-summary-test"))
     }
 
     func testCLISummaryPeriodSelectsWindow() throws {
