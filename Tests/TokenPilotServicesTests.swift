@@ -959,6 +959,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["report", "--provider", "bogus"]),
             .failure(.invalidProvider("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--model", "claude-sonnet"]), .success(.report(period: .last7Days, format: .text, model: "claude-sonnet")))
+        // --model accepts any model name and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--model"]),
+            .failure(.missingValue(forFlag: "--model"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project"]), .failure(.missingValue(forFlag: "--project")))
@@ -1277,6 +1283,31 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("provider-report-test"))
+    }
+
+    func testCLIReportModelFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // opencode-sonnet and claude-sonnet both carry events; --model must keep only opencode-sonnet.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "model-report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "claude-sonnet", timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "model-report-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode],
+            period: .last7Days,
+            model: "opencode-sonnet",
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode-sonnet events survive the model filter.
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("model-report-test"))
     }
 
     func testCLIReportJSONNoCostAndBreakdown() throws {
