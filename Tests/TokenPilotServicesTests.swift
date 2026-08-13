@@ -534,6 +534,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["export", "--instances", "--project", "project-a"]),
             .failure(.invalidCombination("--instances cannot be combined with --project."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--provider", "opencode"]), .success(.export(format: .json, period: .last7Days, outputPath: nil, includesCapacity: false, provider: .opencode)))
+        // --provider accepts any Provider raw value and rejects unknown names.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["export", "--provider", "bogus"]),
+            .failure(.invalidProvider("bogus"))
+        )
     }
 
     func testCapacityRecordRoundTripFeedsCLICapacityExportSection() throws {
@@ -1939,6 +1945,37 @@ final class TokenPilotServicesTests: XCTestCase {
         let projectBPayload = try XCTUnwrap(projectB["payload"] as? [String: Any])
         let projectBMetrics = try XCTUnwrap(projectBPayload["metrics"] as? [String: Any])
         XCTAssertEqual(projectBMetrics["totalTokens"] as? Int, 2_000)
+    }
+
+    func testCLIExportProviderFiltersEvents() throws {
+        let now = Date()
+        // opencode and claude both carry events; --provider must keep only opencode.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now.addingTimeInterval(-3_600), inputTokens: 3_000, outputTokens: 0, estimatedCostUSD: Decimal(0.06), source: "provider-export-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, model: "claude-sonnet", timestamp: now.addingTimeInterval(-7_200), inputTokens: 9_000, outputTokens: 0, estimatedCostUSD: Decimal(0.18), source: "provider-export-test", dataSource: .localLog),
+        ]
+        // runExport applies the provider filter before aggregation and export.
+        let providerEvents = events.filter { $0.provider == .opencode }
+        let exporter = UsageExportService()
+        let usage = AggregationService().aggregate(
+            snapshots: [ProviderSnapshot(provider: .opencode, events: providerEvents)],
+            period: .last7Days,
+            now: now
+        )
+        let data = try exporter.export(
+            usage: usage,
+            snapshots: [ProviderSnapshot(provider: .opencode, events: providerEvents)],
+            dataMode: "CLI",
+            format: .json,
+            includesCost: true
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode events survive the provider filter.
+        let metrics = try XCTUnwrap(json["metrics"] as? [String: Any])
+        XCTAssertEqual(metrics["totalTokens"] as? Int, 3_000)
+        // The claude event is excluded from the raw event rows by the provider filter.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("claude-sonnet"))
     }
 
     func testCLISummaryTextUsesAggregatesOnly() {

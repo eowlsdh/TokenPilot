@@ -377,7 +377,7 @@ private enum TokenPilotCLIRunner {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, calendar: calendar))
             }
             return 0
-        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances)):
+        case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances, let provider)):
             return await runExport(
                 format: format,
                 period: period,
@@ -391,7 +391,8 @@ private enum TokenPilotCLIRunner {
                 project: project,
                 weekStartDay: weekStartDay,
                 sections: sections,
-                instances: instances
+                instances: instances,
+                provider: provider
             )
         }
     }
@@ -418,10 +419,12 @@ private enum TokenPilotCLIRunner {
         project: String?,
         weekStartDay: WeekStartDay?,
         sections: [HistoryPeriod]?,
-        instances: Bool
+        instances: Bool,
+        provider: Provider?
     ) async -> Int32 {
         let allEvents = UsageHistoryStore().loadEvents()
-        let events = project.map { label in allEvents.filter { $0.projectLabel == label } } ?? allEvents
+        let providerEvents = provider.map { p in allEvents.filter { $0.provider == p } } ?? allEvents
+        let events = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let snapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
