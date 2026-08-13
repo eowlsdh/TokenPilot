@@ -827,6 +827,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["audit", "--provider", "bogus"]),
             .failure(.invalidProvider("bogus"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--model", "opencode-sonnet"]), .success(.audit(model: "opencode-sonnet")))
+        // --model accepts any model name and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["audit", "--model"]),
+            .failure(.missingValue(forFlag: "--model"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["audit", "--bogus"]), .failure(.unknownCommand("--bogus")))
     }
 
@@ -9727,6 +9733,38 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("provider-audit-test"))
+    }
+
+    func testCLIAuditModelFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in
+            calendar.date(byAdding: .day, value: offset, to: now)!
+        }
+        // opencode-sonnet and claude-sonnet both carry events; --model must keep only opencode-sonnet.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: day(0), inputTokens: 500, outputTokens: 0, source: "model-audit-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, model: "claude-sonnet", timestamp: day(-1), inputTokens: 400, outputTokens: 0, source: "model-audit-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.auditJSON(
+            events: events,
+            windowDays: 7,
+            model: "opencode-sonnet",
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode-sonnet event survives the model filter.
+        XCTAssertEqual(json["activeDays"] as? Int, 1)
+        let days = try XCTUnwrap(json["days"] as? [[String: Any]])
+        let todayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-17" })
+        XCTAssertEqual(todayRow["active"] as? Bool, true)
+        XCTAssertEqual(todayRow["tokens"] as? Int, 500)
+        let yesterdayRow = try XCTUnwrap(days.first { $0["date"] as? String == "2030-03-16" })
+        XCTAssertEqual(yesterdayRow["active"] as? Bool, false)
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("model-audit-test"))
     }
 
     func testCLIAuditWindowSelectorsScopeCoverage() throws {
