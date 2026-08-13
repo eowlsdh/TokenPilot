@@ -929,6 +929,12 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true)))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project", "my-workspace"]), .success(.report(period: .last7Days, format: .text, project: "my-workspace")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "today", "--md", "--project", "my-workspace", "--breakdown"]), .success(.report(period: .today, format: .markdown, includesBreakdown: true, project: "my-workspace")))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--provider", "claude"]), .success(.report(period: .last7Days, format: .text, provider: .claude)))
+        // --provider accepts any Provider raw value and rejects unknown names.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--provider", "bogus"]),
+            .failure(.invalidProvider("bogus"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project"]), .failure(.missingValue(forFlag: "--project")))
@@ -1219,6 +1225,34 @@ final class TokenPilotServicesTests: XCTestCase {
         // No per-event source labels leak into the payload.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("json-test"))
+    }
+
+    func testCLIReportProviderFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // opencode and claude both carry events; --provider must keep only opencode.
+        let events = [
+            UsageEvent(provider: .opencode, model: "opencode-sonnet", timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "provider-report-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, model: "claude-sonnet", timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "provider-report-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            period: .last7Days,
+            provider: .opencode,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode events survive the provider filter.
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(shares.count, 1)
+        XCTAssertEqual(shares.first?["provider"] as? String, "opencode")
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("provider-report-test"))
     }
 
     func testCLIReportJSONNoCostAndBreakdown() throws {

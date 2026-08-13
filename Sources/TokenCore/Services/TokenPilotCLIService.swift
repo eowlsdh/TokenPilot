@@ -18,7 +18,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false)
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil)
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil)
-    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false)
+    case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false, provider: Provider? = nil)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false)
     case help
@@ -394,6 +394,7 @@ public enum TokenPilotCLIService {
         var timeZone: TimeZone?
         var includesBreakdown = false
         var project: String?
+        var provider: Provider?
         var sections: [HistoryPeriod]?
         var weekStartDay: WeekStartDay?
         var instances = false
@@ -440,6 +441,13 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 project = flags[index]
+            case "--provider":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Provider(rawValue: flags[index]) else {
+                    return .failure(.invalidProvider(flags[index]))
+                }
+                provider = parsed
             case "--sections":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -491,7 +499,7 @@ public enum TokenPilotCLIService {
         if instances, project != nil {
             return .failure(.invalidCombination("--instances cannot be combined with --project."))
         }
-        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, instances: instances))
+        return .success(.report(period: period, format: format, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, instances: instances, provider: provider))
     }
 
     private static func parseExport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -740,7 +748,7 @@ public enum TokenPilotCLIService {
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--provider <name>]
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
-          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
+          TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
           TokenPilot help
@@ -774,7 +782,8 @@ public enum TokenPilotCLIService {
         per-day breakdown and cache efficiency; --svg emits the same receipt as a standalone
         SVG, --md emits a copy-pasteable Markdown table, --json emits the same receipt as a
         structured JSON payload for scripting (ccusage --json style), and --csv emits the same receipt
-        as machine-readable rows for spreadsheets (ccusage --csv style). --breakdown adds a per-day, per-model
+        as machine-readable rows for spreadsheets (ccusage --csv style), --provider restricts the receipt
+        to one provider (ccusage --provider style). --breakdown adds a per-day, per-model
         breakdown section (ccusage --breakdown style). --sections (JSON only) emits the requested
         periods in one envelope with a totals object last (ccusage --sections style).
         --instances (JSON only) groups the payload by workspace label with each project carrying
@@ -1781,12 +1790,14 @@ public enum TokenPilotCLIService {
         includesCost: Bool = true,
         includesBreakdown: Bool = false,
         project: String? = nil,
+        provider: Provider? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
-        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
+        let scopedEvents = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
@@ -1855,12 +1866,14 @@ public enum TokenPilotCLIService {
         days: Int? = nil,
         includesCost: Bool = true,
         project: String? = nil,
+        provider: Provider? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
-        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
+        let scopedEvents = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
@@ -1918,12 +1931,14 @@ public enum TokenPilotCLIService {
         includesCost: Bool = true,
         includesBreakdown: Bool = false,
         project: String? = nil,
+        provider: Provider? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
-        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
+        let scopedEvents = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
@@ -2040,12 +2055,14 @@ public enum TokenPilotCLIService {
         includesCost: Bool = true,
         includesBreakdown: Bool = false,
         project: String? = nil,
+        provider: Provider? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
-        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
+        let scopedEvents = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
@@ -2156,6 +2173,7 @@ public enum TokenPilotCLIService {
         includesCost: Bool = true,
         includesBreakdown: Bool = false,
         project: String? = nil,
+        provider: Provider? = nil,
         sections: [HistoryPeriod]? = nil,
         instances: Bool = false,
         now: Date = Date(),
@@ -2178,6 +2196,7 @@ public enum TokenPilotCLIService {
                     includesCost: includesCost,
                     includesBreakdown: includesBreakdown,
                     project: project,
+                    provider: provider,
                     now: now,
                     calendar: calendar
                 )
@@ -2191,6 +2210,7 @@ public enum TokenPilotCLIService {
                         days: nil,
                         includesCost: includesCost,
                         includesBreakdown: includesBreakdown,
+                        provider: provider,
                         now: now,
                         calendar: calendar
                     )
@@ -2220,6 +2240,7 @@ public enum TokenPilotCLIService {
             includesCost: includesCost,
             includesBreakdown: includesBreakdown,
             project: project,
+            provider: provider,
             now: now,
             calendar: calendar
         )
@@ -2236,6 +2257,7 @@ public enum TokenPilotCLIService {
                 days: days,
                 includesCost: includesCost,
                 includesBreakdown: includesBreakdown,
+                provider: provider,
                 now: now,
                 calendar: calendar
             )
@@ -2254,6 +2276,7 @@ public enum TokenPilotCLIService {
         days: Int?,
         includesCost: Bool,
         includesBreakdown: Bool,
+        provider: Provider? = nil,
         now: Date,
         calendar: Calendar
     ) -> [ReportProjectGroup] {
@@ -2271,6 +2294,7 @@ public enum TokenPilotCLIService {
                     includesCost: includesCost,
                     includesBreakdown: includesBreakdown,
                     project: label,
+                    provider: provider,
                     now: now,
                     calendar: calendar
                 )
@@ -2288,12 +2312,14 @@ public enum TokenPilotCLIService {
         includesCost: Bool,
         includesBreakdown: Bool,
         project: String?,
+        provider: Provider? = nil,
         now: Date,
         calendar: Calendar
     ) -> TokenPilotReportJSON {
         let window = reportWindow(period: period, since: since, until: until, days: days, now: now, calendar: calendar)
         let enabledSet = Set(enabledProviders)
-        let scopedEvents = project.map { label in events.filter { $0.projectLabel == label } } ?? events
+        let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
+        let scopedEvents = project.map { label in providerEvents.filter { $0.projectLabel == label } } ?? providerEvents
         let providerSnapshots = Provider.allCases.map { provider in
             ProviderSnapshot(
                 provider: provider,
