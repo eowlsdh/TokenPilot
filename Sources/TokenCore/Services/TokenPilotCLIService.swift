@@ -24,7 +24,7 @@ public enum SortKind: String, Equatable, Sendable {
 public enum TokenPilotCLICommand: Equatable, Sendable {
     case export(format: UsageExportFormat, period: HistoryPeriod, outputPath: String?, includesCapacity: Bool, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, project: String? = nil, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, provider: Provider? = nil, model: String? = nil)
     case summary(period: HistoryPeriod = .today, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, includesCost: Bool = true, includesJSON: Bool = false, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil, sort: SortKind? = nil)
-    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil)
+    case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil, sort: SortKind? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false, provider: Provider? = nil, model: String? = nil)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false)
@@ -681,6 +681,7 @@ public enum TokenPilotCLIService {
         var project: String?
         var provider: Provider?
         var model: String?
+        var sort: SortKind?
         var includesJSON = false
         var weekStartDay: WeekStartDay?
         var sections: [HistoryPeriod]?
@@ -741,6 +742,13 @@ public enum TokenPilotCLIService {
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
                 model = flags[index]
+            case "--sort":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = SortKind(rawValue: flags[index]) else {
+                    return .failure(.invalidSort(flags[index]))
+                }
+                sort = parsed
             case "--start-of-week":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -796,7 +804,7 @@ public enum TokenPilotCLIService {
         if includesMarkdown, includesJSON || includesCSV {
             return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         }
-        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay, sections: sections, instances: instances, includesCSV: includesCSV, includesMarkdown: includesMarkdown, provider: provider, model: model))
+        return .success(.stats(period: period, since: since, until: until, days: days, includesCost: includesCost, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, includesJSON: includesJSON, weekStartDay: weekStartDay, sections: sections, instances: instances, includesCSV: includesCSV, includesMarkdown: includesMarkdown, provider: provider, model: model, sort: sort))
     }
 
     public static var helpText: String {
@@ -806,7 +814,7 @@ public enum TokenPilotCLIService {
         Usage:
           TokenPilot export [--format json|csv] [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--out <path>] [--capacity] [--no-cost] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot summary [--period today|last7Days|thisMonth] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--provider <name>] [--model <name>] [--sort tokens|requests|cost]
-          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances]
+          TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--sort tokens|requests|cost]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances]
           TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--provider <name>] [--model <name>]
           TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N]
@@ -834,7 +842,9 @@ public enum TokenPilotCLIService {
         label with each project carrying its own payload (ccusage --instances style). stats prints derived usage statistics for the window:
         active days, daily average, busiest day and hour, and most-used provider; --provider restricts
         the statistics to one provider (ccusage --provider style), --model restricts them to one model
-        name (ccusage --model style), --json emits
+        name (ccusage --model style),
+        --sort orders the provider share by tokens, requests, or cost (ccusage --sort style; provider order is kept when omitted),
+        --json emits
         the same statistics as structured JSON for scripting (toktrack stats --json style) with a
         per-provider model breakdown (ccusage --by-agent style), --csv emits the same statistics as
         machine-readable rows for spreadsheets (toktrack stats --csv style), --md emits the same statistics as a Markdown
@@ -1471,6 +1481,7 @@ public enum TokenPilotCLIService {
         project: String? = nil,
         provider: Provider? = nil,
         model: String? = nil,
+        sort: SortKind? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -1490,7 +1501,7 @@ public enum TokenPilotCLIService {
 
         var lines: [String] = ["period,tokens,requests,cost_usd"]
         lines.append(csvRow(date: periodLabel, tokens: metrics.totalTokens, requests: metrics.requestCount, cost: includesCost ? metrics.estimatedCostUSD : 0))
-        for share in usage.providerShare where share.tokens > 0 {
+        for share in sortedProviderShares(usage.providerShare, sort: sort) where share.tokens > 0 {
             lines.append(csvRow(date: localized(share.provider.displayName, language: .en), tokens: share.tokens, requests: share.requestCount, cost: includesCost ? (share.estimatedCostUSD ?? 0) : 0))
         }
         return lines.joined(separator: "\n")
@@ -1513,6 +1524,7 @@ public enum TokenPilotCLIService {
         project: String? = nil,
         provider: Provider? = nil,
         model: String? = nil,
+        sort: SortKind? = nil,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -1569,7 +1581,7 @@ public enum TokenPilotCLIService {
         if let mostUsedProvider = metrics.mostUsedProvider {
             lines.append("| Most used provider | \(localized(mostUsedProvider.displayName, language: .en)) |")
         }
-        let shares = usage.providerShare.filter { $0.tokens > 0 }
+        let shares = sortedProviderShares(usage.providerShare, sort: sort).filter { $0.tokens > 0 }
         if !shares.isEmpty {
             lines.append("")
             lines.append("**Providers**")

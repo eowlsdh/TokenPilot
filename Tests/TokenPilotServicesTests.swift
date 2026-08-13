@@ -941,6 +941,18 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["stats", "--model"]),
             .failure(.missingValue(forFlag: "--model"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--sort", "tokens"]), .success(.stats(sort: .tokens)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--sort", "requests"]), .success(.stats(sort: .requests)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--sort", "cost"]), .success(.stats(sort: .cost)))
+        // --sort accepts tokens|requests|cost and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--sort", "bogus"]),
+            .failure(.invalidSort("bogus"))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--sort"]),
+            .failure(.missingValue(forFlag: "--sort"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today,last7Days,thisMonth"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today, .last7Days, .thisMonth])))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today])))
         // --sections requires --json and cannot be combined with custom windows.
@@ -2227,6 +2239,54 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
         // Aggregates only: no per-event source labels leak.
         XCTAssertFalse(markdown.contains("md-stats-test"))
+    }
+
+    func testCLIStatsSortOrdersProviderShare() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // Three providers with distinct token/request/cost shapes so each --sort key yields a different order.
+        let events = [
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 1_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "sort-stats-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "sort-stats-test", dataSource: .localLog),
+            UsageEvent(provider: .gemini, timestamp: now, inputTokens: 5_000, outputTokens: 0, requestCount: 1, estimatedCostUSD: Decimal(0.10), source: "sort-stats-test", dataSource: .localLog),
+        ]
+        let enabled: [Provider] = [.claude, .opencode, .gemini]
+
+        // CSV provider rows are ordered by the requested --sort key (descending tokens).
+        let tokenCSV = TokenPilotCLIService.statsCSVText(
+            events: events,
+            enabledProviders: enabled,
+            period: .last7Days,
+            sort: .tokens,
+            now: now,
+            calendar: calendar
+        )
+        let tokenLines = tokenCSV.split(separator: "\n").map(String.init)
+        let opencodeIndex = tokenLines.firstIndex { $0.hasPrefix("opencode,") } ?? 0
+        let geminiIndex = tokenLines.firstIndex { $0.hasPrefix("Antigravity CLI,") } ?? 0
+        let claudeIndex = tokenLines.firstIndex { $0.hasPrefix("Claude Code,") } ?? 0
+        XCTAssertLessThan(opencodeIndex, geminiIndex)
+        XCTAssertLessThan(geminiIndex, claudeIndex)
+
+        // Markdown providers table follows the same ordering (descending requests here).
+        let requestMD = TokenPilotCLIService.statsMarkdownText(
+            events: events,
+            enabledProviders: enabled,
+            period: .last7Days,
+            sort: .requests,
+            now: now,
+            calendar: calendar
+        )
+        let mdLines = requestMD.split(separator: "\n").map(String.init)
+        let mdOpen = mdLines.firstIndex { $0.hasPrefix("| opencode |") } ?? 0
+        let mdClaude = mdLines.firstIndex { $0.hasPrefix("| Claude Code |") } ?? 0
+        let mdGemini = mdLines.firstIndex { $0.hasPrefix("| Antigravity CLI |") } ?? 0
+        XCTAssertLessThan(mdOpen, mdClaude)
+        XCTAssertLessThan(mdClaude, mdGemini)
+
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(tokenCSV.contains("sort-stats-test"))
+        XCTAssertFalse(requestMD.contains("sort-stats-test"))
     }
 
     func testCLISummaryJSONPayloadMatchesSummaryText() throws {
