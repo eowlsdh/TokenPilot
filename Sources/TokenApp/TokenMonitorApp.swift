@@ -115,7 +115,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV, let includesMarkdown)):
+        case .success(.stats(let period, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let includesJSON, let weekStartDay, let sections, let instances, let includesCSV, let includesMarkdown, let provider)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
@@ -131,6 +131,7 @@ private enum TokenPilotCLIRunner {
                         days: days,
                         includesCost: includesCost,
                         project: project,
+                        provider: provider,
                         calendar: calendar
                     )
                 )
@@ -146,6 +147,7 @@ private enum TokenPilotCLIRunner {
                         includesCost: includesCost,
                         includesBreakdown: includesBreakdown,
                         project: project,
+                        provider: provider,
                         calendar: calendar
                     )
                 )
@@ -161,6 +163,7 @@ private enum TokenPilotCLIRunner {
                         includesCost: includesCost,
                         includesBreakdown: includesBreakdown,
                         project: project,
+                        provider: provider,
                         sections: sections,
                         instances: instances,
                         calendar: calendar
@@ -186,6 +189,7 @@ private enum TokenPilotCLIRunner {
                         includesCost: includesCost,
                         includesBreakdown: includesBreakdown,
                         project: project,
+                        provider: provider,
                         calendar: calendar
                     )
                 )

@@ -887,6 +887,12 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["stats", "--csv", "--md"]),
             .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--provider", "opencode"]), .success(.stats(provider: .opencode)))
+        // --provider accepts any Provider raw value and rejects unknown names.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["stats", "--provider", "bogus"]),
+            .failure(.invalidProvider("bogus"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today,last7Days,thisMonth"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today, .last7Days, .thisMonth])))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["stats", "--json", "--sections", "today"]), .success(.stats(period: .last7Days, includesJSON: true, sections: [.today])))
         // --sections requires --json and cannot be combined with custom windows.
@@ -2519,6 +2525,35 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertNil(noCostProviders.first?["estimatedCostUSD"])
         let noCostModels = try XCTUnwrap(noCostProviders.first?["models"] as? [[String: Any]])
         XCTAssertNil(noCostModels.first?["estimatedCostUSD"])
+    }
+
+    func testCLIStatsProviderFiltersEvents() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // opencode and claude both carry events; --provider must keep only opencode.
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 3_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "provider-stats-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "provider-stats-test", dataSource: .localLog),
+        ]
+        let data = try TokenPilotCLIService.statsJSON(
+            events: events,
+            enabledProviders: [.opencode, .claude],
+            period: .last7Days,
+            provider: .opencode,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        // Only the opencode events survive the provider filter.
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000)
+        XCTAssertEqual(json["requestCount"] as? Int, 2)
+        XCTAssertEqual(json["mostUsedProvider"] as? String, "opencode")
+        let providers = try XCTUnwrap(json["providers"] as? [[String: Any]])
+        XCTAssertEqual(providers.count, 1)
+        XCTAssertEqual(providers.first?["provider"] as? String, "opencode")
+        // Aggregates only: no per-event source labels leak.
+        let serialized = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertFalse(serialized.contains("provider-stats-test"))
     }
 
     func testCLIStatsJSONSectionsEmitsEnvelope() throws {
