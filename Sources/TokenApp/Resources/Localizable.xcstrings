@@ -11408,25 +11408,25 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지난 %d분 동안 약 %@ tok/분 (추정)"
+            "value": "지난 %2$d분 동안 약 %1$@ tok/분 (추정)"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "~%@ tok/min over the last %d min (est.)"
+            "value": "~%1$@ tok/min over the last %2$d min (est.)"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "过去 %d 分钟约 %@ tok/分钟（估计）"
+            "value": "过去 %2$d 分钟约 %1$@ tok/分钟（估计）"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "直近 %d 分で約 %@ tok/分（推定）"
+            "value": "直近 %2$d 分で約 %1$@ tok/分（推定）"
           }
         }
       }

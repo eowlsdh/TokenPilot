@@ -2,6 +2,25 @@ import XCTest
 @testable import TokenCore
 
 final class TokenMonitorTests: XCTestCase {
+    func testLocalizedThroughputFormatIsSafeAcrossLanguages() {
+        // Regression: the ko/ja/zh translations of this key reversed the %@/%d
+        // order vs the English key, so String(format:) bound the String to %d
+        // and the Int to %@ -> EXC_BAD_ACCESS (KERN_INVALID_ADDRESS at 0x3c
+        // when windowMinutes == 60). Positional specifiers keep the mapping
+        // stable regardless of the translation's word order.
+        let key = "~%@ tok/min over the last %d min (est.)"
+        let languages: [TokenPilotLanguage] = [.en, .ko, .ja, .zhHans, .zhHant, .system]
+        for language in languages {
+            let format = TokenPilotLocalizer.localized(key, language: language)
+            let rendered = String(format: format, "1.5K", 60)
+            XCTAssertFalse(rendered.isEmpty, "rendered throughput text must not be empty for \(language)")
+            XCTAssertTrue(rendered.contains("1.5K"), "per-minute value missing for \(language): \(rendered)")
+            XCTAssertTrue(rendered.contains("60"), "window minutes missing for \(language): \(rendered)")
+            XCTAssertFalse(rendered.contains("%@"), "unbound %@ left for \(language): \(rendered)")
+            XCTAssertFalse(rendered.contains("%d"), "unbound %d left for \(language): \(rendered)")
+        }
+    }
+
     func testUsageEventClampsNegativeTokenValues() {
         let event = UsageEvent(
             provider: .claude,

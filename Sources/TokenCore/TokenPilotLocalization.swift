@@ -325,7 +325,7 @@ public enum TokenPilotLocalizer {
         "day streak": [.en: "day streak", .ko: "일 연속", .ja: "日連続", .zhHans: "天连续", .zhHant: "天連續"],
         "requests": [.en: "requests", .ko: "요청", .ja: "リクエスト", .zhHans: "请求", .zhHant: "請求"],
         "Cache hit rate is degrading": [.en: "Cache hit rate is degrading", .ko: "캐시 적중률이 하락하고 있습니다", .ja: "キャッシュヒット率が低下しています", .zhHans: "缓存命中率正在下降", .zhHant: "緩存命中率正在下降"],
-        "~%@ tok/min over the last %d min (est.)": [.en: "~%@ tok/min over the last %d min (est.)", .ko: "지난 %d분 동안 약 %@ tok/분 (추정)", .ja: "直近 %d 分で約 %@ tok/分（推定）", .zhHans: "过去 %d 分钟约 %@ tok/分钟（估计）", .zhHant: "過去 %d 分鐘約 %@ tok/分鐘（估計）"],
+        "~%@ tok/min over the last %d min (est.)": [.en: "~%1$@ tok/min over the last %2$d min (est.)", .ko: "지난 %2$d분 동안 약 %1$@ tok/분 (추정)", .ja: "直近 %2$d 分で約 %1$@ tok/分（推定）", .zhHans: "过去 %2$d 分钟约 %1$@ tok/分钟（估计）", .zhHant: "過去 %2$d 分鐘約 %1$@ tok/分鐘（估計）"],
         "Budget history": [.en: "Budget history", .ko: "예산 기록", .ja: "予算履歴", .zhHans: "预算记录", .zhHant: "預算記錄"],
         "exceeded": [.en: "exceeded", .ko: "초과", .ja: "超過", .zhHans: "超出", .zhHant: "超出"],
         "Daily local tokens vs the configured daily budget. Not provider quota.": [.en: "Daily local tokens vs the configured daily budget. Not provider quota.", .ko: "설정된 일일 예산 대비 일별 로컬 토큰입니다. 제공자 할당량이 아닙니다.", .ja: "設定された1日の予算に対する1日ごとのローカルトークンです。プロバイダの割り当てではありません。", .zhHans: "每日本地令牌与配置的每日预算对比。不是提供方配额。", .zhHant: "每日本地令牌與配置的每日預算對比。不是提供方配額。"],

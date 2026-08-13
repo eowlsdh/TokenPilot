@@ -868,7 +868,8 @@ struct HistoryHeatmapCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        let weeks = grid
+        return GlassCard(padding: 10) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Activity heatmap"), systemImage: "square.grid.3x3.fill")
@@ -888,22 +889,22 @@ struct HistoryHeatmapCard: View {
                     .frame(maxWidth: 150)
                 }
 
-                if grid.isEmpty {
+                if weeks.isEmpty {
                     EmptyInlineState(text: model.t("Local activity, not provider quota"))
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 2) {
                             HStack(spacing: 2) {
-                                ForEach(0..<grid.count, id: \.self) { column in
-                                    monthLabel(column: column)
+                                ForEach(weeks.indices, id: \.self) { column in
+                                    monthLabel(column: column, weeks: weeks)
                                         .frame(width: 9, alignment: .leading)
                                 }
                             }
                             .frame(height: 10)
                             ForEach(0..<7, id: \.self) { row in
                                 HStack(spacing: 2) {
-                                    ForEach(0..<grid.count, id: \.self) { column in
-                                        heatCell(grid[column][row])
+                                    ForEach(weeks.indices, id: \.self) { column in
+                                        heatCell(safeCell(weeks, column: column, row: row))
                                     }
                                 }
                             }
@@ -921,9 +922,16 @@ struct HistoryHeatmapCard: View {
         .accessibilityLabel(accessibilitySummary)
     }
 
+    private func safeCell(_ weeks: [[UsageHeatCell]], column: Int, row: Int) -> UsageHeatCell? {
+        guard column >= 0, column < weeks.count else { return nil }
+        let week = weeks[column]
+        guard row >= 0, row < week.count else { return nil }
+        return week[row]
+    }
+
     @ViewBuilder
-    private func monthLabel(column: Int) -> some View {
-        let month = monthOfWeek(column: column)
+    private func monthLabel(column: Int, weeks: [[UsageHeatCell]]) -> some View {
+        let month = monthOfWeek(column: column, weeks: weeks)
         if month == nil {
             Color.clear
         } else {
@@ -934,12 +942,12 @@ struct HistoryHeatmapCard: View {
         }
     }
 
-    private func monthOfWeek(column: Int) -> String? {
-        guard column < grid.count else { return nil }
-        guard let firstCell = grid[column].first else { return nil }
+    private func monthOfWeek(column: Int, weeks: [[UsageHeatCell]]) -> String? {
+        guard column >= 0, column < weeks.count else { return nil }
+        guard let firstCell = weeks[column].first else { return nil }
         guard let date = Self.dateFormatter.date(from: firstCell.dateKey) else { return nil }
         let previousMonth: String?
-        if column > 0, let prevCell = grid[column - 1].first,
+        if column > 0, column - 1 < weeks.count, let prevCell = weeks[column - 1].first,
            let prevDate = Self.dateFormatter.date(from: prevCell.dateKey) {
             previousMonth = Self.monthFormatter.string(from: prevDate)
         } else {
