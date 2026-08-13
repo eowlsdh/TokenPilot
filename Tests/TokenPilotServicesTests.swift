@@ -1001,6 +1001,18 @@ final class TokenPilotServicesTests: XCTestCase {
             TokenPilotCLIService.parse(arguments: ["report", "--model"]),
             .failure(.missingValue(forFlag: "--model"))
         )
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--sort", "tokens"]), .success(.report(period: .last7Days, format: .text, sort: .tokens)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--sort", "requests"]), .success(.report(period: .last7Days, format: .text, sort: .requests)))
+        XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--sort", "cost"]), .success(.report(period: .last7Days, format: .text, sort: .cost)))
+        // --sort accepts tokens|requests|cost and requires a value.
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--sort", "bogus"]),
+            .failure(.invalidSort("bogus"))
+        )
+        XCTAssertEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--sort"]),
+            .failure(.missingValue(forFlag: "--sort"))
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--period", "bogus"]), .failure(.invalidPeriod("bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--bogus"]), .failure(.unknownCommand("--bogus")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--project"]), .failure(.missingValue(forFlag: "--project")))
@@ -1344,6 +1356,52 @@ final class TokenPilotServicesTests: XCTestCase {
         // Aggregates only: no per-event source labels leak.
         let serialized = String(data: data, encoding: .utf8) ?? ""
         XCTAssertFalse(serialized.contains("model-report-test"))
+    }
+
+    func testCLIReportSortOrdersProviderShare() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 12))!
+        // Three providers with distinct token/request/cost shapes so each --sort key yields a different order.
+        let events = [
+            UsageEvent(provider: .claude, timestamp: now, inputTokens: 1_000, outputTokens: 0, requestCount: 2, estimatedCostUSD: Decimal(0.06), source: "sort-report-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: now, inputTokens: 9_000, outputTokens: 0, requestCount: 5, estimatedCostUSD: Decimal(0.18), source: "sort-report-test", dataSource: .localLog),
+            UsageEvent(provider: .gemini, timestamp: now, inputTokens: 5_000, outputTokens: 0, requestCount: 1, estimatedCostUSD: Decimal(0.10), source: "sort-report-test", dataSource: .localLog),
+        ]
+        let enabled: [Provider] = [.claude, .opencode, .gemini]
+
+        // Text receipt provider share is ordered by the requested --sort key (descending tokens).
+        let text = TokenPilotCLIService.reportText(
+            events: events,
+            enabledProviders: enabled,
+            language: .en,
+            period: .last7Days,
+            sort: .tokens,
+            now: now,
+            calendar: calendar
+        )
+        let lines = text.split(separator: "\n").map(String.init)
+        let opencodeIndex = lines.firstIndex { $0.hasPrefix("opencode:") }
+        let geminiIndex = lines.firstIndex { $0.hasPrefix("Antigravity CLI:") }
+        let claudeIndex = lines.firstIndex { $0.hasPrefix("Claude Code:") }
+        XCTAssertLessThan(try XCTUnwrap(opencodeIndex), try XCTUnwrap(geminiIndex))
+        XCTAssertLessThan(try XCTUnwrap(geminiIndex), try XCTUnwrap(claudeIndex))
+
+        // JSON provider share follows the same ordering (descending requests here).
+        let data = try TokenPilotCLIService.reportJSON(
+            events: events,
+            enabledProviders: enabled,
+            period: .last7Days,
+            sort: .requests,
+            now: now,
+            calendar: calendar
+        )
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let shares = try XCTUnwrap(json["providerShare"] as? [[String: Any]])
+        XCTAssertEqual(shares.compactMap { $0["provider"] as? String }, ["opencode", "Claude Code", "Antigravity CLI"])
+
+        // Aggregates only: no per-event source labels leak.
+        XCTAssertFalse(text.contains("sort-report-test"))
+        XCTAssertFalse(String(data: data, encoding: .utf8)?.contains("sort-report-test") ?? true)
     }
 
     func testCLIReportJSONNoCostAndBreakdown() throws {

@@ -209,7 +209,7 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.report(let period, let format, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let sections, let weekStartDay, let instances, let provider, let model)):
+        case .success(.report(let period, let format, let since, let until, let days, let includesCost, let timeZone, let includesBreakdown, let project, let sections, let weekStartDay, let instances, let provider, let model, let sort)):
             let settings = TokenPilotSettingsStore().load()
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
@@ -229,6 +229,7 @@ private enum TokenPilotCLIRunner {
                         project: project,
                         provider: provider,
                         model: model,
+                        sort: sort,
                         calendar: calendar
                     )
                 )
@@ -246,6 +247,7 @@ private enum TokenPilotCLIRunner {
                         project: project,
                         provider: provider,
                         model: model,
+                        sort: sort,
                         calendar: calendar
                     )
                 )
@@ -264,6 +266,7 @@ private enum TokenPilotCLIRunner {
                         project: project,
                         provider: provider,
                         model: model,
+                        sort: sort,
                         calendar: calendar
                     )
                 )
@@ -281,6 +284,7 @@ private enum TokenPilotCLIRunner {
                         project: project,
                         provider: provider,
                         model: model,
+                        sort: sort,
                         sections: sections,
                         instances: instances,
                         calendar: calendar
