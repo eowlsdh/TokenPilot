@@ -124,20 +124,50 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
         return snapshot
     }
 
-    /// Merges provider-reported quota from `ratelimit-*` headers into a local-activity snapshot.
+    /// Merges provider-reported quota from the official Zen/Go usage API into a local-activity
+    /// snapshot. The weekly window keeps the established `rate-limit` series identity so the
+    /// existing capacity pipeline recognizes it as comparable provider quota; rolling (5h) and
+    /// monthly are carried as supplementary windows so the overview can show them too.
     public static func applyingRateLimit(_ limit: OpenCodeRateLimit, to snapshot: ProviderSnapshot) -> ProviderSnapshot {
         var updated = snapshot
-        updated.weekly = LimitWindow(
-            kind: .weekly,
-            usedPercent: limit.usedPercent,
-            resetAt: limit.resetAt,
-            confidence: .high,
-            providerWindowID: "rate-limit"
-        )
+        var appliedAny = false
+        if let rolling = limit.rolling {
+            updated.fiveHour = LimitWindow(
+                kind: .fiveHour,
+                usedPercent: rolling.usedPercent,
+                resetAt: rolling.resetAt,
+                confidence: .high,
+                providerWindowID: "opencode-go-rolling",
+                durationMinutes: 300
+            )
+            appliedAny = true
+        }
+        if let weekly = limit.weekly {
+            updated.weekly = LimitWindow(
+                kind: .weekly,
+                usedPercent: weekly.usedPercent,
+                resetAt: weekly.resetAt,
+                confidence: .high,
+                providerWindowID: "rate-limit"
+            )
+            appliedAny = true
+        }
+        if let monthly = limit.monthly {
+            updated.monthly = LimitWindow(
+                kind: .monthly,
+                usedPercent: monthly.usedPercent,
+                resetAt: monthly.resetAt,
+                confidence: .high,
+                providerWindowID: "opencode-go-monthly",
+                durationMinutes: 43_200
+            )
+            appliedAny = true
+        }
+        guard appliedAny else { return snapshot }
         updated.confidence = .high
         updated.isStale = false
         updated.updatedAt = limit.observedAt
-        updated.statusMessage = "Provider-reported rate limit"
+        updated.statusMessage = "Provider-reported usage"
         return updated
     }
 

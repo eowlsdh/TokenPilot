@@ -964,7 +964,29 @@ public enum CapacityObservationFactory {
             break
         case .opencode:
             // Consent-gated probe result: provider-reported quota, so comparable unlike the
-            // token/cost activity signals below.
+            // token/cost activity signals below. The official usage API reports three windows
+            // (rolling 5h, weekly, monthly); each is surfaced as its own observation so the
+            // overview can show them all. Weekly keeps the established `rate-limit` series id.
+            if let rolling = snapshot.fiveHour,
+               rolling.providerWindowID == "opencode-go-rolling",
+               let used = rolling.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, durationMinutes: 300),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: rolling.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
             if let weekly = snapshot.weekly,
                weekly.providerWindowID == "rate-limit",
                let used = weekly.usedPercent,
@@ -974,6 +996,26 @@ public enum CapacityObservationFactory {
                 seriesID: series,
                 observedAt: observedAt,
                 resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if let monthly = snapshot.monthly,
+               monthly.providerWindowID == "opencode-go-monthly",
+               let used = monthly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, durationMinutes: 43_200),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: monthly.resetAt,
                 value: value,
                 authority: .providerReported,
                 stability: .supported,

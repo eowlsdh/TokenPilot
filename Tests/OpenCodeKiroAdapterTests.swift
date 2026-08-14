@@ -1172,15 +1172,20 @@ private final class SpyOpenCodeCredentialLoader: OpenCodeCredentialLoading, @unc
 }
 
 private struct StubOpenCodeProbe: OpenCodeRateLimitProbing {
-    let headers: [String: String]
-    func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason> {
-        .success(headers)
+    let data: Data
+    func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason> {
+        .success(data)
     }
 }
 
+private func usagePayload(_ windows: [String: [String: Any]]) -> Data {
+    let payload: [String: Any] = ["usage": windows]
+    return try! JSONSerialization.data(withJSONObject: payload)
+}
+
 final class OpenCodeRateLimitTests: XCTestCase {
-    /// opencode exposes quota only through response headers, so the probe is opt-in: without consent
-    /// nothing reads the token store and no request is sent.
+    /// opencode quota is provider-reported, so the probe is opt-in: without consent nothing reads
+    /// the token store and no request is sent.
     func testConsentGateBlocksTheCredentialReadAndProbe() async {
         let spy = SpyOpenCodeCredentialLoader()
         var settings = AppSettings()
@@ -1189,7 +1194,7 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { spy },
-            makeProbe: { StubOpenCodeProbe(headers: [:]) }
+            makeProbe: { StubOpenCodeProbe(data: Data()) }
         ).observe(settings: settings)
 
         XCTAssertFalse(spy.loaded, "no consent must mean no credential read and no probe request")
@@ -1203,39 +1208,51 @@ final class OpenCodeRateLimitTests: XCTestCase {
         XCTAssertFalse(AppSettings().openCode.rateLimitProbeEnabled, "default must be off")
     }
 
-    func testParsesStandardAndPrefixedRateLimitHeaders() {
+    func testParsesOfficialUsageAPIWindows() {
         let now = Date()
+        let reset = "2026-08-15T12:00:00+09:00"
+        let data = usagePayload([
+            "rolling": ["status": "ok", "percent": 19.5, "resetsAt": reset],
+            "weekly": ["status": "ok", "percent": 29.7, "resetsAt": reset],
+            "monthly": ["status": "ok", "percent": 25.0, "resetsAt": reset]
+        ])
 
-        XCTAssertEqual(
-            OpenCodeRateLimitObserver.parse(headers: ["ratelimit-limit": "1000", "ratelimit-remaining": "250"], now: now)?.usedPercent,
-            75
-        )
-        XCTAssertEqual(
-            OpenCodeRateLimitObserver.parse(headers: ["x-ratelimit-limit": "10", "x-ratelimit-remaining": "3"], now: now)?.usedPercent,
-            70
-        )
-        XCTAssertNil(OpenCodeRateLimitObserver.parse(headers: [:], now: now))
-        XCTAssertNil(
-            OpenCodeRateLimitObserver.parse(headers: ["ratelimit-limit": "0", "ratelimit-remaining": "0"], now: now),
-            "a zero limit cannot yield a percentage"
-        )
+        let limit = OpenCodeRateLimitObserver.parse(data: data, now: now)
+        XCTAssertEqual(limit?.rolling?.usedPercent, 20)
+        XCTAssertEqual(limit?.weekly?.usedPercent, 30)
+        XCTAssertEqual(limit?.monthly?.usedPercent, 25)
+        XCTAssertNotNil(limit?.monthly?.resetAt)
     }
 
-    func testResetAcceptsBothSecondsRemainingAndUnixTimestamps() throws {
+    func testParseSkipsNonOKAndMissingWindowsButKeepsValidOnes() {
         let now = Date()
+        let data = usagePayload([
+            "rolling": ["status": "rate-limited"],
+            "weekly": ["status": "ok", "percent": 50],
+            "monthly": ["nope": true]
+        ])
 
-        let relative = try XCTUnwrap(OpenCodeRateLimitObserver.parse(
-            headers: ["ratelimit-limit": "10", "ratelimit-remaining": "5", "ratelimit-reset": "3600"],
-            now: now
-        ))
-        XCTAssertNotNil(relative.resetAt)
-        XCTAssertGreaterThan(try XCTUnwrap(relative.resetAt), now)
+        let limit = OpenCodeRateLimitObserver.parse(data: data, now: now)
+        XCTAssertNil(limit?.rolling, "non-ok windows must be dropped")
+        XCTAssertEqual(limit?.weekly?.usedPercent, 50)
+        XCTAssertNil(limit?.monthly)
+    }
 
-        let absolute = try XCTUnwrap(OpenCodeRateLimitObserver.parse(
-            headers: ["ratelimit-limit": "10", "ratelimit-remaining": "5", "ratelimit-reset": "\(Int(now.timeIntervalSince1970) + 7_200)"],
-            now: now
-        ))
-        XCTAssertNotNil(absolute.resetAt)
+    func testParseRejectsMalformedPayloads() {
+        let now = Date()
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: Data("not json".utf8), now: now))
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: Data("{}".utf8), now: now))
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: usagePayload(["rolling": ["status": "ok", "percent": "abc"]]), now: now))
+    }
+
+    func testResetParsesOffsetISOTimestamp() throws {
+        let now = Date()
+        let reset = "2026-08-15T03:00:00Z"
+        let data = usagePayload([
+            "weekly": ["status": "ok", "percent": 40, "resetsAt": reset]
+        ])
+        let limit = try XCTUnwrap(OpenCodeRateLimitObserver.parse(data: data, now: now))
+        XCTAssertEqual(limit.weekly?.resetAt, ISO8601DateFormatter().date(from: reset))
     }
 
     func testExpiredTokenReportsAnActionableReason() async {
@@ -1250,7 +1267,7 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { ExpiredLoader() },
-            makeProbe: { StubOpenCodeProbe(headers: [:]) }
+            makeProbe: { StubOpenCodeProbe(data: Data()) }
         ).observe(settings: settings)
 
         guard case .failure(let reason) = result else { return XCTFail("expected failure") }
@@ -1267,19 +1284,25 @@ final class OpenCodeRateLimitTests: XCTestCase {
         snapshot.updatedAt = now
         snapshot.todayTokens = 5_000
         snapshot = OpenCodeSessionAdapter.applyingRateLimit(
-            OpenCodeRateLimit(usedPercent: 75, resetAt: now.addingTimeInterval(3_600), observedAt: now),
+            OpenCodeRateLimit(
+                rolling: OpenCodeRateLimitWindow(usedPercent: 60, resetAt: now.addingTimeInterval(3_600)),
+                weekly: OpenCodeRateLimitWindow(usedPercent: 75, resetAt: now.addingTimeInterval(86_400)),
+                monthly: OpenCodeRateLimitWindow(usedPercent: 50, resetAt: now.addingTimeInterval(2_592_000)),
+                observedAt: now
+            ),
             to: snapshot
         )
 
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 60)
         XCTAssertEqual(snapshot.weekly?.usedPercent, 75)
-        XCTAssertEqual(snapshot.primaryUsedPercent.map { 100 - $0 }, 25)
+        XCTAssertEqual(snapshot.monthly?.usedPercent, 50)
         XCTAssertEqual(snapshot.confidence, .high)
 
         let observations = CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now)
-        let quota = observations.filter { $0.seriesID.providerWindowID == "rate-limit" }
-        XCTAssertEqual(quota.count, 1)
-        XCTAssertTrue(quota.allSatisfy { $0.comparability == .comparable })
-        XCTAssertTrue(quota.map { CapacityAssessmentService().assess($0, now: now) }
+        let quotaIDs = observations.filter { $0.comparability == .comparable }.map(\.seriesID.providerWindowID)
+        XCTAssertEqual(quotaIDs.sorted(), ["opencode-go-monthly", "opencode-go-rolling", "rate-limit"])
+        XCTAssertTrue(observations.filter { $0.seriesID.providerWindowID == "rate-limit" }
+            .map { CapacityAssessmentService().assess($0, now: now) }
             .allSatisfy { $0.alertEligibility == .percent })
     }
 
@@ -1294,36 +1317,41 @@ final class OpenCodeRateLimitTests: XCTestCase {
         snapshot.updatedAt = now
         snapshot.todayTokens = 5_000
         snapshot = OpenCodeSessionAdapter.applyingRateLimit(
-            OpenCodeRateLimit(usedPercent: 75, resetAt: nil, observedAt: now),
+            OpenCodeRateLimit(
+                rolling: OpenCodeRateLimitWindow(usedPercent: 90, resetAt: nil),
+                weekly: OpenCodeRateLimitWindow(usedPercent: 75, resetAt: nil),
+                monthly: OpenCodeRateLimitWindow(usedPercent: 40, resetAt: nil),
+                observedAt: now
+            ),
             to: snapshot
         )
 
+        let display = MenuBarStatusService().displayWindow(for: snapshot)
+        XCTAssertEqual(display?.usedPercent, 75, "the menu bar must keep the weekly window as headline even when a rolling window exists")
         let segments = MenuBarStatusService().providerMetricsSegments(snapshots: [snapshot], settings: settings, now: now)
         XCTAssertTrue(segments.contains { $0.provider == .opencode && $0.displayValue.contains("25%") },
                       "quota must outrank the token display: \(segments.map(\.displayValue))")
     }
 
-    /// Live checks on 2026-07-29 showed opencode Zen has no usage endpoint and sends no rate-limit
-    /// headers, so the UI must say the quota is unavailable instead of implying it can be fetched.
-    func testSettingsUIStatesQuotaIsNotAvailableYet() throws {
+    func testSettingsUIStatesOfficialUsageAPI() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/TokenApp/Views/SettingsScreen.swift"))
 
         XCTAssertTrue(
-            source.contains("no rate-limit headers, so remaining quota cannot be read yet"),
-            "the UI must state plainly that opencode quota cannot be read today"
+            source.contains("Read opencode Go usage from the official usage API"),
+            "the UI must describe the official usage API"
         )
         XCTAssertTrue(
-            source.contains("spends one authenticated request per refresh and today returns nothing"),
+            source.contains("one authenticated request per refresh"),
             "the cost of enabling the probe must stay disclosed"
         )
         XCTAssertTrue(source.contains("openCodeRateLimitBinding"))
     }
 
     func testProbeReturnsNoQuotaRatherThanAFabricatedPercentage() async {
-        struct EmptyHeaderProbe: OpenCodeRateLimitProbing {
-            func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason> {
-                .success(["content-type": "application/json"])
+        struct EmptyPayloadProbe: OpenCodeRateLimitProbing {
+            func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason> {
+                .success(Data("{}".utf8))
             }
         }
         struct KeyLoader: OpenCodeCredentialLoading {
@@ -1335,13 +1363,13 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { KeyLoader() },
-            makeProbe: { EmptyHeaderProbe() }
+            makeProbe: { EmptyPayloadProbe() }
         ).observe(settings: settings)
 
         guard case .failure(let reason) = result else {
-            return XCTFail("a response without rate-limit headers must not yield a percentage")
+            return XCTFail("a response without usage windows must not yield a percentage")
         }
-        XCTAssertEqual(reason, .headersMissing)
+        XCTAssertEqual(reason, .usageUnavailable)
     }
 
     func testReadsThePlanAPIKeyAndIgnoresNonAPIEntries() throws {

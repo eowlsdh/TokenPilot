@@ -6497,6 +6497,34 @@
         }
       }
     },
+    "Default off. When enabled, one authenticated request per refresh reads rolling, weekly, and monthly usage percentages from opencode.ai; today the probe reports only what the API returns.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default off. When enabled, one authenticated request per refresh reads rolling, weekly, and monthly usage percentages from opencode.ai; today the probe reports only what the API returns."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 꺼짐. 켜면 새로 고침마다 인증 요청 한 번으로 opencode.ai에서 5시간·주간·월간 사용량 퍼센트를 읽습니다. 프로브는 API가 반환하는 값만 표시합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既定はオフです。オンにすると更新ごとに認証リクエスト 1 回で opencode.ai から 5 時間・週次・月次の使用量パーセントを取得します。プローブは API が返す値のみを表示します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认关闭。启用后每次刷新通过一次认证请求从 opencode.ai 读取 5 小时、每周、每月用量百分比；探针仅显示 API 返回的值。"
+          }
+        }
+      }
+    },
     "EXPERIMENTAL / UNOFFICIAL: TokenPilot runs the fixed command `opencodebar provider grok --json` and imports only percentage and reset values.": {
       "localizations": {
         "en": {
@@ -6521,6 +6549,62 @@
           "stringUnit": {
             "state": "translated",
             "value": "实验性 / 非官方：TokenPilot 运行固定命令 `opencodebar provider grok --json`，且只导入百分比和重置值。"
+          }
+        }
+      }
+    },
+    "opencode Go exposes an official usage API. Enabling it reads your remaining plan usage (rolling 5h, weekly, monthly) with one authenticated request per refresh.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opencode Go exposes an official usage API. Enabling it reads your remaining plan usage (rolling 5h, weekly, monthly) with one authenticated request per refresh."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opencode Go가 공식 사용량 API를 제공합니다. 켜면 새로 고침마다 인증 요청 한 번으로 남은 플랜 사용량(5시간, 주간, 월간)을 읽어옵니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opencode Go は公式の使用量 API を提供しています。オンにすると更新ごとに認証リクエスト 1 回で残りのプラン使用量（5 時間・週次・月次）を取得します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "opencode Go 提供官方用量 API。启用后每次刷新通过一次认证请求读取剩余套餐用量（5 小时、每周、每月）。"
+          }
+        }
+      }
+    },
+    "Read opencode Go usage from the official usage API": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read opencode Go usage from the official usage API"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공식 사용량 API에서 opencode Go 사용량 읽기"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "公式の使用量 API から opencode Go の使用量を取得"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从官方用量 API 读取 opencode Go 用量"
           }
         }
       }

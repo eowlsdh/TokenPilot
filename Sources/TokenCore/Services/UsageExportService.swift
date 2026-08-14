@@ -43,7 +43,7 @@ public final class UsageExportService {
         includesCost: Bool = true,
         sort: SortKind? = nil
     ) throws -> Data {
-        let exportUsage = sanitizedUsageForExport(usage)
+        let exportUsage = sanitizedUsageForExport(usage, now: generatedAt)
         switch format {
         case .json:
             return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments, includesCost: includesCost, sort: sort)
@@ -93,7 +93,7 @@ public final class UsageExportService {
         includesCost: Bool = true,
         sort: SortKind? = nil
     ) -> UsageExportPayload {
-        let sanitized = sanitizedUsageForExport(usage)
+        let sanitized = sanitizedUsageForExport(usage, now: generatedAt)
         let exportUsage = includesCost ? sanitized : costStripped(sanitized)
         return UsageExportPayload(
             generatedAt: generatedAt,
@@ -142,12 +142,12 @@ public final class UsageExportService {
         return try encoder.encode(envelope)
     }
 
-    private func sanitizedUsageForExport(_ usage: AggregatedUsage) -> AggregatedUsage {
+    private func sanitizedUsageForExport(_ usage: AggregatedUsage, now: Date = Date()) -> AggregatedUsage {
         let events = usage.events.filter(\.isWebQuotaComparable)
         let snapshots = Provider.allCases.map { provider in
             ProviderSnapshot(provider: provider, events: events.filter { $0.provider == provider })
         }
-        return AggregationService().aggregate(snapshots: snapshots, period: usage.period)
+        return AggregationService().aggregate(snapshots: snapshots, period: usage.period, now: now)
     }
 
     /// Returns a copy of the aggregated usage with every cost field blanked so

@@ -113,6 +113,15 @@ public final class MenuBarStatusService: @unchecked Sendable {
             }
             return snapshot.monthly
         }
+        // opencode Go's official usage API reports rolling (5h), weekly, and monthly windows; the
+        // menu bar keeps the weekly window as its headline value, matching the capacity pipeline's
+        // established `rate-limit` series, while the overview shows all three.
+        if snapshot.provider == .opencode {
+            if let weekly = snapshot.weekly { return weekly }
+            if let fiveHour = snapshot.fiveHour { return fiveHour }
+            if let monthly = snapshot.monthly { return monthly }
+            return nil
+        }
         if let fiveHour = snapshot.fiveHour { return fiveHour }
         if let weekly = snapshot.weekly { return weekly }
         if let dailyRequestsPercent = snapshot.dailyRequestsPercent {
@@ -1367,7 +1376,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
     }
 
     private func representativeForProvider(_ candidates: [Candidate]) -> Candidate? {
-        candidates.sorted(by: isBetterCandidate).first
+        if candidates.contains(where: { $0.snapshot.provider == .opencode }),
+           let weekly = candidates.first(where: { $0.seriesID.hasSuffix("/rate-limit") }) {
+            return weekly
+        }
+        return candidates.sorted(by: isBetterCandidate).first
     }
 
     private func isBetterCandidate(_ lhs: Candidate, _ rhs: Candidate) -> Bool {

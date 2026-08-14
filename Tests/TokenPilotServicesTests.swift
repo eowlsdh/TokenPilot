@@ -1980,8 +1980,11 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCLIExportSectionsEnvelopeTotals() throws {
-        let now = Date()
         let calendar = Calendar.current
+        // Anchor `now` to midday so the -3_600s event can never roll to the previous calendar day
+        // (the suite must pass at any hour, including just after midnight).
+        let today = calendar.startOfDay(for: Date())
+        let now = calendar.date(byAdding: .hour, value: 12, to: today) ?? Date()
         // Events are anchored in the past relative to `now` so the export service's
         // live re-aggregation (`sanitizedUsageForExport`) keeps them in the window.
         let todayEvent = UsageEvent(

@@ -1,25 +1,40 @@
 import Foundation
 
-/// Reason an opencode rate-limit observation could not be produced.
+/// Reason an opencode usage observation could not be produced.
 public enum OpenCodeRateLimitUnavailableReason: String, Error, Sendable, Equatable {
     case consentMissing
     case tokenUnavailable
     case tokenExpired
-    case headersMissing
+    case usageUnavailable
     case transportFailed
     case unauthorized
     case cancelled
 }
 
-/// Provider-reported opencode quota derived from `ratelimit-*` response headers.
-public struct OpenCodeRateLimit: Sendable, Equatable {
+/// One provider-reported opencode usage window.
+public struct OpenCodeRateLimitWindow: Sendable, Equatable {
     public let usedPercent: Int
     public let resetAt: Date?
-    public let observedAt: Date
 
-    public init(usedPercent: Int, resetAt: Date?, observedAt: Date) {
+    public init(usedPercent: Int, resetAt: Date?) {
         self.usedPercent = min(max(usedPercent, 0), 100)
         self.resetAt = resetAt
+    }
+}
+
+/// Provider-reported opencode quota from the official Zen/Go usage API
+/// (`GET /zen/go/v1/usage`). Each plan window is optional because the API may report only the
+/// windows the account actually tracks.
+public struct OpenCodeRateLimit: Sendable, Equatable {
+    public let rolling: OpenCodeRateLimitWindow?
+    public let weekly: OpenCodeRateLimitWindow?
+    public let monthly: OpenCodeRateLimitWindow?
+    public let observedAt: Date
+
+    public init(rolling: OpenCodeRateLimitWindow?, weekly: OpenCodeRateLimitWindow?, monthly: OpenCodeRateLimitWindow?, observedAt: Date) {
+        self.rolling = rolling
+        self.weekly = weekly
+        self.monthly = monthly
         self.observedAt = observedAt
     }
 }
@@ -46,9 +61,9 @@ public protocol OpenCodeCredentialLoading: Sendable {
     func loadCredential() -> OpenCodeCredential?
 }
 
-/// Performs the single probe request and surfaces only the rate-limit headers.
+/// Performs the single probe request and surfaces the raw JSON response body.
 public protocol OpenCodeRateLimitProbing: Sendable {
-    func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason>
+    func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason>
 }
 
 /// Reads opencode's stored access token from its local session database.
@@ -134,19 +149,17 @@ public struct OpenCodeLocalCredentialLoader: OpenCodeCredentialLoading, Sendable
     }
 }
 
-/// Sends one minimal authenticated request and returns only `ratelimit-*` headers.
+/// Sends one minimal authenticated request to the official opencode usage API and returns the raw
+/// JSON response body.
 ///
-/// Verified against the live service on 2026-07-29: `zen/go/v1/models` answers 200 but sends no
-/// `ratelimit-*` headers, and every usage/limits/me/billing path under `zen` returns 404. The
-/// `ratelimit-*` strings in the opencode binary belong to a bundled server-side rate-limit library,
-/// not to its Zen API client, so there is currently no quota surface to read.
+/// Verified against the live service on 2026-08-14: `zen/go/v1/usage` answers 401 without an
+/// Authorization header (the endpoint exists) and returns usage windows when authenticated. The
+/// response is parsed by `OpenCodeRateLimitObserver.parse(data:now:)`.
 ///
-/// This transport is kept because the header contract is the standard one and costs nothing to
-/// support if opencode adds it later. Until then `observe` fails with `headersMissing` rather than
-/// inventing a percentage, and the probe stays disabled by default so no request is spent for
-/// nothing.
+/// This transport stays consent-gated: the probe is disabled by default so no authenticated
+/// request is spent for nothing, and only the usage percentages and reset timestamps are kept.
 public struct OpenCodeRateLimitHTTPProbe: OpenCodeRateLimitProbing, Sendable {
-    public static let endpoint = "https://opencode.ai/zen/go/v1/models"
+    public static let endpoint = "https://opencode.ai/zen/go/v1/usage"
     public static let requestTimeout: TimeInterval = 10
 
     private let session: URLSession
@@ -157,26 +170,20 @@ public struct OpenCodeRateLimitHTTPProbe: OpenCodeRateLimitProbing, Sendable {
         self.endpointOverride = endpointOverride
     }
 
-    public func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason> {
+    public func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason> {
         guard let url = URL(string: endpointOverride ?? Self.endpoint) else { return .failure(.transportFailed) }
 
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
 
         do {
-            let (_, response) = try await session.data(for: request)
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else { return .failure(.transportFailed) }
             if http.statusCode == 401 || http.statusCode == 403 { return .failure(.unauthorized) }
-
-            var headers: [String: String] = [:]
-            for (key, value) in http.allHeaderFields {
-                guard let name = (key as? String)?.lowercased(), let text = value as? String else { continue }
-                if name.hasPrefix("ratelimit-") || name.hasPrefix("x-ratelimit-") {
-                    headers[name] = text
-                }
-            }
-            return headers.isEmpty ? .failure(.headersMissing) : .success(headers)
+            guard (200..<300).contains(http.statusCode) else { return .failure(.usageUnavailable) }
+            return .success(data)
         } catch is CancellationError {
             return .failure(.cancelled)
         } catch {
@@ -212,45 +219,68 @@ public struct OpenCodeRateLimitObserver: Sendable {
         switch await makeProbe().probeRateLimit(credential: credential) {
         case .failure(let reason):
             return .failure(reason)
-        case .success(let headers):
-            guard let limit = Self.parse(headers: headers, now: now) else { return .failure(.headersMissing) }
+        case .success(let data):
+            guard let limit = Self.parse(data: data, now: now) else { return .failure(.usageUnavailable) }
             return .success(limit)
         }
     }
 
-    /// Reads the standard `ratelimit-*` fields. `reset` is seconds-until-reset per RFC draft, but a
-    /// unix timestamp is also accepted because deployments differ.
-    public static func parse(headers: [String: String], now: Date) -> OpenCodeRateLimit? {
-        let normalized = Dictionary(uniqueKeysWithValues: headers.map { ($0.key.lowercased(), $0.value) })
-
-        func value(_ names: [String]) -> Double? {
-            for name in names {
-                if let raw = normalized[name], let parsed = Double(raw.trimmingCharacters(in: .whitespaces)) {
-                    return parsed
-                }
-            }
+    /// Parses the official `GET /zen/go/v1/usage` JSON response:
+    /// `{"usage":{"rolling":{"status":"ok","percent":19.5,"resetsAt":"..."},"weekly":{...},"monthly":{...}}}`
+    /// Each window is optional; the result keeps only recognized windows.
+    public static func parse(data: Data, now: Date) -> OpenCodeRateLimit? {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let usage = root["usage"] as? [String: Any] else {
             return nil
         }
 
-        guard let limit = value(["ratelimit-limit", "x-ratelimit-limit"]), limit > 0,
-              let remaining = value(["ratelimit-remaining", "x-ratelimit-remaining"]) else {
+        let rolling = parseWindow(usage["rolling"], now: now)
+        let weekly = parseWindow(usage["weekly"], now: now)
+        let monthly = parseWindow(usage["monthly"], now: now)
+        guard rolling != nil || weekly != nil || monthly != nil else { return nil }
+
+        return OpenCodeRateLimit(rolling: rolling, weekly: weekly, monthly: monthly, observedAt: now)
+    }
+
+    private static func parseWindow(_ value: Any?, now: Date) -> OpenCodeRateLimitWindow? {
+        guard let window = value as? [String: Any],
+              (window["status"] as? String) == "ok" else {
             return nil
         }
-
-        let used = max(0, min(limit, limit - remaining))
-        let usedPercent = Int(((used / limit) * 100).rounded())
+        let percent: Double?
+        if let number = window["percent"] as? NSNumber {
+            percent = number.doubleValue
+        } else if let text = window["percent"] as? String {
+            percent = Double(text.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            percent = nil
+        }
+        guard let percent, percent.isFinite else { return nil }
 
         var resetAt: Date?
-        if let reset = value(["ratelimit-reset", "x-ratelimit-reset", "ratelimit-reset-after", "x-ratelimit-reset-after"]) {
-            resetAt = reset > 1_000_000_000
-                ? Date(timeIntervalSince1970: reset > 1_000_000_000_000 ? reset / 1_000 : reset)
-                : now.addingTimeInterval(reset)
+        if let text = window["resetsAt"] as? String {
+            resetAt = openCodeUsageDate(text)
         }
-        return OpenCodeRateLimit(usedPercent: usedPercent, resetAt: resetAt, observedAt: now)
+        return OpenCodeRateLimitWindow(usedPercent: Int(percent.rounded()), resetAt: resetAt)
+    }
+
+    /// Accepts offset-qualified ISO timestamps (`2026-08-14T12:00:00+09:00`) and, as a fallback,
+    /// unix seconds.
+    private static func openCodeUsageDate(_ text: String) -> Date? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: trimmed) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: trimmed) { return date }
+        if let seconds = Double(trimmed), seconds > 1_000 {
+            return Date(timeIntervalSince1970: seconds > 1_000_000_000_000 ? seconds / 1_000 : seconds)
+        }
+        return nil
     }
 }
 
 private func openCodeExpiryDate(_ value: String?) -> Date? {
-    guard let value, let raw = Double(value.trimmingCharacters(in: .whitespaces)), raw > 0 else { return nil }
+    guard let value, let raw = Double(value.trimmingCharacters(in: .whitespacesAndNewlines)), raw > 0 else { return nil }
     return Date(timeIntervalSince1970: raw > 1_000_000_000_000 ? raw / 1_000 : raw)
 }
