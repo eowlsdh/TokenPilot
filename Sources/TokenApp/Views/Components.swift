@@ -466,6 +466,10 @@ private extension Provider {
         case .xai: return 0.28
         case .opencode: return 0.34
         case .kiro: return 0.40
+        case .jetbrains: return 0.46
+        case .minimax: return 0.52
+        case .zai: return 0.58
+        case .openrouter: return 0.64
         }
     }
 }

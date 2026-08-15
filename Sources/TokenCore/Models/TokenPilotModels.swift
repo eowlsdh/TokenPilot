@@ -8,6 +8,10 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case xai
     case opencode
     case kiro
+    case jetbrains
+    case minimax
+    case zai
+    case openrouter
 
     public var id: String { rawValue }
 
@@ -20,6 +24,10 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "Grok / xAI API"
         case .opencode: return "opencode"
         case .kiro: return "Kiro"
+        case .jetbrains: return "JetBrains AI Assistant"
+        case .minimax: return "MiniMax"
+        case .zai: return "Z.ai"
+        case .openrouter: return "OpenRouter"
         }
     }
 
@@ -32,6 +40,10 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "xAI"
         case .opencode: return "OC"
         case .kiro: return "Ki"
+        case .jetbrains: return "JB"
+        case .minimax: return "MM"
+        case .zai: return "ZA"
+        case .openrouter: return "OR"
         }
     }
 
@@ -44,6 +56,10 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "server.rack"
         case .opencode: return "chevron.left.forwardslash.chevron.right"
         case .kiro: return "cube.transparent"
+        case .jetbrains: return "cursorarrow.click"
+        case .minimax: return "waveform.path.ecg"
+        case .zai: return "globe"
+        case .openrouter: return "arrow.triangle.branch"
         }
     }
 }
@@ -128,6 +144,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
     case officialStatusline
     case officialTelemetry
     case officialManagementAPI
+    case officialUsageAPI
     case webUsage
     case localLog
     case experimentalCLI
@@ -143,6 +160,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
         case .officialStatusline: return "official statusline"
         case .officialTelemetry: return "official telemetry"
         case .officialManagementAPI: return "official management API (future)"
+        case .officialUsageAPI: return "official usage API"
         case .webUsage: return "limit hints"
         case .localLog: return "local log"
         case .experimentalCLI: return "experimental CLI (unofficial)"
@@ -687,9 +705,66 @@ public struct OpenCodeSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Opt-in consent for the experimental server usage probes (Claude OAuth usage, Codex wham
+/// usage, Grok plan label). Default-off. Each probe reads only an access token from the
+/// provider's own CLI credential file, keeps it in memory for a single request, and never
+/// touches refresh tokens, cookies, or API keys. Results are labeled EXPERIMENTAL/UNOFFICIAL.
+public struct ExperimentalUsageSettings: Codable, Equatable, Sendable {
+    public static let claudeConsentVersionCurrent = 1
+    public static let codexConsentVersionCurrent = 1
+    public static let grokTierConsentVersionCurrent = 1
+
+    public var claudeConsentVersion: Int?
+    public var codexConsentVersion: Int?
+    public var grokTierConsentVersion: Int?
+
+    public var claudeProbeEnabled: Bool {
+        claudeConsentVersion == Self.claudeConsentVersionCurrent
+    }
+
+    public var codexProbeEnabled: Bool {
+        codexConsentVersion == Self.codexConsentVersionCurrent
+    }
+
+    public var grokTierProbeEnabled: Bool {
+        grokTierConsentVersion == Self.grokTierConsentVersionCurrent
+    }
+
+    public init(
+        claudeConsentVersion: Int? = nil,
+        codexConsentVersion: Int? = nil,
+        grokTierConsentVersion: Int? = nil
+    ) {
+        self.claudeConsentVersion = claudeConsentVersion == Self.claudeConsentVersionCurrent ? Self.claudeConsentVersionCurrent : nil
+        self.codexConsentVersion = codexConsentVersion == Self.codexConsentVersionCurrent ? Self.codexConsentVersionCurrent : nil
+        self.grokTierConsentVersion = grokTierConsentVersion == Self.grokTierConsentVersionCurrent ? Self.grokTierConsentVersionCurrent : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case claudeConsentVersion
+        case codexConsentVersion
+        case grokTierConsentVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            claudeConsentVersion: try container.decodeIfPresent(Int.self, forKey: .claudeConsentVersion),
+            codexConsentVersion: try container.decodeIfPresent(Int.self, forKey: .codexConsentVersion),
+            grokTierConsentVersion: try container.decodeIfPresent(Int.self, forKey: .grokTierConsentVersion)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(claudeConsentVersion, forKey: .claudeConsentVersion)
+        try container.encodeIfPresent(codexConsentVersion, forKey: .codexConsentVersion)
+        try container.encodeIfPresent(grokTierConsentVersion, forKey: .grokTierConsentVersion)
+    }
+}
+
 public struct XAISettings: Codable, Equatable, Sendable {
     public static let experimentalOAuthWeeklyConsentVersionCurrent = 1
-
     public var teamID: String
     public var managementAPIKeyConfigured: Bool
     public var managementAPILookbackDays: Int
@@ -1201,6 +1276,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var xaiEnabled: Bool
     public var opencodeEnabled: Bool
     public var kiroEnabled: Bool
+    public var jetbrainsEnabled: Bool
+    public var minimaxEnabled: Bool
+    public var zaiEnabled: Bool
+    public var openrouterEnabled: Bool
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
@@ -1229,6 +1308,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var xAI: XAISettings
     public var kiro: KiroSettings
     public var openCode: OpenCodeSettings
+    public var experimentalUsage: ExperimentalUsageSettings
     public var showMockDataWhenDisconnected: Bool
     public var challengeTargetTokens: Int
     public var launchAtLogin: Bool
@@ -1254,6 +1334,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         xaiEnabled: Bool = false,
         opencodeEnabled: Bool = true,
         kiroEnabled: Bool = true,
+        jetbrainsEnabled: Bool = false,
+        minimaxEnabled: Bool = false,
+        zaiEnabled: Bool = false,
+        openrouterEnabled: Bool = false,
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
@@ -1274,6 +1358,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         xAI: XAISettings = XAISettings(),
         kiro: KiroSettings = KiroSettings(),
         openCode: OpenCodeSettings = OpenCodeSettings(),
+        experimentalUsage: ExperimentalUsageSettings = ExperimentalUsageSettings(),
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
@@ -1303,6 +1388,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.xaiEnabled = xaiEnabled
         self.opencodeEnabled = opencodeEnabled
         self.kiroEnabled = kiroEnabled
+        self.jetbrainsEnabled = jetbrainsEnabled
+        self.minimaxEnabled = minimaxEnabled
+        self.zaiEnabled = zaiEnabled
+        self.openrouterEnabled = openrouterEnabled
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
@@ -1331,6 +1420,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.xAI = xAI
         self.kiro = kiro
         self.openCode = openCode
+        self.experimentalUsage = experimentalUsage
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
         self.challengeTargetTokens = challengeTargetTokens
         self.launchAtLogin = launchAtLogin
@@ -1395,6 +1485,10 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case xaiEnabled
         case opencodeEnabled
         case kiroEnabled
+        case jetbrainsEnabled
+        case minimaxEnabled
+        case zaiEnabled
+        case openrouterEnabled
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
@@ -1423,6 +1517,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case xAI
         case kiro
         case openCode
+        case experimentalUsage
         case showMockDataWhenDisconnected
         case challengeTargetTokens
         case launchAtLogin
@@ -1853,6 +1948,10 @@ public struct CapacitySeriesID: Codable, Equatable, Hashable, Sendable, CustomSt
         SeriesSemantics(providers: [.kiro], providerWindowID: "credits-used", kind: .balance, unit: .credits, duration: .none, resetCapable: false),
         SeriesSemantics(providers: [.kiro], providerWindowID: "usage-limits", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
         SeriesSemantics(providers: [.kiro], providerWindowID: "context-percent", kind: .context, unit: .percent, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.jetbrains], providerWindowID: "jetbrains-quota", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.minimax], providerWindowID: "minimax-token-plan", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.zai], providerWindowID: "zai-tokens-limit", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.openrouter], providerWindowID: "openrouter-credits", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
         SeriesSemantics(providers: Set(Provider.allCases), providerWindowID: "context", kind: .context, unit: .tokens, duration: .none, resetCapable: false)
     ]
 

@@ -268,6 +268,10 @@ struct SettingsScreen: View {
             codexProviderSetup
             openCodeProviderSetup
             kiroProviderSetup
+            jetbrainsProviderSetup
+            minimaxProviderSetup
+            zaiProviderSetup
+            openRouterProviderSetup
         }
     }
 
@@ -521,6 +525,15 @@ struct SettingsScreen: View {
                 .buttonStyle(.bordered)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
                 .buttonStyle(.bordered)
+            TokenPilotSeparator()
+            Text(model.t("Experimental server usage"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Read Claude usage from the official OAuth usage API"), isOn: claudeUsageProbeBinding)
+            Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Claude credentials file, keeps it in memory for one request, and never reads the refresh token."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -706,6 +719,15 @@ struct SettingsScreen: View {
                 .font(.caption2)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+            TokenPilotSeparator()
+            Text(model.t("Experimental plan label"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Show Grok plan label from the CLI settings API"), isOn: grokTierProbeBinding)
+            Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Grok auth file, keeps it in memory for one request, and never reads the refresh token."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -842,6 +864,97 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
                 .buttonStyle(.bordered)
+            TokenPilotSeparator()
+            Text(model.t("Experimental server usage"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Toggle(model.t("Read Codex usage from the ChatGPT backend API"), isOn: codexUsageProbeBinding)
+            Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Codex auth file, keeps it in memory for one request, and never reads the refresh token."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var jetbrainsProviderSetup: some View {
+        providerSetupDisclosure(provider: .jetbrains, title: model.t("JetBrains AI Assistant")) {
+            Text(model.t("Reads the JetBrains IDE quota cache (AIAssistantQuotaManager2.xml) with no credentials."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("Shows the local AI Assistant quota from your latest JetBrains IDE session. No account or API key is needed."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.jetbrains) } }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    private var minimaxProviderSetup: some View {
+        providerSetupDisclosure(provider: .minimax, title: model.t("MiniMax")) {
+            Text(model.t("Official Token Plan API"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            SecureField(model.hasSavedMinimaxAPIKey ? model.t("Saved API key hidden") : model.t("MiniMax API Key"), text: $model.minimaxAPIKeyInput)
+                .textFieldStyle(.roundedBorder)
+            Text(model.t("TokenPilot stores only its own MiniMax API key Keychain item and calls the official /v1/token_plan/remains endpoint."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                Button(model.t("Save API Key")) { model.saveAPIKey(for: .minimax) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+                Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .minimax) }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.hasSavedMinimaxAPIKey)
+                Button(model.t("Check Connection")) { Task { await model.checkConnection(.minimax) } }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var zaiProviderSetup: some View {
+        providerSetupDisclosure(provider: .zai, title: model.t("Z.ai")) {
+            Text(model.t("Official GLM plan usage API"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            SecureField(model.hasSavedZAIAPIKey ? model.t("Saved API key hidden") : model.t("Z.ai API Key"), text: $model.zaiAPIKeyInput)
+                .textFieldStyle(.roundedBorder)
+            Text(model.t("TokenPilot stores only its own Z.ai API key Keychain item and calls the official usage quota endpoint."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                Button(model.t("Save API Key")) { model.saveAPIKey(for: .zai) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+                Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .zai) }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.hasSavedZAIAPIKey)
+                Button(model.t("Check Connection")) { Task { await model.checkConnection(.zai) } }
+                    .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var openRouterProviderSetup: some View {
+        providerSetupDisclosure(provider: .openrouter, title: model.t("OpenRouter")) {
+            Text(model.t("Official credits API"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            SecureField(model.hasSavedOpenRouterAPIKey ? model.t("Saved API key hidden") : model.t("OpenRouter API Key"), text: $model.openrouterAPIKeyInput)
+                .textFieldStyle(.roundedBorder)
+            Text(model.t("TokenPilot stores only its own OpenRouter API key Keychain item and calls the official /api/v1/credits endpoint."))
+                .font(.caption2)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            HStack {
+                Button(model.t("Save API Key")) { model.saveAPIKey(for: .openrouter) }
+                    .buttonStyle(.borderedProminent)
+                    .tint(TokenPilotDesign.calm)
+                Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .openrouter) }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.hasSavedOpenRouterAPIKey)
+                Button(model.t("Check Connection")) { Task { await model.checkConnection(.openrouter) } }
+                    .buttonStyle(.bordered)
+            }
         }
     }
 
@@ -1212,6 +1325,50 @@ struct SettingsScreen: View {
                     primaryAction: model.t("Check Connection"),
                     copyText: nil,
                     onPrimary: { Task { await model.checkConnection(.kiro) } },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("JetBrains AI Assistant"),
+                    status: model.sourceStatusText(.jetbrains),
+                    statusColor: model.sourceStatusColor(.jetbrains),
+                    detail: model.sourceDetailText(.jetbrains),
+                    explanation: model.t("Reads the local JetBrains IDE quota cache. No account or API key is needed."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.jetbrains) } },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("MiniMax"),
+                    status: model.sourceStatusText(.minimax),
+                    statusColor: model.sourceStatusColor(.minimax),
+                    detail: model.sourceDetailText(.minimax),
+                    explanation: model.t("Save a MiniMax API key to read the official Token Plan usage."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.minimax) } },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("Z.ai"),
+                    status: model.sourceStatusText(.zai),
+                    statusColor: model.sourceStatusColor(.zai),
+                    detail: model.sourceDetailText(.zai),
+                    explanation: model.t("Save a Z.ai API key to read the official GLM plan usage."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.zai) } },
+                    onCopy: nil
+                )
+                GuideCard(
+                    title: model.t("OpenRouter"),
+                    status: model.sourceStatusText(.openrouter),
+                    statusColor: model.sourceStatusColor(.openrouter),
+                    detail: model.sourceDetailText(.openrouter),
+                    explanation: model.t("Save an OpenRouter API key to read the official credits API."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.openrouter) } },
                     onCopy: nil
                 )
                 GuideCard(
@@ -1668,7 +1825,7 @@ struct SettingsScreen: View {
     }
 
     private var providerSetupOrder: [Provider] {
-        [.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro]
+        [.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter]
     }
 
     private var firstAttentionProvider: Provider? {
@@ -1701,9 +1858,16 @@ struct SettingsScreen: View {
             return model.t("No secret required")
         case .codex:
             return model.t("No Codex token stored")
-        case .claude, .gemini, .opencode, .kiro:
+        case .minimax, .zai, .openrouter:
+            return hasSavedAPIKey(provider) ? model.t("API key saved") : model.t("API key required")
+        case .claude, .gemini, .opencode, .kiro, .jetbrains:
             return model.t("No secret required")
         }
+    }
+
+    private func hasSavedAPIKey(_ provider: Provider) -> Bool {
+        guard let stored = try? KeychainService().readSecret(account: "\(provider.rawValue).apiKey") else { return false }
+        return !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func providerSecretColor(_ provider: Provider) -> Color {
@@ -1794,6 +1958,45 @@ struct SettingsScreen: View {
             set: { enabled in
                 model.settings.openCode = OpenCodeSettings(
                     rateLimitConsentVersion: enabled ? OpenCodeSettings.rateLimitConsentVersionCurrent : nil
+                )
+            }
+        )
+    }
+
+    private var claudeUsageProbeBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.experimentalUsage.claudeProbeEnabled },
+            set: { enabled in
+                model.settings.experimentalUsage = ExperimentalUsageSettings(
+                    claudeConsentVersion: enabled ? ExperimentalUsageSettings.claudeConsentVersionCurrent : nil,
+                    codexConsentVersion: model.settings.experimentalUsage.codexConsentVersion,
+                    grokTierConsentVersion: model.settings.experimentalUsage.grokTierConsentVersion
+                )
+            }
+        )
+    }
+
+    private var codexUsageProbeBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.experimentalUsage.codexProbeEnabled },
+            set: { enabled in
+                model.settings.experimentalUsage = ExperimentalUsageSettings(
+                    claudeConsentVersion: model.settings.experimentalUsage.claudeConsentVersion,
+                    codexConsentVersion: enabled ? ExperimentalUsageSettings.codexConsentVersionCurrent : nil,
+                    grokTierConsentVersion: model.settings.experimentalUsage.grokTierConsentVersion
+                )
+            }
+        )
+    }
+
+    private var grokTierProbeBinding: Binding<Bool> {
+        Binding(
+            get: { model.settings.experimentalUsage.grokTierProbeEnabled },
+            set: { enabled in
+                model.settings.experimentalUsage = ExperimentalUsageSettings(
+                    claudeConsentVersion: model.settings.experimentalUsage.claudeConsentVersion,
+                    codexConsentVersion: model.settings.experimentalUsage.codexConsentVersion,
+                    grokTierConsentVersion: enabled ? ExperimentalUsageSettings.grokTierConsentVersionCurrent : nil
                 )
             }
         )

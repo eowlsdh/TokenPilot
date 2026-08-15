@@ -447,6 +447,38 @@ enum TokenPilotDesign {
                 darkHighContrast: rgb(0.830, 0.630, 1.000)
             )
             .color(contrast: contrast)
+        case .jetbrains:
+            return SemanticColorDefinition(
+                light: rgb(0.850, 0.330, 0.130),
+                dark: rgb(1.000, 0.520, 0.260),
+                lightHighContrast: rgb(0.670, 0.200, 0.050),
+                darkHighContrast: rgb(1.000, 0.620, 0.360)
+            )
+            .color(contrast: contrast)
+        case .minimax:
+            return SemanticColorDefinition(
+                light: rgb(0.000, 0.560, 0.600),
+                dark: rgb(0.160, 0.760, 0.800),
+                lightHighContrast: rgb(0.000, 0.420, 0.460),
+                darkHighContrast: rgb(0.330, 0.850, 0.880)
+            )
+            .color(contrast: contrast)
+        case .zai:
+            return SemanticColorDefinition(
+                light: rgb(0.230, 0.400, 0.780),
+                dark: rgb(0.420, 0.620, 1.000),
+                lightHighContrast: rgb(0.120, 0.270, 0.620),
+                darkHighContrast: rgb(0.570, 0.730, 1.000)
+            )
+            .color(contrast: contrast)
+        case .openrouter:
+            return SemanticColorDefinition(
+                light: rgb(0.620, 0.220, 0.220),
+                dark: rgb(0.900, 0.380, 0.360),
+                lightHighContrast: rgb(0.480, 0.110, 0.110),
+                darkHighContrast: rgb(0.960, 0.520, 0.470)
+            )
+            .color(contrast: contrast)
         }
     }
 

@@ -754,8 +754,13 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func reconcileSeparateMetricItems(segments: [MenuBarProviderMetricSegment]) {
-        let providers = Set(segments.compactMap(\.provider))
-        for provider in Array(separateMetricItems.keys) where !providers.contains(provider) {
+        // Only remove an item when the provider is no longer selected for the menu bar at all.
+        // A segment can be momentarily absent during refresh (snapshot sets publish in stages),
+        // and dropping the NSStatusItem then would leave the provider invisible until restart.
+        let enabledProviders = Set(segments.compactMap(\.provider))
+            .union(separateMetricItems.keys)
+            .filter { model.settings.effectiveMenuBarMetricProviders.contains($0) }
+        for provider in Array(separateMetricItems.keys) where !enabledProviders.contains(provider) {
             removeSeparateMetricItem(for: provider)
         }
 

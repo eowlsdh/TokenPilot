@@ -423,6 +423,9 @@ final class TokenMonitorTests: XCTestCase {
         settings.menuBarShowsSecondaryProvider = true
         settings.xAI.usageSource = .experimentalOpenCodeBarCLI
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        for provider in [Provider.jetbrains, .minimax, .zai, .openrouter] {
+            _ = settings.setProviderEnabled(provider, isEnabled: true)
+        }
 
         let experimental = ProviderSnapshot(
             provider: .xai,
@@ -450,10 +453,10 @@ final class TokenMonitorTests: XCTestCase {
 
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(segments.count, Provider.allCases.count)
-        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro])
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
-            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO"]
+            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO", "JETBRAINS", "MINIMAX", "ZAI", "OPENROUTER"]
         )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
@@ -1074,7 +1077,10 @@ final class TokenMonitorTests: XCTestCase {
     func testMenuBarRunsLiveRefreshWithoutWaitingForPopoverOpen() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertTrue(source.contains("private let menuBarTickInterval: TimeInterval = 1"))
+        // The tick drives digest checks and the data-refresh gate on a fixed short interval; it must
+        // not require the popover to be open. 30s bounds how often @Published menuBarNow can trigger
+        // a full status-item rebuild (which previously spun the CPU at 1s).
+        XCTAssertTrue(source.contains("private let menuBarTickInterval: TimeInterval = 30"))
         XCTAssertTrue(source.contains("private var dataRefreshInterval: TimeInterval"))
         XCTAssertTrue(source.contains("TimeInterval(max(settings.refreshIntervalSeconds, 5))"))
         XCTAssertTrue(source.contains("RunLoop.main.add(timer, forMode: .common)"))
@@ -1126,7 +1132,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
         XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
         XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
-        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter]"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .opencode, title: model.t(\"opencode\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .kiro, title: model.t(\"Kiro\"))"))
 

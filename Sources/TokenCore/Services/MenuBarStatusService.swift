@@ -528,6 +528,10 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case .xai: return "GROK CTX"
         case .opencode: return "OPENCODE"
         case .kiro: return "KIRO"
+        case .jetbrains: return "JETBRAINS"
+        case .minimax: return "MINIMAX"
+        case .zai: return "ZAI"
+        case .openrouter: return "OPENROUTER"
         }
     }
 
@@ -783,7 +787,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return "\(target.shortName) · \(localized("Unavailable", language: settings.localization.language))"
         case .xai:
             return targetedXAIStatusTitle(settings: settings, language: settings.localization.language)
-        case .claude, .gemini, .deepseek, .opencode, .kiro:
+        case .claude, .gemini, .deepseek, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter:
             return "\(target.shortName) · \(modeLabel)"
         }
     }

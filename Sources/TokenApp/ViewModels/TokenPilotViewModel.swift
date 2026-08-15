@@ -60,9 +60,15 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
+    @Published var minimaxAPIKeyInput = ""
+    @Published var zaiAPIKeyInput = ""
+    @Published var openrouterAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
+    @Published var hasSavedMinimaxAPIKey = false
+    @Published var hasSavedZAIAPIKey = false
+    @Published var hasSavedOpenRouterAPIKey = false
     /// Transient presentation-only experimental OAuth weekly result. Never persisted or sunk.
     @Published private(set) var xaiOAuthResult: XAIRefreshResult?
     @Published private var menuBarNow = Date()
@@ -103,7 +109,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let capacityPresentationMapper = CapacityPresentationMapper()
     private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
     private let capacityAlertVisibilityBuilder = CapacityAlertVisibilityBuilder()
-    private let menuBarTickInterval: TimeInterval = 1
+    private let menuBarTickInterval: TimeInterval = 30
     private var dataRefreshInterval: TimeInterval {
         TimeInterval(max(settings.refreshIntervalSeconds, 5))
     }
@@ -230,12 +236,27 @@ final class TokenPilotViewModel: ObservableObject {
             if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
                 settings.deepseekAPIKeyConfigured = hasDeepSeekKey
             }
+            hasSavedMinimaxAPIKey = ((try? keychain.readSecret(account: Self.minimaxAPIKeyAccount)) ?? nil) != nil
+            hasSavedZAIAPIKey = ((try? keychain.readSecret(account: Self.zaiAPIKeyAccount)) ?? nil) != nil
+            hasSavedOpenRouterAPIKey = ((try? keychain.readSecret(account: Self.openRouterAPIKeyAccount)) ?? nil) != nil
         }
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
+    static let minimaxAPIKeyAccount = "minimax.apiKey"
+    static let zaiAPIKeyAccount = "zai.apiKey"
+    static let openRouterAPIKeyAccount = "openrouter.apiKey"
+
+    static func apiKeyAccount(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyAccount
+        case .zai: return zaiAPIKeyAccount
+        case .openrouter: return openRouterAPIKeyAccount
+        default: return deepSeekAPIKeyAccount
+        }
+    }
     private var menuBarOAuthResult: XAIRefreshResult? {
         guard let result = xaiOAuthResult,
               result.selectedOutcome == .oauthWeekly,
@@ -1983,6 +2004,76 @@ final class TokenPilotViewModel: ObservableObject {
             settings.deepseekAPIKeyConfigured = false
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func apiKeyInput(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyInput
+        case .zai: return zaiAPIKeyInput
+        case .openrouter: return openrouterAPIKeyInput
+        default: return deepSeekAPIKeyInput
+        }
+    }
+
+    func setAPIKeyInput(_ value: String, for provider: Provider) {
+        switch provider {
+        case .minimax: minimaxAPIKeyInput = value
+        case .zai: zaiAPIKeyInput = value
+        case .openrouter: openrouterAPIKeyInput = value
+        default: deepSeekAPIKeyInput = value
+        }
+    }
+
+    func hasSavedAPIKey(for provider: Provider) -> Bool {
+        switch provider {
+        case .minimax: return hasSavedMinimaxAPIKey
+        case .zai: return hasSavedZAIAPIKey
+        case .openrouter: return hasSavedOpenRouterAPIKey
+        default: return hasSavedDeepSeekAPIKey
+        }
+    }
+
+    func saveAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let key = apiKeyInput(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            bannerMessage = t("Enter an API key first.")
+            return
+        }
+        do {
+            try keychain.saveSecret(key, account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = true
+            case .zai: hasSavedZAIAPIKey = true
+            case .openrouter: hasSavedOpenRouterAPIKey = true
+            default: break
+            }
+            bannerMessage = t("API key saved in TokenPilot Keychain item.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func deleteAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            try keychain.deleteSecret(account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = false
+            case .zai: hasSavedZAIAPIKey = false
+            case .openrouter: hasSavedOpenRouterAPIKey = false
+            default: break
+            }
+            bannerMessage = t("API key deleted.")
         } catch {
             bannerMessage = localizedErrorMessage(error)
         }

@@ -191,17 +191,31 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
     /// Local context metadata is treated as stale when the newest valid signals file is older than this.
     private static let staleThreshold: TimeInterval = 15 * 60
     private let sessionRoots: [URL]
+    private let makeTierProbe: (@Sendable () -> GrokTierProbe)?
 
-    public init(sessionRoots: [URL]? = nil) {
+    public init(sessionRoots: [URL]? = nil, makeTierProbe: (@Sendable () -> GrokTierProbe)? = nil) {
         self.sessionRoots = sessionRoots ?? [
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".grok", isDirectory: true)
                 .appendingPathComponent("sessions", isDirectory: true)
         ]
+        self.makeTierProbe = makeTierProbe
     }
 
     public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
-        let snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+        var snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+
+        if settings.grokTierProbeEnabled, let makeProbe = makeTierProbe {
+            switch await makeProbe().probe(settings: settings) {
+            case .success(let tier):
+                snapshot.statusMessage = "EXPERIMENTAL · UNOFFICIAL · \(tier)"
+                snapshot.isExperimental = true
+                snapshot.updatedAt = now
+            case .failure:
+                break
+            }
+        }
+
         return ProviderRefreshResult(
             snapshot: snapshot,
             capacityObservations: [],
@@ -1109,16 +1123,100 @@ public enum CapacityObservationFactory {
             if let contextPercent = snapshot.contextWindowUsedPercent,
                let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent),
                let value = try? CapacityValue(usedPercent: contextPercent),
+                let observation = try? CapacityObservation(
+                 seriesID: series,
+                 observedAt: observedAt,
+                 value: value,
+                 authority: .localDerived,
+                 stability: .supported,
+                 consent: .notRequired,
+                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                 comparability: .incomparable,
+                 parserRevision: "kiroContextV1",
+                 now: observedAt
+                ) {
+                 observations.append(observation)
+             }
+        case .jetbrains:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "jetbrains-quota",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .jetbrains, providerWindowID: "jetbrains-quota", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
                let observation = try? CapacityObservation(
                 seriesID: series,
                 observedAt: observedAt,
+                resetAt: weekly.resetAt,
                 value: value,
-                authority: .localDerived,
+                authority: .providerReported,
                 stability: .supported,
                 consent: .notRequired,
                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
-                comparability: .incomparable,
-                parserRevision: "kiroContextV1",
+                comparability: .comparable,
+                parserRevision: "jetbrainsQuotaV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .minimax:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "minimax-token-plan",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .minimax, providerWindowID: "minimax-token-plan", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "minimaxTokenPlanV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .zai:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "zai-tokens-limit",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .zai, providerWindowID: "zai-tokens-limit", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "zaiTokensLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .openrouter:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "openrouter-credits",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .openrouter, providerWindowID: "openrouter-credits", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "openrouterCreditsV1",
                 now: observedAt
                ) {
                 observations.append(observation)
@@ -1448,16 +1546,20 @@ public final class UsageStore: @unchecked Sendable {
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
 
         return [
-            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
+            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots, makeUsageProbe: { ClaudeOAuthUsageProbe() }),
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
-            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
+            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots, makeUsageProbe: { CodexOAuthUsageProbe() }),
             DeepSeekBalanceAdapter(),
-            GrokLocalSignalsAdapter(),
+            GrokLocalSignalsAdapter(makeTierProbe: { GrokTierProbe() }),
             OpenCodeSessionAdapter(
                 databaseURLs: openCodeDatabases.isEmpty ? nil : openCodeDatabases,
                 legacyMessageRoots: openCodeLegacyRoots.isEmpty ? nil : openCodeLegacyRoots
             ),
-            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots)
+            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots),
+            JetBrainsAIAssistantAdapter(),
+            MiniMaxTokenPlanAdapter(),
+            ZAIUsageAdapter(),
+            OpenRouterAdapter()
         ]
     }
 

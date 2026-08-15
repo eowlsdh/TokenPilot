@@ -41,7 +41,7 @@ public final class DefaultPathResolver: Sendable {
             return resolveOpenCodePaths()
         case .kiro:
             return resolveKiroPaths()
-        case .deepseek, .xai:
+        case .deepseek, .xai, .jetbrains, .minimax, .zai, .openrouter:
             return []
         }
     }
