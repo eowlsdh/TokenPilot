@@ -115,6 +115,16 @@ enum TokenPilotDesign {
                 contrast: contrast
             )
         }
+
+        func nsColor(contrast: ColorSchemeContrast? = nil) -> NSColor {
+            TokenPilotDesign.semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        }
     }
 
     enum Typography {
@@ -270,9 +280,13 @@ enum TokenPilotDesign {
     )
     static let textSecondary = textSecondaryDefinition.color()
 
+    // Tertiary carries 10-11pt labels, so it is held to the 4.5:1 small-text bar on
+    // every surface it lands on. The previous values measured 3.47:1 (light, card),
+    // 3.01:1 (light, muted card) and 4.44:1 (dark, card); these clear 4.5:1 against
+    // card, background, and muted card in both appearances.
     private static let textTertiaryDefinition = SemanticColorDefinition(
-        light: rgb(0.520, 0.540, 0.590),
-        dark: rgb(0.478, 0.478, 0.518),
+        light: rgb(0.408, 0.424, 0.464),
+        dark: rgb(0.526, 0.526, 0.570),
         lightHighContrast: rgb(0.305, 0.330, 0.390),
         darkHighContrast: rgb(0.690, 0.700, 0.750)
     )
@@ -488,9 +502,22 @@ enum TokenPilotDesign {
 
     private static func riskColor(_ percent: Int?, contrast: ColorSchemeContrast?) -> Color {
         guard let percent else { return textSecondaryDefinition.color(contrast: contrast) }
-        if percent >= 85 { return dangerDefinition.color(contrast: contrast) }
-        if percent >= 70 { return warningDefinition.color(contrast: contrast) }
-        return calmDefinition.color(contrast: contrast)
+        switch CapacityRisk.forUsedPercent(percent) {
+        case .critical: return dangerDefinition.color(contrast: contrast)
+        case .warning: return warningDefinition.color(contrast: contrast)
+        default: return calmDefinition.color(contrast: contrast)
+        }
+    }
+
+    /// Risk color for AppKit drawing, from the same definitions and thresholds the
+    /// popover uses, so one window never reads amber in the menu bar and calm inside.
+    static func riskNSColor(_ risk: CapacityRisk) -> NSColor {
+        switch risk {
+        case .critical: return dangerDefinition.nsColor()
+        case .warning: return warningDefinition.nsColor()
+        case .normal: return calmDefinition.nsColor()
+        case .informational, .stale, .unavailable: return textSecondaryDefinition.nsColor()
+        }
     }
 
     static func quotaRiskColor(_ risk: CapacityRisk, eligibility: CapacityAlertEligibility) -> Color {
@@ -554,7 +581,28 @@ enum TokenPilotDesign {
         darkHighContrast: NSColor? = nil,
         contrast: ColorSchemeContrast? = nil
     ) -> Color {
-        Color(NSColor(name: nil) { appearance in
+        Color(
+            semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        )
+    }
+
+    /// The same dynamic color as `semanticColor`, for AppKit surfaces (the menu bar
+    /// draws with `NSColor`, and drawing it with `.systemRed`/`.systemOrange` was how
+    /// the menu bar ended up ignoring the high-contrast variants).
+    private static func semanticNSColor(
+        light: NSColor,
+        dark: NSColor,
+        lightHighContrast: NSColor? = nil,
+        darkHighContrast: NSColor? = nil,
+        contrast: ColorSchemeContrast? = nil
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
             let match = appearance.bestMatch(from: [
                 .accessibilityHighContrastDarkAqua,
                 .darkAqua,
@@ -576,7 +624,7 @@ enum TokenPilotDesign {
             default:
                 return useHighContrast ? (lightHighContrast ?? light) : light
             }
-        })
+        }
     }
 
     private static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, alpha: CGFloat = 1.0) -> NSColor {

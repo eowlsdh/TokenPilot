@@ -58,8 +58,9 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | 🧰 **Grok/xAI source** | Local context reads only numeric metadata from `~/.grok/sessions/**/signals.json` (never `auth.json`/tokens/prompts/responses). A separate default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly feature may, after explicit consent, read only the selected access token and expiry from fixed `~/.grok/auth.json` for one billing request; the token stays memory-only and is never logged, stored, diagnosed, or exported. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
 | 🖥️ **CLI export + summary** | `TokenPilot export --format json|csv [--capacity]` and `TokenPilot summary` print local usage from the terminal with the same redaction rules as GUI export. |
-| ⚡ **Configurable auto-refresh** | Pick the local-source refresh cadence (15 sec to 15 min) from Settings; menu bar tick stays live. |
-| 📉 **Menu bar sparkline** | Provider-metrics blocks draw a mini remaining-percent trend from the stored limit history, for the same window as the displayed value. |
+| ⚡ **Configurable auto-refresh** | Pick the local-source refresh cadence (15 sec to 15 min) from Settings; menu bar tick stays live, and waking the Mac from sleep refreshes right away instead of showing pre-sleep numbers. |
+| 📉 **Menu bar trend or bar** | Provider-metrics blocks draw a mini remaining-percent trend from the stored limit history, a filled remaining bar, or nothing — pick one in Settings. |
+| 🧵 **Terminal status line** | `TokenPilot statusline` prints one compact line (model, tightest remaining quota with its reset countdown, today's tokens and cost) for a CLI status line, ccusage-style. |
 | 🎯 **Daily goal** | Set a local daily token target (Settings > General); Overview shows today's progress with a bar and honest local-activity labeling. |
 | 📬 **Weekly digest** | Optional opt-in summary of this week's local usage every Monday at 09:00, delivered as a macOS notification while TokenPilot is running. |
 | ⌘⇧Space **global shortcut** | Optional opt-in shortcut opens the popover from anywhere; right-click the menu bar item for **Copy summary**. |
@@ -111,7 +112,17 @@ TokenPilot export --format csv --period today --out usage.csv
 
 # Include the latest capacity evidence per series in the JSON payload
 TokenPilot export --period today --capacity
+
+# Print one compact line for an editor status line
+TokenPilot statusline
+
+# Pick and order the segments, restrict them to one provider, drop the colors
+TokenPilot statusline --components capacity,block,burn --provider claude --no-color
 ```
+
+`statusline` renders `model | quota | today | cost` on a single line for a CLI status line (ccusage `statusline` style). It reads the caller's session JSON from stdin when one is piped in — only the model name and session cost are used — and otherwise renders from stored local usage alone. `--components` picks and orders segments from `model,capacity,today,cost,block,burn,session`, `--provider` restricts the capacity segment and local totals to one provider, `--timezone` decides which day `today` and the 5-hour block belong to, and `--no-color` drops the ANSI colors (`NO_COLOR` does the same). Only fresh provider-reported quota windows are shown as percentages; evidence older than its freshness policy is marked `·S` rather than presented as current, and paths, project labels, and session identifiers are never printed.
+
+To use it with Claude Code, set it as your status line command first, then install the TokenPilot bridge from **Settings → Setup Guide → Connect Claude Code** — the bridge captures Claude's limits and chains to the command that was already configured, so both keep working. **Settings → Setup Guide → Terminal status line** copies the exact command for this build.
 
 `export` accepts `--format json|csv` (default `json`), `--period today|last7Days|thisMonth` (default `last7Days`), `--out <path>`, and `--capacity` (append latest stored capacity evidence). Output never includes prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
 

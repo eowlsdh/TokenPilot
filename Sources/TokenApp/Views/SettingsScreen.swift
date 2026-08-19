@@ -369,6 +369,18 @@ struct SettingsScreen: View {
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar providers"))
 
+                            Picker(model.t("Menu bar trend"), selection: menuBarTrendStyleBinding) {
+                                Text(model.t("Trend line")).tag(MenuBarTrendStyle.sparkline)
+                                Text(model.t("Remaining bar")).tag(MenuBarTrendStyle.bar)
+                                Text(model.t("No trend")).tag(MenuBarTrendStyle.off)
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityLabel(model.t("Menu bar trend"))
+                            Text(model.t("Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now."))
+                                .font(.caption2)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+
                             VStack(alignment: .leading, spacing: 6) {
                                 Text(model.t("Menu bar providers"))
                                     .font(.caption.weight(.semibold))
@@ -1262,6 +1274,16 @@ struct SettingsScreen: View {
                     onCopy: { model.copyToClipboard(claudeStatuslineSnippet) }
                 )
                 GuideCard(
+                    title: model.t("Terminal status line"),
+                    status: model.t("CLI"),
+                    detail: "TokenPilot statusline",
+                    explanation: model.t("Renders one TokenPilot line — model, remaining quota, today's tokens and cost — in a CLI status line. Copy the command, set it as your status line, then install the Claude bridge above so it keeps chaining to this line."),
+                    primaryAction: model.t("Copy"),
+                    copyText: nil,
+                    onPrimary: { model.copyToClipboard(statuslineCommandSnippet) },
+                    onCopy: nil
+                )
+                GuideCard(
                     title: model.t("Connect Antigravity CLI"),
                     status: model.sourceStatusText(.gemini),
                     statusColor: model.sourceStatusColor(.gemini),
@@ -1912,6 +1934,12 @@ struct SettingsScreen: View {
             set: { model.setMenuBarPrimaryMetric($0) }
         )
     }
+    private var menuBarTrendStyleBinding: Binding<MenuBarTrendStyle> {
+        Binding(
+            get: { model.settings.menuBarTrendStyle },
+            set: { model.setMenuBarTrendStyle($0) }
+        )
+    }
     private var menuBarProviderGroupingBinding: Binding<MenuBarProviderGrouping> {
         Binding(
             get: { model.settings.menuBarProviderGrouping },
@@ -2108,6 +2136,18 @@ struct SettingsScreen: View {
         }
     }
 
+
+    /// The status line command, quoted for a shell and pointing at this build's own executable.
+    ///
+    /// Copied on demand rather than rendered into the card: the setup guide shows
+    /// the command by name and keeps the resolved local path out of the UI.
+    private var statuslineCommandSnippet: String {
+        "\"\(statuslineExecutablePath)\" statusline"
+    }
+
+    private var statuslineExecutablePath: String {
+        Bundle.main.executableURL?.path ?? "/Applications/TokenPilot.app/Contents/MacOS/TokenMonitor"
+    }
 
     private var claudeStatuslineSnippet: String {
         """

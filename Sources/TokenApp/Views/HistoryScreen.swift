@@ -813,14 +813,7 @@ private struct HistoryMonthlyBar: View {
     }
 
     private func monthName(_ month: Int?) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM"
-        guard let month, (1...12).contains(month) else { return "" }
-        var components = DateComponents()
-        components.month = month
-        let date = Calendar(identifier: .gregorian).date(from: components) ?? Date()
-        return formatter.string(from: date)
+        LocalizedDateLabels.monthAbbreviation(monthNumber: month, language: model.settings.localization.language)
     }
 }
 
@@ -853,13 +846,6 @@ struct HistoryHeatmapCard: View {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    private static let monthFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM"
         return formatter
     }()
 
@@ -946,14 +932,15 @@ struct HistoryHeatmapCard: View {
         guard column >= 0, column < weeks.count else { return nil }
         guard let firstCell = weeks[column].first else { return nil }
         guard let date = Self.dateFormatter.date(from: firstCell.dateKey) else { return nil }
+        let language = model.settings.localization.language
         let previousMonth: String?
         if column > 0, column - 1 < weeks.count, let prevCell = weeks[column - 1].first,
            let prevDate = Self.dateFormatter.date(from: prevCell.dateKey) {
-            previousMonth = Self.monthFormatter.string(from: prevDate)
+            previousMonth = LocalizedDateLabels.monthAbbreviation(for: prevDate, language: language)
         } else {
             previousMonth = nil
         }
-        let month = Self.monthFormatter.string(from: date)
+        let month = LocalizedDateLabels.monthAbbreviation(for: date, language: language)
         return month == previousMonth ? nil : month
     }
 
@@ -1434,10 +1421,7 @@ struct HistoryFiveHourBlocksCard: View {
     }
 
     private func blockTimeText(_ start: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "MMM d HH:mm"
-        return formatter.string(from: start)
+        LocalizedDateLabels.dayAndTime(for: start, language: model.settings.localization.language)
     }
 
     private func blockWidth(_ block: FiveHourUsageBlock, peak: Int) -> Double {

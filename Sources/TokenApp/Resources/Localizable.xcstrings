@@ -19074,6 +19074,278 @@
           }
         }
       }
+    },
+    "Menu bar trend": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "메뉴 막대 추세"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menu bar trend"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜单栏趋势"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メニューバーのトレンド"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "菜單欄趨勢"
+          }
+        }
+      }
+    },
+    "Trend line": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추세선"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trend line"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趋势线"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トレンドライン"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趨勢線"
+          }
+        }
+      }
+    },
+    "Remaining bar": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잔여 막대"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remaining bar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余量条"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残量バー"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩餘量條"
+          }
+        }
+      }
+    },
+    "No trend": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "표시 안 함"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No trend"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不显示"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "表示しない"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不顯示"
+          }
+        }
+      }
+    },
+    "Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "추세선은 저장된 잔여 퍼센트 기록을 그리고, 막대는 지금 표시된 잔여 퍼센트만큼 채웁니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趋势线绘制已保存的剩余百分比历史，条形则填充当前显示的剩余百分比。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トレンドラインは保存された残量パーセントの履歴を描き、バーは現在表示中の残量パーセントを塗りつぶします。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "趨勢線繪製已保存的剩餘百分比歷史，條形則填充當前顯示的剩餘百分比。"
+          }
+        }
+      }
+    },
+    "Terminal status line": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "터미널 상태 표시줄"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal status line"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端状态栏"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルのステータスライン"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終端狀態列"
+          }
+        }
+      }
+    },
+    "CLI": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CLI"
+          }
+        }
+      }
+    },
+    "Renders one TokenPilot line — model, remaining quota, today's tokens and cost — in a CLI status line. Copy the command, set it as your status line, then install the Claude bridge above so it keeps chaining to this line.": {
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "모델, 잔여 한도, 오늘 토큰과 비용을 한 줄로 CLI 상태 표시줄에 출력합니다. 명령을 복사해 상태 표시줄로 지정한 뒤 위의 Claude 브리지를 설치하면 이 줄이 계속 이어집니다."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renders one TokenPilot line — model, remaining quota, today's tokens and cost — in a CLI status line. Copy the command, set it as your status line, then install the Claude bridge above so it keeps chaining to this line."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 CLI 状态栏中以一行显示模型、剩余配额、今日 tokens 与费用。复制命令并设为状态栏命令，然后安装上方的 Claude 桥接，它会继续串联这一行。"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "モデル、残りクォータ、今日のトークンとコストを 1 行で CLI のステータスラインに表示します。コマンドをコピーしてステータスラインに設定し、上の Claude ブリッジをインストールするとこの行が引き続き表示されます。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 CLI 狀態列中以一行顯示模型、剩餘配額、今日 tokens 與費用。複製命令並設為狀態列命令，然後安裝上方的 Claude 橋接，它會繼續串聯這一行。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

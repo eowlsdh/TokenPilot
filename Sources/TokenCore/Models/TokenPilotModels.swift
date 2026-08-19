@@ -75,6 +75,21 @@ public enum MenuBarProviderGrouping: String, Codable, CaseIterable, Sendable {
     case separate = "Separate"
 }
 
+/// What the provider-metrics menu bar block draws under its percentage.
+///
+/// Benchmarked against the icon styles in Claude Usage Tracker (battery,
+/// progress bar, percentage only) and ClaudeBar's color-coded quota bars: a
+/// trend line answers "which way is it going", a bar answers "how much is left"
+/// at a glance, and some users want neither.
+public enum MenuBarTrendStyle: String, Codable, CaseIterable, Sendable {
+    /// Remaining-percent trend line from stored limit samples (the original behavior).
+    case sparkline = "Sparkline"
+    /// Filled bar showing the remaining percent currently displayed.
+    case bar = "Bar"
+    /// Percentage text only.
+    case off = "Off"
+}
+
 /// The weekday that starts a local weekly window (budget progress, weekly digest).
 ///
 /// Benchmarked against TokenBar's "Week Start Day" setting and ccusage's week
@@ -1289,6 +1304,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarPrimaryMetric: MenuBarPrimaryMetric
     public var menuBarSecondaryDisplayTarget: Provider?
     public var menuBarShowsSecondaryProvider: Bool
+    public var menuBarTrendStyle: MenuBarTrendStyle
     public var claudeStatusFilePath: String
     public var claudeStatusFileBookmarkData: Data?
     public var geminiTelemetryLogPath: String
@@ -1368,6 +1384,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarPrimaryMetric: MenuBarPrimaryMetric = .remainingPercent,
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
+        menuBarTrendStyle: MenuBarTrendStyle = .sparkline,
         challengeTargetTokens: Int = 10_000,
         launchAtLogin: Bool = false,
         refreshIntervalSeconds: Int = 60,
@@ -1401,6 +1418,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarPrimaryMetric = menuBarPrimaryMetric
         self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
+        self.menuBarTrendStyle = menuBarTrendStyle
         self.claudeStatusFilePath = claudeStatusFilePath
         self.claudeStatusFileBookmarkData = claudeStatusFileBookmarkData
         self.geminiTelemetryLogPath = geminiTelemetryLogPath
@@ -1498,6 +1516,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarPrimaryMetric
         case menuBarSecondaryDisplayTarget
         case menuBarShowsSecondaryProvider
+        case menuBarTrendStyle
         case claudeStatusFilePath
         case claudeStatusFileBookmarkData
         case geminiTelemetryLogPath
@@ -1572,6 +1591,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarPrimaryMetric: Self.decodeMenuBarPrimaryMetric(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
+            menuBarTrendStyle: try container.decodeIfPresent(MenuBarTrendStyle.self, forKey: .menuBarTrendStyle) ?? .sparkline,
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,

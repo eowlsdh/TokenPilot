@@ -594,9 +594,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
               let percent = candidate.usedPercent else {
             return .normal
         }
-        if percent >= 85 { return .critical }
-        if percent >= 70 { return .warning }
-        return .normal
+        switch CapacityRisk.forUsedPercent(percent) {
+        case .critical: return .critical
+        case .warning: return .warning
+        default: return .normal
+        }
     }
 
     public func shouldShowStatusDot(

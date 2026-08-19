@@ -22,6 +22,8 @@ final class TokenPilotViewModel: ObservableObject {
         case manual
         case automaticTimer
         case settings
+        /// The Mac woke from sleep, where timers were suspended and stored values went stale.
+        case systemWake
     }
 
     enum Screen: String, CaseIterable, Identifiable {
@@ -101,6 +103,7 @@ final class TokenPilotViewModel: ObservableObject {
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
     private let capacityEvidenceStore = CapacityEvidenceStore()
+    private let statuslineSnapshotStore = StatuslineSnapshotStore()
     private let capacityRuntimeStore = CapacityRuntimeStore()
     private let capacityAlertRuleStore = CapacityAlertRuleStore()
     private let capacityAlertDeliveryStore = CapacityAlertDeliveryStore()
@@ -848,6 +851,10 @@ final class TokenPilotViewModel: ObservableObject {
         settings.menuBarProviderGrouping = grouping
     }
 
+    func setMenuBarTrendStyle(_ style: MenuBarTrendStyle) {
+        settings.menuBarTrendStyle = style
+    }
+
     func setMenuBarMetricProvider(_ provider: Provider, isVisible: Bool) {
         var next = settings
         guard !isVisible || next.isProviderEnabled(provider) else { return }
@@ -950,6 +957,33 @@ final class TokenPilotViewModel: ObservableObject {
         // MenuBarExtra can rebuild content during Settings ↔ Overview navigation.
         // Keep this lifecycle hook lightweight; app-level timer/init/manual actions own provider refreshes.
         menuBarNow = Date()
+    }
+
+    /// Publishes the capacity windows the `statusline` CLI reads on every editor prompt.
+    ///
+    /// Off the main actor and best effort: the status line is a convenience, and
+    /// a failed write only means the CLI falls back to the full evidence store.
+    private func writeStatuslineSnapshot(assessments: [CapacityAssessment], observedAt: Date) {
+        let windows = StatuslineService.windows(from: assessments)
+        guard !windows.isEmpty else { return }
+        let snapshot = StatuslineSnapshot(generatedAt: observedAt, windows: windows)
+        let store = statuslineSnapshotStore
+        Task.detached(priority: .utility) {
+            store.save(snapshot)
+        }
+    }
+
+    /// Refreshes right after the Mac wakes, unless a refresh just finished.
+    ///
+    /// Timers do not fire during sleep, so without this the menu bar keeps a
+    /// pre-sleep percentage and a stale reset countdown until the next tick.
+    func refreshAfterSystemWake(now: Date = Date()) async {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
+        menuBarNow = now
+        guard WakeRefreshGate.shouldRefresh(lastRefreshFinishedAt: lastRefreshFinishedAt, now: now) else { return }
+        await refresh(reason: .systemWake)
     }
 
     private func handleAutoRefreshTick() async {
@@ -1186,6 +1220,8 @@ final class TokenPilotViewModel: ObservableObject {
             return .automaticTimer
         case .settings:
             return .settingsChanged
+        case .systemWake:
+            return .automaticTimer
         }
     }
     private func processCapacity(result: UsageStore.Result, settingsAtStart: AppSettings) async {
@@ -1207,6 +1243,7 @@ final class TokenPilotViewModel: ObservableObject {
             : []
         capacityAssessments = assessments
         capacityPresentations = presentationEnabled ? assessments.map(capacityPresentationMapper.map) : []
+        writeStatuslineSnapshot(assessments: assessments, observedAt: result.observedAt)
 
         let officialDeepSeekBalance = result.snapshots.first {
             $0.provider == .deepseek && $0.dataSource == .officialTelemetry && !$0.isStale

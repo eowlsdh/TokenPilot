@@ -28,6 +28,7 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false, provider: Provider? = nil, model: String? = nil, sort: SortKind? = nil)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil)
     case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil)
+    case statusline(components: [StatuslineComponent], provider: Provider? = nil, colorized: Bool = true, timeZone: TimeZone? = nil)
     case help
 }
 
@@ -42,6 +43,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidTimezone(String)
     case invalidWeekStartDay(String)
     case invalidCombination(String)
+    case invalidComponents(String)
     case missingValue(forFlag: String)
 
     public var errorDescription: String? {
@@ -66,6 +68,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported week start day '\(day)'. Use sunday, monday, tuesday, wednesday, thursday, friday, or saturday."
         case .invalidCombination(let message):
             return message
+        case .invalidComponents(let components):
+            return "Unsupported statusline components '\(components)'. Use a comma-separated list of model, capacity, today, cost, block, burn, or session."
         case .missingValue(let flag):
             return "Missing value for '\(flag)'."
         }
@@ -77,7 +81,8 @@ public enum TokenPilotCLIService {
     public static func isCLIInvocation(_ arguments: [String]) -> Bool {
         guard let first = arguments.first else { return false }
         return first == "export" || first == "summary" || first == "stats" || first == "report" ||
-            first == "audit" || first == "blocks" || first == "help" || first == "-h" || first == "--help"
+            first == "audit" || first == "blocks" || first == "statusline" || first == "help" ||
+            first == "-h" || first == "--help"
     }
 
     public static func parse(arguments: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -97,6 +102,8 @@ public enum TokenPilotCLIService {
             return parseAudit(Array(arguments.dropFirst()))
         case "blocks":
             return parseBlocks(Array(arguments.dropFirst()))
+        case "statusline":
+            return parseStatusline(Array(arguments.dropFirst()))
         case "export":
             return parseExport(Array(arguments.dropFirst()))
         default:
@@ -349,6 +356,50 @@ public enum TokenPilotCLIService {
             return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         }
         return .success(.summary(period: period, since: since, until: until, days: days, timeZone: timeZone, includesBreakdown: includesBreakdown, project: project, sections: sections, weekStartDay: weekStartDay, includesCost: includesCost, includesJSON: includesJSON, instances: instances, includesCSV: includesCSV, includesMarkdown: includesMarkdown, provider: provider, model: model, sort: sort))
+    }
+
+    /// Parses `statusline` flags (ccusage `statusline` style).
+    ///
+    /// Colors are on by default because an editor status line renders ANSI, and
+    /// off automatically when the caller sets `NO_COLOR` or passes `--no-color`.
+    private static func parseStatusline(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
+        var components = StatuslineComponent.defaultComponents
+        var provider: Provider?
+        var colorized = true
+        var timeZone: TimeZone?
+        var index = 0
+        while index < flags.count {
+            let flag = flags[index]
+            switch flag {
+            case "--no-color":
+                colorized = false
+            case "--components":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = StatuslineService.parseComponents(flags[index]) else {
+                    return .failure(.invalidComponents(flags[index]))
+                }
+                components = parsed
+            case "--provider":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = Provider(rawValue: flags[index]) else {
+                    return .failure(.invalidProvider(flags[index]))
+                }
+                provider = parsed
+            case "--timezone":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                guard let parsed = TimeZone(identifier: flags[index]) else {
+                    return .failure(.invalidTimezone(flags[index]))
+                }
+                timeZone = parsed
+            default:
+                return .failure(.unknownCommand(flag))
+            }
+            index += 1
+        }
+        return .success(.statusline(components: components, provider: provider, colorized: colorized, timeZone: timeZone))
     }
 
     private static func parseBlocks(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -842,6 +893,7 @@ public enum TokenPilotCLIService {
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances] [--sort tokens|requests|cost]
           TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--provider <name>] [--model <name>]
           TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--provider <name>]
+          TokenPilot statusline [--components model,capacity,today,cost,block,burn,session] [--provider <name>] [--timezone <zone>] [--no-color]
           TokenPilot help
 
         export writes locally stored usage events as JSON (default) or CSV to stdout, or to <path>
@@ -915,9 +967,19 @@ public enum TokenPilotCLIService {
         localizes the reset times, --provider restricts the blocks to one provider (ccusage --provider style),
         and --since/--until/--days scope the observations. --json emits them as
         structured JSON, and --csv emits the same blocks as rows for spreadsheets, and --md emits them
-        as a Markdown document for notes and PR descriptions. Exports, reports,
+        as a Markdown document for notes and PR descriptions. statusline prints one compact line
+        for an editor status line (ccusage statusline style): add it to Claude Code's statusLine
+        command and it renders on every prompt. It reads the caller's session JSON from stdin when
+        one is piped in (model name and session cost only) and otherwise renders from stored local
+        usage alone. --components picks and orders the segments (model, capacity, today, cost,
+        block, burn, session; default model,capacity,today,cost), --provider restricts the capacity
+        segment and local totals to one provider, --timezone decides which day "today" and the
+        5-hour block belong to, and --no-color drops the ANSI colors (also dropped when NO_COLOR is
+        set). The capacity segment only shows fresh, provider-reported quota windows, so local
+        activity is never printed as a limit. Exports, reports,
         and audits never
         include prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
+        The statusline never prints paths, project labels, or session identifiers.
         """
     }
 

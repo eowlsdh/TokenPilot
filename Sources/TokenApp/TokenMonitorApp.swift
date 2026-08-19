@@ -404,6 +404,22 @@ private enum TokenPilotCLIRunner {
                 print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             }
             return 0
+        case .success(.statusline(let components, let provider, let colorized, let timeZone)):
+            let input = StatuslineService.parseInput(readPipedStandardInput())
+            let events = UsageHistoryStore().loadEvents()
+            let windows = await loadStatuslineWindows()
+            print(
+                StatuslineService.render(
+                    input: input,
+                    events: events,
+                    windows: windows,
+                    components: components,
+                    provider: provider,
+                    colorized: colorized && colorsAllowed(),
+                    calendar: cliCalendar(for: timeZone)
+                )
+            )
+            return 0
         case .success(.export(let format, let period, let outputPath, let includesCapacity, let since, let until, let days, let includesCost, let timeZone, let project, let weekStartDay, let sections, let instances, let provider, let model, let sort)):
             return await runExport(
                 format: format,
@@ -424,6 +440,21 @@ private enum TokenPilotCLIRunner {
                 sort: sort
             )
         }
+    }
+
+    /// Reads stdin only when something is piped in.
+    ///
+    /// A status line command is also run by hand from a terminal, where stdin is
+    /// the TTY and reading it would block until the user pressed Ctrl-D.
+    private static func readPipedStandardInput() -> Data {
+        guard isatty(FileHandle.standardInput.fileDescriptor) == 0 else { return Data() }
+        return FileHandle.standardInput.readDataToEndOfFile()
+    }
+
+    /// Honors the NO_COLOR convention shared by ccusage and other status line tools.
+    private static func colorsAllowed() -> Bool {
+        let noColor = ProcessInfo.processInfo.environment["NO_COLOR"] ?? ""
+        return noColor.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// Calendar for CLI window math: the requested timezone, or the system one when unset.
@@ -599,6 +630,18 @@ private enum TokenPilotCLIRunner {
         }
     }
 
+    /// Capacity windows for the status line, cheapest source first.
+    ///
+    /// The snapshot the app writes after each refresh decodes in milliseconds;
+    /// decoding the whole evidence store takes long enough to be felt on every
+    /// editor prompt, so it is only used when no snapshot exists yet.
+    private static func loadStatuslineWindows() async -> [StatuslineCapacityWindow] {
+        if let snapshot = StatuslineSnapshotStore().load() {
+            return snapshot.windows
+        }
+        return StatuslineService.windows(from: await loadLatestCapacityAssessments())
+    }
+
     private static func loadLatestCapacityAssessments() async -> [CapacityAssessment] {
         let snapshot = await CapacityEvidenceStore().loadSnapshot()
         let now = Date()
@@ -627,6 +670,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private var separateMetricItems: [Provider: MetricStatusItem] = [:]
     private weak var contextMenuButton: NSStatusBarButton?
     private var modelObservation: AnyCancellable?
+    private var wakeObservation: NSObjectProtocol?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyEventHandlerRef: EventHandlerRef?
     private static let hotKeySignature: OSType = 0x54504B50
@@ -650,6 +694,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.setActivationPolicy(.accessory)
         configurePopover()
         configureStatusItem()
+        observeSystemWake()
         modelObservation = model.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async {
                 self?.updateStatusItem()
@@ -657,9 +702,27 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Refreshes on wake so the menu bar never shows pre-sleep percentages or a reset countdown that already elapsed.
+    private func observeSystemWake() {
+        wakeObservation = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.model.refreshAfterSystemWake()
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         model.shutdownExperimentalOAuthWeekly()
         unregisterGlobalHotkey()
+        if let wakeObservation {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObservation)
+        }
+        wakeObservation = nil
     }
 
     private func configurePopover() {
@@ -736,11 +799,16 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         let view: ProviderMetricsMenuBarNSView
         if let combinedMetricsView {
             view = combinedMetricsView
-            view.update(segments: segments, accessibilityLabel: model.menuBarAccessibilityLabel)
+            view.update(
+                segments: segments,
+                accessibilityLabel: model.menuBarAccessibilityLabel,
+                trendStyle: model.settings.menuBarTrendStyle
+            )
         } else {
             view = ProviderMetricsMenuBarNSView(
                 segments: segments,
-                accessibilityLabel: model.menuBarAccessibilityLabel
+                accessibilityLabel: model.menuBarAccessibilityLabel,
+                trendStyle: model.settings.menuBarTrendStyle
             )
             view.translatesAutoresizingMaskIntoConstraints = false
             button.addSubview(view)
@@ -767,11 +835,12 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         for segment in segments {
             guard let provider = segment.provider else { continue }
             if let metricItem = separateMetricItems[provider] {
-                metricItem.update(segment: segment)
+                metricItem.update(segment: segment, trendStyle: model.settings.menuBarTrendStyle)
             } else {
                 separateMetricItems[provider] = MetricStatusItem(
                     statusItem: makeStatusItem(),
-                    segment: segment
+                    segment: segment,
+                    trendStyle: model.settings.menuBarTrendStyle
                 )
             }
         }
@@ -958,11 +1027,12 @@ private final class MetricStatusItem {
     let statusItem: NSStatusItem
     private let metricsView: ProviderMetricsMenuBarNSView
 
-    init(statusItem: NSStatusItem, segment: MenuBarProviderMetricSegment) {
+    init(statusItem: NSStatusItem, segment: MenuBarProviderMetricSegment, trendStyle: MenuBarTrendStyle) {
         self.statusItem = statusItem
         metricsView = ProviderMetricsMenuBarNSView(
             segments: [segment],
-            accessibilityLabel: segment.accessibilityLabel
+            accessibilityLabel: segment.accessibilityLabel,
+            trendStyle: trendStyle
         )
         guard let button = statusItem.button else { return }
         button.title = ""
@@ -978,8 +1048,8 @@ private final class MetricStatusItem {
         statusItem.length = metricsView.intrinsicContentSize.width + 8
     }
 
-    func update(segment: MenuBarProviderMetricSegment) {
-        metricsView.update(segments: [segment], accessibilityLabel: segment.accessibilityLabel)
+    func update(segment: MenuBarProviderMetricSegment, trendStyle: MenuBarTrendStyle) {
+        metricsView.update(segments: [segment], accessibilityLabel: segment.accessibilityLabel, trendStyle: trendStyle)
         statusItem.button?.toolTip = segment.accessibilityLabel
         statusItem.button?.setAccessibilityLabel(segment.accessibilityLabel)
         statusItem.length = metricsView.intrinsicContentSize.width + 8
@@ -1000,10 +1070,12 @@ private final class ProviderMetricsMenuBarNSView: NSView {
 
     private var segments: [MenuBarProviderMetricSegment]
     private var spokenLabel: String
+    private var trendStyle: MenuBarTrendStyle
 
-    init(segments: [MenuBarProviderMetricSegment], accessibilityLabel: String) {
+    init(segments: [MenuBarProviderMetricSegment], accessibilityLabel: String, trendStyle: MenuBarTrendStyle) {
         self.segments = segments
         spokenLabel = accessibilityLabel
+        self.trendStyle = trendStyle
         super.init(frame: .zero)
         setAccessibilityElement(false)
         frame.size = intrinsicContentSize
@@ -1027,10 +1099,11 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         return NSSize(width: widths.reduce(0, +) + spacing, height: Self.viewHeight)
     }
 
-    func update(segments: [MenuBarProviderMetricSegment], accessibilityLabel: String) {
-        guard self.segments != segments || spokenLabel != accessibilityLabel else { return }
+    func update(segments: [MenuBarProviderMetricSegment], accessibilityLabel: String, trendStyle: MenuBarTrendStyle) {
+        guard self.segments != segments || spokenLabel != accessibilityLabel || self.trendStyle != trendStyle else { return }
         self.segments = segments
         spokenLabel = accessibilityLabel
+        self.trendStyle = trendStyle
         invalidateIntrinsicContentSize()
         frame.size = intrinsicContentSize
         needsDisplay = true
@@ -1058,12 +1131,22 @@ private final class ProviderMetricsMenuBarNSView: NSView {
                 font: Self.valueFont,
                 color: valueColor(segment.displayValue)
             )
-            if segment.sparklineValues.count >= 2 {
-                drawSparkline(
-                    segment.sparklineValues,
-                    in: NSRect(x: x, y: Self.viewHeight - 3, width: width, height: 3),
-                    color: valueColor(segment.displayValue)
-                )
+            let trendRect = NSRect(x: x, y: Self.viewHeight - 3, width: width, height: 3)
+            switch trendStyle {
+            case .sparkline:
+                if segment.sparklineValues.count >= 2 {
+                    drawSparkline(
+                        segment.sparklineValues,
+                        in: trendRect,
+                        color: valueColor(segment.displayValue)
+                    )
+                }
+            case .bar:
+                if let fraction = MenuBarGaugeService.remainingFraction(displayValue: segment.displayValue) {
+                    drawBar(fraction: fraction, in: trendRect, color: valueColor(segment.displayValue))
+                }
+            case .off:
+                break
             }
             x += width + Self.segmentSpacing
         }
@@ -1085,6 +1168,18 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         path.lineWidth = 1
         color.withAlphaComponent(0.85).setStroke()
         path.stroke()
+    }
+
+    /// Remaining-quota bar: a dim full-width track with the remaining share filled in.
+    private func drawBar(fraction: Double, in rect: NSRect, color: NSColor) {
+        let track = NSRect(x: rect.minX + 1, y: rect.minY + 1, width: max(rect.width - 2, 0), height: rect.height - 1)
+        guard track.width > 0 else { return }
+        color.withAlphaComponent(0.22).setFill()
+        NSBezierPath(rect: track).fill()
+        let filledWidth = track.width * CGFloat(min(max(fraction, 0), 1))
+        guard filledWidth > 0 else { return }
+        color.withAlphaComponent(0.9).setFill()
+        NSBezierPath(rect: NSRect(x: track.minX, y: track.minY, width: filledWidth, height: track.height)).fill()
     }
 
     private func segmentWidth(_ segment: MenuBarProviderMetricSegment) -> CGFloat {
@@ -1114,14 +1209,14 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         )
     }
 
+    /// Menu bar value color: the app's shared risk thresholds and the app's own
+    /// palette, so the block agrees with the popover both on when to warn and on
+    /// which hue means "healthy", and follows Increase Contrast like everything else.
     private func valueColor(_ value: String) -> NSColor {
-        guard let percentText = value.split(separator: "%").first,
-              let percent = Int(percentText.filter(\.isNumber)) else {
+        guard let remaining = MenuBarGaugeService.remainingPercent(displayValue: value) else {
             return .secondaryLabelColor
         }
-        if percent <= 20 { return .systemRed }
-        if percent <= 50 { return .systemOrange }
-        return .systemBlue
+        return TokenPilotDesign.riskNSColor(CapacityRisk.forRemainingPercent(remaining))
     }
 }
 
