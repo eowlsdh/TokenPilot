@@ -33,7 +33,23 @@ public struct KiroLocalSessionAdapter: ProviderAdapter, Sendable {
             return ProviderSnapshot(provider: .kiro, confidence: .low, statusMessage: "Disabled")
         }
 
-        let roots = sessionRoots ?? Self.defaultSessionRoots()
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .kiro,
+            settings: settings,
+            defaults: sessionRoots ?? Self.defaultSessionRoots()
+        )
+        defer { resolution.release() }
+
+        guard !resolution.needsUserGrant else {
+            return ProviderSnapshot(
+                provider: .kiro,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Choose the Kiro folder to grant access"
+            )
+        }
+
+        let roots = resolution.roots
         let rootExists = roots.contains { FileManager.default.fileExists(atPath: $0.path) }
         guard rootExists else {
             return ProviderSnapshot(

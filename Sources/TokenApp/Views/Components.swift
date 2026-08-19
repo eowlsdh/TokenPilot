@@ -27,6 +27,9 @@ struct TokenPilotSectionHeader<Accessory: View>: View {
                     .font(TokenPilotDesign.Typography.sectionTitle)
                     .foregroundStyle(palette.text(.primary))
                     .lineLimit(1)
+                    // Korean, Japanese, and Chinese titles run longer than the English source;
+                    // shrinking a little beats clipping a word.
+                    .minimumScaleFactor(0.85)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -100,6 +103,7 @@ struct CompactProviderStatusRow<Trailing: View>: View {
                     .font(TokenPilotDesign.Typography.cardTitle)
                     .foregroundStyle(palette.text(.primary))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -312,6 +316,126 @@ struct DisclosureCard<Summary: View, Content: View>: View {
 }
 
 
+/// A collapsible group of cards under one header.
+///
+/// Unlike `DisclosureCard` this adds no card chrome of its own, so the cards inside keep their own
+/// surface instead of nesting a card in a card. History and Overview use it to keep a long screen
+/// scannable: a reader sees the group titles first and opens only the one they came for.
+struct CollapsibleSection<Content: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+    var badge: String? = nil
+    var initiallyExpanded: Bool = false
+    private let content: Content
+
+    @State private var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String? = nil,
+        badge: String? = nil,
+        initiallyExpanded: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.badge = badge
+        self.initiallyExpanded = initiallyExpanded
+        self.content = content()
+        self._isExpanded = State(initialValue: initiallyExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+            header
+            if isExpanded {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+                    content
+                }
+                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var header: some View {
+        Button {
+            toggle()
+        } label: {
+            HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(TokenPilotDesign.Typography.glyph)
+                        .foregroundStyle(palette.text(.secondary))
+                        .accessibilityHidden(true)
+                }
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                    Text(title)
+                        .font(TokenPilotDesign.Typography.sectionTitle)
+                        .foregroundStyle(palette.text(.primary))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(TokenPilotDesign.Typography.caption)
+                            .foregroundStyle(palette.text(.secondary))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: TokenPilotDesign.Spacing.sm)
+
+                if let badge, !badge.isEmpty {
+                    Text(badge)
+                        .font(TokenPilotDesign.Typography.micro)
+                        .monospacedDigit()
+                        .foregroundStyle(palette.text(.secondary))
+                        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+                        .padding(.vertical, 2)
+                        .background(palette.surface(.chip), in: Capsule())
+                        .accessibilityHidden(true)
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.text(.secondary))
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+            .frame(minHeight: 28)
+        }
+        .buttonStyle(.plain)
+        .focusable()
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel(badge.map { "\(title), \($0)" } ?? title)
+        .accessibilityValue(localized(isExpanded ? "Expanded" : "Collapsed", language: language))
+        .accessibilityHint(localized("Show or hide this group", language: language))
+    }
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    private func toggle() {
+        if reduceMotion {
+            isExpanded.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.toggle()
+            }
+        }
+    }
+}
+
 struct TokenPilotSeparator: View {
     var axis: Axis = .horizontal
     var length: CGFloat? = nil
@@ -416,10 +540,10 @@ struct TokenPilotBrandMark: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
                 .fill(palette.surface(.cardElevated))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
                         .stroke(
                             palette.borderColor(),
                             lineWidth: palette.borderWidth()
@@ -470,6 +594,7 @@ private extension Provider {
         case .minimax: return 0.52
         case .zai: return 0.58
         case .openrouter: return 0.64
+        case .commandcode: return 0.70
         }
     }
 }
@@ -713,7 +838,7 @@ struct StatusBadge: View {
         HStack(spacing: TokenPilotDesign.Spacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.chipGlyph)
                     .accessibilityHidden(true)
             }
 
@@ -803,11 +928,11 @@ struct SemanticChip: View {
         HStack(spacing: TokenPilotDesign.Spacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.chipGlyph)
                     .accessibilityHidden(true)
             } else if differentiateWithoutColor, let glyph = role?.differentiationGlyph {
                 Image(systemName: glyph)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(TokenPilotDesign.Typography.chipGlyph.weight(.bold))
                     .accessibilityHidden(true)
             }
 

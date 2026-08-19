@@ -45,7 +45,7 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Glanceable provider percentages** | Native two-row `NSStatusItem` blocks keep each selected provider's remaining percentage visible; show them separately or combined. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, and Kiro credits in one place. |
+| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, Kiro credits, and Command Code session tokens/cost in one place. |
 | 🧮 **Per-model breakdown** | The History screen ranks every model by tokens for the selected period, with request counts and estimated cost where the provider reports it. Included in JSON export under `localActivity.modelBreakdown`. |
 | 📈 **7-day trend** | The History screen charts the last seven days of local token activity, highlighting the peak day and counting active days. Inactive days stay visible as zero so gaps are obvious. |
 | 📁 **Per-project breakdown** | opencode History ranks workspaces by tokens, requests, and cost for the selected period using only workspace folder names; never included in exports. |
@@ -141,6 +141,7 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 | **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json`; optional default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly usage after explicit consent | Local context shows remaining context (`100 - contextWindowUsage`), not subscription quota. Manual weekly truth has precedence. Experimental OAuth weekly is presentation-only and may break. |
 | **opencode** | Read-only local session store: `~/.local/share/opencode/opencode.db` (or `opencode-next.db`), with pre-1.2 `storage/message` JSON as fallback. Honors `XDG_DATA_HOME` | High for token counts and cost: opencode records exact per-message values. Local activity only — opencode publishes no subscription window, so this is never shown as quota. |
 | **Kiro** | Read-only local sessions: IDE `usage_summary` credits under `~/.kiro/sessions/<workspace>/sess_*/messages.jsonl`, plus CLI context-window percentage from `~/.kiro/sessions/cli/*.json` | High for the values Kiro itself reports. Kiro meters in **credits**, not tokens, so TokenPilot shows credits as credits and never estimates token counts from transcript text. |
+| **Command Code** | Read-only local session transcripts: `~/.commandcode/projects/<project>/<session>.jsonl`. Never reads `~/.commandcode/auth.json` | High for the tokens and cost Command Code records per turn. Command Code meters plans in **dollars over rolling 5-hour and 7-day windows** and publishes those meters only through its own `/usage` view, so TokenPilot shows local spend as activity and never as remaining quota. |
 
 ### Provider diagnostics
 

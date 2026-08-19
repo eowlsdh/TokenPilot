@@ -39,6 +39,33 @@ struct HistoryScreen: View {
         model.capacityPresentations.count + model.limitHistorySamples.count
     }
 
+    /// Group badges show how much is folded away, so a collapsed group never hides its own weight.
+    private var trendCardCount: Int {
+        var count = 1 // the heatmap always renders
+        if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if model.monthlyTrend.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if model.requestHistoryTrend.totalRequests > 0 { count += 1 }
+        if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if !model.fiveHourBlocks.isEmpty { count += 1 }
+        return count
+    }
+
+    private var efficiencyCardCount: Int {
+        var count = 0
+        if model.cacheEfficiency.hasCacheActivity { count += 1 }
+        if model.providerCacheEfficiency.hasAnyActivity { count += 1 }
+        if model.costEfficiency.hasAnyActivity { count += 1 }
+        if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) { count += 1 }
+        return count
+    }
+
+    private var breakdownCardCount: Int {
+        var count = 1 // the timeline always renders
+        if !model.historyUsage.modelBreakdown.isEmpty { count += 1 }
+        if !model.historyUsage.projectBreakdown.isEmpty { count += 1 }
+        return count
+    }
+
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
@@ -80,42 +107,71 @@ struct HistoryScreen: View {
                 if model.historyUsage.events.isEmpty {
                     HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)
                 } else {
+                    // The summary and the export stay in the open; everything else lives in a group
+                    // so this screen opens as four headers instead of fifteen stacked charts.
                     HistoryUsageSummaryCard(model: model)
-                    if model.cacheEfficiency.hasCacheActivity {
-                        HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
+
+                    if trendCardCount > 0 {
+                        CollapsibleSection(
+                            title: model.t("Trends"),
+                            systemImage: "chart.xyaxis.line",
+                            badge: "\(trendCardCount)",
+                            initiallyExpanded: true
+                        ) {
+                            if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
+                                HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
+                            }
+                            if model.monthlyTrend.contains(where: { $0.tokens > 0 }) {
+                                HistoryMonthlyTrendCard(bars: model.monthlyTrend, model: model)
+                            }
+                            if model.requestHistoryTrend.totalRequests > 0 {
+                                HistoryRequestTrendCard(trend: model.requestHistoryTrend, model: model)
+                            }
+                            if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
+                                HistoryHourlyActivityCard(summary: model.hourlyActivity, model: model)
+                            }
+                            if !model.fiveHourBlocks.isEmpty {
+                                HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
+                            }
+                            HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
+                        }
                     }
-                    if model.providerCacheEfficiency.hasAnyActivity {
-                        HistoryProviderCacheCard(summary: model.providerCacheEfficiency, model: model)
+
+                    if efficiencyCardCount > 0 {
+                        CollapsibleSection(
+                            title: model.t("Efficiency"),
+                            systemImage: "bolt.badge.clock",
+                            badge: "\(efficiencyCardCount)"
+                        ) {
+                            if model.cacheEfficiency.hasCacheActivity {
+                                HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
+                            }
+                            if model.providerCacheEfficiency.hasAnyActivity {
+                                HistoryProviderCacheCard(summary: model.providerCacheEfficiency, model: model)
+                            }
+                            if model.costEfficiency.hasAnyActivity {
+                                HistoryCostEfficiencyCard(efficiency: model.costEfficiency, model: model)
+                            }
+                            if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
+                                HistoryBudgetHistoryCard(trend: model.budgetHistoryTrend, model: model)
+                            }
+                        }
                     }
-                    if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
-                        HistoryBudgetHistoryCard(trend: model.budgetHistoryTrend, model: model)
+
+                    CollapsibleSection(
+                        title: model.t("Breakdown"),
+                        systemImage: "list.bullet.rectangle",
+                        badge: "\(breakdownCardCount)"
+                    ) {
+                        if !model.historyUsage.modelBreakdown.isEmpty {
+                            HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
+                        }
+                        if !model.historyUsage.projectBreakdown.isEmpty {
+                            HistoryProjectBreakdownCard(shares: model.historyUsage.projectBreakdown, model: model)
+                        }
+                        HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)
                     }
-                    if model.costEfficiency.hasAnyActivity {
-                        HistoryCostEfficiencyCard(efficiency: model.costEfficiency, model: model)
-                    }
-                    if !model.fiveHourBlocks.isEmpty {
-                        HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
-                    }
-                    if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
-                        HistoryHourlyActivityCard(summary: model.hourlyActivity, model: model)
-                    }
-                    if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
-                        HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
-                    }
-                    if model.requestHistoryTrend.totalRequests > 0 {
-                        HistoryRequestTrendCard(trend: model.requestHistoryTrend, model: model)
-                    }
-                    if model.monthlyTrend.contains(where: { $0.tokens > 0 }) {
-                        HistoryMonthlyTrendCard(bars: model.monthlyTrend, model: model)
-                    }
-                    HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
-                    if !model.historyUsage.modelBreakdown.isEmpty {
-                        HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
-                    }
-                    if !model.historyUsage.projectBreakdown.isEmpty {
-                        HistoryProjectBreakdownCard(shares: model.historyUsage.projectBreakdown, model: model)
-                    }
-                    HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)
+
                     HistoryExportCard(model: model)
                 }
             }
@@ -132,7 +188,7 @@ struct CurrentCapacitySignalCard: View {
     var body: some View {
         let visibleItems = Array(items.prefix(3))
 
-        GlassCard(padding: 10, surface: .cardElevated) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact, surface: .cardElevated) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Current capacity evidence"), systemImage: "checkmark.seal")
@@ -559,7 +615,7 @@ struct HistorySevenDayTrendCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Last 7 days"), systemImage: "chart.bar")
@@ -617,11 +673,11 @@ private struct HistoryTrendBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                         .fill(isPeak ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
                         .frame(height: max(geometry.size.height * fillRatio, bar.tokens > 0 ? 2 : 1))
                 }
@@ -646,7 +702,7 @@ struct HistoryRequestTrendCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Requests trend"), systemImage: "bolt.badge.clock")
@@ -665,11 +721,11 @@ struct HistoryRequestTrendCard: View {
 
                 HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
                     ForEach(trend.days) { bar in
-                        VStack(spacing: 3) {
+                        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
                             GeometryReader { geometry in
                                 VStack(spacing: 0) {
                                     Spacer(minLength: 0)
-                                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                         .fill(bar.requestCount == peakCount && bar.requestCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
                                         .frame(height: max(geometry.size.height * fillRatio(bar), bar.requestCount > 0 ? 2 : 1))
                                 }
@@ -724,7 +780,7 @@ struct HistoryMonthlyTrendCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Monthly trend"), systemImage: "chart.bar.xaxis")
@@ -784,11 +840,11 @@ private struct HistoryMonthlyBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                         .fill(isPeak ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
                         .frame(height: max(geometry.size.height * fillRatio, bar.tokens > 0 ? 2 : 1))
                 }
@@ -855,7 +911,7 @@ struct HistoryHeatmapCard: View {
 
     var body: some View {
         let weeks = grid
-        return GlassCard(padding: 10) {
+        return GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Activity heatmap"), systemImage: "square.grid.3x3.fill")
@@ -879,8 +935,8 @@ struct HistoryHeatmapCard: View {
                     EmptyInlineState(text: model.t("Local activity, not provider quota"))
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 2) {
+                        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                            HStack(spacing: TokenPilotDesign.Spacing.xxs) {
                                 ForEach(weeks.indices, id: \.self) { column in
                                     monthLabel(column: column, weeks: weeks)
                                         .frame(width: 9, alignment: .leading)
@@ -888,7 +944,7 @@ struct HistoryHeatmapCard: View {
                             }
                             .frame(height: 10)
                             ForEach(0..<7, id: \.self) { row in
-                                HStack(spacing: 2) {
+                                HStack(spacing: TokenPilotDesign.Spacing.xxs) {
                                     ForEach(weeks.indices, id: \.self) { column in
                                         heatCell(safeCell(weeks, column: column, row: row))
                                     }
@@ -922,7 +978,7 @@ struct HistoryHeatmapCard: View {
             Color.clear
         } else {
             Text(month ?? "")
-                .font(.system(size: 8, weight: .medium))
+                .font(TokenPilotDesign.Typography.axis)
                 .foregroundStyle(TokenPilotDesign.textTertiary)
                 .lineLimit(1)
         }
@@ -947,12 +1003,12 @@ struct HistoryHeatmapCard: View {
     @ViewBuilder
     private func heatCell(_ cell: UsageHeatCell?) -> some View {
         if let cell {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                 .fill(heatColor(level: cell.level))
                 .frame(width: 9, height: 9)
                 .help("\(cell.dateKey): \(TokenPilotFormatters.compactNumber(cell.tokens)) tok")
         } else {
-            RoundedRectangle(cornerRadius: 2, style: .continuous)
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                 .fill(TokenPilotDesign.surface(.separator).opacity(0.4))
                 .frame(width: 9, height: 9)
         }
@@ -986,7 +1042,7 @@ struct HistoryHeatmapCard: View {
         private var hasMore: Bool { shares.count > 4 }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Models"), systemImage: "cpu")
@@ -1029,7 +1085,7 @@ private struct HistoryModelRow: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
                 Circle()
                     .fill(TokenPilotDesign.accent(for: share.provider))
@@ -1096,7 +1152,7 @@ struct HistoryProjectBreakdownCard: View {
     private var hasMore: Bool { shares.count > 4 }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Projects"), systemImage: "folder")
@@ -1139,7 +1195,7 @@ private struct HistoryProjectRow: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
                 Circle()
                     .fill(TokenPilotDesign.accent(for: share.provider))
@@ -1197,7 +1253,7 @@ struct HistoryUsageSummaryCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Usage event summary"), systemImage: "number")
@@ -1287,7 +1343,7 @@ struct HistoryHourlyActivityCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Hourly activity"), systemImage: "clock.badge")
@@ -1308,15 +1364,15 @@ struct HistoryHourlyActivityCard: View {
 
                 let peak = summary.buckets.map(\.tokens).max() ?? 0
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: 3) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
                         ForEach(summary.buckets, id: \.hour) { bucket in
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                     .fill(hourColor(bucket, peak: peak))
                                     .frame(width: 8, height: hourHeight(bucket, peak: peak))
                                 if bucket.hour % 6 == 0 {
                                     Text("\(bucket.hour)")
-                                        .font(.system(size: 7, design: .monospaced))
+                                        .font(TokenPilotDesign.Typography.axis)
                                         .foregroundStyle(TokenPilotDesign.textTertiary)
                                         .lineLimit(1)
                                 } else {
@@ -1361,7 +1417,7 @@ struct HistoryFiveHourBlocksCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("5-hour blocks"), systemImage: "clock.fill")
@@ -1444,7 +1500,7 @@ struct HistoryCostEfficiencyCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Cost efficiency"), systemImage: "centsign.circle")
@@ -1520,7 +1576,7 @@ struct HistoryBudgetHistoryCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Budget history"), systemImage: "chart.bar.fill")
@@ -1538,14 +1594,14 @@ struct HistoryBudgetHistoryCard: View {
                 }
 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: 3) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
                         ForEach(trend.days) { day in
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                     .fill(budgetBarColor(day))
                                     .frame(width: 10, height: budgetBarHeight(day))
                                 Text(day.dayLabel)
-                                    .font(.system(size: 7, design: .monospaced))
+                                    .font(TokenPilotDesign.Typography.axis)
                                     .foregroundStyle(TokenPilotDesign.textTertiary)
                                     .lineLimit(1)
                             }
@@ -1588,7 +1644,7 @@ struct HistoryProviderCacheCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Cache by provider"), systemImage: "square.stack.3d.up")
@@ -1663,7 +1719,7 @@ struct HistoryCacheEfficiencyCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Cache efficiency"), systemImage: "arrow.triangle.2.circlepath")
@@ -1696,14 +1752,14 @@ struct HistoryCacheEfficiencyCard: View {
                 .lineLimit(1)
 
                 if model.cacheTrend.days.contains(where: { $0.hasActivity }) {
-                    HStack(alignment: .bottom, spacing: 3) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
                         ForEach(model.cacheTrend.days, id: \.dayLabel) { day in
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                     .fill(trendBarColor(day))
                                     .frame(width: 10, height: trendBarHeight(day))
                                 Text(day.dayLabel)
-                                    .font(.system(size: 7, design: .monospaced))
+                                    .font(TokenPilotDesign.Typography.axis)
                                     .foregroundStyle(TokenPilotDesign.textTertiary)
                                     .lineLimit(1)
                             }
@@ -1801,7 +1857,7 @@ struct HistoryUsageTimelineCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Recent usage"), systemImage: "clock.arrow.circlepath")
@@ -1931,7 +1987,7 @@ struct HistoryExportCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10, surface: .cardMuted) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact, surface: .cardMuted) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Export"), systemImage: "square.and.arrow.down")
@@ -1977,16 +2033,16 @@ struct HistoryCapacityEmptyState: View {
 
     var body: some View {
         GlassCard {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: "checkmark.seal")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .frame(width: 28, height: 28)
                     .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                     Text(model.t("No capacity signals yet"))
                         .font(TokenPilotDesign.Typography.cardTitle)
                         .foregroundStyle(TokenPilotDesign.textPrimary)
@@ -2013,16 +2069,16 @@ struct HistoryEmptyState: View {
 
     var body: some View {
         GlassCard {
-            HStack(alignment: .top, spacing: 10) {
+            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: hasLimitSignals ? "doc.text.magnifyingglass" : "tray")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(hasLimitSignals ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
                     .frame(width: 28, height: 28)
                     .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
                     .accessibilityHidden(true)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                     Text(model.t("No usage events recorded"))
                         .font(TokenPilotDesign.Typography.cardTitle)
                         .foregroundStyle(TokenPilotDesign.textPrimary)

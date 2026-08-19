@@ -97,6 +97,18 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
         self.quotaFileURLs = quotaFileURLs ?? Self.defaultQuotaFileURLs()
     }
 
+    /// JetBrains keeps one IDE directory per product; the quota cache sits at a fixed path inside.
+    static func quotaFileURLs(under root: URL) -> [URL] {
+        let manager = FileManager.default
+        let direct = root.appendingPathComponent("options/AIAssistantQuotaManager2.xml")
+        if manager.fileExists(atPath: direct.path) { return [direct] }
+        guard let entries = try? manager.contentsOfDirectory(atPath: root.path) else { return [] }
+        return entries.compactMap { entry in
+            let candidate = root.appendingPathComponent(entry).appendingPathComponent("options/AIAssistantQuotaManager2.xml")
+            return manager.fileExists(atPath: candidate.path) ? candidate : nil
+        }
+    }
+
     public static func defaultQuotaFileURLs() -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let base = home.appendingPathComponent("Library/Application Support/JetBrains", isDirectory: true)
@@ -122,9 +134,26 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
             )
         }
 
+        // A sandboxed build cannot walk ~/Library/Application Support/JetBrains on its own; when the
+        // user grants that folder the quota files are discovered underneath it instead.
+        let resolution = ProviderSourceAccess.resolve(provider: .jetbrains, settings: settings, defaults: [])
+        defer { resolution.release() }
+        let grantedFiles = resolution.roots.flatMap { Self.quotaFileURLs(under: $0) }
+        if resolution.needsUserGrant && grantedFiles.isEmpty {
+            let snapshot = ProviderSnapshot(
+                provider: .jetbrains,
+                updatedAt: now,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Choose the JetBrains folder to grant access"
+            )
+            return ProviderRefreshResult(snapshot: snapshot, typedErrors: [], observedAt: now)
+        }
+        let searchURLs = grantedFiles.isEmpty ? quotaFileURLs : grantedFiles
+
         let manager = FileManager.default
         var latest: (url: URL, quota: JetBrainsQuotaParser.Quota)?
-        for url in quotaFileURLs where manager.fileExists(atPath: url.path) {
+        for url in searchURLs where manager.fileExists(atPath: url.path) {
             guard let data = try? Data(contentsOf: url), let quota = parser.parse(xml: data) else { continue }
             if latest == nil || url.lastPathComponent > latest!.url.lastPathComponent {
                 latest = (url, quota)

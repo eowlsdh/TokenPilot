@@ -231,20 +231,10 @@ struct OverviewScreen: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+                // Capacity first: the headline card and the per-provider rows are what this app is
+                // for, so nothing optional gets between them. Goal, streak, milestone, budget, and
+                // context cards are local activity and wait inside one collapsed group.
                 UsageSummaryCard(model: model)
-                DailyGoalCard(goal: model.dailyGoal, model: model)
-                if model.usageStreak.hasActivity {
-                    UsageStreakCard(streak: model.usageStreak, model: model)
-                }
-                if !model.activityMilestones.isEmpty {
-                    ActivityMilestonesCard(milestones: model.activityMilestones, model: model)
-                }
-                if model.budgetGuardrails.hasAnyBudget {
-                    BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
-                }
-                if !model.contextHealthAssessments.isEmpty {
-                    ContextHealthCard(assessments: model.contextHealthAssessments, model: model)
-                }
 
                 if hasNoOverviewData {
                     emptyOverviewState
@@ -258,10 +248,51 @@ struct OverviewScreen: View {
                     )
                 }
 
+                if activityCardCount > 0 {
+                    CollapsibleSection(
+                        title: model.t("Activity"),
+                        subtitle: model.t("Local activity, not provider quota"),
+                        systemImage: "chart.bar.doc.horizontal",
+                        badge: "\(activityCardCount)"
+                    ) {
+                        if showsDailyGoal {
+                            DailyGoalCard(goal: model.dailyGoal, model: model)
+                        }
+                        if model.usageStreak.hasActivity {
+                            UsageStreakCard(streak: model.usageStreak, model: model)
+                        }
+                        if !model.activityMilestones.isEmpty {
+                            ActivityMilestonesCard(milestones: model.activityMilestones, model: model)
+                        }
+                        if model.budgetGuardrails.hasAnyBudget {
+                            BudgetGuardrailCard(budget: model.budgetGuardrails, model: model)
+                        }
+                        if !model.contextHealthAssessments.isEmpty {
+                            ContextHealthCard(assessments: model.contextHealthAssessments, model: model)
+                        }
+                    }
+                }
+
                 AlertsStatusRow(text: model.alertStatusText)
             }
             .padding(.bottom, TokenPilotDesign.Spacing.section)
         }
+    }
+
+    /// The goal card earns its place once there is something to measure: activity today, or a
+    /// target the user actually moved off the default.
+    private var showsDailyGoal: Bool {
+        model.dailyGoal.tokens > 0 || model.settings.challengeTargetTokens != AppSettings().challengeTargetTokens
+    }
+
+    private var activityCardCount: Int {
+        var count = 0
+        if showsDailyGoal { count += 1 }
+        if model.usageStreak.hasActivity { count += 1 }
+        if !model.activityMilestones.isEmpty { count += 1 }
+        if model.budgetGuardrails.hasAnyBudget { count += 1 }
+        if !model.contextHealthAssessments.isEmpty { count += 1 }
+        return count
     }
 
     private var hasNoOverviewData: Bool {
@@ -293,7 +324,7 @@ struct DailyGoalCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Daily goal"), systemImage: "flag.fill")
@@ -342,7 +373,7 @@ struct ContextHealthCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Context health"), systemImage: "rectangle.compress.vertical")
@@ -426,7 +457,7 @@ struct UsageStreakCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Activity streak"), systemImage: "flame.fill")
@@ -474,7 +505,7 @@ struct ActivityMilestonesCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Milestones"), systemImage: "trophy.fill")
@@ -492,10 +523,10 @@ struct ActivityMilestonesCard: View {
 
                 LazyVGrid(
                     columns: [
-                        GridItem(.adaptive(minimum: 92), spacing: 6)
+                        GridItem(.adaptive(minimum: 92), spacing: TokenPilotDesign.Spacing.sm)
                     ],
                     alignment: .leading,
-                    spacing: 6
+                    spacing: TokenPilotDesign.Spacing.sm
                 ) {
                     ForEach(milestones) { milestone in
                         milestoneChip(milestone)
@@ -538,7 +569,7 @@ struct BudgetGuardrailCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 12) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Budget guardrails"), systemImage: "creditcard.fill")
@@ -1361,8 +1392,8 @@ struct CapacitySignalLine: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                 Text(item.seriesLabel(language: language))
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
@@ -1518,7 +1549,7 @@ struct CapacityErrorInline: View {
     let error: CapacityRefreshError
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)

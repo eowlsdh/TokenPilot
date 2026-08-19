@@ -7,15 +7,17 @@ struct SettingsScreen: View {
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
+                // Numbers used to imply a 1-6 sequence that two unnumbered sections interrupted.
+                // The order is now simply most-used first, and the titles carry no false steps.
                 consoleSummary
-                generalSettings
                 sourceSettings
+                setupGuide
                 notificationSettings
-                privacySettings
                 telegramSettings
                 discordSettings
+                generalSettings
                 languageSettings
-                setupGuide
+                privacySettings
             }
             .padding(.bottom, 16)
         }
@@ -83,17 +85,17 @@ struct SettingsScreen: View {
                 systemImage: "gearshape"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 Toggle(model.t("Launch at login"), isOn: launchAtLoginBinding)
                 Text(model.t("Starts TokenPilot automatically when you log in so usage stays monitored and alerts keep working without opening the app."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 TokenPilotSeparator()
 
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Auto refresh"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     Picker(model.t("Refresh interval"), selection: $model.settings.refreshIntervalSeconds) {
                         ForEach(Self.refreshIntervalPresets) { preset in
@@ -105,14 +107,14 @@ struct SettingsScreen: View {
                     .frame(maxWidth: 130)
                 }
                 Text(model.t("How often TokenPilot re-reads local sources while the menu bar app runs."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 TokenPilotSeparator()
 
                 Toggle(model.t("Global shortcut"), isOn: $model.settings.menuBarHotkeyEnabled)
                 Text(model.t("Opens the TokenPilot popover from anywhere with ⌘⇧Space."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 TokenPilotSeparator()
@@ -124,15 +126,15 @@ struct SettingsScreen: View {
                     step: 500
                 )
                 Text(model.t("Today's local token target shown on Overview. Local activity, not a provider quota."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 TokenPilotSeparator()
 
                 Text(model.t("Budget guardrails"))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 Text(model.t("Optional local token budgets per window. A budget of 0 disables that window. Reaching a budget never changes what a provider reports."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 Stepper(
@@ -164,7 +166,7 @@ struct SettingsScreen: View {
 
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Week starts on"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     Picker(model.t("Week starts on"), selection: $model.settings.weekStartDay) {
                         ForEach(WeekStartDay.allCases, id: \.self) { day in
@@ -176,29 +178,29 @@ struct SettingsScreen: View {
                     .frame(maxWidth: 130)
                 }
                 Text(model.t("Sets the day that starts local weekly windows (weekly budget and weekly digest)."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 TokenPilotSeparator()
 
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Version"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     Text(model.appVersionText)
-                        .font(.caption)
+                        .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
 
                 TokenPilotSeparator()
 
                 Text(model.t("Settings backup"))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 Text(model.t("Export settings as JSON to move or back up your configuration. Credentials, chat IDs, webhooks, and API keys are never included; saved secrets stay in the Keychain."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
-                HStack(spacing: 8) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Export Settings")) { model.exportSettings() }
                         .buttonStyle(.bordered)
                     Button(model.t("Import Settings")) { model.importSettings() }
@@ -268,6 +270,7 @@ struct SettingsScreen: View {
             codexProviderSetup
             openCodeProviderSetup
             kiroProviderSetup
+            commandCodeProviderSetup
             jetbrainsProviderSetup
             minimaxProviderSetup
             zaiProviderSetup
@@ -282,17 +285,17 @@ struct SettingsScreen: View {
             accessibilityValue: sourceHealthSummaryText
         ) {
             DisclosureSummaryRow(
-                title: model.t("1. Source Health"),
+                title: model.t("Source Health"),
                 subtitle: sourceHealthSummaryText,
                 status: sourceHealthStatusLabel,
                 statusColor: sourceHealthStatusColor,
                 systemImage: "externaldrive.badge.checkmark"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 sourceHealthSummary
 
-                HStack(spacing: 8) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
                         .buttonStyle(.borderedProminent)
                         .tint(TokenPilotDesign.calm)
@@ -301,7 +304,7 @@ struct SettingsScreen: View {
                 }
 
                 Text(model.t("Auto-detect checks local default metadata and user-selected files only. Diagnostics hide raw paths, raw events, prompts, responses, and secrets."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -309,25 +312,25 @@ struct SettingsScreen: View {
                     runtimeRecoveryBanner
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                     LazyVGrid(
                         columns: [GridItem(.flexible()), GridItem(.flexible())],
-                        spacing: 8
+                        spacing: TokenPilotDesign.Spacing.md
                     ) {
                         ForEach(Provider.allCases) { provider in
                             providerToggle(provider)
                         }
                     }
                     Text(model.t("Choose providers shown on Overview. Turning one off skips refresh without deleting stored history."))
-                        .font(.caption2)
+                        .font(TokenPilotDesign.Typography.explanation)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
 
                 GlassCard(surface: .cardMuted) {
                     VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
-                        HStack(spacing: 8) {
+                        HStack(spacing: TokenPilotDesign.Spacing.md) {
                             Label(model.t("Menu bar layout"), systemImage: "menubar.rectangle")
-                                .font(.caption.weight(.semibold))
+                                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                             Spacer(minLength: 0)
                             Text(
@@ -335,7 +338,7 @@ struct SettingsScreen: View {
                                     ? model.t("Providers")
                                     : model.t("Up to two providers can be shown")
                             )
-                                .font(.caption2)
+                                .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
 
@@ -358,7 +361,7 @@ struct SettingsScreen: View {
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar metric"))
                             Text(model.t("What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists."))
-                                .font(.caption2)
+                                .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
                         if model.settings.menuBarDisplayStyle == .providerMetrics {
@@ -377,13 +380,13 @@ struct SettingsScreen: View {
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar trend"))
                             Text(model.t("Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now."))
-                                .font(.caption2)
+                                .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)
 
-                            VStack(alignment: .leading, spacing: 6) {
+                            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
                                 Text(model.t("Menu bar providers"))
-                                    .font(.caption.weight(.semibold))
+                                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                                     .foregroundStyle(TokenPilotDesign.textSecondary)
                                 ForEach(Provider.allCases) { provider in
                                     Toggle(isOn: menuBarMetricProviderBinding(for: provider)) {
@@ -391,7 +394,7 @@ struct SettingsScreen: View {
                                             Text(model.providerDisplayName(provider))
                                             Spacer(minLength: 0)
                                             Text(model.t("Show in menu bar"))
-                                                .font(.caption2)
+                                                .font(TokenPilotDesign.Typography.explanation)
                                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                                         }
                                     }
@@ -401,7 +404,7 @@ struct SettingsScreen: View {
 
                             if model.settings.menuBarProviderGrouping == .separate {
                                 Text(model.t("Each selected provider gets its own menu bar item."))
-                                    .font(.caption2)
+                                    .font(TokenPilotDesign.Typography.explanation)
                                     .foregroundStyle(TokenPilotDesign.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -440,15 +443,22 @@ struct SettingsScreen: View {
                             }
                         }
 
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                             Text(model.t("Menu bar reflects saved source data and does not refresh providers."))
                             if model.settings.menuBarDisplayStyle == .providerMetrics {
                                 Text(model.t("Provider metrics matches simple provider/value blocks."))
                             }
                         }
-                        .font(.caption2)
+                        .font(TokenPilotDesign.Typography.explanation)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                        if model.settings.menuBarDisplayStyle == .providerMetrics {
+                            Text(model.t("Markers: E experimental · M manual · S stale · — no value yet"))
+                                .font(TokenPilotDesign.Typography.explanation)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
                             .font(.system(size: 11, design: .monospaced))
@@ -475,9 +485,9 @@ struct SettingsScreen: View {
                 systemImage: "stethoscope"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 Text(model.t("Diagnostics summarize source health without showing raw local paths, raw events, prompts, responses, cookies, credentials, or tokens."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -492,9 +502,9 @@ struct SettingsScreen: View {
                 TokenPilotSeparator()
 
                 Text(model.t("Provider service status"))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 Text(model.t("Official status pages, refreshed with a check. May be delayed; local source health is above."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 ForEach(statusPageProviders, id: \.self) { provider in
@@ -511,7 +521,7 @@ struct SettingsScreen: View {
     private var claudeProviderSetup: some View {
         providerSetupDisclosure(provider: .claude, title: model.t("Claude Code")) {
             Text(model.t("Claude status source"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 sourceSelectionBadge(isSelected: !model.settings.claudeStatusFilePath.isEmpty)
@@ -519,31 +529,33 @@ struct SettingsScreen: View {
                 Button(model.t("Choose…")) { model.chooseClaudeStatusFile() }
             }
             Text(model.t("Raw local paths stay hidden. Choose again to replace the saved source bookmark."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             TokenPilotSeparator()
             Text(model.t("Install statusline bridge"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("Claude Code only reports 5-hour and weekly limits through a statusLine command. Copy this script and run it once in Terminal to write the metadata TokenPilot reads."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("An existing status line is preserved: the bridge records the payload, then runs your original command."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Copy Setup Script")) { model.copyToClipboard(claudeStatuslineSnippet) }
                 .buttonStyle(.bordered)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.claude)), \(model.t("Check Connection"))")
+            sourceGrantRow(.claude)
             TokenPilotSeparator()
             Text(model.t("Experimental server usage"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Read Claude usage from the official OAuth usage API"), isOn: claudeUsageProbeBinding)
             Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Claude credentials file, keeps it in memory for one request, and never reads the refresh token."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -552,7 +564,7 @@ struct SettingsScreen: View {
     private var geminiProviderSetup: some View {
         providerSetupDisclosure(provider: .gemini, title: model.t("Antigravity CLI")) {
             Text(model.t("Antigravity telemetry source"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 sourceSelectionBadge(isSelected: !model.settings.geminiTelemetryLogPath.isEmpty)
@@ -560,7 +572,7 @@ struct SettingsScreen: View {
                 Button(model.t("Choose…")) { model.chooseGeminiTelemetrySource() }
             }
             Text(model.t("Select statusline JSON, legacy telemetry, or a session folder. Raw local paths stay hidden after selection."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 ForEach([1000, 1500, 2000], id: \.self) { cap in
@@ -572,6 +584,7 @@ struct SettingsScreen: View {
             }
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.gemini)), \(model.t("Check Connection"))")
         }
     }
 
@@ -584,13 +597,13 @@ struct SettingsScreen: View {
                 )
                 Spacer(minLength: 0)
                 Text(model.t("Official balance API"))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
             SecureField(model.hasSavedDeepSeekAPIKey ? model.t("Saved API key hidden") : model.t("DeepSeek API Key"), text: $model.deepSeekAPIKeyInput)
                 .textFieldStyle(.roundedBorder)
             Text(model.t("TokenPilot stores only its own DeepSeek API key Keychain item and calls the official /user/balance endpoint."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
@@ -601,10 +614,11 @@ struct SettingsScreen: View {
                     .disabled(!model.hasSavedDeepSeekAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("\(model.providerDisplayName(.deepseek)), \(model.t("Check Connection"))")
             }
             TokenPilotSeparator()
             Text(model.t("Manual DeepSeek balance fallback"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Use Manual DeepSeek Balance"), isOn: $model.settings.deepSeekBalance.manualFallbackEnabled)
             HStack {
@@ -631,7 +645,7 @@ struct SettingsScreen: View {
 
     private var xAIProviderSetup: some View {
         providerSetupDisclosure(provider: .xai, title: model.t("Grok Build")) {
-            HStack(spacing: 8) {
+            HStack(spacing: TokenPilotDesign.Spacing.md) {
                 Toggle(
                     model.t("Enable Grok Build"),
                     isOn: Binding(
@@ -657,22 +671,24 @@ struct SettingsScreen: View {
             .accessibilityValue(model.t("Local context metadata"))
 
             Text(model.t("The local context source reads only ~/.grok/sessions/**/signals.json metadata. It never reads auth.json, OAuth tokens, prompts, or responses."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(model.sourceDetailText(.xai))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.xai)), \(model.t("Check Connection"))")
+            sourceGrantRow(.xai)
 
             TokenPilotSeparator()
 
             Text(model.t("Experimental OAuth weekly usage"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
             Toggle(
                 model.t("Use experimental Grok OAuth weekly usage"),
                 isOn: Binding(
@@ -684,16 +700,16 @@ struct SettingsScreen: View {
             )
             .accessibilityHint(model.t("Default off. Reads the fixed local Grok CLI auth descriptor only after explicit consent."))
             Text(model.t("EXPERIMENTAL / UNOFFICIAL: After explicit consent, reads only the selected access token and expiry from ~/.grok/auth.json for one weekly billing request. The token stays in memory and is never displayed, logged, stored, diagnosed, or exported."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text(model.experimentalOAuthWeeklyStatusText)
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 Spacer(minLength: 0)
                 Text(model.experimentalOAuthWeeklyActionText)
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
             }
             .accessibilityElement(children: .combine)
             Button(model.t("Refresh OAuth weekly usage")) {
@@ -705,9 +721,9 @@ struct SettingsScreen: View {
             TokenPilotSeparator()
 
             Text(model.t("Manual weekly limit"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
             Text(model.t("Grok has no public weekly-limit API and TokenPilot never reuses Grok login sessions the way Orca does for Claude/Codex. Enter the Weekly limit value you see in Grok (for example 64%). Menu bar shows that exact remaining percentage with a MANUAL marker."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -723,21 +739,21 @@ struct SettingsScreen: View {
                 Button(model.t("Mark Weekly Snapshot Now")) { model.markGrokWeeklySnapshotNow() }
                 if let capturedAt = model.settings.xAI.weeklySnapshotCapturedAt {
                     Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt, language: model.settings.localization.language))")
-                        .font(.caption)
+                        .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
             }
             Text(model.t("When enabled, menu bar prefers this weekly remaining value over local context usage (GROK CTX)."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             TokenPilotSeparator()
             Text(model.t("Experimental plan label"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Show Grok plan label from the CLI settings API"), isOn: grokTierProbeBinding)
             Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Grok auth file, keeps it in memory for one request, and never reads the refresh token."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -746,103 +762,166 @@ struct SettingsScreen: View {
     private var openCodeProviderSetup: some View {
         providerSetupDisclosure(provider: .opencode, title: model.t("opencode")) {
             Text(model.t("Local session store"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("opencode is detected automatically from its local session database. No API key, token, or file selection is required."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. opencode publishes no subscription window, so this is local activity and never provider quota."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("The database is opened read-only so a running opencode session is never blocked, and credential tables are never read."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             TokenPilotSeparator()
             Text(model.t("Provider-reported usage limits"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("opencode Go exposes an official usage API. Enabling it reads your remaining plan usage (rolling 5h, weekly, monthly) with one authenticated request per refresh."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Toggle(model.t("Read opencode Go usage from the official usage API"), isOn: openCodeRateLimitBinding)
             Text(model.t("Default off. When enabled, one authenticated request per refresh reads rolling, weekly, and monthly usage percentages from opencode.ai; today the probe reports only what the API returns."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("Only the plan API key is read for that request; it is never logged, saved, diagnosed, or exported."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.opencode) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.opencode)), \(model.t("Check Connection"))")
+            sourceGrantRow(.opencode)
         }
     }
 
     private var kiroProviderSetup: some View {
         providerSetupDisclosure(provider: .kiro, title: model.t("Kiro")) {
             Text(model.t("Local session store"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("Kiro is detected automatically from its local session files. No API key, token, or file selection is required."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("Kiro meters usage in credits, not tokens, and also reports a context-window percentage. TokenPilot shows credits as credits and does not estimate token counts from transcript text."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("Credits are local activity, not provider quota, and are never shown as currency."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             TokenPilotSeparator()
             Text(model.t("Provider-reported usage limits"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Read stored Kiro token to fetch usage limits"), isOn: kiroUsageLimitsBinding)
             Text(model.t("Calls Kiro's official usage-limits API to show remaining quota. TokenPilot reads only the stored access token and profile ID for one request; the token is never logged, saved, diagnosed, or exported, and the refresh token is never read."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Text(model.t("Default off. If the stored token has expired, sign in to Kiro again and refresh."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.kiro) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.kiro)), \(model.t("Check Connection"))")
+            sourceGrantRow(.kiro)
+        }
+    }
+
+    /// Source-folder grant row for the file-backed providers.
+    ///
+    /// Outside the sandbox this is only needed for a non-standard install location, so it stays
+    /// quiet. In a sandboxed build the provider cannot read anything without it, so the copy says so.
+    @ViewBuilder
+    private func sourceGrantRow(_ provider: Provider) -> some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            TokenPilotSeparator()
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                Button(model.t("Choose Folder")) { model.chooseProviderSourceFolder(provider) }
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel("\(model.providerDisplayName(provider)), \(model.t("Choose Folder"))")
+                if let folder = model.grantedSourceFolderName(provider) {
+                    Text(folder)
+                        .font(TokenPilotDesign.Typography.caption)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Button(model.t("Reset")) { model.clearProviderSourceFolder(provider) }
+                        .buttonStyle(.borderless)
+                        .accessibilityLabel("\(model.providerDisplayName(provider)), \(model.t("Reset"))")
+                }
+                Spacer(minLength: 0)
+            }
+            Text(
+                model.requiresSourceGrants
+                    ? model.t("This build is sandboxed, so it only reads folders you grant. Choose this provider's folder once to start monitoring it.")
+                    : model.t("Only needed if this provider stores its data somewhere other than the default folder.")
+            )
+            .font(TokenPilotDesign.Typography.explanation)
+            .foregroundStyle(model.requiresSourceGrants ? TokenPilotDesign.warning : TokenPilotDesign.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var commandCodeProviderSetup: some View {
+        providerSetupDisclosure(provider: .commandcode, title: model.t("Command Code")) {
+            Text(model.t("Local session store"))
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+            Text(model.t("Command Code is detected automatically from its local session transcripts. No API key, token, or file selection is required."))
+                .font(TokenPilotDesign.Typography.explanation)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Transcripts record exact tokens and cost per turn, so those numbers are measured, not estimated. Project names come from the session folder only."))
+                .font(TokenPilotDesign.Typography.explanation)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(model.t("Command Code meters plans in dollars over rolling 5-hour and 7-day windows, but publishes those meters only in its own /usage view. TokenPilot shows local spend as activity and never as remaining quota."))
+                .font(TokenPilotDesign.Typography.explanation)
+                .foregroundStyle(TokenPilotDesign.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            Button(model.t("Check Connection")) { Task { await model.checkConnection(.commandcode) } }
+                .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.commandcode)), \(model.t("Check Connection"))")
+            sourceGrantRow(.commandcode)
         }
     }
 
     private var codexProviderSetup: some View {
         providerSetupDisclosure(provider: .codex, title: model.t("Codex")) {
             Text(model.t("Experimental Codex limit hints"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Use experimental Codex limit hints"), isOn: $model.settings.codexManual.webConnectorEnabled)
             Text(model.t("Experimental connector asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot never reads, stores, displays, or exports Codex access tokens."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("Codex limit hints are experimental and may break if the Codex CLI changes. They are not guaranteed official quota."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
             TokenPilotSeparator()
             Text(model.t("Manual Codex limit snapshot"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Use Manual Limit Snapshot"), isOn: $model.settings.codexManual.webSnapshotEnabled)
             Text(model.t("Enter manual values you observed. TokenPilot stores only numbers and notes, not cookies, login tokens, or raw account pages."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Stepper(String(format: model.t("Manual today tokens: %d"), model.settings.codexManual.webTodayTokens), value: $model.settings.codexManual.webTodayTokens, in: 0...100_000_000, step: 1_000)
             HStack {
                 Button(model.t("Mark Manual Snapshot Now")) { model.markCodexWebSnapshotNow() }
                 if let capturedAt = model.settings.codexManual.webSnapshotCapturedAt {
                     Text("\(model.t("Captured")): \(TokenPilotFormatters.clock(capturedAt, language: model.settings.localization.language))")
-                        .font(.caption)
+                        .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
             }
@@ -856,33 +935,35 @@ struct SettingsScreen: View {
             TextField(model.t("Notes"), text: $model.settings.codexManual.notes)
                 .textFieldStyle(.roundedBorder)
             Text(model.t("Pasted /status output (cleared after parse)"))
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             TextEditor(text: $model.settings.codexManual.pastedStatusOutput)
                 .font(.system(size: 12, design: .monospaced))
                 .frame(height: 90)
                 .scrollContentBackground(.hidden)
                 .background(TokenPilotDesign.surface(.cardMuted))
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
             HStack {
                 Button(model.t("Paste Status")) { model.pasteCodexStatusFromClipboard() }
                 Button(model.t("Parse Status")) { model.parseCodexStatus() }
                 Text("\(model.t("Confidence")): \(model.settings.codexManual.confidence.localizedLabel(language: model.settings.localization.language))")
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
             Text(model.t("Parsed status remains manual or estimated unless the source is provider-reported and fresh."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.codex)), \(model.t("Check Connection"))")
+            sourceGrantRow(.codex)
             TokenPilotSeparator()
             Text(model.t("Experimental server usage"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Toggle(model.t("Read Codex usage from the ChatGPT backend API"), isOn: codexUsageProbeBinding)
             Text(model.t("EXPERIMENTAL · UNOFFICIAL · Reads only the access token from the local Codex auth file, keeps it in memory for one request, and never reads the refresh token."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -891,25 +972,27 @@ struct SettingsScreen: View {
     private var jetbrainsProviderSetup: some View {
         providerSetupDisclosure(provider: .jetbrains, title: model.t("JetBrains AI Assistant")) {
             Text(model.t("Reads the JetBrains IDE quota cache (AIAssistantQuotaManager2.xml) with no credentials."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(model.t("Shows the local AI Assistant quota from your latest JetBrains IDE session. No account or API key is needed."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.jetbrains) } }
                 .buttonStyle(.bordered)
+                .accessibilityLabel("\(model.providerDisplayName(.jetbrains)), \(model.t("Check Connection"))")
+            sourceGrantRow(.jetbrains)
         }
     }
 
     private var minimaxProviderSetup: some View {
         providerSetupDisclosure(provider: .minimax, title: model.t("MiniMax")) {
             Text(model.t("Official Token Plan API"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             SecureField(model.hasSavedMinimaxAPIKey ? model.t("Saved API key hidden") : model.t("MiniMax API Key"), text: $model.minimaxAPIKeyInput)
                 .textFieldStyle(.roundedBorder)
             Text(model.t("TokenPilot stores only its own MiniMax API key Keychain item and calls the official /v1/token_plan/remains endpoint."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .minimax) }
@@ -920,6 +1003,7 @@ struct SettingsScreen: View {
                     .disabled(!model.hasSavedMinimaxAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.minimax) } }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("\(model.providerDisplayName(.minimax)), \(model.t("Check Connection"))")
             }
         }
     }
@@ -927,12 +1011,12 @@ struct SettingsScreen: View {
     private var zaiProviderSetup: some View {
         providerSetupDisclosure(provider: .zai, title: model.t("Z.ai")) {
             Text(model.t("Official GLM plan usage API"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             SecureField(model.hasSavedZAIAPIKey ? model.t("Saved API key hidden") : model.t("Z.ai API Key"), text: $model.zaiAPIKeyInput)
                 .textFieldStyle(.roundedBorder)
             Text(model.t("TokenPilot stores only its own Z.ai API key Keychain item and calls the official usage quota endpoint."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .zai) }
@@ -943,6 +1027,7 @@ struct SettingsScreen: View {
                     .disabled(!model.hasSavedZAIAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.zai) } }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("\(model.providerDisplayName(.zai)), \(model.t("Check Connection"))")
             }
         }
     }
@@ -950,12 +1035,12 @@ struct SettingsScreen: View {
     private var openRouterProviderSetup: some View {
         providerSetupDisclosure(provider: .openrouter, title: model.t("OpenRouter")) {
             Text(model.t("Official credits API"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             SecureField(model.hasSavedOpenRouterAPIKey ? model.t("Saved API key hidden") : model.t("OpenRouter API Key"), text: $model.openrouterAPIKeyInput)
                 .textFieldStyle(.roundedBorder)
             Text(model.t("TokenPilot stores only its own OpenRouter API key Keychain item and calls the official /api/v1/credits endpoint."))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .openrouter) }
@@ -966,6 +1051,7 @@ struct SettingsScreen: View {
                     .disabled(!model.hasSavedOpenRouterAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.openrouter) } }
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("\(model.providerDisplayName(.openrouter)), \(model.t("Check Connection"))")
             }
         }
     }
@@ -977,14 +1063,14 @@ struct SettingsScreen: View {
             accessibilityValue: notificationSummaryText
         ) {
             DisclosureSummaryRow(
-                title: model.t("2. Notifications"),
+                title: model.t("Notifications"),
                 subtitle: notificationSummaryText,
                 status: hasEffectiveNotificationChannel ? model.t("Effective ON") : model.t("Effective OFF"),
                 statusColor: hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
                 systemImage: "bell"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
                 notificationEffectiveSummary
 
                 Toggle(model.t("Global notifications"), isOn: $model.settings.globalNotificationsEnabled)
@@ -993,11 +1079,11 @@ struct SettingsScreen: View {
                 Toggle(model.t("Weekly digest"), isOn: $model.settings.weeklyDigestEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
                 Text(model.t("Summarizes this week's local usage on the week-start day at the chosen time while TokenPilot is running."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Weekly digest time"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     DatePicker(
                         model.t("Weekly digest time"),
@@ -1018,11 +1104,11 @@ struct SettingsScreen: View {
                 Toggle(model.t("Daily digest"), isOn: $model.settings.dailyDigestEnabled)
                     .disabled(!model.settings.globalNotificationsEnabled || !model.settings.macOSNotificationsEnabled)
                 Text(model.t("Summarizes today's local usage each day at the chosen time while TokenPilot is running."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 HStack(alignment: .firstTextBaseline) {
                     Text(model.t("Daily digest time"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     Spacer(minLength: 8)
                     DatePicker(
                         model.t("Daily digest time"),
@@ -1046,7 +1132,7 @@ struct SettingsScreen: View {
                     .disabled(!model.settings.globalNotificationsEnabled)
 
                 Text(model.t("Global OFF disables every channel. Channel OFF disables matching alert-rule delivery controls."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -1057,18 +1143,18 @@ struct SettingsScreen: View {
                         .disabled(!hasEffectiveNotificationChannel)
                     Spacer()
                     Text("\(model.t("Permission")): \(model.settings.notificationPermissionStatus.localizedLabel(language: model.settings.localization.language))")
-                        .font(.caption)
+                        .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
                 if model.settings.notificationPermissionStatus == .denied {
                     Text(model.t("Permission denied. Enable notifications in macOS Settings > Notifications."))
-                        .font(.caption)
+                        .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(TokenPilotDesign.warning)
                 }
 
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                     Text(model.t("Provider/window alert rules"))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                     ForEach(model.capacityAlertRows) { row in
                         CapacityAlertRuleRow(row: row, model: model)
@@ -1085,15 +1171,15 @@ struct SettingsScreen: View {
             accessibilityValue: telegramSummaryText
         ) {
             deliverySummary(
-                title: model.t("3. Telegram"),
+                title: model.t("Telegram"),
                 detail: telegramSummaryText,
                 status: telegramEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
                 statusColor: telegramEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
                 systemImage: "paperplane"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Toggle(model.t("Enable Telegram Alerts"), isOn: $model.settings.telegram.isEnabled)
                     Spacer()
                     StatusBadge(
@@ -1115,13 +1201,13 @@ struct SettingsScreen: View {
                 TextField(model.t("Chat ID"), text: $model.settings.telegram.chatID)
                     .textFieldStyle(.roundedBorder)
 
-                HStack(spacing: 8) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.hasSavedTelegramToken ? model.t("Replace Token") : model.t("Save Token")) { model.saveTelegramToken() }
                     Button(model.t("Delete Token"), role: .destructive) { model.deleteTelegramToken() }
                         .disabled(!model.hasSavedTelegramToken)
                     Spacer()
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Find Chat ID")) { Task { await model.findTelegramChatID() } }
                     Button(model.t("Send Test Message")) { Task { await model.sendTelegramTest() } }
                         .disabled(!telegramEffectiveNotificationsEnabled)
@@ -1132,22 +1218,22 @@ struct SettingsScreen: View {
                     )
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                     Text("\(model.t("Connection status")): \(model.localizedStatus(model.settings.telegram.connectionStatus))")
                     Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.telegram.lastTestSentAt, language: model.settings.localization.language))")
                 }
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 Text(model.t("Effective Telegram delivery requires Global notifications, Telegram notifications, Telegram alerts, a saved bot token, and a chat ID."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(model.t("Telegram OFF by default. Enable only after saving TokenPilot's own bot token."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 Text(model.t("Telegram alerts are optional. TokenPilot stores only its own bot token Keychain item and sends only alert messages when enabled."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
         }
@@ -1160,15 +1246,15 @@ struct SettingsScreen: View {
             accessibilityValue: discordSummaryText
         ) {
             deliverySummary(
-                title: model.t("4. Discord"),
+                title: model.t("Discord"),
                 detail: discordSummaryText,
                 status: discordEffectiveNotificationsEnabled ? model.t("Effective ON") : model.t("Effective OFF"),
                 statusColor: discordEffectiveNotificationsEnabled ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary,
                 systemImage: "bubble.left.and.bubble.right"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Toggle(model.t("Enable Discord Alerts"), isOn: $model.settings.discord.isEnabled)
                     Spacer()
                     StatusBadge(
@@ -1188,7 +1274,7 @@ struct SettingsScreen: View {
                 SecureField(model.hasSavedDiscordWebhook ? model.t("Saved webhook hidden") : model.t("Discord Webhook URL"), text: $model.discordWebhookInput)
                     .textFieldStyle(.roundedBorder)
 
-                HStack(spacing: 8) {
+                HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.hasSavedDiscordWebhook ? model.t("Replace Webhook") : model.t("Save Webhook")) { model.saveDiscordWebhook() }
                     Button(model.t("Delete Webhook"), role: .destructive) { model.deleteDiscordWebhook() }
                         .disabled(!model.hasSavedDiscordWebhook)
@@ -1197,22 +1283,22 @@ struct SettingsScreen: View {
                     Spacer()
                 }
 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                     Text("\(model.t("Connection status")): \(model.localizedStatus(model.settings.discord.connectionStatus))")
                     Text("\(model.t("Last test sent at")): \(TokenPilotFormatters.clock(model.settings.discord.lastTestSentAt, language: model.settings.localization.language))")
                 }
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 Text(model.t("Effective Discord delivery requires Global notifications, Discord notifications, Discord alerts, and a saved webhook."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(model.t("Discord OFF by default. Paste only a Discord channel webhook created for TokenPilot."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                 Text(model.t("Webhook URL is stored in TokenPilot's own Keychain item and is never shown in plain text after saving."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
         }
@@ -1224,14 +1310,14 @@ struct SettingsScreen: View {
             accessibilityValue: model.settings.localization.language.displayName
         ) {
             DisclosureSummaryRow(
-                title: model.t("5. Language"),
+                title: model.t("Language"),
                 subtitle: model.t("Language changes may require restarting TokenPilot."),
                 status: model.settings.localization.language.displayName,
                 statusColor: TokenPilotDesign.trust,
                 systemImage: "globe"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 Picker(model.t("Language"), selection: $model.settings.localization.language) {
                     ForEach(TokenPilotLanguage.allCases) { language in
                         // Display names intentionally NOT localized — each language
@@ -1242,7 +1328,7 @@ struct SettingsScreen: View {
                 }
                 .pickerStyle(.menu)
                 Text(model.t("Language changes may require restarting TokenPilot."))
-                    .font(.caption)
+                    .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
         }
@@ -1254,14 +1340,14 @@ struct SettingsScreen: View {
             accessibilityValue: setupGuideSummaryText
         ) {
             DisclosureSummaryRow(
-                title: model.t("6. Setup Guide"),
+                title: model.t("Setup Guide"),
                 subtitle: setupGuideSummaryText,
                 status: model.t("Setup Guide"),
                 statusColor: TokenPilotDesign.textSecondary,
                 systemImage: "checkmark.seal"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 GuideCard(
                     title: model.t("Connect Claude Code"),
                     status: model.sourceStatusText(.claude),
@@ -1272,6 +1358,17 @@ struct SettingsScreen: View {
                     copyText: claudeStatuslineSnippet,
                     onPrimary: { Task { await model.checkConnection(.claude) } },
                     onCopy: { model.copyToClipboard(claudeStatuslineSnippet) }
+                )
+                GuideCard(
+                    title: model.t("Command Code"),
+                    status: model.sourceStatusText(.commandcode),
+                    statusColor: model.sourceStatusColor(.commandcode),
+                    detail: model.sourceDetailText(.commandcode),
+                    explanation: model.t("Reads local session transcripts only. Local spend is activity, not remaining quota."),
+                    primaryAction: model.t("Check Connection"),
+                    copyText: nil,
+                    onPrimary: { Task { await model.checkConnection(.commandcode) } },
+                    onCopy: nil
                 )
                 GuideCard(
                     title: model.t("Terminal status line"),
@@ -1437,7 +1534,7 @@ struct SettingsScreen: View {
                 systemImage: "lock.shield"
             )
         } content: {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 Toggle(isOn: $model.settings.showMockDataWhenDisconnected) {
                     Text(model.t("Preview sample data when no source is connected"))
                         .fixedSize(horizontal: false, vertical: true)
@@ -1453,7 +1550,7 @@ struct SettingsScreen: View {
     }
 
     private var sourceHealthSummary: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: TokenPilotDesign.Spacing.sm) {
             StatusBadge(
                 label: "\(readyProviderCount)/\(sourceHealthProviderCount) \(model.t("sources ready"))",
                 color: readyProviderCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.warning
@@ -1473,15 +1570,15 @@ struct SettingsScreen: View {
     }
 
     private var runtimeRecoveryBanner: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
                 .foregroundStyle(TokenPilotDesign.warning)
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
                 Text(model.t("Capacity runtime recovery required"))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     .foregroundStyle(TokenPilotDesign.textPrimary)
                 Text(model.t("Capacity alerts use safe defaults until local runtime state is readable again."))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
@@ -1491,42 +1588,42 @@ struct SettingsScreen: View {
         }
         .padding(9)
         .background {
-            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous)
                 .stroke(TokenPilotDesign.warning, lineWidth: 1)
         )
     }
 
     private var capacityRefreshNotes: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
             Text(model.t("Capacity refresh notes"))
-                .font(.caption.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             ForEach(Array(model.capacityRefreshErrors.prefix(3))) { error in
                 Text("\(model.providerDisplayName(error.provider)): \(model.localizedStatus(error.redactedMessage))")
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .lineLimit(2)
             }
         }
         .padding(8)
         .background(TokenPilotDesign.surface(.cardMuted))
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
 
     private var notificationEffectiveSummary: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             Image(systemName: hasEffectiveNotificationChannel ? "bell.badge" : "bell.slash")
                 .foregroundStyle(hasEffectiveNotificationChannel ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                 Text(model.t("Effective notification delivery"))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     .foregroundStyle(TokenPilotDesign.textPrimary)
                 Text(notificationEffectiveDetail)
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1799,7 +1896,7 @@ struct SettingsScreen: View {
         ) {
             providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)
         } content: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 content()
             }
         }
@@ -1838,7 +1935,7 @@ struct SettingsScreen: View {
             }
 
             Text("\(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic))")
-                .font(.caption2.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1847,7 +1944,7 @@ struct SettingsScreen: View {
     }
 
     private var providerSetupOrder: [Provider] {
-        [.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter]
+        [.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .commandcode, .jetbrains, .minimax, .zai, .openrouter]
     }
 
     private var firstAttentionProvider: Provider? {
@@ -1882,7 +1979,7 @@ struct SettingsScreen: View {
             return model.t("No Codex token stored")
         case .minimax, .zai, .openrouter:
             return hasSavedAPIKey(provider) ? model.t("API key saved") : model.t("API key required")
-        case .claude, .gemini, .opencode, .kiro, .jetbrains:
+        case .claude, .gemini, .opencode, .kiro, .jetbrains, .commandcode:
             return model.t("No secret required")
         }
     }
@@ -2039,58 +2136,58 @@ struct SettingsScreen: View {
 
 
     private func providerDiagnosticRow(_ diagnostic: ProviderConnectionDiagnostic) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                     Text(model.providerDisplayName(diagnostic.provider))
-                        .font(.caption.weight(.bold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.bold))
                     Text("\(model.t("Last checked")): \(model.diagnosticLastCheckedText(diagnostic))")
-                        .font(.caption2)
+                        .font(TokenPilotDesign.Typography.explanation)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
                 Spacer(minLength: 0)
-                VStack(alignment: .trailing, spacing: 3) {
+                VStack(alignment: .trailing, spacing: TokenPilotDesign.Spacing.xxs) {
                     Text(model.diagnosticStatusText(diagnostic))
-                        .font(.caption2.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                         .foregroundStyle(model.diagnosticStatusColor(diagnostic))
                     Text("\(model.t("Confidence")): \(diagnostic.confidence.localizedLabel(language: model.settings.localization.language))")
-                        .font(.caption2)
+                        .font(TokenPilotDesign.Typography.explanation)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                 }
             }
 
             Text(model.diagnosticNextActionText(diagnostic))
-                .font(.caption2.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textPrimary)
             Text(model.diagnosticDetailText(diagnostic))
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
         }
         .padding(9)
         .background {
-            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
     private func providerStatusRow(_ provider: Provider) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                 Text(model.providerDisplayName(provider))
-                    .font(.caption.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 Text(model.providerStatusDetailText(provider))
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
             }
             Spacer(minLength: 0)
             Text(model.providerStatusText(provider))
-                .font(.caption2.weight(.semibold))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(providerStatusColor(provider))
         }
         .padding(9)
         .background {
-            LiquidGlassBackground(cornerRadius: 10, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
 
     private func providerStatusColor(_ provider: Provider) -> Color {
@@ -2126,11 +2223,11 @@ struct SettingsScreen: View {
 
 
     private func privacyLine(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(TokenPilotDesign.calm)
             Text(text)
-                .font(.caption)
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -2482,14 +2579,14 @@ struct CapacityAlertRuleRow: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top, spacing: 8) {
-                VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
+            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
                     Text(model.capacityAlertRowTitle(row))
-                        .font(.caption.weight(.semibold))
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                         .foregroundStyle(TokenPilotDesign.textPrimary)
                     Text(model.capacityAlertRowSubtitle(row))
-                        .font(.caption2)
+                        .font(TokenPilotDesign.Typography.explanation)
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .lineLimit(2)
                 }
@@ -2501,7 +2598,7 @@ struct CapacityAlertRuleRow: View {
             }
 
             if !row.channels.isEmpty {
-                HStack(spacing: 4) {
+                HStack(spacing: TokenPilotDesign.Spacing.xs) {
                     ForEach(row.channels) { channel in
                         CapacityAlertInfoPill(
                             label: model.capacityAlertChannelPillText(channel),
@@ -2516,7 +2613,7 @@ struct CapacityAlertRuleRow: View {
             let detail = model.capacityAlertRowDetail(row)
             if !detail.isEmpty {
                 Text(detail)
-                    .font(.caption2)
+                    .font(TokenPilotDesign.Typography.explanation)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2524,9 +2621,9 @@ struct CapacityAlertRuleRow: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
         .background {
-            LiquidGlassBackground(cornerRadius: 9, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
 }
 
@@ -2562,17 +2659,17 @@ struct GuideCard: View {
     let onCopy: (() -> Void)?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
             HStack {
                 Text(title)
-                    .font(.caption.weight(.bold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.bold))
                 Spacer()
                 Text(status)
-                    .font(.caption2.weight(.semibold))
+                    .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                     .foregroundStyle(statusColor)
             }
             Text(explanation)
-                .font(.caption2)
+                .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             if let detail, !detail.isEmpty {
                 Text(detail)
@@ -2584,6 +2681,7 @@ struct GuideCard: View {
             HStack {
                 Button(primaryAction, action: onPrimary)
                     .buttonStyle(.bordered)
+                    .accessibilityLabel("\(title), \(primaryAction)")
                 if copyText != nil, let onCopy {
                     Button(localized("Copy", language: language), action: onCopy)
                         .buttonStyle(.bordered)
@@ -2593,8 +2691,8 @@ struct GuideCard: View {
         }
         .padding(10)
         .background {
-            LiquidGlassBackground(cornerRadius: 12, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.lg, intensity: 0.55, surface: .cardMuted)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.lg, style: .continuous))
     }
 }

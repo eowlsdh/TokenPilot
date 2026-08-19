@@ -1520,6 +1520,46 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
 
+    /// Grants one provider's source folder.
+    ///
+    /// The Developer ID build reads the default home paths directly, so this is for a non-standard
+    /// install location. A sandboxed build cannot read those paths at all, and this is the only way
+    /// the provider ever gets data — the grant is stored as a read-only security-scoped bookmark.
+    func chooseProviderSourceFolder(_ provider: Provider) {
+        chooseLocalSource(
+            provider: provider,
+            prompt: t("Grant access"),
+            message: t("Choose this provider's local data folder. TokenPilot keeps read-only access to it."),
+            canChooseDirectories: true
+        ) { [weak self] url, bookmarkData in
+            guard let self else { return }
+            var next = self.settings
+            next.monitoredProviders.customPaths[provider] = url.path
+            next.monitoredProviders.customBookmarks[provider] = bookmarkData
+            self.settings = next
+        }
+    }
+
+    /// Drops a previously granted folder so the provider falls back to its default paths.
+    func clearProviderSourceFolder(_ provider: Provider) {
+        var next = settings
+        next.monitoredProviders.customPaths.removeValue(forKey: provider)
+        next.monitoredProviders.customBookmarks.removeValue(forKey: provider)
+        settings = next
+        Task { await checkConnection(provider) }
+    }
+
+    /// Folder name of the granted source, for display. Never the full path.
+    func grantedSourceFolderName(_ provider: Provider) -> String? {
+        guard let path = settings.monitoredProviders.customPaths[provider], !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    /// True when this build runs sandboxed, where providers only read folders the user granted.
+    var requiresSourceGrants: Bool {
+        ProviderSourceAccess.isSandboxed
+    }
+
     private func chooseLocalSource(
         provider: Provider,
         prompt: String,

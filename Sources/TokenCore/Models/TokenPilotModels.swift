@@ -12,6 +12,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case minimax
     case zai
     case openrouter
+    case commandcode
 
     public var id: String { rawValue }
 
@@ -28,6 +29,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .minimax: return "MiniMax"
         case .zai: return "Z.ai"
         case .openrouter: return "OpenRouter"
+        case .commandcode: return "Command Code"
         }
     }
 
@@ -44,6 +46,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .minimax: return "MM"
         case .zai: return "ZA"
         case .openrouter: return "OR"
+        case .commandcode: return "CC"
         }
     }
 
@@ -60,6 +63,7 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .minimax: return "waveform.path.ecg"
         case .zai: return "globe"
         case .openrouter: return "arrow.triangle.branch"
+        case .commandcode: return "terminal.fill"
         }
     }
 }
@@ -1295,6 +1299,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var minimaxEnabled: Bool
     public var zaiEnabled: Bool
     public var openrouterEnabled: Bool
+    public var commandcodeEnabled: Bool
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
@@ -1354,6 +1359,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         minimaxEnabled: Bool = false,
         zaiEnabled: Bool = false,
         openrouterEnabled: Bool = false,
+        commandcodeEnabled: Bool = false,
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
@@ -1409,6 +1415,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.minimaxEnabled = minimaxEnabled
         self.zaiEnabled = zaiEnabled
         self.openrouterEnabled = openrouterEnabled
+        self.commandcodeEnabled = commandcodeEnabled
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
@@ -1507,6 +1514,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case minimaxEnabled
         case zaiEnabled
         case openrouterEnabled
+        case commandcodeEnabled
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
@@ -1562,6 +1570,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
             xaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .xaiEnabled) ?? false,
             opencodeEnabled: try container.decodeIfPresent(Bool.self, forKey: .opencodeEnabled) ?? true,
             kiroEnabled: try container.decodeIfPresent(Bool.self, forKey: .kiroEnabled) ?? true,
+            // These flags were added after the original decode list and were never read back, so
+            // enabling one of these providers survived until the next launch and then silently
+            // turned itself off: `enabledProviders` intersects the legacy flags with the monitored
+            // set, and a flag that always decoded to false removed the provider again.
+            jetbrainsEnabled: try container.decodeIfPresent(Bool.self, forKey: .jetbrainsEnabled) ?? false,
+            minimaxEnabled: try container.decodeIfPresent(Bool.self, forKey: .minimaxEnabled) ?? false,
+            zaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .zaiEnabled) ?? false,
+            openrouterEnabled: try container.decodeIfPresent(Bool.self, forKey: .openrouterEnabled) ?? false,
+            commandcodeEnabled: try container.decodeIfPresent(Bool.self, forKey: .commandcodeEnabled) ?? false,
             deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
@@ -1961,7 +1978,7 @@ public struct CapacitySeriesID: Codable, Equatable, Hashable, Sendable, CustomSt
         SeriesSemantics(providers: [.codex], providerWindowID: "rolling", kind: .rolling, unit: .percent, duration: .requiredPositive, resetCapable: true),
         SeriesSemantics(providers: [.gemini], providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, duration: .optionalExact(1_440), resetCapable: true),
         SeriesSemantics(providers: [.deepseek], providerWindowID: "balance", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
-        SeriesSemantics(providers: [.opencode], providerWindowID: "session-cost", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.opencode, .commandcode], providerWindowID: "session-cost", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
         SeriesSemantics(providers: [.opencode], providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, duration: .optionalExact(300), resetCapable: true),
         SeriesSemantics(providers: [.opencode], providerWindowID: "rate-limit", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
         SeriesSemantics(providers: [.opencode], providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, duration: .optionalExact(43_200), resetCapable: true),

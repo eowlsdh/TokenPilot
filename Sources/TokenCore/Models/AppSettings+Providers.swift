@@ -43,7 +43,7 @@ extension AppSettings {
             return claudeStatusFileBookmarkData
         case .gemini:
             return geminiTelemetrySourceBookmarkData
-        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             return nil
         }
     }
@@ -54,7 +54,7 @@ extension AppSettings {
             claudeStatusFileBookmarkData = data
         case .gemini:
             geminiTelemetrySourceBookmarkData = data
-        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             break
         }
     }
@@ -96,6 +96,7 @@ extension AppSettings {
         case .minimax: return minimaxEnabled
         case .zai: return zaiEnabled
         case .openrouter: return openrouterEnabled
+        case .commandcode: return commandcodeEnabled
         }
     }
 
@@ -112,6 +113,7 @@ extension AppSettings {
         minimaxEnabled = safeProviders.contains(.minimax)
         zaiEnabled = safeProviders.contains(.zai)
         openrouterEnabled = safeProviders.contains(.openrouter)
+        commandcodeEnabled = safeProviders.contains(.commandcode)
         monitoredProviders.enabledProviders = safeProviders
     }
 }

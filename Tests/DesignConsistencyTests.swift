@@ -232,7 +232,68 @@ final class PaletteContrastTests: XCTestCase {
         }
     }
 
+    /// Provider accents label provider names and marks at 11pt, so they are held to the same bar.
+    func testProviderAccentsMeetSmallTextContrastInLightAppearance() throws {
+        let source = try Self.designSystemSource()
+        let card = try Self.rgb("cardDefinition", appearance: "light", in: source)
+        let muted = try Self.rgb("cardMutedDefinition", appearance: "light", in: source)
+
+        for provider in Provider.allCases {
+            let accent = try Self.accentRGB(provider: provider, appearance: "light", in: source)
+            let onCard = Self.contrastRatio(accent, card)
+            let onMuted = Self.contrastRatio(accent, muted)
+            XCTAssertGreaterThanOrEqual(
+                onCard,
+                Self.smallTextMinimum,
+                "\(provider.rawValue) accent is \(String(format: "%.2f", onCard)):1 on card"
+            )
+            XCTAssertGreaterThanOrEqual(
+                onMuted,
+                4.0,
+                "\(provider.rawValue) accent is \(String(format: "%.2f", onMuted)):1 on a muted card"
+            )
+        }
+    }
+
+    /// Status colors sit on both card surfaces in both appearances.
+    func testStatusColorsMeetSmallTextContrast() throws {
+        let source = try Self.designSystemSource()
+        for appearance in ["light", "dark"] {
+            let card = try Self.rgb("cardDefinition", appearance: appearance, in: source)
+            for token in ["dangerDefinition", "warningDefinition", "calmDefinition", "goalDefinition", "trustDefinition"] {
+                let color = try Self.rgb(token, appearance: appearance, in: source)
+                let contrast = Self.contrastRatio(color, card)
+                XCTAssertGreaterThanOrEqual(
+                    contrast,
+                    Self.smallTextMinimum,
+                    "\(token) on card (\(appearance)) is \(String(format: "%.2f", contrast)):1"
+                )
+            }
+        }
+    }
+
     // MARK: helpers
+
+    /// Reads the `case .<provider>: return SemanticColorDefinition(...)` accent arms.
+    private static func accentRGB(provider: Provider, appearance: String, in source: String) throws -> (Double, Double, Double) {
+        // Match the case arm only, so a comment between the arm and the definition cannot turn this
+        // guard into a silent skip.
+        guard let accentRange = source.range(of: "private static func accent(for provider: Provider"),
+              let caseRange = source.range(of: "case .\(provider.rawValue):", range: accentRange.upperBound..<source.endIndex) else {
+            throw XCTSkip("accent arm not found: \(provider.rawValue)")
+        }
+        let window = String(source[caseRange.upperBound...].prefix(500))
+        let regex = try NSRegularExpression(pattern: "\(appearance): rgb\\(([0-9.]+), ([0-9.]+), ([0-9.]+)\\)")
+        guard let match = regex.firstMatch(in: window, range: NSRange(window.startIndex..<window.endIndex, in: window)),
+              match.numberOfRanges == 4,
+              let r = Range(match.range(at: 1), in: window).flatMap({ Double(window[$0]) }),
+              let g = Range(match.range(at: 2), in: window).flatMap({ Double(window[$0]) }),
+              let b = Range(match.range(at: 3), in: window).flatMap({ Double(window[$0]) }) else {
+            XCTFail("could not read \(appearance) accent for \(provider.rawValue)")
+            return (0, 0, 0)
+        }
+        return (r, g, b)
+    }
 
     private static func designSystemSource() throws -> String {
         let url = URL(fileURLWithPath: #filePath)
@@ -272,5 +333,147 @@ final class PaletteContrastTests: XCTestCase {
             value <= 0.04045 ? value / 12.92 : pow((value + 0.055) / 1.055, 2.4)
         }
         return 0.2126 * channel(color.0) + 0.7152 * channel(color.1) + 0.0722 * channel(color.2)
+    }
+}
+
+// MARK: - Sandbox source grants
+
+/// A sandboxed build (the App Store entitlements) can only read folders the user granted, so these
+/// cover both halves: the Developer ID build keeps reading its default paths, and the sandboxed one
+/// asks for a grant instead of reporting "not found".
+final class ProviderSourceAccessTests: XCTestCase {
+    private var directory: URL!
+
+    override func setUpWithError() throws {
+        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("source-access-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        if let directory, FileManager.default.fileExists(atPath: directory.path) {
+            try FileManager.default.removeItem(at: directory)
+        }
+    }
+
+    func testUnsandboxedBuildKeepsUsingDefaultPaths() {
+        let defaults = [URL(fileURLWithPath: "/tmp/defaults", isDirectory: true)]
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .commandcode,
+            settings: AppSettings(),
+            defaults: defaults,
+            sandboxed: false
+        )
+        defer { resolution.release() }
+        XCTAssertEqual(resolution.roots, defaults)
+        XCTAssertFalse(resolution.needsUserGrant)
+    }
+
+    func testSandboxedBuildWithoutAGrantAsksForOne() {
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .commandcode,
+            settings: AppSettings(),
+            defaults: [URL(fileURLWithPath: "/tmp/defaults", isDirectory: true)],
+            sandboxed: true
+        )
+        defer { resolution.release() }
+        XCTAssertTrue(resolution.roots.isEmpty, "a sandboxed build must not pretend it can read a default path")
+        XCTAssertTrue(resolution.needsUserGrant)
+    }
+
+    func testGrantedFolderWinsOverDefaults() {
+        var settings = AppSettings()
+        settings.monitoredProviders.customPaths[.kiro] = directory.path
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .kiro,
+            settings: settings,
+            defaults: [URL(fileURLWithPath: "/tmp/defaults", isDirectory: true)],
+            sandboxed: false
+        )
+        defer { resolution.release() }
+        XCTAssertEqual(resolution.roots.map(\.path), [directory.path])
+        XCTAssertFalse(resolution.needsUserGrant)
+    }
+
+    func testBookmarkResolvesAndSatisfiesASandboxedBuild() throws {
+        let bookmark = try TokenPilotSecurityScopedBookmarks.makeReadOnlyBookmarkData(for: directory)
+        var settings = AppSettings()
+        settings.monitoredProviders.customPaths[.codex] = directory.path
+        settings.monitoredProviders.customBookmarks[.codex] = bookmark
+
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .codex,
+            settings: settings,
+            defaults: [],
+            sandboxed: true
+        )
+        defer { resolution.release() }
+        XCTAssertFalse(resolution.needsUserGrant)
+        XCTAssertEqual(resolution.roots.first?.standardizedFileURL.path, directory.standardizedFileURL.path)
+    }
+
+    func testGrantsSurviveASettingsRoundTrip() throws {
+        let bookmark = try TokenPilotSecurityScopedBookmarks.makeReadOnlyBookmarkData(for: directory)
+        var settings = AppSettings()
+        settings.monitoredProviders.customPaths[.opencode] = directory.path
+        settings.monitoredProviders.customBookmarks[.opencode] = bookmark
+
+        let decoded = try JSONDecoder().decode(AppSettings.self, from: JSONEncoder().encode(settings))
+        XCTAssertEqual(decoded.monitoredProviders.customPaths[.opencode], directory.path)
+        XCTAssertEqual(decoded.monitoredProviders.customBookmarks[.opencode], bookmark)
+    }
+
+    func testAdapterReportsTheGrantInsteadOfAMissingFolder() async {
+        var settings = AppSettings()
+        _ = settings.setProviderEnabled(.commandcode, isEnabled: true)
+        // The adapter resolves through ProviderSourceAccess, so an ungranted sandboxed build stops
+        // before touching the filesystem; unsandboxed here, a missing default folder still reports
+        // the honest "not found" message.
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("never-created-\(UUID().uuidString)", isDirectory: true)
+        let snapshot = await CommandCodeLocalSessionAdapter(projectRoots: [missing]).snapshot(settings: settings)
+        XCTAssertTrue(
+            snapshot.statusMessage == "Command Code session folder not found" ||
+            snapshot.statusMessage == "Choose the Command Code folder to grant access",
+            "unexpected status: \(snapshot.statusMessage ?? "nil")"
+        )
+        XCTAssertEqual(snapshot.dataSource, .unknown)
+    }
+
+    /// Every file-backed provider must be grantable, or a sandboxed build silently loses it.
+    func testEveryFileBackedProviderResolvesThroughTheGrantPath() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/TokenApp/Views/SettingsScreen.swift"),
+            encoding: .utf8
+        )
+        for provider in [Provider.claude, .codex, .opencode, .kiro, .commandcode, .jetbrains, .xai] {
+            XCTAssertTrue(
+                source.contains("sourceGrantRow(.\(provider.rawValue))"),
+                "\(provider.rawValue) has no way to be granted a source folder"
+            )
+        }
+    }
+
+    func testGrantMessagesAreLocalized() {
+        let keys = [
+            "Choose the Command Code folder to grant access",
+            "Choose the Kiro folder to grant access",
+            "Choose the Codex folder to grant access",
+            "Choose the opencode folder to grant access",
+            "Choose the Grok folder to grant access",
+            "Choose the JetBrains folder to grant access",
+            "Choose Folder",
+            "This build is sandboxed, so it only reads folders you grant. Choose this provider's folder once to start monitoring it."
+        ]
+        for key in keys {
+            for language in [TokenPilotLanguage.ko, .ja, .zhHans, .zhHant] {
+                let value = TokenPilotLocalizer.localized(key, language: language)
+                XCTAssertFalse(value.isEmpty)
+                XCTAssertNotEqual(value, key, "missing \(language) translation for: \(key)")
+            }
+        }
     }
 }

@@ -133,10 +133,18 @@ enum TokenPilotDesign {
         static let cardTitle = Font.system(size: 14, weight: .semibold, design: .rounded)
         static let label = Font.system(size: 12, weight: .medium)
         static let caption = Font.system(size: 11, weight: .medium)
+        /// Multi-line explanatory copy. Regular weight so a paragraph does not read as a label,
+        /// and 11pt rather than the 10pt `.caption2` this replaced across Settings.
+        static let explanation = Font.system(size: 11, weight: .regular)
         static let micro = Font.system(size: 10, weight: .semibold, design: .monospaced)
         static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
         static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
         static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
+        /// Chart axis ticks and heatmap month labels. Was 7-8pt inline, which is below the floor
+        /// for anything a reader is expected to actually read.
+        static let axis = Font.system(size: 9, weight: .medium, design: .monospaced)
+        /// Leading glyph inside a chip, sized to sit with `micro` text.
+        static let chipGlyph = Font.system(size: 9, weight: .semibold)
         static let glyph = Font.system(size: 12, weight: .semibold)
     }
 
@@ -151,6 +159,8 @@ enum TokenPilotDesign {
     }
 
     enum Radius {
+        /// Progress bars and other 2-4pt fills.
+        static let xxs: CGFloat = 2
         static let xs: CGFloat = 4
         static let sm: CGFloat = 6
         static let md: CGFloat = 8
@@ -300,8 +310,9 @@ enum TokenPilotDesign {
     )
     static let danger = dangerDefinition.color()
 
+    // Light-mode warning sits on muted cards too, where the old value measured 4.16:1.
     private static let warningDefinition = SemanticColorDefinition(
-        light: rgb(0.700, 0.355, 0.000),
+        light: rgb(0.660, 0.330, 0.000),
         dark: rgb(0.961, 0.647, 0.141),
         lightHighContrast: rgb(0.500, 0.245, 0.000),
         darkHighContrast: rgb(1.000, 0.780, 0.250)
@@ -334,6 +345,9 @@ enum TokenPilotDesign {
 
     static let cardRadius = Radius.card
     static let cardPadding = Spacing.xl
+    /// Denser cards (charts, list cards) still share one rhythm instead of the 10/12/14 mix that
+    /// made neighbouring cards look mismatched.
+    static let cardPaddingCompact = Spacing.section
     static let rowSpacing = Spacing.md
     static let sectionSpacing = Spacing.section
 
@@ -407,7 +421,7 @@ enum TokenPilotDesign {
         switch provider {
         case .claude:
             return SemanticColorDefinition(
-                light: rgb(0.780, 0.360, 0.040),
+                light: rgb(0.700, 0.300, 0.010),
                 dark: rgb(1.000, 0.640, 0.230),
                 lightHighContrast: rgb(0.590, 0.235, 0.000),
                 darkHighContrast: rgb(1.000, 0.720, 0.330)
@@ -415,7 +429,7 @@ enum TokenPilotDesign {
             .color(contrast: contrast)
         case .codex:
             return SemanticColorDefinition(
-                light: rgb(0.000, 0.520, 0.230),
+                light: rgb(0.000, 0.480, 0.210),
                 dark: rgb(0.160, 0.740, 0.370),
                 lightHighContrast: rgb(0.000, 0.380, 0.155),
                 darkHighContrast: rgb(0.310, 0.880, 0.480)
@@ -461,9 +475,19 @@ enum TokenPilotDesign {
                 darkHighContrast: rgb(0.830, 0.630, 1.000)
             )
             .color(contrast: contrast)
+        case .commandcode:
+            // Rose-plum: the one hue band no other provider uses, and it clears 4.5:1 on
+            // card and muted card in light appearance as well as on the dark card.
+            return SemanticColorDefinition(
+                light: rgb(0.700, 0.100, 0.450),
+                dark: rgb(1.000, 0.420, 0.720),
+                lightHighContrast: rgb(0.520, 0.040, 0.360),
+                darkHighContrast: rgb(1.000, 0.560, 0.800)
+            )
+            .color(contrast: contrast)
         case .jetbrains:
             return SemanticColorDefinition(
-                light: rgb(0.850, 0.330, 0.130),
+                light: rgb(0.740, 0.260, 0.080),
                 dark: rgb(1.000, 0.520, 0.260),
                 lightHighContrast: rgb(0.670, 0.200, 0.050),
                 darkHighContrast: rgb(1.000, 0.620, 0.360)
@@ -471,7 +495,7 @@ enum TokenPilotDesign {
             .color(contrast: contrast)
         case .minimax:
             return SemanticColorDefinition(
-                light: rgb(0.000, 0.560, 0.600),
+                light: rgb(0.000, 0.470, 0.510),
                 dark: rgb(0.160, 0.760, 0.800),
                 lightHighContrast: rgb(0.000, 0.420, 0.460),
                 darkHighContrast: rgb(0.330, 0.850, 0.880)

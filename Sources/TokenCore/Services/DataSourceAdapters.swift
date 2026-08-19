@@ -556,8 +556,18 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
             return parseStatuslineFile(fileURL, bookmarkData: bookmarkData)
         }
 
-        if shouldUseLocalJSONLFallback(fileURL: fileURL, settings: settings), let fallback = parseLocalJSONLFallback() {
-            return fallback
+        if shouldUseLocalJSONLFallback(fileURL: fileURL, settings: settings) {
+            // The statusline file has its own bookmark; the projects fallback needs its own grant,
+            // because a sandboxed build cannot walk ~/.claude/projects without one.
+            let resolution = ProviderSourceAccess.resolve(
+                provider: .claude,
+                settings: settings,
+                defaults: fallbackProjectRoots ?? defaultClaudeProjectRoots()
+            )
+            defer { resolution.release() }
+            if !resolution.needsUserGrant, let fallback = parseLocalJSONLFallback(roots: resolution.roots) {
+                return fallback
+            }
         }
 
         return ProviderSnapshot(
@@ -2064,7 +2074,21 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             return await manualFallback.snapshot(settings: settings)
         }
 
-        let roots = sessionRoots ?? defaultCodexSessionRoots()
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .codex,
+            settings: settings,
+            defaults: sessionRoots ?? defaultCodexSessionRoots()
+        )
+        defer { resolution.release() }
+        guard !resolution.needsUserGrant else {
+            return ProviderSnapshot(
+                provider: .codex,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Choose the Codex folder to grant access"
+            )
+        }
+        let roots = resolution.roots
         let allFiles = candidateFiles(in: roots, allowedExtensions: ["jsonl"], maxFiles: maxSessionFiles * 3)
         let now = Date()
         let calendar = Calendar.current

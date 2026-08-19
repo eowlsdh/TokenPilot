@@ -423,7 +423,7 @@ final class TokenMonitorTests: XCTestCase {
         settings.menuBarShowsSecondaryProvider = true
         settings.xAI.usageSource = .experimentalOpenCodeBarCLI
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
-        for provider in [Provider.jetbrains, .minimax, .zai, .openrouter] {
+        for provider in [Provider.jetbrains, .minimax, .zai, .openrouter, .commandcode] {
             _ = settings.setProviderEnabled(provider, isEnabled: true)
         }
 
@@ -453,10 +453,10 @@ final class TokenMonitorTests: XCTestCase {
 
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(segments.count, Provider.allCases.count)
-        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter])
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
-            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO", "JETBRAINS", "MINIMAX", "ZAI", "OPENROUTER"]
+            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO", "JETBRAINS", "MINIMAX", "ZAI", "OPENROUTER", "CMD"]
         )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
@@ -1132,9 +1132,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
         XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
         XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
-        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .commandcode, .jetbrains, .minimax, .zai, .openrouter]"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .opencode, title: model.t(\"opencode\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .kiro, title: model.t(\"Kiro\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .commandcode, title: model.t(\"Command Code\"))"))
 
         XCTAssertTrue(
             source.contains("ForEach(Provider.allCases) { provider in\n                            providerToggle(provider)"),
@@ -1248,7 +1249,11 @@ final class TokenMonitorTests: XCTestCase {
         }
         XCTAssertFalse(redesignedViewSource.localizedCaseInsensitiveContains("dashboard"))
 
-        XCTAssertTrue(settingsCollapsed.contains("consoleSummary generalSettings sourceSettings notificationSettings privacySettings"))
+        // Most-used sections first; the misleading "1.-6." numbering is gone from the titles.
+        XCTAssertTrue(settingsCollapsed.contains("consoleSummary sourceSettings setupGuide notificationSettings telegramSettings discordSettings generalSettings languageSettings privacySettings"))
+        for numberedTitle in ["1. Source Health", "2. Notifications", "3. Telegram", "4. Discord", "5. Language", "6. Setup Guide"] {
+            XCTAssertFalse(settingsSource.contains(numberedTitle), "numbered section titles were replaced: \(numberedTitle)")
+        }
         XCTAssertTrue(settingsSource.contains("title: model.t(\"Settings overview\")"))
         XCTAssertFalse(settingsSource.contains("Settings disclosure console"))
         XCTAssertTrue(settingsSource.contains("title: model.t(\"Source health\")"))

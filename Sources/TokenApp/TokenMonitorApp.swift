@@ -1060,11 +1060,14 @@ private final class MetricStatusItem {
     }
 }
 private final class ProviderMetricsMenuBarNSView: NSView {
-    private static let titleFont = NSFont.monospacedSystemFont(ofSize: 7, weight: .medium)
-    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 10.5, weight: .bold)
+    private static let titleFont = NSFont.monospacedSystemFont(ofSize: 8, weight: .semibold)
+    private static let valueFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .bold)
     private static let horizontalPadding: CGFloat = 3
     private static let segmentSpacing: CGFloat = 5
-    private static let titleRowHeight = ceil(titleFont.ascender - titleFont.descender + titleFont.leading)
+    // The 7pt label the block used to draw was below the legibility floor for a menu bar. Provider
+    // labels are uppercase, so the title row only needs the ascent; giving back the unused descender
+    // space pays for an 8pt label and an 11pt value while the block stays under the 22pt bar.
+    private static let titleRowHeight = ceil(titleFont.ascender)
     private static let valueRowHeight = ceil(valueFont.ascender - valueFont.descender + valueFont.leading)
     private static let viewHeight = titleRowHeight + valueRowHeight
 

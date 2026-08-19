@@ -93,7 +93,26 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             return ProviderSnapshot(provider: .opencode, confidence: .low, statusMessage: "Disabled")
         }
 
-        let databases = databaseURLs ?? Self.defaultDatabaseURLs()
+        // A granted folder covers the store inside it, so the sandbox reads the databases through
+        // the same grant instead of failing silently on a fixed home path.
+        let grant = ProviderSourceAccess.resolve(
+            provider: .opencode,
+            settings: settings,
+            defaults: []
+        )
+        defer { grant.release() }
+        guard !grant.needsUserGrant else {
+            return ProviderSnapshot(
+                provider: .opencode,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Choose the opencode folder to grant access"
+            )
+        }
+        let grantedDatabases = grant.roots.flatMap { root in
+            ["opencode.db", "opencode-next.db"].map { root.appendingPathComponent($0) }
+        }
+        let databases = grantedDatabases.isEmpty ? (databaseURLs ?? Self.defaultDatabaseURLs()) : grantedDatabases
         var events: [UsageEvent] = []
         var seenMessageIDs = Set<String>()
         for database in databases {

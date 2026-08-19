@@ -203,7 +203,15 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
     }
 
     public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
-        var snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+        let resolution = ProviderSourceAccess.resolve(provider: .xai, settings: settings, defaults: sessionRoots)
+        defer { resolution.release() }
+        var snapshot: ProviderSnapshot
+        if resolution.needsUserGrant {
+            snapshot = Self.unavailableSnapshot(now: now)
+            snapshot.statusMessage = "Choose the Grok folder to grant access"
+        } else {
+            snapshot = Self.newestSnapshot(in: resolution.roots, now: now) ?? Self.unavailableSnapshot(now: now)
+        }
 
         if settings.grokTierProbeEnabled, let makeProbe = makeTierProbe {
             switch await makeProbe().probe(settings: settings) {
@@ -1179,6 +1187,45 @@ public enum CapacityObservationFactory {
                ) {
                 observations.append(observation)
             }
+        case .commandcode:
+            // Command Code meters its plans in dollars over rolling 5-hour and 7-day windows, but
+            // publishes those meters only through `/usage` and Studio, behind the API key. Local
+            // transcripts therefore yield activity evidence only: spend and tokens, both
+            // incomparable to provider quota and alert-ineligible.
+            if let balance = snapshot.balance,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "session-cost", kind: .balance, unit: .currency),
+               let value = try? CapacityValue(money: balance.toppedUpBalance, currency: balance.currency),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if snapshot.todayTokens > 0,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "context", kind: .context, unit: .tokens),
+               let value = try? CapacityValue(tokens: snapshot.todayTokens),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
         case .zai:
             if let weekly = snapshot.weekly,
                weekly.providerWindowID == "zai-tokens-limit",
@@ -1544,6 +1591,9 @@ public final class UsageStore: @unchecked Sendable {
         let kiroSessionRoots = pathResolver.resolveDefaultPaths(for: .kiro)
             .filter { ["ide_sessions", "cli_sessions"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let commandCodeProjectRoots = pathResolver.resolveDefaultPaths(for: .commandcode)
+            .filter { $0.kind == "projects" && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
 
         return [
             ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots, makeUsageProbe: { ClaudeOAuthUsageProbe() }),
@@ -1556,6 +1606,7 @@ public final class UsageStore: @unchecked Sendable {
                 legacyMessageRoots: openCodeLegacyRoots.isEmpty ? nil : openCodeLegacyRoots
             ),
             KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots),
+            CommandCodeLocalSessionAdapter(projectRoots: commandCodeProjectRoots.isEmpty ? nil : commandCodeProjectRoots),
             JetBrainsAIAssistantAdapter(),
             MiniMaxTokenPlanAdapter(),
             ZAIUsageAdapter(),
