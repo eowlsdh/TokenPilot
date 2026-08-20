@@ -34,6 +34,8 @@
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
 - **Claude / Codex / Antigravity(레거시 Gemini telemetry) / DeepSeek / Grok/xAI 통합**: 각 provider의 로컬 메타데이터, 선택형 balance 신호, Grok 로컬 context 메타데이터를 한 화면에 정리합니다.
 - **Command Code**: `~/.commandcode/projects/<프로젝트>/<세션>.jsonl` 세션 기록에서 턴별 토큰과 비용을 읽습니다. `auth.json`은 읽지 않으며, 5시간·7일 롤링 금액 한도는 Command Code 자체 `/usage`에만 공개되므로 로컬 지출은 활동으로만 표시합니다.
+- **JetBrains AI Assistant**: JetBrains가 IDE별 캐시(`options/AIAssistantQuotaManager2.xml`)에 직접 기록한 할당량을 읽습니다. API key가 필요 없지만, 샌드박스 빌드에서는 설정에서 폴더 권한을 먼저 허용해야 합니다.
+- **MiniMax / Z.ai / OpenRouter**: 사용자가 설정에 저장한 API key로 각 provider의 공식 사용량 엔드포인트를 호출합니다. key는 Keychain에 보관하며 로그·진단·export에 절대 기록하지 않습니다. key가 없으면 해당 provider는 꺼진 상태로 그렇게 표시하며, 추측값으로 대체하지 않습니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.

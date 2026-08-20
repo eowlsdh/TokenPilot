@@ -47,7 +47,7 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Glanceable provider percentages** | Native two-row `NSStatusItem` blocks keep each selected provider's remaining percentage visible; show them separately or combined. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, Kiro credits, and Command Code session tokens/cost in one place. |
+| 📊 **Multi-provider monitoring + setup** | Twelve assistants in one place: Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, opencode, Kiro, Command Code, Grok local context, JetBrains AI Assistant, DeepSeek, MiniMax, Z.ai, and OpenRouter. |
 | 🧮 **Per-model breakdown** | The History screen ranks every model by tokens for the selected period, with request counts and estimated cost where the provider reports it. Included in JSON export under `localActivity.modelBreakdown`. |
 | 📈 **7-day trend** | The History screen charts the last seven days of local token activity, highlighting the peak day and counting active days. Inactive days stay visible as zero so gaps are obvious. |
 | 📁 **Per-project breakdown** | opencode History ranks workspaces by tokens, requests, and cost for the selected period using only workspace folder names; never included in exports. |
@@ -127,6 +127,19 @@ To use it with Claude Code, set it as your status line command first, then insta
 
 `export` accepts `--format json|csv` (default `json`), `--period today|last7Days|thisMonth` (default `last7Days`), `--out <path>`, and `--capacity` (append latest stored capacity evidence). Output never includes prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
 
+Four more read-only commands share the same filters and redaction rules:
+
+| Command | What it prints |
+|---|---|
+| `stats` | Totals with a per-model and per-provider breakdown for the window |
+| `report` | A shareable summary, with `--md`, `--csv`, `--json`, or SVG output |
+| `audit` | Coverage gaps in the stored history — which days and providers are thin |
+| `blocks` | The rolling 5-hour usage blocks, with `--active` / `--recent` filters |
+
+All four accept the window selectors (`--period`, `--since`/`--until`, `--days`, `--timezone`,
+`--start-of-week`) and the `--provider`, `--model`, `--project`, and `--sort` filters. Run
+`TokenPilot --help` for the full list.
+
 ---
 
 ## How It Works
@@ -154,6 +167,19 @@ First-run setup is centered in **Settings → Provider Diagnostics**:
 - DeepSeek balance setup is explicit: no API key, official balance connected, stale balance, or manual fallback.
 - Grok/xAI diagnostics report local signal availability and remaining local context. The separate experimental OAuth weekly path is default-off, consent-gated, and does not store credentials or claim official provider quota.
 - opencode and Kiro diagnostics report local session store availability. Their databases are opened read-only and immutable, so a running agent is never blocked and its data is never modified. Credential tables (`account`, `credential`, `auth_kv`) are never read.
+
+### JetBrains AI Assistant
+
+Reads the quota JetBrains writes to its own per-IDE cache (`options/AIAssistantQuotaManager2.xml`
+under `~/Library/Application Support/JetBrains`). No API key, no account — but under the sandboxed
+build the folder has to be granted in Settings first.
+
+### MiniMax, Z.ai, and OpenRouter
+
+Each reads its provider's official usage endpoint using an API key **you** save in Settings, which
+is kept in the Keychain and never written to logs, diagnostics, or exports. Without a key the
+provider stays off and says so; it never falls back to guessing. MiniMax reports its Token Plan,
+Z.ai its GLM plan, and OpenRouter its remaining credits.
 
 ### Grok / xAI source
 
