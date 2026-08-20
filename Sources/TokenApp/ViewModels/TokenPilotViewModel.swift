@@ -514,6 +514,74 @@ final class TokenPilotViewModel: ObservableObject {
         capacityAlertSummary.rows
     }
 
+    /// The percentages Settings offers as one-tap choices. Any value in 1...100 is valid; these are
+    /// the ones worth a chip, and they cover what the benchmarked trackers default to (75/90/95).
+    static let offeredAlertThresholds = [50, 75, 80, 90, 95, 100]
+
+    /// Chips to show for a rule: the offered set, plus any percentage the rule already carries, so
+    /// a threshold set elsewhere is never silently dropped by editing something next to it.
+    func alertThresholdChoices(for row: CapacityAlertVisibilityRow) -> [Int] {
+        Set(Self.offeredAlertThresholds + row.percentThresholds.compactMap(\.percent)).sorted()
+    }
+
+    /// Replaces a rule's thresholds.
+    ///
+    /// `replacingCondition` bumps the condition revision, which is part of the delivery key, so the
+    /// edited rule starts with no delivery history. That is what should happen: the transition
+    /// engine records a first sighting without firing, so a newly added threshold arrives at the
+    /// next crossing rather than immediately for a window the user is already inside.
+    func setCapacityAlertThresholds(ruleID: String, reset: Bool, percents: Set<Int>) async {
+        let load = await capacityAlertRuleStore.load()
+        guard !load.recoveryStatus.recoveryRequired else {
+            bannerMessage = t("Alert settings are recovering; try again in a moment.")
+            return
+        }
+        guard let existing = load.rules.first(where: { $0.id == ruleID }) else { return }
+
+        // Every alert off would leave a rule that watches nothing while still looking configured.
+        guard reset || !percents.isEmpty else {
+            bannerMessage = t("Keep at least one alert threshold.")
+            return
+        }
+
+        guard let updated = try? existing.replacingCondition(
+            .percentThresholds(reset: reset, percents: percents)
+        ) else {
+            bannerMessage = t("That alert threshold is not supported for this window.")
+            return
+        }
+
+        let next = load.rules.filter { $0.id != ruleID } + [updated]
+        let save = await capacityAlertRuleStore.save(next.sorted { $0.id < $1.id })
+        guard !save.recoveryStatus.writeBlocked else {
+            bannerMessage = t("Could not save alert settings.")
+            return
+        }
+        capacityAlertRules = next.sorted { $0.id < $1.id }
+    }
+
+    func toggleCapacityAlertThreshold(row: CapacityAlertVisibilityRow, percent: Int) async {
+        var percents = Set(row.percentThresholds.compactMap(\.percent))
+        if percents.contains(percent) {
+            percents.remove(percent)
+        } else {
+            percents.insert(percent)
+        }
+        await setCapacityAlertThresholds(
+            ruleID: row.id,
+            reset: row.percentThresholds.contains(where: \.isReset),
+            percents: percents
+        )
+    }
+
+    func toggleCapacityAlertReset(row: CapacityAlertVisibilityRow) async {
+        await setCapacityAlertThresholds(
+            ruleID: row.id,
+            reset: !row.percentThresholds.contains(where: \.isReset),
+            percents: Set(row.percentThresholds.compactMap(\.percent))
+        )
+    }
+
     var alertStatusText: String {
         let summary = capacityAlertSummary
         var parts = [capacityAlertChannelPreferenceSummary()]

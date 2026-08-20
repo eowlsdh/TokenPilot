@@ -2627,6 +2627,38 @@ struct CapacityAlertRuleRow: View {
                 }
             }
 
+            if row.conditionKind == .percentThresholds, !row.readOnly {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+                    Text(model.t("Alert at"))
+                        .font(TokenPilotDesign.Typography.explanation)
+                        .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    // Seven chips do not fit one 420pt row; the adaptive grid is the wrapping
+                    // idiom this codebase already uses for chip rows.
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 54), spacing: TokenPilotDesign.Spacing.xs)],
+                        alignment: .leading,
+                        spacing: TokenPilotDesign.Spacing.xs
+                    ) {
+                        CapacityAlertThresholdChip(
+                            label: model.t("Reset"),
+                            isOn: row.percentThresholds.contains(where: \.isReset),
+                            accessibilityLabel: "\(model.capacityAlertRowTitle(row)), \(model.t("Reset"))"
+                        ) {
+                            await model.toggleCapacityAlertReset(row: row)
+                        }
+                        ForEach(model.alertThresholdChoices(for: row), id: \.self) { percent in
+                            CapacityAlertThresholdChip(
+                                label: "\(percent)%",
+                                isOn: row.percentThresholds.contains { $0.percent == percent },
+                                accessibilityLabel: "\(model.capacityAlertRowTitle(row)), \(percent)%"
+                            ) {
+                                await model.toggleCapacityAlertThreshold(row: row, percent: percent)
+                            }
+                        }
+                    }
+                }
+            }
+
             let detail = model.capacityAlertRowDetail(row)
             if !detail.isEmpty {
                 Text(detail)
@@ -2641,6 +2673,39 @@ struct CapacityAlertRuleRow: View {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
+    }
+}
+
+/// A threshold the user can switch on or off.
+///
+/// The model accepts any percentage from 1 to 100, but a 420pt popover is no place for numeric
+/// entry per rule; these cover what the benchmarked trackers default to, and any value already
+/// stored appears alongside them so editing one threshold never silently drops another.
+struct CapacityAlertThresholdChip: View {
+    let label: String
+    let isOn: Bool
+    let accessibilityLabel: String
+    let action: () async -> Void
+
+    var body: some View {
+        Button {
+            Task { await action() }
+        } label: {
+            Text(label)
+                .font(TokenPilotDesign.Typography.badge)
+                .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+                .padding(.vertical, TokenPilotDesign.Spacing.xs)
+                .background(isOn ? TokenPilotDesign.trust.opacity(0.16) : TokenPilotDesign.surface(.badge))
+                .overlay(
+                    Capsule().stroke(isOn ? TokenPilotDesign.trust.opacity(0.35) : TokenPilotDesign.border, lineWidth: 1)
+                )
+                .foregroundStyle(isOn ? TokenPilotDesign.trust : TokenPilotDesign.text(.secondary))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(isOn ? Text("On") : Text("Off"))
+        .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
     }
 }
 
