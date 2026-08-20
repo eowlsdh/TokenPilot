@@ -42,6 +42,7 @@ final class CapacityAlertCoverageTests: XCTestCase {
             return !alertable
                 && CapacityAlertCatalogue.deliberatelyNotAlertable[key] == nil
                 && CapacityAlertCatalogue.alertableOnlyFromObservedSeries[key] == nil
+                && CapacityAlertCatalogue.needsAConditionKindThatDoesNotExistYet[key] == nil
         }
 
         XCTAssertTrue(
@@ -56,6 +57,28 @@ final class CapacityAlertCoverageTests: XCTestCase {
     func testEveryCatalogueEntryResolvesToASeries() {
         for entry in CapacityAlertCatalogue.alertableSeries {
             XCTAssertNotNil(entry.seriesID, "\(entry.provider.rawValue)/\(entry.providerWindowID)")
+        }
+    }
+
+    /// Resolving to a series is not the same as being able to watch it. `CapacityAlertRule` rejects
+    /// a percent-threshold rule whose series is counted in anything but percent, so an entry can
+    /// look alertable and be unbuildable — which is exactly what Gemini's daily *request* cap was
+    /// until this test existed.
+    func testEveryAlertableEntryCanActuallyBuildARule() throws {
+        for entry in CapacityAlertCatalogue.alertableSeries {
+            let seriesID = try XCTUnwrap(entry.seriesID)
+            XCTAssertNoThrow(
+                try CapacityAlertRule(
+                    provider: entry.provider,
+                    seriesID: seriesID,
+                    authority: .providerReported,
+                    stability: .supported,
+                    enabled: true,
+                    routing: CapacityAlertRouting(macOS: true, telegram: false, discord: false),
+                    condition: CapacityAlertCatalogue.defaultThresholds
+                ),
+                "\(entry.provider.rawValue)/\(entry.providerWindowID) is listed as alertable but no rule can be built for it"
+            )
         }
     }
 

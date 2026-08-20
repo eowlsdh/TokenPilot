@@ -51,7 +51,6 @@ public enum CapacityAlertCatalogue {
         AlertableSeries(provider: .claude, providerWindowID: "seven-day", kind: .fixedReset, unit: .percent),
         // Codex reports its own window durations, so the duration is part of the series identity and
         // cannot be stated here; rules for these are created from what was actually observed.
-        AlertableSeries(provider: .gemini, providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, durationMinutes: 1_440),
         AlertableSeries(provider: .opencode, providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, durationMinutes: 300),
         AlertableSeries(provider: .opencode, providerWindowID: "rate-limit", kind: .fixedReset, unit: .percent),
         AlertableSeries(provider: .opencode, providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, durationMinutes: 43_200),
@@ -69,6 +68,17 @@ public enum CapacityAlertCatalogue {
     /// from what the evidence store actually saw — which is the same mechanism the other providers
     /// will need, and the reason this is recorded as a third category rather than filed under
     /// "not alertable", which would be false.
+    /// Series that measure something real but that no existing condition can express.
+    ///
+    /// A percent-threshold rule requires a percentage: `CapacityAlertRule` rejects one whose series
+    /// is counted in anything else. Gemini publishes a daily *request* cap, so alerting on it needs
+    /// a count-based condition that does not exist yet. Listing it here rather than as alertable
+    /// keeps the catalogue honest — it was claimed as alertable until a test tried to build the rule
+    /// and the model refused.
+    public static let needsAConditionKindThatDoesNotExistYet: [String: String] = [
+        "gemini/daily-requests": "A request count, not a percentage; needs a count-based condition"
+    ]
+
     public static let alertableOnlyFromObservedSeries: [String: String] = [
         "codex/primary": "Codex sets the window duration, so the series identity is not fixed",
         "codex/secondary": "Codex sets the window duration, so the series identity is not fixed"
