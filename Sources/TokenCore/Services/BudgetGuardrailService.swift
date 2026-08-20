@@ -105,7 +105,9 @@ public struct BudgetGuardrailService: Sendable {
         guard budget > 0 else {
             return BudgetGuardrailProgress(tokens: 0, budgetTokens: 0, percent: 0, crossedThreshold: false)
         }
-        let tokens = events.filter(filter).reduce(0) { $0 + $1.totalTokens }
+        // Cache reads are re-sent context, so counting them here blew any token budget on the
+        // first conversation of the day and made the guardrail fire on nothing.
+        let tokens = events.filter(filter).reduce(0) { $0 + $1.workingTokens }
         let percent = tokens > 0 ? min(Int((Double(tokens) / Double(budget) * 100).rounded()), 100) : 0
         return BudgetGuardrailProgress(
             tokens: tokens,

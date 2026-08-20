@@ -46,6 +46,10 @@ public enum TokenPilotLocalizer {
         "Separate items": [.en: "Separate items", .ko: "개별 항목", .ja: "個別項目", .zhHans: "独立项目", .zhHant: "獨立項目"],
         "Each selected provider gets its own menu bar item.": [.en: "Each selected provider gets its own menu bar item.", .ko: "선택한 각 제공자가 자체 메뉴 막대 항목으로 표시됩니다.", .ja: "選択した各プロバイダに専用のメニューバー項目が表示されます。", .zhHans: "每个选定的提供方都会显示自己的菜单栏项目。", .zhHant: "每個選定的提供方都會顯示自己的菜單欄項目。"],
         "The primary and secondary providers get their own menu bar items.": [.en: "The primary and secondary providers get their own menu bar items.", .ko: "기본 제공자와 보조 제공자가 각각 별도의 메뉴 막대 항목으로 표시됩니다.", .ja: "主なプロバイダと2番目のプロバイダがそれぞれ専用のメニューバー項目になります。", .zhHans: "主要提供方与次要提供方各自显示为独立的菜单栏项目。", .zhHant: "主要提供方與次要提供方各自顯示為獨立的菜單欄項目。"],
+        // Adapter status messages are otherwise still English. These two are translated because
+        // they are the ones that tell the user what to do next; the rest merely describe state.
+        "Local JSONL · connect the statusline for limits": [.en: "Local JSONL · connect the statusline for limits", .ko: "로컬 JSONL · 한도를 보려면 statusline을 연결하세요", .ja: "ローカル JSONL · 上限を見るには statusline を接続してください", .zhHans: "本地 JSONL · 连接 statusline 才能看到限额", .zhHant: "本機 JSONL · 連接 statusline 才能看到限額"],
+        "Statusline connected · waiting for the first session": [.en: "Statusline connected · waiting for the first session", .ko: "statusline 연결됨 · 첫 세션을 기다리는 중", .ja: "statusline 接続済み · 最初のセッション待ち", .zhHans: "statusline 已连接 · 等待第一个会话", .zhHant: "statusline 已連接 · 等待第一個工作階段"],
         "Menu bar width": [.en: "Menu bar width", .ko: "메뉴 막대 너비", .ja: "メニューバーの幅", .zhHans: "菜单栏宽度", .zhHant: "菜單欄寬度"],
         "Full": [.en: "Full", .ko: "전체", .ja: "全表示", .zhHans: "完整", .zhHant: "完整"],
         "Standard": [.en: "Standard", .ko: "표준", .ja: "標準", .zhHans: "标准", .zhHant: "標準"],
@@ -581,9 +585,6 @@ public enum TokenPilotLocalizer {
         "Estimated cost": [.en: "Estimated cost", .ko: "예상 비용", .ja: "推定コスト", .zhHans: "估算成本", .zhHant: "估算成本"],
         "5h window": [.en: "5h window", .ko: "5시간 창", .ja: "5時間ウィンドウ", .zhHans: "5 小时窗口", .zhHant: "5 小時視窗"],
         "Monthly window": [.en: "Monthly window", .ko: "월간 창", .ja: "月次ウィンドウ", .zhHans: "每月窗口", .zhHant: "每月視窗"],
-        "Daily goal": [.en: "Daily goal", .ko: "일일 목표", .ja: "1日の目標", .zhHans: "每日目标", .zhHant: "每日目標"],
-        "Daily goal: %d tokens": [.en: "Daily goal: %d tokens", .ko: "일일 목표: %d 토큰", .ja: "1日の目標: %d トークン", .zhHans: "每日目标：%d 令牌", .zhHant: "每日目標：%d 令牌"],
-        "Today's local token target shown on Overview. Local activity, not a provider quota.": [.en: "Today's local token target shown on Overview. Local activity, not a provider quota.", .ko: "Overview에 표시되는 오늘 로컬 토큰 목표입니다. 로컬 활동이지 제공자 한도가 아닙니다.", .ja: "Overview に表示される今日のローカルトークン目標です。ローカル活動であり、プロバイダのクォータではありません。", .zhHans: "Overview 上显示的今日本地令牌目标。属于本地活动，并非提供方配额。", .zhHant: "Overview 上顯示的今日本機令牌目標。屬於本機活動，並非提供方配額。"],
         "Weekly digest": [.en: "Weekly digest", .ko: "주간 요약", .ja: "週次サマリー", .zhHans: "每周摘要", .zhHant: "每週摘要"],
         "Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running.": [.en: "Summarizes this week's local usage every Monday at 09:00 while TokenPilot is running.", .ko: "TokenPilot이 실행되는 동안 매주 월요일 09:00에 이번 주 로컬 사용량을 요약해 보냅니다.", .ja: "TokenPilot の実行中、毎週月曜 09:00 に今週のローカル使用量を要約して送信します。", .zhHans: "TokenPilot 运行期间，每周一 09:00 发送本周本地用量摘要。", .zhHant: "TokenPilot 執行期間，每週一 09:00 傳送本週本機用量摘要。"],
         "This week": [.en: "This week", .ko: "이번 주", .ja: "今週", .zhHans: "本周", .zhHant: "本週"],

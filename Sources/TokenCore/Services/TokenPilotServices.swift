@@ -1386,7 +1386,6 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         }
         copy.geminiDailyRequestCap = max(copy.geminiDailyRequestCap, 1)
         copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 15), 900)
-        copy.challengeTargetTokens = max(copy.challengeTargetTokens, 1)
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)

@@ -376,6 +376,23 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
 
     public var cacheTokens: Int { cacheReadTokens + cacheCreationTokens }
 
+    /// Tokens that represent new work: everything except cache reads.
+    ///
+    /// A cache read is context being re-sent, billed at a fraction of a fresh token and utterly
+    /// dominant by volume — measured on real local logs it was 98% of a Claude Code day and 99% of
+    /// an opencode one, turning "today" into 599M when 12M was new. As a headline that reads as a
+    /// broken counter, and as a budget it is worse than useless: any token budget is blown on the
+    /// first conversation.
+    ///
+    /// So anything that answers *how much did I do* — goals, budgets, milestones, the menu bar's
+    /// today figure — uses this. History's totals, the model breakdown, and the export keep every
+    /// token, because full accounting is exactly what those surfaces are for.
+    public var workingTokens: Int {
+        // An override arrives as an opaque total with no components to subtract from.
+        if totalTokensOverride != nil { return totalTokens }
+        return max(componentTokenTotal - cacheReadTokens, 0)
+    }
+
     public var isWebQuotaComparable: Bool {
         !(provider == .codex && dataSource == .localLog && isExperimental)
     }
@@ -509,6 +526,9 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var dailyRequestsUsed: Int?
     public var dailyRequestsLimit: Int?
     public var todayTokens: Int
+    /// How much of `todayTokens` was re-sent cached context. Zero when the source does not say,
+    /// in which case `todayWorkingTokens` falls back to the full total rather than guessing.
+    public var todayCacheReadTokens: Int
     public var todayCostUSD: Decimal?
     public var confidence: DataConfidence
     public var dataSource: UsageDataSource
@@ -532,6 +552,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         dailyRequestsUsed: Int? = nil,
         dailyRequestsLimit: Int? = nil,
         todayTokens: Int = 0,
+        todayCacheReadTokens: Int = 0,
         todayCostUSD: Decimal? = nil,
         confidence: DataConfidence = .low,
         dataSource: UsageDataSource = .unknown,
@@ -552,6 +573,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         self.dailyRequestsUsed = dailyRequestsUsed.map { max($0, 0) }
         self.dailyRequestsLimit = dailyRequestsLimit.map { max($0, 0) }
         self.todayTokens = max(todayTokens, 0)
+        self.todayCacheReadTokens = min(max(todayCacheReadTokens, 0), max(todayTokens, 0))
         self.todayCostUSD = todayCostUSD
         self.confidence = confidence
         self.dataSource = dataSource
@@ -574,6 +596,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         case dailyRequestsUsed
         case dailyRequestsLimit
         case todayTokens
+        case todayCacheReadTokens
         case todayCostUSD
         case confidence
         case dataSource
@@ -598,6 +621,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
             dailyRequestsUsed: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsUsed),
             dailyRequestsLimit: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsLimit),
             todayTokens: try container.decodeIfPresent(Int.self, forKey: .todayTokens) ?? 0,
+            todayCacheReadTokens: try container.decodeIfPresent(Int.self, forKey: .todayCacheReadTokens) ?? 0,
             todayCostUSD: try container.decodeIfPresent(Decimal.self, forKey: .todayCostUSD),
             confidence: try container.decodeIfPresent(DataConfidence.self, forKey: .confidence) ?? .low,
             dataSource: try container.decodeIfPresent(UsageDataSource.self, forKey: .dataSource) ?? .unknown,
@@ -622,6 +646,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(dailyRequestsUsed, forKey: .dailyRequestsUsed)
         try container.encodeIfPresent(dailyRequestsLimit, forKey: .dailyRequestsLimit)
         try container.encode(todayTokens, forKey: .todayTokens)
+        try container.encode(todayCacheReadTokens, forKey: .todayCacheReadTokens)
         try container.encodeIfPresent(todayCostUSD, forKey: .todayCostUSD)
         try container.encode(confidence, forKey: .confidence)
         try container.encode(dataSource, forKey: .dataSource)
@@ -638,6 +663,13 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var dailyRequestsPercent: Int? {
         guard let used = dailyRequestsUsed, let limit = dailyRequestsLimit, limit > 0 else { return nil }
         return min(max(Int((Double(used) / Double(limit) * 100).rounded()), 0), 100)
+    }
+
+    /// Today's tokens with re-sent cached context taken out — see ``UsageEvent/workingTokens``.
+    /// Equals `todayTokens` when the source reports no cache split, so a provider that cannot
+    /// break its total down is never made to look smaller than it is.
+    public var todayWorkingTokens: Int {
+        max(todayTokens - todayCacheReadTokens, 0)
     }
 
     public var primaryUsedPercent: Int? {
@@ -1365,7 +1397,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var openCode: OpenCodeSettings
     public var experimentalUsage: ExperimentalUsageSettings
     public var showMockDataWhenDisconnected: Bool
-    public var challengeTargetTokens: Int
     public var launchAtLogin: Bool
     public var refreshIntervalSeconds: Int
     public var menuBarHotkeyEnabled: Bool
@@ -1426,7 +1457,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowsSecondaryProvider: Bool = false,
         menuBarTrendStyle: MenuBarTrendStyle = .sparkline,
         menuBarWidthLimit: MenuBarWidthLimit = .standard,
-        challengeTargetTokens: Int = 10_000,
         launchAtLogin: Bool = false,
         refreshIntervalSeconds: Int = 60,
         menuBarHotkeyEnabled: Bool = false,
@@ -1483,7 +1513,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.openCode = openCode
         self.experimentalUsage = experimentalUsage
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
-        self.challengeTargetTokens = challengeTargetTokens
         self.launchAtLogin = launchAtLogin
         self.refreshIntervalSeconds = refreshIntervalSeconds
         self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
@@ -1587,7 +1616,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case openCode
         case experimentalUsage
         case showMockDataWhenDisconnected
-        case challengeTargetTokens
         case launchAtLogin
         case refreshIntervalSeconds
         case menuBarHotkeyEnabled
@@ -1656,7 +1684,6 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
             menuBarTrendStyle: Self.decodeChoice(from: container, forKey: .menuBarTrendStyle, default: .sparkline),
             menuBarWidthLimit: Self.decodeChoice(from: container, forKey: .menuBarWidthLimit, default: .standard),
-            challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,

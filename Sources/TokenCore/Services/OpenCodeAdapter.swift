@@ -204,6 +204,7 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
         let calendar = Calendar.current
         let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayCacheReadTokens = todayEvents.reduce(0) { $0 + $1.cacheReadTokens }
         let todayCost = todayEvents.compactMap(\.estimatedCostUSD).reduce(Decimal(0), +)
         let newest = events.map(\.timestamp).max() ?? Date.distantPast
         let isStale = now.timeIntervalSince(newest) > staleThreshold
@@ -215,6 +216,7 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             provider: .opencode,
             updatedAt: newest,
             todayTokens: todayTokens,
+            todayCacheReadTokens: todayCacheReadTokens,
             todayCostUSD: todayCost > 0 ? todayCost : nil,
             confidence: isStale ? .medium : .high,
             dataSource: .localLog,

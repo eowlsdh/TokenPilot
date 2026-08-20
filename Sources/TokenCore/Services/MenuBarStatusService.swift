@@ -142,6 +142,10 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
         if let fiveHour = snapshot.fiveHour { return fiveHour }
         if let weekly = snapshot.weekly { return weekly }
+        // A provider whose only window is monthly used to fall through to "no value": Kiro's
+        // credit usage is monthly-slotted, so the menu bar showed nothing while the snapshot
+        // carried a perfectly good percentage.
+        if let monthly = snapshot.monthly { return monthly }
         if let dailyRequestsPercent = snapshot.dailyRequestsPercent {
             return LimitWindow(kind: .dailyRequests, usedPercent: dailyRequestsPercent, confidence: snapshot.confidence)
         }
@@ -387,9 +391,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
             if candidate.snapshot.provider == .codex {
                 return "\(candidate.snapshot.provider.shortName) · \(localized("Unavailable", language: settings.localization.language))"
             }
-            if candidate.snapshot.todayTokens > 0 {
+            if candidate.snapshot.todayWorkingTokens > 0 {
                 let tokenUnit = TokenPilotLocalizer.localized("tok", language: settings.localization.language)
-                return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens))\(tokenUnit)"
+                return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayWorkingTokens))\(tokenUnit)"
             }
             if let used = candidate.snapshot.dailyRequestsUsed {
                 return "\(candidate.snapshot.provider.shortName) \(TokenPilotFormatters.compactNumber(used))req"
@@ -709,8 +713,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                     ].joined(separator: ", ")
                 )
             }
-            if candidate.snapshot.todayTokens > 0 {
-                let value = TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens)
+            if candidate.snapshot.todayWorkingTokens > 0 {
+                let value = TokenPilotFormatters.compactNumber(candidate.snapshot.todayWorkingTokens)
                 // The menu bar has very little width, so the segment uses the language-neutral "tok"
                 // abbreviation while the accessibility label carries the localized unit.
                 let unit = "tok"
@@ -802,6 +806,13 @@ public final class MenuBarStatusService: @unchecked Sendable {
             // genuinely has no source, because telling a configured user to set it up again is wrong.
             guard let snapshot else { return "\(provider.shortName) Setup" }
             return "\(provider.shortName) —" + (snapshot.isStale ? " STALE" : "")
+        }
+        // Settings offers "Menu bar metric" for the compact layout as well as the detailed one, but
+        // only the detailed one read it, so picking today's tokens or cost here changed nothing.
+        // Returns nil for the default metric or when the local value is missing, which leaves the
+        // remaining-percent behaviour below untouched.
+        if let metricSegment = primaryMetricSegment(for: candidate, settings: settings) {
+            return metricSegment
         }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
@@ -1689,9 +1700,9 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case .remainingPercent:
             return nil
         case .todayTokens:
-            guard candidate.snapshot.todayTokens > 0 else { return nil }
+            guard candidate.snapshot.todayWorkingTokens > 0 else { return nil }
             let tokenUnit = TokenPilotLocalizer.localized("tok", language: settings.localization.language)
-            return "\(shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayTokens))\(tokenUnit)"
+            return "\(shortName) \(TokenPilotFormatters.compactNumber(candidate.snapshot.todayWorkingTokens))\(tokenUnit)"
         case .todayCost:
             guard let cost = candidate.snapshot.todayCostUSD, cost > 0 else { return nil }
             return "\(shortName) \(TokenPilotFormatters.cost(cost))"

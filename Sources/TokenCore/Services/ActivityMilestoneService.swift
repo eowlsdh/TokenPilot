@@ -51,7 +51,9 @@ public struct ActivityMilestoneService: Sendable {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> [ActivityMilestone] {
-        let totalTokens = events.reduce(0) { $0 + $1.totalTokens }
+        // A milestone celebrates work done, and cache reads are context being re-sent: counting
+        // them handed out every token milestone on day one.
+        let totalTokens = events.reduce(0) { $0 + $1.workingTokens }
         let totalRequests = events.reduce(0) { $0 + $1.requestCount }
         let streak = UsageStreakService.streak(events: events, now: now, calendar: calendar)
         let activeDays = Set(

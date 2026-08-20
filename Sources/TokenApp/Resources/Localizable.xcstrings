@@ -753,108 +753,6 @@
         }
       }
     },
-    "Daily goal": {
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일일 목표"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Daily goal"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日目标"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1日の目標"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日目標"
-          }
-        }
-      }
-    },
-    "Daily goal: %d tokens": {
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "일일 목표: %d 토큰"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Daily goal: %d tokens"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日目标：%d 令牌"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "1日の目標: %d トークン"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "每日目標：%d 令牌"
-          }
-        }
-      }
-    },
-    "Today's local token target shown on Overview. Local activity, not a provider quota.": {
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Overview에 표시되는 오늘 로컬 토큰 목표입니다. 로컬 활동이지 제공자 한도가 아닙니다."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Today's local token target shown on Overview. Local activity, not a provider quota."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Overview 上显示的今日本地令牌目标。属于本地活动，并非提供方配额。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Overview に表示される今日のローカルトークン目標です。ローカル活動であり、プロバイダのクォータではありません。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Overview 上顯示的今日本機令牌目標。屬於本機活動，並非提供方配額。"
-          }
-        }
-      }
-    },
     "Weekly digest": {
       "localizations": {
         "ko": {
@@ -20159,6 +20057,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字在菜單欄中可佔用的寬度。設定得更窄時會先省略重置倒數與視窗標記，然後省略第二個讀數，絕不截斷詞語。"
+          }
+        }
+      }
+    },
+    "Local JSONL · connect the statusline for limits" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 JSONL · 한도를 보려면 statusline을 연결하세요"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local JSONL · connect the statusline for limits"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地 JSONL · 连接 statusline 才能看到限额"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカル JSONL · 上限を見るには statusline を接続してください"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本機 JSONL · 連接 statusline 才能看到限額"
+          }
+        }
+      }
+    },
+    "Statusline connected · waiting for the first session" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "statusline 연결됨 · 첫 세션을 기다리는 중"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Statusline connected · waiting for the first session"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "statusline 已连接 · 等待第一个会话"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "statusline 接続済み · 最初のセッション待ち"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "statusline 已連接 · 等待第一個工作階段"
           }
         }
       }

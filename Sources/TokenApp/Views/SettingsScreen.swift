@@ -119,18 +119,6 @@ struct SettingsScreen: View {
 
                 TokenPilotSeparator()
 
-                Stepper(
-                    String(format: model.t("Daily goal: %d tokens"), model.settings.challengeTargetTokens),
-                    value: $model.settings.challengeTargetTokens,
-                    in: 100...10_000_000,
-                    step: 500
-                )
-                Text(model.t("Today's local token target shown on Overview. Local activity, not a provider quota."))
-                    .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-
-                TokenPilotSeparator()
-
                 Text(model.t("Budget guardrails"))
                     .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 Text(model.t("Optional local token budgets per window. A budget of 0 disables that window. Reaching a budget never changes what a provider reports."))

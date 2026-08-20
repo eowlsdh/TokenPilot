@@ -722,6 +722,7 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         let now = Date()
         let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayCacheReadTokens = todayEvents.reduce(0) { $0 + $1.cacheReadTokens }
         let newest = events.map(\.timestamp).max() ?? Date()
         let isStale = Date().timeIntervalSince(newest) > staleThreshold
         let retainedStart = calendar.date(byAdding: .day, value: -31, to: calendar.startOfDay(for: now)) ?? now
@@ -733,11 +734,14 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
             provider: .claude,
             updatedAt: newest,
             todayTokens: todayTokens,
+            todayCacheReadTokens: todayCacheReadTokens,
             todayCostUSD: cost > 0 ? cost : nil,
             confidence: .medium,
             dataSource: .localLog,
             isStale: isStale,
-            statusMessage: isStale ? "STALE · local JSONL older than 5 minutes" : "Local JSONL · rate limits unavailable",
+            // "rate limits unavailable" was true and useless: Claude Code does not write limits
+            // to its local JSONL, the statusline bridge supplies them, and nothing said so.
+            statusMessage: isStale ? "STALE · local JSONL older than 5 minutes" : "Local JSONL · connect the statusline for limits",
             model: model,
             events: retained
         )
@@ -910,7 +914,9 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             )
         }
         guard !events.isEmpty else {
-            let message = readError == nil ? "No Antigravity or Gemini token events yet" : "Antigravity/Gemini data could not be read"
+            // A resolved, readable, empty source is the bridge sitting installed and never written
+            // — worth saying, because "no events yet" reads as a fault the user should chase.
+            let message = readError == nil ? "Statusline connected · waiting for the first session" : "Antigravity/Gemini data could not be read"
             return ProviderSnapshot(provider: .gemini, confidence: .low, dataSource: .unknown, isStale: readError != nil, statusMessage: message)
         }
 
@@ -923,6 +929,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         let retainedStart = min(startOfLast7Days, startOfMonth)
         let retainedEvents = events.filter { $0.timestamp >= retainedStart }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayCacheReadTokens = todayEvents.reduce(0) { $0 + $1.cacheReadTokens }
         let todayRequests = todayEvents.reduce(0) { $0 + $1.requestCount }
         let shouldShowDailyRequests = todayRequests > 0
         let newestTimestamp = events.map(\.timestamp).max() ?? Date.distantPast
@@ -937,6 +944,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             dailyRequestsUsed: shouldShowDailyRequests ? todayRequests : nil,
             dailyRequestsLimit: shouldShowDailyRequests ? settings.geminiDailyRequestCap : nil,
             todayTokens: todayTokens,
+            todayCacheReadTokens: todayCacheReadTokens,
             confidence: confidence,
             dataSource: dataSource,
             isStale: isStale,
@@ -2133,6 +2141,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             fiveHour: latestRateLimits?.fiveHour ?? manual.fiveHour,
             weekly: latestRateLimits?.weekly ?? manual.weekly,
             todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+            todayCacheReadTokens: events.reduce(0) { $0 + $1.cacheReadTokens },
             confidence: .medium,
             dataSource: .localLog,
             isExperimental: true,
@@ -3039,28 +3048,18 @@ private func isDirectory(_ url: URL) -> Bool {
     return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
 }
 
+/// The newest `maxFiles` files under `roots`, newest first.
+///
+/// This used to stop walking after `maxFiles * 4` entries and sort those by modification date,
+/// which ranks an arbitrary slice of the tree rather than the tree — see ``NewestFileScan``.
 private func candidateFiles(in roots: [URL], allowedExtensions: Set<String>, maxFiles: Int) -> [URL] {
-    var files: [URL] = []
-    for root in roots {
-        guard FileManager.default.fileExists(atPath: root.path), !isForbiddenCredentialPath(root) else { continue }
-        if !isDirectory(root) {
-            if allowedExtensions.contains(root.pathExtension.lowercased()) {
-                files.append(root)
-            }
-            continue
-        }
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
-        for case let file as URL in enumerator {
-            guard files.count < maxFiles * 4 else { break }
-            guard allowedExtensions.contains(file.pathExtension.lowercased()), !isForbiddenCredentialPath(file) else { continue }
-            files.append(file)
-        }
+    NewestFileScan.newestFiles(
+        in: roots.filter { !isForbiddenCredentialPath($0) },
+        limit: maxFiles
+    ) { file in
+        allowedExtensions.contains(file.pathExtension.lowercased()) && !isForbiddenCredentialPath(file)
     }
-
-    return files
-        .sorted { (fileModificationDate($0) ?? Date.distantPast) > (fileModificationDate($1) ?? Date.distantPast) }
-        .prefix(maxFiles)
-        .map { $0 }
+    .files
 }
 
 private func isForbiddenCredentialPath(_ url: URL) -> Bool {

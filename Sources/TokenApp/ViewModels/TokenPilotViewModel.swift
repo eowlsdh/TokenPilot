@@ -416,12 +416,6 @@ final class TokenPilotViewModel: ObservableObject {
         aggregationService.heatmapCells(from: historyUsage.events, days: max(heatmapWeeks, 1) * 7)
     }
 
-    var dailyGoal: DailyGoalProgress {
-        DailyGoalService.progress(
-            tokens: overviewUsage.metrics.totalTokens,
-            targetTokens: settings.challengeTargetTokens
-        )
-    }
 
     var budgetGuardrails: BudgetGuardrailSnapshot {
         let service = BudgetGuardrailService()

@@ -255,9 +255,6 @@ struct OverviewScreen: View {
                         systemImage: "chart.bar.doc.horizontal",
                         badge: "\(activityCardCount)"
                     ) {
-                        if showsDailyGoal {
-                            DailyGoalCard(goal: model.dailyGoal, model: model)
-                        }
                         if model.usageStreak.hasActivity {
                             UsageStreakCard(streak: model.usageStreak, model: model)
                         }
@@ -279,15 +276,8 @@ struct OverviewScreen: View {
         }
     }
 
-    /// The goal card earns its place once there is something to measure: activity today, or a
-    /// target the user actually moved off the default.
-    private var showsDailyGoal: Bool {
-        model.dailyGoal.tokens > 0 || model.settings.challengeTargetTokens != AppSettings().challengeTargetTokens
-    }
-
     private var activityCardCount: Int {
         var count = 0
-        if showsDailyGoal { count += 1 }
         if model.usageStreak.hasActivity { count += 1 }
         if !model.activityMilestones.isEmpty { count += 1 }
         if model.budgetGuardrails.hasAnyBudget { count += 1 }
@@ -316,55 +306,6 @@ struct OverviewScreen: View {
             .tint(TokenPilotDesign.status(.goal))
             .focusable()
         }
-    }
-}
-
-struct DailyGoalCard: View {
-    let goal: DailyGoalProgress
-    @ObservedObject var model: TokenPilotViewModel
-
-    var body: some View {
-        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
-            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
-                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
-                    Label(model.t("Daily goal"), systemImage: "flag.fill")
-                        .font(TokenPilotDesign.Typography.cardTitle)
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                        .lineLimit(1)
-
-                    Spacer(minLength: 0)
-
-                    Text(
-                        "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
-                        "\(TokenPilotFormatters.compactNumber(goal.targetTokens)) " +
-                        model.t("tok")
-                    )
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.78)
-                }
-
-                ProgressLine(
-                    percent: goal.percent,
-                    color: TokenPilotDesign.trust,
-                    accessibilityLabel: model.t("Daily goal"),
-                    accessibilityValue: "\(TokenPilotFormatters.compactNumber(goal.tokens)) / \(TokenPilotFormatters.compactNumber(goal.targetTokens))"
-                )
-
-                Text(model.t("Local activity, not provider quota"))
-                    .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(
-            "\(model.t("Daily goal")): " +
-            "\(TokenPilotFormatters.compactNumber(goal.tokens)) / " +
-            "\(TokenPilotFormatters.compactNumber(goal.targetTokens))"
-        )
     }
 }
 

@@ -310,7 +310,7 @@ public enum StatuslineService {
     }
 
     private static func todayTokens(events: [UsageEvent], now: Date, calendar: Calendar) -> Int {
-        todayEvents(events: events, now: now, calendar: calendar).reduce(0) { $0 + $1.totalTokens }
+        todayEvents(events: events, now: now, calendar: calendar).reduce(0) { $0 + $1.workingTokens }
     }
 
     private static func todayCost(events: [UsageEvent], now: Date, calendar: Calendar) -> Decimal? {

@@ -3359,22 +3359,12 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(claude?.sparklineValues, [0.2, 0.4])
     }
 
-    func testDailyGoalProgressMath() {
-        XCTAssertEqual(
-            DailyGoalService.progress(tokens: 0, targetTokens: 10_000),
-            DailyGoalProgress(tokens: 0, targetTokens: 10_000, percent: 0)
-        )
-        XCTAssertEqual(DailyGoalService.progress(tokens: 5_000, targetTokens: 10_000).percent, 50)
-        XCTAssertEqual(DailyGoalService.progress(tokens: 10_000, targetTokens: 10_000).percent, 100)
-        XCTAssertEqual(DailyGoalService.progress(tokens: 20_000, targetTokens: 10_000).percent, 100)
-        XCTAssertEqual(DailyGoalService.progress(tokens: 500, targetTokens: 0).targetTokens, 1)
-    }
 
     // MARK: - SettingsBackupService
 
     func testSettingsBackupRoundTripsSettings() throws {
         var settings = AppSettings()
-        settings.challengeTargetTokens = 42_000
+        settings.geminiDailyRequestCap = 4_200
         settings.weekStartDay = .sunday
         settings.menuBarPrimaryMetric = .todayCost
         settings.budget.dailyTokens = 20_000
@@ -3383,7 +3373,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let data = try service.exportData(settings: settings)
         let imported = try service.importSettings(from: data)
 
-        XCTAssertEqual(imported.challengeTargetTokens, 42_000)
+        XCTAssertEqual(imported.geminiDailyRequestCap, 4_200)
         XCTAssertEqual(imported.weekStartDay, .sunday)
         XCTAssertEqual(imported.menuBarPrimaryMetric, .todayCost)
         XCTAssertEqual(imported.budget.dailyTokens, 20_000)
@@ -3830,13 +3820,11 @@ final class TokenPilotServicesTests: XCTestCase {
 
         settings.refreshIntervalSeconds = 120
         settings.menuBarHotkeyEnabled = true
-        settings.challengeTargetTokens = 0
         settings.weeklyDigestEnabled = true
         store.save(settings)
         let loaded = store.load()
         XCTAssertEqual(loaded.refreshIntervalSeconds, 120)
         XCTAssertTrue(loaded.menuBarHotkeyEnabled)
-        XCTAssertEqual(loaded.challengeTargetTokens, 1)
         XCTAssertTrue(loaded.weeklyDigestEnabled)
     }
 
@@ -3850,14 +3838,12 @@ final class TokenPilotServicesTests: XCTestCase {
         custom.refreshIntervalSeconds = 300
         custom.weeklyDigestEnabled = true
         custom.weekStartDay = .sunday
-        custom.challengeTargetTokens = 500_000
         store.save(custom)
 
         let reset = store.resetToDefaults()
         XCTAssertEqual(reset.refreshIntervalSeconds, 60)
         XCTAssertFalse(reset.weeklyDigestEnabled)
         XCTAssertEqual(reset.weekStartDay, .monday)
-        XCTAssertEqual(reset.challengeTargetTokens, 10_000)
 
         let reloaded = store.load()
         XCTAssertEqual(reloaded.refreshIntervalSeconds, 60)
@@ -4543,7 +4529,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await GeminiTelemetryAdapter().snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.confidence, .low)
-        XCTAssertEqual(snapshot.statusMessage, "No Antigravity or Gemini token events yet")
+        XCTAssertEqual(snapshot.statusMessage, "Statusline connected · waiting for the first session")
         XCTAssertEqual(snapshot.events.count, 0)
     }
 
@@ -5190,7 +5176,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.provider, .claude)
         XCTAssertEqual(snapshot.confidence, .medium)
         XCTAssertEqual(snapshot.dataSource, .localLog)
-        XCTAssertEqual(snapshot.statusMessage, "Local JSONL · rate limits unavailable")
+        XCTAssertEqual(snapshot.statusMessage, "Local JSONL · connect the statusline for limits")
         XCTAssertEqual(snapshot.todayTokens, 200)
         XCTAssertEqual(snapshot.events.count, 1)
         XCTAssertEqual(snapshot.events[0].source, "claude-jsonl")
@@ -5215,7 +5201,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(source.mode, .custom)
         XCTAssertEqual(source.confidence, .medium)
         XCTAssertTrue(source.detectedPaths.contains { $0.kind == "projects" && $0.path == home.appendingPathComponent(".claude/projects", isDirectory: true).path && $0.exists })
-        XCTAssertEqual(source.statusMessage, "Local JSONL · rate limits unavailable")
+        XCTAssertEqual(source.statusMessage, "Local JSONL · connect the statusline for limits")
     }
     func testDataSourceConnectionServiceMarksAntigravityStatuslineConnectedFromDefaultPath() async throws {
         let home = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
