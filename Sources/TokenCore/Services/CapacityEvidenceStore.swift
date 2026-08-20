@@ -1943,12 +1943,8 @@ public struct CapacityAlertVisibilityRow: Equatable, Identifiable, Sendable {
     }
 
     private static func percentThresholdLabel(_ threshold: CapacityAlertPercentThreshold) -> String {
-        switch threshold {
-        case .reset: return "Reset"
-        case .fifty: return "50%"
-        case .eighty: return "80%"
-        case .hundred: return "100%"
-        }
+        guard let percent = threshold.percent else { return "Reset" }
+        return "\(percent)%"
     }
 }
 
@@ -2324,7 +2320,8 @@ public struct CapacityAlertTransitionEngine: Sendable {
                     attempted = true
                 }
             } else {
-                for threshold in [CapacityAlertPercentThreshold.fifty, .eighty, .hundred] where rule.condition.enabledPercentThresholds.contains(threshold) {
+                // Ascending, so a jump past several thresholds reports them in the order they were crossed.
+                for threshold in rule.condition.enabledPercentThresholds.filter({ !$0.isReset }).sorted() {
                     guard let percent = percentValue(threshold) else { continue }
                     let wasBelow = (previousLastUsed ?? used) < percent
                     if wasBelow, used >= percent, !delivered.contains(threshold), attemptAllowed {
@@ -2409,12 +2406,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
     }
 
     private func percentValue(_ threshold: CapacityAlertPercentThreshold) -> Int? {
-        switch threshold {
-        case .reset: return nil
-        case .fifty: return 50
-        case .eighty: return 80
-        case .hundred: return 100
-        }
+        threshold.percent
     }
 }
 

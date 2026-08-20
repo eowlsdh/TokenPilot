@@ -2547,11 +2547,80 @@ public struct CapacityRuntimeControl: Codable, Equatable, Sendable {
     }
 }
 
-public enum CapacityAlertPercentThreshold: String, Codable, CaseIterable, Sendable {
-    case reset
-    case fifty
-    case eighty
-    case hundred
+/// A point at which an alert fires: either a used-percentage, or the window resetting.
+///
+/// This was four fixed cases — reset, 50, 80, 100 — so a user who wanted warning at 90% could not
+/// have one, which is a strange limitation in a tool whose entire job is warning you before you run
+/// out. Any percentage now works.
+///
+/// The three original percentages keep their original spellings (`fifty`, `eighty`, `hundred`)
+/// rather than becoming `p50`/`p80`/`p100`. Delivered-alert state is persisted by this raw value, so
+/// renaming them would make every already-delivered alert look undelivered and fire a second time on
+/// the first launch after updating.
+public struct CapacityAlertPercentThreshold: Codable, Hashable, Sendable, Comparable {
+    public let rawValue: String
+
+    private init(unchecked rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    /// The window rolled over. Not a percentage, so it sorts before all of them.
+    public static let reset = CapacityAlertPercentThreshold(unchecked: "reset")
+    public static let fifty = CapacityAlertPercentThreshold(unchecked: "fifty")
+    public static let eighty = CapacityAlertPercentThreshold(unchecked: "eighty")
+    public static let hundred = CapacityAlertPercentThreshold(unchecked: "hundred")
+
+    /// The percentages that existed before thresholds were configurable, by their stored spelling.
+    private static let legacySpellings: [Int: String] = [50: "fifty", 80: "eighty", 100: "hundred"]
+
+    /// Alerting at 0% would fire on an untouched window; above 100 can never be reached.
+    public static let validPercents = 1...100
+
+    /// Returns nil rather than clamping: a threshold the user cannot reach is a promise the app
+    /// cannot keep, and silently moving it to 100 would hide that.
+    public static func percent(_ value: Int) -> CapacityAlertPercentThreshold? {
+        guard validPercents.contains(value) else { return nil }
+        return CapacityAlertPercentThreshold(unchecked: legacySpellings[value] ?? "p\(value)")
+    }
+
+    /// nil for ``reset``, which is an event rather than a level.
+    public var percent: Int? {
+        switch rawValue {
+        case "reset": return nil
+        case "fifty": return 50
+        case "eighty": return 80
+        case "hundred": return 100
+        default:
+            guard rawValue.hasPrefix("p"), let value = Int(rawValue.dropFirst()) else { return nil }
+            return Self.validPercents.contains(value) ? value : nil
+        }
+    }
+
+    public var isReset: Bool { rawValue == "reset" }
+
+    /// Reset first, then ascending percentage — the order alerts should be evaluated in.
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs.percent, rhs.percent) {
+        case let (left?, right?): return left < right
+        case (nil, _?): return true
+        case (_?, nil): return false
+        default: return lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        let candidate = CapacityAlertPercentThreshold(unchecked: raw)
+        guard candidate.isReset || candidate.percent != nil else {
+            throw CapacityContractError.invalidCondition
+        }
+        self = candidate
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum CapacityAlertConditionKind: String, Codable, CaseIterable, Sendable {
@@ -2562,7 +2631,7 @@ public enum CapacityAlertConditionKind: String, Codable, CaseIterable, Sendable 
 
 public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     private enum Storage: Equatable, Sendable {
-        case percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool)
+        case percentThresholds(Set<CapacityAlertPercentThreshold>)
         case balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool)
         case pendingBalanceCurrencyBinding
     }
@@ -2578,12 +2647,7 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     }
 
     public var enabledPercentThresholds: Set<CapacityAlertPercentThreshold> {
-        guard case let .percentThresholds(reset, fifty, eighty, hundred) = storage else { return [] }
-        var thresholds: Set<CapacityAlertPercentThreshold> = []
-        if reset { thresholds.insert(.reset) }
-        if fifty { thresholds.insert(.fifty) }
-        if eighty { thresholds.insert(.eighty) }
-        if hundred { thresholds.insert(.hundred) }
+        guard case let .percentThresholds(thresholds) = storage else { return [] }
         return thresholds
     }
 
@@ -2606,8 +2670,26 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         self.storage = storage
     }
 
+    /// The three original percentages, kept because most callers and every stored rule speak in them.
     public static func percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool) -> CapacityAlertCondition {
-        CapacityAlertCondition(storage: .percentThresholds(reset: reset, fifty: fifty, eighty: eighty, hundred: hundred))
+        var thresholds: Set<CapacityAlertPercentThreshold> = []
+        if reset { thresholds.insert(.reset) }
+        if fifty { thresholds.insert(.fifty) }
+        if eighty { thresholds.insert(.eighty) }
+        if hundred { thresholds.insert(.hundred) }
+        return CapacityAlertCondition(storage: .percentThresholds(thresholds))
+    }
+
+    /// Any set of percentages the user chose. Values outside 1...100 are dropped rather than
+    /// clamped — a threshold that cannot be reached is a promise the app cannot keep.
+    public static func percentThresholds(reset: Bool, percents: some Sequence<Int>) -> CapacityAlertCondition {
+        var thresholds = Set(percents.compactMap(CapacityAlertPercentThreshold.percent))
+        if reset { thresholds.insert(.reset) }
+        return CapacityAlertCondition(storage: .percentThresholds(thresholds))
+    }
+
+    public static func percentThresholds(_ thresholds: Set<CapacityAlertPercentThreshold>) -> CapacityAlertCondition {
+        CapacityAlertCondition(storage: .percentThresholds(thresholds))
     }
 
     public static func balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool) throws -> CapacityAlertCondition {
@@ -2640,6 +2722,7 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         case fifty
         case eighty
         case hundred
+        case percents
         case threshold
         case currency
         case rearmAtOrAboveThreshold
@@ -2654,12 +2737,20 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         switch key {
         case .percentThresholds:
             let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
-            self = .percentThresholds(
-                reset: try nested.decodeIfPresent(Bool.self, forKey: .reset) ?? false,
-                fifty: try nested.decodeIfPresent(Bool.self, forKey: .fifty) ?? false,
-                eighty: try nested.decodeIfPresent(Bool.self, forKey: .eighty) ?? false,
-                hundred: try nested.decodeIfPresent(Bool.self, forKey: .hundred) ?? false
-            )
+            var thresholds: Set<CapacityAlertPercentThreshold> = []
+            if try nested.decodeIfPresent(Bool.self, forKey: .reset) ?? false { thresholds.insert(.reset) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .fifty) ?? false { thresholds.insert(.fifty) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .eighty) ?? false { thresholds.insert(.eighty) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .hundred) ?? false { thresholds.insert(.hundred) }
+            // A file written before thresholds were configurable has no `percents`, and the
+            // booleans above already carry everything it could express.
+            for percent in try nested.decodeIfPresent([Int].self, forKey: .percents) ?? [] {
+                guard let threshold = CapacityAlertPercentThreshold.percent(percent) else {
+                    throw CapacityContractError.invalidCondition
+                }
+                thresholds.insert(threshold)
+            }
+            self = .percentThresholds(thresholds)
         case .balanceBelow:
             let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balanceBelow)
             self = try .balanceBelow(
@@ -2677,12 +2768,19 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch storage {
-        case let .percentThresholds(reset, fifty, eighty, hundred):
+        case let .percentThresholds(thresholds):
             var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
-            try nested.encode(reset, forKey: .reset)
-            try nested.encode(fifty, forKey: .fifty)
-            try nested.encode(eighty, forKey: .eighty)
-            try nested.encode(hundred, forKey: .hundred)
+            // The three original percentages keep their boolean keys so a build from before
+            // thresholds were configurable still reads a file this one wrote, and `percents`
+            // carries the full set for builds that understand it.
+            try nested.encode(thresholds.contains(.reset), forKey: .reset)
+            try nested.encode(thresholds.contains(.fifty), forKey: .fifty)
+            try nested.encode(thresholds.contains(.eighty), forKey: .eighty)
+            try nested.encode(thresholds.contains(.hundred), forKey: .hundred)
+            let percents = thresholds.compactMap(\.percent).sorted()
+            if !percents.isEmpty {
+                try nested.encode(percents, forKey: .percents)
+            }
         case let .balanceBelow(threshold, currency, rearmAtOrAboveThreshold):
             guard threshold >= 0, CapacityValidation.isValidCurrencyCode(currency) else {
                 throw CapacityContractError.invalidCondition

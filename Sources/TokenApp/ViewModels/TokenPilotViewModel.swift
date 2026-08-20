@@ -693,12 +693,8 @@ final class TokenPilotViewModel: ObservableObject {
         switch row.conditionKind {
         case .percentThresholds:
             return row.percentThresholds.map { threshold in
-                switch threshold {
-                case .reset: return t("Reset")
-                case .fifty: return "50%"
-                case .eighty: return "80%"
-                case .hundred: return "100%"
-                }
+                guard let percent = threshold.percent else { return t("Reset") }
+                return "\(percent)%"
             }.joined(separator: "/")
         case .balanceBelow:
             guard let threshold = row.balanceThresholdCanonical, let currency = row.balanceCurrency else { return "" }
