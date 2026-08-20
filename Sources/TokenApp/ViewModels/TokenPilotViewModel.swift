@@ -1276,7 +1276,31 @@ final class TokenPilotViewModel: ObservableObject {
 
         let rulesLoad = await capacityAlertRuleStore.load()
         let deliveryLoad = await capacityAlertDeliveryStore.load()
-        capacityAlertRules = rulesLoad.rules
+
+        // Give every watched provider the alerts it should have had. This only ever adds a rule
+        // whose identity is absent, so a rule the user edited is never touched, and it is skipped
+        // entirely while the store is in recovery rather than writing into a file we could not
+        // fully read.
+        var activeRules = rulesLoad.rules
+        if !rulesLoad.recoveryStatus.recoveryRequired {
+            let reconciliation = CapacityAlertReconciler.reconcile(
+                existing: rulesLoad.rules,
+                enabledProviders: Set(settingsAtStart.enabledProviders),
+                routing: CapacityAlertRouting(
+                    macOS: settingsAtStart.macOSNotificationsEnabled,
+                    telegram: settingsAtStart.telegramNotificationsEnabled,
+                    discord: settingsAtStart.discordNotificationsEnabled
+                )
+            )
+            if reconciliation.didChange {
+                let save = await capacityAlertRuleStore.save(reconciliation.rules)
+                if !save.recoveryStatus.writeBlocked {
+                    activeRules = reconciliation.rules
+                }
+            }
+        }
+
+        capacityAlertRules = activeRules
         capacityAlertRulesRecoveryStatus = rulesLoad.recoveryStatus
         capacityAlertDeliveryStates = deliveryLoad.states
         capacityAlertDeliveryRecoveryStatus = deliveryLoad.recoveryStatus
@@ -1286,7 +1310,7 @@ final class TokenPilotViewModel: ObservableObject {
             discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         )
         let transition = capacityAlertTransitionEngine.evaluate(
-            rules: rulesLoad.rules,
+            rules: activeRules,
             assessments: assessments,
             previousStates: deliveryLoad.states,
             channels: channels,

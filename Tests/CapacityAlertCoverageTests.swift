@@ -1,14 +1,10 @@
 import XCTest
 @testable import TokenCore
 
-/// Alert rules exist for Claude's two windows and DeepSeek's balance, and nothing else: the legacy
-/// migration filters on `provider == .claude`. Everything else the app measures is shown on screen
-/// and never warns, which is the one thing a limit monitor exists to do.
-///
-/// These tests do not fix that — wiring it touches persisted delivery state and the migration
-/// merge, which overwrites by rule ID and would reset a user's own thresholds. They pin the size and
-/// shape of the gap so it cannot be forgotten, and so a new provider window cannot quietly join the
-/// list of things that never alert.
+/// Alert rules used to come only from a migration filtering on `provider == .claude`, so everything
+/// else the app measured was shown on screen and never warned — the one thing a limit monitor
+/// exists to do. `CapacityAlertReconciler` closes that; these tests keep the catalogue it works
+/// from honest, so a new provider window cannot quietly join the list of things that never alert.
 final class CapacityAlertCoverageTests: XCTestCase {
     private static func observationFactorySource() throws -> String {
         try String(
@@ -91,16 +87,22 @@ final class CapacityAlertCoverageTests: XCTestCase {
         }
     }
 
-    /// The gap, stated as a number. When rules stop being Claude-only this test is what says so.
-    func testAlertsCurrentlyReachFarFewerProvidersThanTheAppMeasures() {
-        let measured = Set(CapacityAlertCatalogue.alertableSeries.map(\.provider))
-        let alerted: Set<Provider> = [.claude]
+    /// Every provider the catalogue calls alertable must be a provider the app actually measures.
+    /// An entry for something never observed would be a rule that quietly watches nothing.
+    ///
+    /// Coverage itself is asserted in `CapacityAlertReconcilerTests`, from behaviour rather than
+    /// from a literal — an earlier version of this test compared against a hardcoded `[.claude]`
+    /// and would have gone on passing after the gap closed, reporting a state that was no longer
+    /// true.
+    func testEveryAlertableProviderIsOneTheAppMeasures() throws {
+        let measured = Set(try Self.seriesConstructions().map(\.0))
+        let alertable = Set(CapacityAlertCatalogue.alertableSeries.map(\.provider))
 
-        XCTAssertTrue(alerted.isSubset(of: measured))
-        XCTAssertGreaterThan(
-            measured.subtracting(alerted).count, 5,
-            "if this dropped, alert coverage grew — update the expectation and the note above"
+        XCTAssertTrue(
+            alertable.isSubset(of: measured),
+            "alertable but never measured: \(alertable.subtracting(measured).map(\.rawValue).sorted())"
         )
+        XCTAssertGreaterThan(alertable.count, 5, "alert coverage should span more than a couple of providers")
     }
 
     /// A freshly created rule should warn before the wall and at it, and say when the window turned
