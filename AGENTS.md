@@ -60,7 +60,7 @@ TokenPilot/
 
 - `TokenApp` may import `TokenCore`; `TokenCore` must stay free of SwiftUI/AppKit UI dependencies.
 - SwiftPM product name is `TokenMonitor`; user-facing app/bundle name is `TokenPilot`. Do not “normalize” this split casually.
-- SwiftPM platform floor is macOS 13; Xcode/app metadata targets macOS 14. Check both `Package.swift` and `project.yml` when changing platform assumptions.
+- The macOS floor is **26.0**, declared once in `project.yml` (`deploymentTarget.macOS`). `Package.swift` states it as `.macOS("26.0")` — the string form, because the `.v26` enum case is not in this toolchain's PackageDescription — and `build.sh` reads it for `LSMinimumSystemVersion`. A test asserts the two agree; do not add a third place.
 - Use `Makefile` targets as the local command surface. `build.sh` is part of the product path, not a disposable helper.
 - Keep `build/`, `.build/`, `DerivedData/`, and generated app bundles out of source edits.
 - For user-visible copy, update both localization surfaces when needed: Swift fallback table and `.xcstrings`.

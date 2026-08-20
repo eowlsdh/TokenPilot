@@ -175,7 +175,7 @@ struct HistoryScreen: View {
                     HistoryExportCard(model: model)
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, TokenPilotDesign.Spacing.sm)
         }
     }
 }
@@ -713,7 +713,7 @@ struct HistoryRequestTrendCard: View {
                     Spacer(minLength: 0)
 
                     Text(TokenPilotFormatters.compactNumber(trend.totalRequests))
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(TokenPilotDesign.Typography.metricCompact)
                         .monospacedDigit()
                         .foregroundStyle(TokenPilotDesign.textSecondary)
                         .lineLimit(1)
@@ -1355,7 +1355,7 @@ struct HistoryHourlyActivityCard: View {
 
                     if let peakHour = summary.peakHour {
                         Text("\(model.t("Peak")) \(peakHour):00")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(TokenPilotDesign.Typography.metricSmall)
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.calm)
                             .lineLimit(1)
@@ -1456,7 +1456,7 @@ struct HistoryFiveHourBlocksCard: View {
                         .frame(height: 8)
 
                         Text(TokenPilotFormatters.compactNumber(block.tokens))
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(TokenPilotDesign.Typography.metricSmall)
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.textPrimary)
                             .frame(width: 56, alignment: .trailing)
@@ -1512,7 +1512,7 @@ struct HistoryCostEfficiencyCard: View {
 
                     if let costPerRequest = efficiency.costPerRequestUSD {
                         Text("\(TokenPilotFormatters.cost(costPerRequest)) / \(model.t("request"))")
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .font(TokenPilotDesign.Typography.metricSmall)
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .lineLimit(1)
@@ -1587,7 +1587,7 @@ struct HistoryBudgetHistoryCard: View {
                     Spacer(minLength: 0)
 
                     Text("\(trend.exceededCount) \(model.t("exceeded"))")
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(TokenPilotDesign.Typography.metricSmall)
                         .monospacedDigit()
                         .foregroundStyle(trend.exceededCount > 0 ? TokenPilotDesign.status(.warning) : TokenPilotDesign.textSecondary)
                         .lineLimit(1)
@@ -1611,7 +1611,7 @@ struct HistoryBudgetHistoryCard: View {
                     }
                 }
                 .frame(height: 34)
-                .padding(.top, 2)
+                .padding(.top, TokenPilotDesign.Spacing.xxs)
 
                 Text(model.t("Daily local tokens vs the configured daily budget. Not provider quota."))
                     .font(TokenPilotDesign.Typography.caption)
@@ -1697,7 +1697,7 @@ struct HistoryProviderCacheCard: View {
             .frame(height: 8)
 
             Text("\(Int((row.hitRate * 100).rounded()))%")
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(TokenPilotDesign.Typography.metricSmall)
                 .monospacedDigit()
                 .foregroundStyle(hitRateColor(row.hitRate))
                 .frame(width: 34, alignment: .trailing)
@@ -1730,7 +1730,7 @@ struct HistoryCacheEfficiencyCard: View {
                     Spacer(minLength: 0)
 
                     Text(hitRateText)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(TokenPilotDesign.Typography.metricCompact)
                         .monospacedDigit()
                         .foregroundStyle(hitRateColor)
                         .lineLimit(1)
@@ -1767,7 +1767,7 @@ struct HistoryCacheEfficiencyCard: View {
                             .accessibilityLabel("\(day.dayLabel), \(Int((day.hitRate * 100).rounded()))%")
                         }
                     }
-                    .padding(.top, 2)
+                    .padding(.top, TokenPilotDesign.Spacing.xxs)
                 }
 
                 if model.cacheTrend.isDegrading {
@@ -1840,8 +1840,8 @@ struct HistoryUsageMetricTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
+        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+        .padding(.vertical, TokenPilotDesign.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TokenPilotDesign.surface(.cardMuted))
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))

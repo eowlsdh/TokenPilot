@@ -37,7 +37,7 @@ struct TokenPilotRootView: View {
         .environment(\.tokenPilotLanguage, model.settings.localization.language)
         .environment(\.locale, Locale(identifier: model.settings.localization.language.localeIdentifier ?? Locale.current.identifier))
         .padding(TokenPilotDesign.Spacing.xl)
-        .frame(width: 420, height: 620)
+        .frame(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
         .foregroundStyle(TokenPilotDesign.text(.primary))
         .background(
             VisualEffectBackground(material: .sidebar, blendingMode: .behindWindow)
@@ -190,7 +190,7 @@ struct TokenPilotRootView: View {
         ) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.captionStrong)
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
                     .accessibilityHidden(true)
 
@@ -349,7 +349,7 @@ struct ContextHealthCard: View {
 
             if let usedPercent = assessment.usedPercent {
                 Text("\(usedPercent)%")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(TokenPilotDesign.Typography.metricSmall)
                     .monospacedDigit()
                     .foregroundStyle(levelColor(assessment.level))
                     .lineLimit(1)
@@ -409,7 +409,7 @@ struct UsageStreakCard: View {
                     Spacer(minLength: 0)
 
                     Text("\(TokenPilotFormatters.compactNumber(streak.currentDays)) \(model.t("days"))")
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(TokenPilotDesign.Typography.metricCompact)
                         .monospacedDigit()
                         .foregroundStyle(TokenPilotDesign.calm)
                         .lineLimit(1)
@@ -486,8 +486,8 @@ struct ActivityMilestonesCard: View {
             .font(TokenPilotDesign.Typography.micro.weight(.semibold))
             .monospacedDigit()
             .foregroundStyle(TokenPilotDesign.calm)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+            .padding(.vertical, TokenPilotDesign.Spacing.xs)
             .background(Capsule().fill(TokenPilotDesign.calm.opacity(0.12)))
     }
 
@@ -571,7 +571,7 @@ struct BudgetGuardrailCard: View {
                     "\(TokenPilotFormatters.compactNumber(progress.budgetTokens)) " +
                     model.t("tok")
                 )
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(TokenPilotDesign.Typography.metricSmall)
                 .monospacedDigit()
                 .foregroundStyle(budgetColor(progress))
                 .lineLimit(1)
@@ -1342,7 +1342,7 @@ struct CapacitySignalLine: View {
                     .frame(width: 58, alignment: .leading)
 
                 Text(item.primaryValue(language: language))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(TokenPilotDesign.Typography.metricCompact)
                     .monospacedDigit()
                     .foregroundStyle(item.valueColor)
                     .lineLimit(1)
@@ -1537,7 +1537,7 @@ struct AlertsStatusRow: View {
         ) {
             HStack(spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "bell.badge")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.captionStrong)
                     .foregroundStyle(TokenPilotDesign.text(.secondary))
                     .accessibilityHidden(true)
 

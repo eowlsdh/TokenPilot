@@ -102,6 +102,9 @@ def spec_setting(name):
 
 marketing_version = spec_setting('MARKETING_VERSION')
 bundle_version = spec_setting('CURRENT_PROJECT_VERSION')
+# The minimum OS was a literal here while project.yml declared its own; two floors that could
+# drift meant this bundle and Xcode's could disagree about which Macs they run on.
+minimum_system_version = spec_setting('macOS')
 
 plist.update({
     'CFBundleExecutable': 'TokenMonitor',
@@ -112,7 +115,7 @@ plist.update({
     'CFBundleIconName': 'AppIcon',
     'CFBundleShortVersionString': marketing_version,
     'CFBundleVersion': bundle_version,
-    'LSMinimumSystemVersion': '14.0',
+    'LSMinimumSystemVersion': minimum_system_version,
     'LSUIElement': True,
     'NSHumanReadableCopyright': 'Copyright © 2026 TokenPilot. All rights reserved.',
 })

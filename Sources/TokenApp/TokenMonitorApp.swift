@@ -728,17 +728,17 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
 
     private func configurePopover() {
         popover.behavior = .transient
-        popover.contentSize = NSSize(width: 420, height: 620)
+        popover.contentSize = NSSize(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
 #if DEBUG
         let root = TokenPilotRootView(model: model)
-            .frame(width: 420, height: 620)
+            .frame(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
             .onAppear { Task { await self.model.refreshAfterPopoverOpen() } }
             .tokenPilotSemanticPalette()
             .tokenPilotDebugAccessibilityProfile(debugAccessibilityProfile)
         popover.contentViewController = NSHostingController(rootView: root)
 #else
         let root = TokenPilotRootView(model: model)
-            .frame(width: 420, height: 620)
+            .frame(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
             .onAppear { Task { await self.model.refreshAfterPopoverOpen() } }
             .tokenPilotSemanticPalette()
         popover.contentViewController = NSHostingController(rootView: root)

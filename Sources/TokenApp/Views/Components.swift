@@ -181,7 +181,7 @@ struct DisclosureSummaryRow: View {
             HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                 if let systemImage {
                     Image(systemName: systemImage)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(TokenPilotDesign.Typography.glyph)
                         .foregroundStyle(palette.text(.secondary))
                         .frame(width: 24, height: 24)
                         .background(palette.surface(.cardMuted))
@@ -274,7 +274,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
             HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                 summary()
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.captionStrong)
                     .foregroundStyle(palette.text(.secondary))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .accessibilityHidden(true)
@@ -398,13 +398,13 @@ struct CollapsibleSection<Content: View>: View {
                         .monospacedDigit()
                         .foregroundStyle(palette.text(.secondary))
                         .padding(.horizontal, TokenPilotDesign.Spacing.sm)
-                        .padding(.vertical, 2)
+                        .padding(.vertical, TokenPilotDesign.Spacing.xxs)
                         .background(palette.surface(.chip), in: Capsule())
                         .accessibilityHidden(true)
                 }
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.captionStrong)
                     .foregroundStyle(palette.text(.secondary))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .accessibilityHidden(true)
@@ -847,8 +847,8 @@ struct StatusBadge: View {
         .font(TokenPilotDesign.Typography.badge)
         .monospacedDigit()
         .lineLimit(1)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+        .padding(.vertical, TokenPilotDesign.Spacing.xxs)
         .foregroundStyle(color ?? palette.status(.trust))
         .background {
             Capsule()
@@ -941,8 +941,8 @@ struct SemanticChip: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+        .padding(.vertical, TokenPilotDesign.Spacing.xxs)
         .foregroundStyle(foregroundColor)
         .background {
             Capsule()

@@ -19,7 +19,7 @@ struct SettingsScreen: View {
                 languageSettings
                 privacySettings
             }
-            .padding(.bottom, 16)
+            .padding(.bottom, TokenPilotDesign.Spacing.xl)
         }
         .onAppear {
             model.refreshStoredCredentialPresence()
@@ -1597,7 +1597,7 @@ struct SettingsScreen: View {
                     .controlSize(.small)
             }
         }
-        .padding(9)
+        .padding(TokenPilotDesign.Spacing.md)
         .background {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
@@ -1620,7 +1620,7 @@ struct SettingsScreen: View {
                     .lineLimit(2)
             }
         }
-        .padding(8)
+        .padding(TokenPilotDesign.Spacing.sm)
         .background(TokenPilotDesign.surface(.cardMuted))
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
@@ -1865,7 +1865,7 @@ struct SettingsScreen: View {
     ) -> some View {
         HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             Image(systemName: systemImage)
-                .font(.system(size: 12, weight: .semibold))
+                .font(TokenPilotDesign.Typography.glyph)
                 .foregroundStyle(statusColor)
                 .frame(width: 24, height: 24)
                 .background(TokenPilotDesign.surface(.cardMuted))
@@ -2180,7 +2180,7 @@ struct SettingsScreen: View {
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
         }
-        .padding(9)
+        .padding(TokenPilotDesign.Spacing.md)
         .background {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
@@ -2200,7 +2200,7 @@ struct SettingsScreen: View {
                 .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(providerStatusColor(provider))
         }
-        .padding(9)
+        .padding(TokenPilotDesign.Spacing.md)
         .background {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
@@ -2635,8 +2635,8 @@ struct CapacityAlertRuleRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.horizontal, TokenPilotDesign.Spacing.md)
+        .padding(.vertical, TokenPilotDesign.Spacing.sm)
         .background {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
         }
@@ -2652,8 +2652,8 @@ struct CapacityAlertInfoPill: View {
     var body: some View {
         Text(label)
             .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+            .padding(.vertical, TokenPilotDesign.Spacing.xs)
             .background(isMuted ? TokenPilotDesign.surface(.badge) : color.opacity(0.16))
             .overlay(
                 Capsule().stroke(isMuted ? TokenPilotDesign.border : color.opacity(0.22), lineWidth: 1)
@@ -2706,7 +2706,7 @@ struct GuideCard: View {
                 Spacer()
             }
         }
-        .padding(10)
+        .padding(TokenPilotDesign.Spacing.md)
         .background {
             LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.lg, intensity: 0.55, surface: .cardMuted)
         }

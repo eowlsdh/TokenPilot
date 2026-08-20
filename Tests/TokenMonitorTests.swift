@@ -1241,8 +1241,12 @@ final class TokenMonitorTests: XCTestCase {
         let historyCollapsed = historySource.collapsedWhitespace
         let redesignedViewSource = [rootSource, settingsSource, historySource, componentsSource].joined(separator: "\n")
 
-        XCTAssertTrue(appSource.contains(".frame(width: 420, height: 620)"))
-        XCTAssertTrue(rootSource.contains(".frame(width: 420, height: 620)"))
+        // The popover stays a fixed size; it now says so through one token instead of four literals,
+        // so the window and the view inside it cannot drift apart.
+        XCTAssertTrue(appSource.contains("TokenPilotDesign.popoverWidth"))
+        XCTAssertTrue(appSource.contains("TokenPilotDesign.popoverHeight"))
+        XCTAssertTrue(rootSource.contains("TokenPilotDesign.popoverWidth"))
+        XCTAssertTrue(rootSource.contains("TokenPilotDesign.popoverHeight"))
 
         for removedSurface in ["import Charts", "LineMark(", "BarMark(", "AreaMark(", "Chart(", "Daily challenge", "Provider share"] {
             XCTAssertFalse(redesignedViewSource.contains(removedSurface), "Removed dashboard/chart surface should stay absent: \(removedSurface)")

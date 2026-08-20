@@ -138,6 +138,13 @@ enum TokenPilotDesign {
         static let explanation = Font.system(size: 11, weight: .regular)
         static let micro = Font.system(size: 10, weight: .semibold, design: .monospaced)
         static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
+        /// Metrics in a row that already carries a larger figure — provider rows, chart values.
+        /// Eleven sites spelled these two out inline because the ramp stopped at `metric`, so the
+        /// numbers in this app came in three sizes and only one of them was a token.
+        static let metricCompact = Font.system(size: 12, weight: .semibold, design: .monospaced)
+        static let metricSmall = Font.system(size: 11, weight: .semibold, design: .monospaced)
+        /// `caption` weight for a label that has to win against the value beside it.
+        static let captionStrong = Font.system(size: 11, weight: .semibold)
         static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
         static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
         /// Chart axis ticks and heatmap month labels. Was 7-8pt inline, which is below the floor
@@ -350,6 +357,14 @@ enum TokenPilotDesign {
     static let cardPaddingCompact = Spacing.section
     static let rowSpacing = Spacing.md
     static let sectionSpacing = Spacing.section
+
+    /// The popover's fixed size, in one place.
+    ///
+    /// It was written out at four call sites — the `NSPopover` content size, both hosting-controller
+    /// frames, and the root view's own frame. Four copies of a window size is three chances for the
+    /// popover and the view inside it to disagree about how big they are.
+    static let popoverWidth: CGFloat = 420
+    static let popoverHeight: CGFloat = 620
 
     static func surface(_ role: Surface) -> Color {
         surfaceColor(role, contrast: nil)

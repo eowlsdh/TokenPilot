@@ -1510,6 +1510,39 @@ final class BuildSigningTests: XCTestCase {
         XCTAssertTrue(spec.contains("CURRENT_PROJECT_VERSION:"))
     }
 
+    /// The minimum OS was a literal in build.sh while project.yml declared its own. Two floors that
+    /// can drift mean this script's bundle and Xcode's could disagree about which Macs they run on,
+    /// and the one that is wrong installs on a machine it cannot launch on.
+    func testTheMinimumOSComesFromTheProjectSpecToo() throws {
+        let script = try Self.buildScript()
+
+        XCTAssertTrue(script.contains("spec_setting('macOS')"), "the OS floor must be read, not restated")
+        XCTAssertTrue(script.contains("'LSMinimumSystemVersion': minimum_system_version"))
+        XCTAssertFalse(script.contains("'LSMinimumSystemVersion': '"), "a hardcoded floor is a second source of truth")
+    }
+
+    /// SwiftPM and Xcode each carry their own floor, and they were 13 and 14 — the package would
+    /// build for Macs the app refuses to launch on.
+    func testTheSwiftPackageAndXcodeAgreeOnTheOSFloor() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let manifest = try String(contentsOf: root.appendingPathComponent("Package.swift"), encoding: .utf8)
+        let spec = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+
+        let manifestFloor = try XCTUnwrap(
+            manifest.firstMatch(of: /\.macOS\("([0-9.]+)"\)/).map { String($0.output.1) },
+            "Package.swift must state its floor as a version string so it can be compared"
+        )
+        let specFloor = try XCTUnwrap(
+            spec.firstMatch(of: /macOS:\s*"([0-9.]+)"/).map { String($0.output.1) }
+        )
+
+        XCTAssertEqual(
+            manifestFloor.prefix(while: { $0 != "." }),
+            specFloor.prefix(while: { $0 != "." }),
+            "SwiftPM says \(manifestFloor), Xcode says \(specFloor)"
+        )
+    }
+
     private static func buildScript() throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent("build.sh"))
