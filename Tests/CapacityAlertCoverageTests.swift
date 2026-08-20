@@ -78,6 +78,31 @@ final class CapacityAlertCoverageTests: XCTestCase {
         }
     }
 
+    /// The catalogue is **not** derivable from `CapacitySeriesID`'s semantics table, which was the
+    /// next change I was about to make. The table says a duration is *permitted*
+    /// (`optionalExact(300)`); it does not say whether the factory emits it. Claude's windows are
+    /// built with `durationMinutes: nil` while opencode's rolling window carries 300, so deriving
+    /// from the table would have produced a Claude rule identified by a duration no observation
+    /// carries — a rule that looks right and can never fire.
+    ///
+    /// This asserts the property that actually matters instead: every alertable entry names an
+    /// identity the factory really emits, duration included.
+    func testEveryAlertableEntryMatchesAnIdentityTheFactoryEmits() {
+        let emitted = Self.seriesIdentities()
+
+        for entry in CapacityAlertCatalogue.alertableSeries {
+            let match = emitted.contains {
+                $0.provider == entry.provider
+                    && $0.windowID == entry.providerWindowID
+                    && $0.duration == entry.durationMinutes
+            }
+            XCTAssertTrue(
+                match,
+                "\(entry.provider.rawValue)/\(entry.providerWindowID) duration=\(String(describing: entry.durationMinutes)) is not an identity the factory emits"
+            )
+        }
+    }
+
     /// A balance, a context window, or a running cost is not a quota. Alerting on them would either
     /// fire constantly or claim a limit the provider never stated.
     func testNoBalanceOrContextSeriesIsMarkedAlertable() {
@@ -121,16 +146,27 @@ final class CapacityAlertCoverageTests: XCTestCase {
     /// and Codex's windows reach the initialiser through a local helper rather than constructing it
     /// in place — and the scan looked complete while skipping exactly those.
     private static func seriesConstructions() throws -> [(Provider, String)] {
-        let lines = try observationFactorySource().split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        var found: [(Provider, String)] = []
+        seriesIdentities().map { ($0.provider, $0.windowID) }
+    }
+
+    /// Provider, window, and **duration** — the duration is part of a series identity, so a
+    /// catalogue entry that omits one the factory emits (or adds one it does not) describes a
+    /// series that will never receive an observation.
+    private static func seriesIdentities() -> [(provider: Provider, windowID: String, duration: Int?)] {
+        guard let lines = try? observationFactorySource()
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init) else { return [] }
+        var found: [(Provider, String, Int?)] = []
 
         for (index, line) in lines.enumerated() {
             guard let windowID = value(after: "providerWindowID:", in: line) else { continue }
-            // The provider is either on this line or a few above it, inside the same call.
-            let window = lines[max(0, index - 6)...index].reversed()
-            guard let providerRaw = window.compactMap({ value(after: "provider: .", in: $0, quoted: false) }).first,
+            // The provider and duration sit on this line or a few around it, inside the same call.
+            let before = lines[max(0, index - 6)...index].reversed()
+            guard let providerRaw = before.compactMap({ value(after: "provider: .", in: $0, quoted: false) }).first,
                   let provider = Provider(rawValue: providerRaw) else { continue }
-            found.append((provider, windowID))
+            let after = lines[index..<min(lines.count, index + 4)]
+            let durationRaw = ([line] + after).compactMap { value(after: "durationMinutes:", in: $0, quoted: false) }.first
+            found.append((provider, windowID, durationRaw.flatMap { Int($0.replacingOccurrences(of: "_", with: "")) }))
         }
         return found
     }
@@ -143,7 +179,7 @@ final class CapacityAlertCoverageTests: XCTestCase {
             guard rest.first == "\"", let end = rest.dropFirst().firstIndex(of: "\"") else { return nil }
             return String(rest[rest.index(after: rest.startIndex)..<end])
         }
-        let identifier = rest.prefix { $0.isLetter || $0.isNumber }
+        let identifier = rest.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
         return identifier.isEmpty ? nil : String(identifier)
     }
 }

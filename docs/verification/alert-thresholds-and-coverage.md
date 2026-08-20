@@ -159,8 +159,21 @@ the providers the user watches — including the ones whose identity is only kno
 remains unwatched is unwatched because the evidence does not support a truthful warning, and each
 case says which.
 
-## Still open
+## Correction: the catalogue is not a duplicate of the semantics table
 
-- **The catalogue duplicates the semantics table.** `CapacityAlertCatalogue.alertableSeries`
-  hand-lists what `CapacitySeriesID`'s private semantics table already declares. The guard test keeps
-  them from diverging, but deriving one from the other would remove the possibility.
+The previous version of this note listed "derive the catalogue from `CapacitySeriesID`'s semantics
+table" as the next change. Attempting it showed it would have been a regression.
+
+The table declares which identities are **permitted**. It does not say which the app **emits**.
+`optionalExact(300)` means a duration of 300 or none is acceptable — and the factory builds Claude's
+windows with `durationMinutes: nil` while opencode's rolling window carries 300. A duration is part
+of a series identity, so deriving from the table would have produced a Claude rule identified by a
+duration no observation carries: a rule that looks correct, validates, saves, and can never fire.
+
+They are two different facts, and the second is not derivable from the first.
+
+What replaced the derivation is a guard for the property that actually matters: every alertable
+entry must name an identity the factory really emits, duration included. It was verified by
+deliberately giving Claude's five-hour window a duration of 300, which failed with
+`claude/five-hour duration=Optional(300) is not an identity the factory emits` — the exact breakage
+the derivation would have shipped silently.
