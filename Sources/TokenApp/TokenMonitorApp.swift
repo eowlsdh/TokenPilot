@@ -668,6 +668,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private var standardStatusItem: NSStatusItem?
     private var combinedMetricsView: ProviderMetricsMenuBarNSView?
     private var separateMetricItems: [Provider: MetricStatusItem] = [:]
+    private var separateTitleItems: [NSStatusItem] = []
     private weak var contextMenuButton: NSStatusBarButton?
     private var modelObservation: AnyCancellable?
     private var wakeObservation: NSObjectProtocol?
@@ -750,14 +751,29 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem() {
         syncGlobalHotkey()
-        let segments = model.menuBarMetricSegments
-        guard model.settings.menuBarDisplayStyle == .providerMetrics else {
+        let style = model.settings.menuBarDisplayStyle
+        let grouping = model.settings.menuBarProviderGrouping
+
+        guard style == .providerMetrics else {
             removeSeparateMetricItems()
-            updateStandardStatusItem()
+            // "Separate items" used to apply to the provider-metrics layout only, so the text
+            // layouts always packed every provider into one wide item no matter what the setting
+            // said. They now split on the same seams the title was already joined from.
+            let titleSegments = (grouping == .separate && style != .iconOnly)
+                ? model.menuBarTitleSegments
+                : []
+            if titleSegments.count > 1 {
+                reconcileSeparateTitleItems(segments: titleSegments)
+            } else {
+                removeSeparateTitleItems()
+                updateStandardStatusItem()
+            }
             return
         }
 
-        switch model.settings.menuBarProviderGrouping {
+        removeSeparateTitleItems()
+        let segments = model.menuBarMetricSegments
+        switch grouping {
         case .combined:
             removeSeparateMetricItems()
             updateCombinedMetricsStatusItem(segments: segments)
@@ -765,6 +781,11 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
             reconcileSeparateMetricItems(segments: segments)
         }
     }
+
+    private static let menuBarTitleAttributes: [NSAttributedString.Key: Any] = [
+        .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
+        .foregroundColor: NSColor.labelColor
+    ]
 
     private func updateStandardStatusItem() {
         let statusItem = standardStatusItem ?? makeStatusItem()
@@ -776,14 +797,43 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         button.title = ""
         button.attributedTitle = NSAttributedString(
             string: model.menuBarTitle,
-            attributes: [
-                .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .semibold),
-                .foregroundColor: NSColor.labelColor
-            ]
+            attributes: Self.menuBarTitleAttributes
         )
         button.toolTip = model.menuBarAccessibilityLabel
         button.setAccessibilityLabel(model.menuBarAccessibilityLabel)
         statusItem.length = NSStatusItem.variableLength
+    }
+
+    /// One status item per title segment, so a two-provider menu bar reads as two small
+    /// items instead of one long line. Items are reused by position: the segment order is
+    /// stable (primary, then secondary), and recreating them would make the whole group
+    /// jump to the right edge of the menu bar on every refresh.
+    private func reconcileSeparateTitleItems(segments: [MenuBarTitleSegment]) {
+        removeStandardStatusItem()
+        while separateTitleItems.count > segments.count {
+            NSStatusBar.system.removeStatusItem(separateTitleItems.removeLast())
+        }
+        while separateTitleItems.count < segments.count {
+            separateTitleItems.append(makeStatusItem())
+        }
+        for (statusItem, segment) in zip(separateTitleItems, segments) {
+            guard let button = statusItem.button else { continue }
+            button.title = ""
+            button.attributedTitle = NSAttributedString(
+                string: segment.text,
+                attributes: Self.menuBarTitleAttributes
+            )
+            button.toolTip = segment.accessibilityLabel
+            button.setAccessibilityLabel(segment.accessibilityLabel)
+            statusItem.length = NSStatusItem.variableLength
+        }
+    }
+
+    private func removeSeparateTitleItems() {
+        for statusItem in separateTitleItems {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+        separateTitleItems.removeAll()
     }
 
     private func updateCombinedMetricsStatusItem(segments: [MenuBarProviderMetricSegment]) {

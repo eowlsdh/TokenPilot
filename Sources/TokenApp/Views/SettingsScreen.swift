@@ -364,14 +364,31 @@ struct SettingsScreen: View {
                                 .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
-                        if model.settings.menuBarDisplayStyle == .providerMetrics {
+                        if model.settings.menuBarDisplayStyle != .iconOnly {
                             Picker(model.t("Menu bar providers"), selection: menuBarProviderGroupingBinding) {
                                 Text(model.t("Combined item")).tag(MenuBarProviderGrouping.combined)
                                 Text(model.t("Separate items")).tag(MenuBarProviderGrouping.separate)
                             }
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar providers"))
+                        }
 
+                        if model.settings.menuBarDisplayStyle != .iconOnly &&
+                            model.settings.menuBarDisplayStyle != .providerMetrics {
+                            Picker(model.t("Menu bar width"), selection: menuBarWidthLimitBinding) {
+                                Text(model.t("Full")).tag(MenuBarWidthLimit.full)
+                                Text(model.t("Standard")).tag(MenuBarWidthLimit.standard)
+                                Text(model.t("Narrow")).tag(MenuBarWidthLimit.narrow)
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityLabel(model.t("Menu bar width"))
+                            Text(model.t("How much menu bar room the text may take. A narrower setting drops reset countdowns and window tags first, then the second reading — never part of a word."))
+                                .font(TokenPilotDesign.Typography.explanation)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if model.settings.menuBarDisplayStyle == .providerMetrics {
                             Picker(model.t("Menu bar trend"), selection: menuBarTrendStyleBinding) {
                                 Text(model.t("Trend line")).tag(MenuBarTrendStyle.sparkline)
                                 Text(model.t("Remaining bar")).tag(MenuBarTrendStyle.bar)
@@ -402,12 +419,18 @@ struct SettingsScreen: View {
                                 }
                             }
 
-                            if model.settings.menuBarProviderGrouping == .separate {
-                                Text(model.t("Each selected provider gets its own menu bar item."))
-                                    .font(TokenPilotDesign.Typography.explanation)
-                                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+                        }
+
+                        if model.settings.menuBarProviderGrouping == .separate &&
+                            model.settings.menuBarDisplayStyle != .iconOnly {
+                            Text(
+                                model.settings.menuBarDisplayStyle == .providerMetrics
+                                    ? model.t("Each selected provider gets its own menu bar item.")
+                                    : model.t("The primary and secondary providers get their own menu bar items.")
+                            )
+                                .font(TokenPilotDesign.Typography.explanation)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         Picker(model.t("Primary provider"), selection: menuBarTargetBinding) {
@@ -460,7 +483,7 @@ struct SettingsScreen: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        Text("\(model.t("Current menu bar")): \(model.menuBarTitle)")
+                        Text("\(model.t("Current menu bar")): \(model.menuBarPreviewText)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .lineLimit(1)
@@ -2029,6 +2052,12 @@ struct SettingsScreen: View {
         Binding(
             get: { model.settings.menuBarPrimaryMetric },
             set: { model.setMenuBarPrimaryMetric($0) }
+        )
+    }
+    private var menuBarWidthLimitBinding: Binding<MenuBarWidthLimit> {
+        Binding(
+            get: { model.settings.menuBarWidthLimit },
+            set: { model.setMenuBarWidthLimit($0) }
         )
     }
     private var menuBarTrendStyleBinding: Binding<MenuBarTrendStyle> {

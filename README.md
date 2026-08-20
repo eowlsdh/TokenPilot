@@ -189,7 +189,9 @@ CODEX   GROK
  77%     80%
 ```
 
-Choose **Separate items** for independently registered `NSStatusItem`s, or **Combined item** to keep every selected provider in one status item. Detailed, compact, and icon-only layouts remain available for users who prefer window labels, local-activity fallback text, or a minimal icon.
+Choose **Separate items** for independently registered `NSStatusItem`s, or **Combined item** to keep every selected provider in one status item. Detailed, compact, and icon-only layouts remain available for users who prefer window labels, local-activity fallback text, or a minimal icon. **Separate items** applies to those text layouts too: the primary and secondary providers each get their own status item instead of sharing one wide one.
+
+**Menu bar width** caps how much room the text layouts may take — `Full`, `Standard`, or `Narrow`. A narrower setting drops whole components in order of least value first: reset countdowns, then window tags, then the second reading. Nothing is ever cut mid-word or replaced with an ellipsis, so what remains is still a number you can act on.
 
 ---
 

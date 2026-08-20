@@ -41,6 +41,24 @@ public struct MenuBarProviderMetricSegment: Equatable, Sendable {
     }
 }
 
+/// One rendered piece of the menu bar title.
+///
+/// The text layouts used to exist only as a single joined string, so "Separate
+/// items" could not apply to them and every provider shared one wide status item.
+/// Splitting the title into the pieces it was already joined from lets the menu bar
+/// draw one item per provider without changing what any layout says.
+public struct MenuBarTitleSegment: Equatable, Sendable {
+    /// The provider this piece speaks for; `nil` for app-level text such as `TP Setup`.
+    public let provider: Provider?
+    public let text: String
+    public let accessibilityLabel: String
+
+    public init(provider: Provider?, text: String, accessibilityLabel: String) {
+        self.provider = provider
+        self.text = text
+        self.accessibilityLabel = accessibilityLabel
+    }
+}
 
 public final class MenuBarStatusService: @unchecked Sendable {
     private enum CandidateKind: Equatable, Sendable {
@@ -141,28 +159,127 @@ public final class MenuBarStatusService: @unchecked Sendable {
         case .iconOnly:
             return "TP"
         case .providerMetrics:
+            // The bar draws provider blocks here, not text; this string is the preview and the
+            // spoken fallback, so it is never the thing taking up menu bar room.
             return providerMetricsTitle(
                 snapshots: snapshots,
                 settings: settings,
                 now: now,
                 xaiOAuthResult: xaiOAuthResult
             )
-        case .detailed where !settings.menuBarShowsSecondaryProvider:
-            return detailedTitle(
-                snapshots: snapshots,
-                settings: settings,
-                modeLabel: modeLabel,
-                now: now,
-                xaiOAuthResult: xaiOAuthResult
-            )
         case .detailed, .compact:
-            return compactTitle(
+            return fittedTitle(limit: settings.menuBarWidthLimit) { showsDecoration, maximumPieces in
+                self.textSegments(
+                    snapshots: snapshots,
+                    settings: settings,
+                    modeLabel: modeLabel,
+                    now: now,
+                    xaiOAuthResult: xaiOAuthResult,
+                    showsDecoration: showsDecoration,
+                    maximumPieces: maximumPieces
+                )
+                .map(\.text)
+                .joined(separator: " · ")
+            }
+        }
+    }
+
+    /// The title split into the per-provider pieces it is joined from, each already
+    /// trimmed to the width budget on its own.
+    ///
+    /// `Separate items` grouping draws one status item per element; `Combined item`
+    /// ignores this and uses ``title(snapshots:settings:modeLabel:now:xaiOAuthResult:)``.
+    public func titleSegments(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        modeLabel: String,
+        now: Date = Date(),
+        xaiOAuthResult: XAIRefreshResult? = nil
+    ) -> [MenuBarTitleSegment] {
+        let rich = textSegments(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: modeLabel,
+            now: now,
+            xaiOAuthResult: xaiOAuthResult,
+            showsDecoration: true,
+            maximumPieces: Self.maximumTitlePieces
+        )
+        guard let budget = settings.menuBarWidthLimit.characterBudget else { return rich }
+        let lean = textSegments(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: modeLabel,
+            now: now,
+            xaiOAuthResult: xaiOAuthResult,
+            showsDecoration: false,
+            maximumPieces: Self.maximumTitlePieces
+        )
+        guard lean.count == rich.count else { return rich }
+        // An item that stands alone can only give back its reset countdown; dropping the
+        // reading itself would leave a provider with nothing to say.
+        return zip(rich, lean).map { MenuBarTextWidth.cells($0.text) <= budget ? $0 : $1 }
+    }
+
+    /// The most pieces any text layout produces: two windows of one provider, or a
+    /// primary and a secondary provider.
+    private static let maximumTitlePieces = 2
+
+    /// Renders the text layouts, then trims whole components until the result fits the
+    /// budget: the reset countdowns go first, then the second piece, because a countdown
+    /// repeats what the popover shows while a dropped piece hides a reading outright.
+    /// Nothing is ever cut mid-word or replaced by an ellipsis.
+    private func fittedTitle(limit: MenuBarWidthLimit, build: (Bool, Int) -> String) -> String {
+        guard let budget = limit.characterBudget else {
+            return build(true, Self.maximumTitlePieces)
+        }
+        var rendered = ""
+        for pieces in stride(from: Self.maximumTitlePieces, through: 1, by: -1) {
+            for showsResetCountdown in [true, false] {
+                rendered = build(showsResetCountdown, pieces)
+                if MenuBarTextWidth.cells(rendered) <= budget { return rendered }
+            }
+        }
+        return rendered
+    }
+
+    /// - Parameter showsDecoration: keeps the parts that qualify a reading rather than
+    ///   carry it — the reset countdown in the detailed layout, the window tag in the
+    ///   compact one. These are what the width budget gives up first.
+    private func textSegments(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        modeLabel: String,
+        now: Date,
+        xaiOAuthResult: XAIRefreshResult?,
+        showsDecoration: Bool,
+        maximumPieces: Int
+    ) -> [MenuBarTitleSegment] {
+        if settings.menuBarDisplayStyle == .detailed, !settings.menuBarShowsSecondaryProvider {
+            // Detailed without a secondary is one provider's windows; the pieces the budget
+            // trims are those windows, and they stay in one item because they describe one thing.
+            return [
+                detailedSegment(
+                    snapshots: snapshots,
+                    settings: settings,
+                    modeLabel: modeLabel,
+                    now: now,
+                    xaiOAuthResult: xaiOAuthResult,
+                    showsResetCountdown: showsDecoration,
+                    maximumWindows: maximumPieces
+                )
+            ]
+        }
+        return Array(
+            compactSegments(
                 snapshots: snapshots,
                 settings: settings,
                 now: now,
-                xaiOAuthResult: xaiOAuthResult
+                xaiOAuthResult: xaiOAuthResult,
+                showsWindowSuffix: showsDecoration
             )
-        }
+            .prefix(max(maximumPieces, 1))
+        )
     }
 
     public func providerMetricsSegments(
@@ -192,12 +309,53 @@ public final class MenuBarStatusService: @unchecked Sendable {
         }
     }
 
+    private func detailedSegment(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        modeLabel: String,
+        now: Date,
+        xaiOAuthResult: XAIRefreshResult?,
+        showsResetCountdown: Bool,
+        maximumWindows: Int
+    ) -> MenuBarTitleSegment {
+        let text = detailedTitle(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: modeLabel,
+            now: now,
+            xaiOAuthResult: xaiOAuthResult,
+            showsResetCountdown: showsResetCountdown,
+            maximumWindows: maximumWindows
+        )
+        let candidate = selectedCandidate(
+            from: snapshots,
+            settings: settings,
+            now: now,
+            xaiOAuthResult: xaiOAuthResult
+        )
+        let provider = candidate?.snapshot.provider ?? settings.menuBarDisplayTarget
+        // Deliberately not `accessibilityLabel(…)`: that method renders the title to speak it,
+        // and this segment is part of that title.
+        return MenuBarTitleSegment(
+            provider: provider,
+            text: text,
+            accessibilityLabel: "TokenPilot, " + compactAccessibilitySegment(
+                provider: provider,
+                candidate: candidate,
+                settings: settings,
+                language: settings.localization.language
+            )
+        )
+    }
+
     private func detailedTitle(
         snapshots: [ProviderSnapshot],
         settings: AppSettings,
         modeLabel: String,
         now: Date,
-        xaiOAuthResult: XAIRefreshResult? = nil
+        xaiOAuthResult: XAIRefreshResult? = nil,
+        showsResetCountdown: Bool = true,
+        maximumWindows: Int = 2
     ) -> String {
         let candidates = allCandidates(from: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult)
         if let target = settings.menuBarDisplayTarget,
@@ -215,8 +373,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return metricSegment
             }
             let segments = percentRenderCandidates(for: candidate, in: candidates)
-                .prefix(2)
-                .map { percentSegment(for: $0) + resetSuffix(for: $0, now: now) }
+                .prefix(max(maximumWindows, 1))
+                .map { percentSegment(for: $0) + (showsResetCountdown ? resetSuffix(for: $0, now: now) : "") }
             guard !segments.isEmpty else { return "\(candidate.snapshot.provider.shortName) · \(modeLabel)" }
             return segments.joined(separator: " · ")
         case .money:
@@ -250,25 +408,92 @@ public final class MenuBarStatusService: @unchecked Sendable {
         separator: String = " · ",
         xaiOAuthResult: XAIRefreshResult? = nil
     ) -> String {
+        compactSegments(
+            snapshots: snapshots,
+            settings: settings,
+            now: now,
+            xaiOAuthResult: xaiOAuthResult
+        )
+        .map(\.text)
+        .joined(separator: separator)
+    }
+
+    private func compactSegments(
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        now: Date,
+        xaiOAuthResult: XAIRefreshResult? = nil,
+        showsWindowSuffix: Bool = true
+    ) -> [MenuBarTitleSegment] {
+        let language = settings.localization.language
         let candidates = allCandidates(from: snapshots, settings: settings, now: now, xaiOAuthResult: xaiOAuthResult)
         let selectedTarget = settings.menuBarDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
+        let secondary = settings.menuBarShowsSecondaryProvider
+            ? settings.menuBarSecondaryDisplayTarget.flatMap { settings.isProviderEnabled($0) ? $0 : nil }
+            : nil
         let primaryCandidate = compactPrimaryCandidate(
             from: candidates,
             selectedTarget: selectedTarget,
             settings: settings,
             now: now
         )
-        let primaryProvider = selectedTarget ?? primaryCandidate?.snapshot.provider
-        var segments = [compactSegment(provider: primaryProvider, candidate: primaryCandidate, settings: settings)]
+        // An idle provider produces no candidate, and the primary slot used to fall back to the
+        // app itself — so a provider that was enabled, read, and simply quiet vanished from the
+        // menu bar behind a generic "TP Setup". Name the provider instead and let its own marker
+        // say it has nothing to report yet.
+        let primaryProvider = selectedTarget
+            ?? primaryCandidate?.snapshot.provider
+            ?? settings.enabledProviders.first { $0 != secondary }
+        var segments = [
+            titleSegment(
+                provider: primaryProvider,
+                candidate: primaryCandidate,
+                snapshots: snapshots,
+                settings: settings,
+                language: language,
+                showsWindowSuffix: showsWindowSuffix
+            )
+        ]
 
-        if settings.menuBarShowsSecondaryProvider,
-           let secondary = settings.menuBarSecondaryDisplayTarget,
-           settings.isProviderEnabled(secondary),
-           secondary != primaryProvider {
-            let secondaryCandidate = representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary })
-            segments.append(compactSegment(provider: secondary, candidate: secondaryCandidate, settings: settings))
+        if let secondary, secondary != primaryProvider {
+            segments.append(
+                titleSegment(
+                    provider: secondary,
+                    candidate: representativeCandidate(from: candidates.filter { $0.snapshot.provider == secondary }),
+                    snapshots: snapshots,
+                    settings: settings,
+                    language: language,
+                    showsWindowSuffix: showsWindowSuffix
+                )
+            )
         }
-        return segments.joined(separator: separator)
+        return segments
+    }
+
+    private func titleSegment(
+        provider: Provider?,
+        candidate: Candidate?,
+        snapshots: [ProviderSnapshot],
+        settings: AppSettings,
+        language: TokenPilotLanguage,
+        showsWindowSuffix: Bool
+    ) -> MenuBarTitleSegment {
+        MenuBarTitleSegment(
+            provider: provider,
+            text: compactSegment(
+                provider: provider,
+                candidate: candidate,
+                settings: settings,
+                snapshot: provider.flatMap { target in snapshots.first { $0.provider == target } },
+                showsWindowSuffix: showsWindowSuffix
+            ),
+            accessibilityLabel: "TokenPilot, " + compactAccessibilitySegment(
+                provider: provider,
+                candidate: candidate,
+                settings: settings,
+                language: language
+            )
+        )
     }
 
     private func providerMetricsTitle(
@@ -537,19 +762,31 @@ public final class MenuBarStatusService: @unchecked Sendable {
     }
 
 
-    private func compactSegment(provider: Provider?, candidate: Candidate?, settings: AppSettings) -> String {
+    /// - Parameter showsWindowSuffix: the window tag after the percentage (`OC 85% 7d`).
+    ///   The width budget drops it first: which window a reading belongs to is on every
+    ///   provider row in the popover, so losing it here costs less than losing a provider.
+    ///   - snapshot: the provider's own snapshot, when there is one. It separates "read this
+    ///     provider, it has nothing to report yet" from "this provider is not set up" — two
+    ///     states that both used to render as `Setup`.
+    private func compactSegment(
+        provider: Provider?,
+        candidate: Candidate?,
+        settings: AppSettings,
+        snapshot: ProviderSnapshot? = nil,
+        showsWindowSuffix: Bool = true
+    ) -> String {
         guard let provider else { return "TP Setup" }
         if provider == .xai {
             if let candidate,
                candidate.authority == "experimental-oauth-weekly",
                let remaining = candidate.remainingPercent {
-                let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+                let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
                 return "\(provider.shortName) \(remaining)%\(suffix)"
             }
             if let candidate,
                candidate.authority == "user-entered",
                let remaining = candidate.remainingPercent {
-                let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+                let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
                 return "\(provider.shortName) \(remaining)%\(suffix)"
             }
             if let candidate,
@@ -559,10 +796,16 @@ public final class MenuBarStatusService: @unchecked Sendable {
             }
             return xAIManagementSetupConfigured(settings) ? "xAI Setup" : "xAI Unavailable"
         }
-        guard let candidate else { return "\(provider.shortName) Setup" }
+        guard let candidate else {
+            // `—` is the app's established "no value yet" marker; the provider-metrics blocks and
+            // the Settings marker legend already use it. `Setup` is reserved for a provider that
+            // genuinely has no source, because telling a configured user to set it up again is wrong.
+            guard let snapshot else { return "\(provider.shortName) Setup" }
+            return "\(provider.shortName) —" + (snapshot.isStale ? " STALE" : "")
+        }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
-            let suffix = candidate.suffix.isEmpty ? "" : " \(candidate.suffix)"
+            let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
             return "\(provider.shortName) \(remaining)%\(suffix)"
         }
         if candidate.kind == .money, let balance = candidate.snapshot.balance {

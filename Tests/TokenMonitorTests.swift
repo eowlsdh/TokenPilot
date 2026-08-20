@@ -1319,7 +1319,13 @@ final class TokenMonitorTests: XCTestCase {
         let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
         let coreModelsSource = try Self.tokenCoreModelsSource()
 
-        XCTAssertTrue(appSource.contains("switch model.settings.menuBarProviderGrouping"))
+        XCTAssertTrue(appSource.contains("let grouping = model.settings.menuBarProviderGrouping"))
+        XCTAssertTrue(appSource.contains("switch grouping"))
+        // The grouping setting governs every layout, not just provider metrics: the text
+        // layouts split into one status item per title segment instead of one wide item.
+        XCTAssertTrue(appSource.contains("reconcileSeparateTitleItems(segments: titleSegments)"))
+        XCTAssertTrue(appSource.contains("removeSeparateTitleItems()"))
+        XCTAssertTrue(appSource.contains("model.menuBarTitleSegments"))
         XCTAssertTrue(appSource.contains("reconcileSeparateMetricItems(segments: segments)"))
         XCTAssertTrue(appSource.contains("removeSeparateMetricItem(for: provider)"))
         XCTAssertTrue(appSource.contains("segments: [segment]"))
@@ -1330,7 +1336,10 @@ final class TokenMonitorTests: XCTestCase {
 
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Combined item\"))"))
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Separate items\"))"))
-        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Each selected provider gets its own menu bar item.\"))"))
+        XCTAssertTrue(settingsSource.contains("model.t(\"Each selected provider gets its own menu bar item.\")"))
+        // "Separate items" applies to the text layouts too, so its explanation has to name what
+        // they split on — the primary and secondary providers, not a checklist.
+        XCTAssertTrue(settingsSource.contains("model.t(\"The primary and secondary providers get their own menu bar items.\")"))
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Show in menu bar\"))"))
         XCTAssertTrue(settingsSource.contains(".disabled(!model.isProviderEnabled(provider))"))
         XCTAssertTrue(coreModelsSource.contains("menuBarProviderGrouping: MenuBarProviderGrouping = .separate"))

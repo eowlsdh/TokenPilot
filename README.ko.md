@@ -20,7 +20,7 @@
 
 | 화면 | 역할 |
 |---|---|
-| **메뉴바** | 위에는 provider 이름, 아래에는 남은 퍼센트를 표시합니다. provider별 표시 여부를 선택하고 **개별 항목** 또는 **통합 항목**으로 배치할 수 있습니다. |
+| **메뉴바** | 위에는 provider 이름, 아래에는 남은 퍼센트를 표시합니다. provider별 표시 여부를 선택하고 **개별 항목** 또는 **통합 항목**으로 배치할 수 있습니다. 개별 항목은 상세/간략 레이아웃에도 적용되어 기본 provider와 보조 provider가 각각 별도 항목이 됩니다. **메뉴 막대 너비**(전체/표준/좁게)로 차지하는 폭을 제한할 수 있으며, 좁힐 때는 초기화 카운트다운 → 창 표시 → 두 번째 값 순으로 통째로 생략하고 단어를 잘라내지 않습니다. |
 | **개요** | 현재 남은 한도, provider별 수용량 상태, DeepSeek topped-up balance, 오늘 토큰, 알림 상태를 보여주는 capacity-first 화면입니다. |
 | **기록** | 저장된 이벤트와 최신 한도 증거 타임라인을 보여주며, 로컬 활동 집계는 quota가 아닌 export-only JSON/CSV 데이터로만 제공합니다. |
 | **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, Grok 로컬 context diagnostics, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |

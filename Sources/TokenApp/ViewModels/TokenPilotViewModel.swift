@@ -280,6 +280,29 @@ final class TokenPilotViewModel: ObservableObject {
             xaiOAuthResult: menuBarOAuthResult
         )
     }
+    /// The text layouts split per provider, for `Separate items` grouping.
+    var menuBarTitleSegments: [MenuBarTitleSegment] {
+        menuBarStatusService.titleSegments(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: dataSourceMode.displayLabel,
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
+        )
+    }
+
+    /// What Settings shows under "Current menu bar". With separate items the bar draws each
+    /// segment as its own status item, so the preview spaces them out instead of joining them
+    /// with the separator only the combined item uses.
+    var menuBarPreviewText: String {
+        guard settings.menuBarProviderGrouping == .separate,
+              settings.menuBarDisplayStyle == .detailed || settings.menuBarDisplayStyle == .compact
+        else { return menuBarTitle }
+        let segments = menuBarTitleSegments
+        guard segments.count > 1 else { return menuBarTitle }
+        return segments.map(\.text).joined(separator: "   ")
+    }
+
     var menuBarMetricSegments: [MenuBarProviderMetricSegment] {
         menuBarStatusService.providerMetricsSegments(
             snapshots: snapshots,
@@ -747,6 +770,12 @@ final class TokenPilotViewModel: ObservableObject {
         }
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
+            if isEnabled {
+                // Switching a provider on is the user asking to watch it, so it belongs in the
+                // menu bar too. Without this the provider stayed invisible there until the user
+                // found the separate menu bar provider list and switched it on a second time.
+                next.menuBarMetricProviders.insert(provider)
+            }
             next.normalizeMenuBarComposition()
             settings = next
         } else {
@@ -853,6 +882,10 @@ final class TokenPilotViewModel: ObservableObject {
 
     func setMenuBarTrendStyle(_ style: MenuBarTrendStyle) {
         settings.menuBarTrendStyle = style
+    }
+
+    func setMenuBarWidthLimit(_ limit: MenuBarWidthLimit) {
+        settings.menuBarWidthLimit = limit
     }
 
     func setMenuBarMetricProvider(_ provider: Provider, isVisible: Bool) {

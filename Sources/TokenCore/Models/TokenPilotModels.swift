@@ -94,6 +94,39 @@ public enum MenuBarTrendStyle: String, Codable, CaseIterable, Sendable {
     case off = "Off"
 }
 
+/// How much horizontal menu bar room TokenPilot may take for its text layouts.
+///
+/// Menu bar width is scarce — more so on a notched display, where every point
+/// TokenPilot takes is a point another app's item loses. The detailed title can
+/// reach 27 monospaced cells once two windows each carry a reset countdown
+/// (`5h 100%·4h58m · 7d 85%·4d7h`), which is roughly an eighth of a laptop menu
+/// bar for one utility.
+///
+/// The budget trims whole components — never mid-word, never an ellipsis — so
+/// whatever survives is still readable and still true.
+public enum MenuBarWidthLimit: String, Codable, CaseIterable, Sendable {
+    /// No cap: whatever the layout produces.
+    case full = "Full"
+    /// Room for both readings once the decoration around them is dropped.
+    case standard = "Standard"
+    /// Room for one reading.
+    case narrow = "Narrow"
+
+    /// Budget in monospaced character cells; `nil` means uncapped.
+    ///
+    /// 26 is what two undecorated readings cost in the widest real case
+    /// (`15m 40% EXP · 4h 75% EXP`), so the standard budget trims decoration
+    /// without ever hiding a reading. 13 is what one costs, which is the point
+    /// of the narrow one.
+    public var characterBudget: Int? {
+        switch self {
+        case .full: return nil
+        case .standard: return 26
+        case .narrow: return 13
+        }
+    }
+}
+
 /// The weekday that starts a local weekly window (budget progress, weekly digest).
 ///
 /// Benchmarked against TokenBar's "Week Start Day" setting and ccusage's week
@@ -1310,6 +1343,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarSecondaryDisplayTarget: Provider?
     public var menuBarShowsSecondaryProvider: Bool
     public var menuBarTrendStyle: MenuBarTrendStyle
+    public var menuBarWidthLimit: MenuBarWidthLimit
     public var claudeStatusFilePath: String
     public var claudeStatusFileBookmarkData: Data?
     public var geminiTelemetryLogPath: String
@@ -1391,6 +1425,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
         menuBarTrendStyle: MenuBarTrendStyle = .sparkline,
+        menuBarWidthLimit: MenuBarWidthLimit = .standard,
         challengeTargetTokens: Int = 10_000,
         launchAtLogin: Bool = false,
         refreshIntervalSeconds: Int = 60,
@@ -1426,6 +1461,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
         self.menuBarTrendStyle = menuBarTrendStyle
+        self.menuBarWidthLimit = menuBarWidthLimit
         self.claudeStatusFilePath = claudeStatusFilePath
         self.claudeStatusFileBookmarkData = claudeStatusFileBookmarkData
         self.geminiTelemetryLogPath = geminiTelemetryLogPath
@@ -1473,9 +1509,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowsSecondaryProvider = false
         }
 
+        // The menu bar selection is intent, not state: keep a switched-off provider in the set so
+        // switching it back on restores it. `effectiveMenuBarMetricProviders` intersects with the
+        // enabled set at read time, so nothing disabled is ever drawn. Pruning here made the loss
+        // permanent — a provider toggled off and on again was simply gone from the menu bar, with
+        // nothing on screen to explain why.
         let enabledProviders = Set(self.enabledProviders)
-        menuBarMetricProviders = menuBarMetricProviders.intersection(enabledProviders)
-        if menuBarMetricProviders.isEmpty,
+        if menuBarMetricProviders.intersection(enabledProviders).isEmpty,
            let fallback = Provider.allCases.first(where: { enabledProviders.contains($0) }) {
             menuBarMetricProviders.insert(fallback)
         }
@@ -1525,6 +1565,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarSecondaryDisplayTarget
         case menuBarShowsSecondaryProvider
         case menuBarTrendStyle
+        case menuBarWidthLimit
         case claudeStatusFilePath
         case claudeStatusFileBookmarkData
         case geminiTelemetryLogPath
@@ -1599,6 +1640,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
             xAI: try container.decodeIfPresent(XAISettings.self, forKey: .xAI) ?? XAISettings(),
             kiro: try container.decodeIfPresent(KiroSettings.self, forKey: .kiro) ?? KiroSettings(),
             openCode: try container.decodeIfPresent(OpenCodeSettings.self, forKey: .openCode) ?? OpenCodeSettings(),
+            // Encoded but never decoded, so every relaunch silently withdrew a consent the user had
+            // given: the experimental probes went quiet with no message and no way to tell why.
+            // Reading it back means an explicit opt-in survives a restart; it is still opt-in only,
+            // and `ExperimentalUsageSettings.init` still drops any version that is not the current one.
+            experimentalUsage: try container.decodeIfPresent(ExperimentalUsageSettings.self, forKey: .experimentalUsage) ?? ExperimentalUsageSettings(),
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
@@ -1608,7 +1654,8 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarPrimaryMetric: Self.decodeMenuBarPrimaryMetric(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
-            menuBarTrendStyle: try container.decodeIfPresent(MenuBarTrendStyle.self, forKey: .menuBarTrendStyle) ?? .sparkline,
+            menuBarTrendStyle: Self.decodeChoice(from: container, forKey: .menuBarTrendStyle, default: .sparkline),
+            menuBarWidthLimit: Self.decodeChoice(from: container, forKey: .menuBarWidthLimit, default: .standard),
             challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000,
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
@@ -1623,6 +1670,18 @@ public struct AppSettings: Codable, Equatable, Sendable {
             budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )
         self.normalizeMenuBarComposition()
+    }
+
+    /// Reads a string-backed choice without letting an unrecognised value fail the whole
+    /// decode. A settings file written by a newer build would otherwise take every other
+    /// preference down with it — providers, alert rules, digest schedule — over one word.
+    private static func decodeChoice<Choice: RawRepresentable>(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+        default fallback: Choice
+    ) -> Choice where Choice.RawValue == String {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return fallback }
+        return Choice(rawValue: rawValue) ?? fallback
     }
 
     private static func decodeProviderIfPresent(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Provider? {

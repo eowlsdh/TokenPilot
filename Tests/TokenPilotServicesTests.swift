@@ -283,7 +283,23 @@ final class TokenPilotServicesTests: XCTestCase {
 
         let legacy = try JSONDecoder().decode(AppSettings.self, from: Data("{}".utf8))
         XCTAssertEqual(legacy.menuBarProviderGrouping, .separate)
-        XCTAssertEqual(legacy.menuBarMetricProviders, Set(legacy.enabledProviders))
+        XCTAssertEqual(Set(legacy.effectiveMenuBarMetricProviders), Set(legacy.enabledProviders))
+    }
+
+    /// Switching a provider off used to prune it out of `menuBarMetricProviders` for good, so
+    /// switching it back on left it missing from the menu bar with nothing to explain why.
+    func testDisablingAProviderKeepsItInTheMenuBarSelectionForWhenItComesBack() {
+        var settings = AppSettings()
+        settings.menuBarMetricProviders = [.claude, .codex]
+
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
+        settings.normalizeMenuBarComposition()
+        XCTAssertTrue(settings.menuBarMetricProviders.contains(.codex))
+        XCTAssertFalse(settings.effectiveMenuBarMetricProviders.contains(.codex))
+
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: true))
+        settings.normalizeMenuBarComposition()
+        XCTAssertTrue(settings.effectiveMenuBarMetricProviders.contains(.codex))
     }
 
     func testLaunchAtLoginSettingRoundTripAndLegacyDefault() throws {
@@ -406,7 +422,7 @@ final class TokenPilotServicesTests: XCTestCase {
         settings.menuBarMetricProviders = [.codex]
         XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: false))
         settings.normalizeMenuBarComposition()
-        XCTAssertEqual(settings.menuBarMetricProviders, [.claude])
+        XCTAssertEqual(settings.effectiveMenuBarMetricProviders, [.claude])
 
         let segments = MenuBarStatusService().providerMetricsSegments(snapshots: [], settings: settings)
 
@@ -5597,6 +5613,7 @@ final class TokenPilotServicesTests: XCTestCase {
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.codexManual.webConnectorEnabled = true
         settings.menuBarDisplayTarget = .codex
+        settings.menuBarWidthLimit = .full
 
         let snapshot = await CodexWebUsageAdapter(
             appServerClient: StubCodexAppServerRateLimitClient(data: response),
@@ -5618,6 +5635,16 @@ final class TokenPilotServicesTests: XCTestCase {
             "codex/secondary/rolling/percent/240"
         ])
         XCTAssertEqual(title, "15m 40% EXP·243d · 4h 75% EXP·243d")
+
+        // The default width budget keeps both rolling windows and gives back the reset
+        // countdowns instead: a dropped window hides a limit, a dropped countdown repeats
+        // what the popover already shows.
+        var budgeted = settings
+        budgeted.menuBarWidthLimit = .standard
+        XCTAssertEqual(
+            MenuBarStatusService().title(snapshots: [snapshot], settings: budgeted, modeLabel: "LIVE", now: referenceNow),
+            "15m 40% EXP · 4h 75% EXP"
+        )
     }
 
     func testCodexAppServerRateLimitsCanDeriveUsageFromUsedAndLimitFields() async throws {
