@@ -1473,6 +1473,43 @@ final class BuildSigningTests: XCTestCase {
                       "the identity search must absorb grep's no-match exit so the loop can continue")
     }
 
+    /// The version was written out as a literal here as well as in project.yml, so this script's
+    /// bundle and Xcode's could disagree about what they were. An App Store build number that
+    /// silently goes backwards is rejected on upload, and by then the mismatch is invisible.
+    func testBuildScriptTakesTheVersionFromTheProjectSpecInsteadOfALiteral() throws {
+        let script = try Self.buildScript()
+
+        XCTAssertTrue(script.contains("MARKETING_VERSION"), "the marketing version must be read, not restated")
+        XCTAssertTrue(script.contains("CURRENT_PROJECT_VERSION"), "the build number must be read, not restated")
+        XCTAssertTrue(
+            script.contains("'CFBundleShortVersionString': marketing_version"),
+            "the plist value must come from the spec"
+        )
+        XCTAssertTrue(
+            script.contains("'CFBundleVersion': bundle_version"),
+            "the plist value must come from the spec"
+        )
+        XCTAssertFalse(
+            script.contains("'CFBundleShortVersionString': '"),
+            "a hardcoded version here is a second source of truth"
+        )
+        XCTAssertFalse(
+            script.contains("'CFBundleVersion': '"),
+            "a hardcoded build number here is a second source of truth"
+        )
+        // A quiet default would just recreate the drift the read is meant to remove.
+        XCTAssertTrue(script.contains("raise SystemExit"), "a missing setting must fail the build, not fall back")
+    }
+
+    /// Both spellings of the app's version have to exist for the read to find them.
+    func testProjectSpecDeclaresBothVersionSettings() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let spec = try String(contentsOf: root.appendingPathComponent("project.yml"), encoding: .utf8)
+
+        XCTAssertTrue(spec.contains("MARKETING_VERSION:"))
+        XCTAssertTrue(spec.contains("CURRENT_PROJECT_VERSION:"))
+    }
+
     private static func buildScript() throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent("build.sh"))

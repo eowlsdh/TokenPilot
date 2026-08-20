@@ -20128,6 +20128,1434 @@
           }
         }
       }
+    },
+    "Antigravity statusline or Gemini telemetry not found" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigravity statusline 또는 Gemini 텔레메트리를 찾을 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigravity statusline or Gemini telemetry not found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 Antigravity statusline 或 Gemini 遥测"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigravity statusline または Gemini テレメトリが見つかりません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到 Antigravity statusline 或 Gemini 遙測"
+          }
+        }
+      }
+    },
+    "Claude status file not found" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude 상태 파일을 찾을 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude status file not found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 Claude 状态文件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude ステータスファイルが見つかりません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到 Claude 狀態檔案"
+          }
+        }
+      }
+    },
+    "Claude statusline could not be read" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude statusline을 읽을 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude statusline could not be read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法读取 Claude statusline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude statusline を読み取れません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法讀取 Claude statusline"
+          }
+        }
+      }
+    },
+    "Codex app-server limit hints unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex app-server 한도 힌트를 사용할 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex app-server limit hints unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 Codex app-server 限额提示"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex app-server の上限ヒントを利用できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 Codex app-server 限額提示"
+          }
+        }
+      }
+    },
+    "Codex limit hints connector off" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 한도 힌트 커넥터가 꺼져 있습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex limit hints connector off"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 限额提示连接器已关闭"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex の上限ヒントコネクタがオフです"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 限額提示連接器已關閉"
+          }
+        }
+      }
+    },
+    "Codex local folder detected · no token_count rows yet" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex 로컬 폴더 감지됨 · 아직 token_count 기록이 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex local folder detected · no token_count rows yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已检测到 Codex 本地文件夹 · 尚无 token_count 记录"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Codex のローカルフォルダを検出 · token_count の記録はまだありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已偵測到 Codex 本機資料夾 · 尚無 token_count 記錄"
+          }
+        }
+      }
+    },
+    "DeepSeek balance unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepSeek 잔액을 가져올 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepSeek balance unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 DeepSeek 余额"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepSeek の残高を取得できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 DeepSeek 餘額"
+          }
+        }
+      }
+    },
+    "EXPERIMENTAL · UNOFFICIAL · Claude OAuth usage" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Claude OAuth 사용량"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Claude OAuth usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Claude OAuth 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Claude OAuth 使用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Claude OAuth 用量"
+          }
+        }
+      }
+    },
+    "EXPERIMENTAL · UNOFFICIAL · Codex OAuth usage" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Codex OAuth 사용량"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Codex OAuth usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Codex OAuth 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Codex OAuth 使用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · Codex OAuth 用量"
+          }
+        }
+      }
+    },
+    "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · 월간 사용량"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · Monthly usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · 每月用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · 月間使用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "EXPERIMENTAL · UNOFFICIAL · OpenCode Bar CLI · 每月用量"
+          }
+        }
+      }
+    },
+    "File exists but cannot be read" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "파일은 있지만 읽을 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File exists but cannot be read"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文件存在但无法读取"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルはありますが読み取れません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "檔案存在但無法讀取"
+          }
+        }
+      }
+    },
+    "JetBrains AI quota file not found" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JetBrains AI 할당량 파일을 찾을 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JetBrains AI quota file not found"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "未找到 JetBrains AI 配额文件"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "JetBrains AI のクォータファイルが見つかりません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "找不到 JetBrains AI 配額檔案"
+          }
+        }
+      }
+    },
+    "LOCAL · Grok Build context window unavailable · newer session has no signals" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LOCAL · Grok Build 컨텍스트 창을 사용할 수 없습니다 · 최신 세션에 신호가 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LOCAL · Grok Build context window unavailable · newer session has no signals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LOCAL · 无法获取 Grok Build 上下文窗口 · 较新的会话没有信号"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LOCAL · Grok Build のコンテキストウィンドウを利用できません · 新しいセッションに信号がありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LOCAL · 無法取得 Grok Build 上下文視窗 · 較新的工作階段沒有訊號"
+          }
+        }
+      }
+    },
+    "Local IDE quota cache" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 IDE 할당량 캐시"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local IDE quota cache"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本地 IDE 配额缓存"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ローカル IDE のクォータキャッシュ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本機 IDE 配額快取"
+          }
+        }
+      }
+    },
+    "MOCK · manual estimate" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 수동 추정치"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · manual estimate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 手动估算"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 手動の推定値"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 手動估算"
+          }
+        }
+      }
+    },
+    "MOCK · sample data" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 샘플 데이터"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · sample data"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 示例数据"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · サンプルデータ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 範例數據"
+          }
+        }
+      }
+    },
+    "MOCK · sample telemetry" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 샘플 텔레메트리"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · sample telemetry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 示例遥测"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · サンプルテレメトリ"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MOCK · 範例遙測"
+          }
+        }
+      }
+    },
+    "Manual menu bar estimate" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 메뉴 막대 추정치"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual menu bar estimate"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动菜单栏估算"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動のメニューバー推定値"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動菜單欄估算"
+          }
+        }
+      }
+    },
+    "Manual mode · no data entered" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 모드 · 입력된 데이터가 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual mode · no data entered"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动模式 · 未输入数据"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動モード · データが入力されていません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動模式 · 未輸入數據"
+          }
+        }
+      }
+    },
+    "Manual mode · paste /status or enter estimates" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 모드 · /status를 붙여넣거나 추정치를 입력하세요"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual mode · paste /status or enter estimates"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动模式 · 粘贴 /status 或输入估算值"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動モード · /status を貼り付けるか推定値を入力してください"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動模式 · 貼上 /status 或輸入估算值"
+          }
+        }
+      }
+    },
+    "Manual web snapshot · user-entered Codex web values" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 웹 스냅샷 · 사용자가 입력한 Codex 웹 값"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual web snapshot · user-entered Codex web values"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动网页快照 · 用户输入的 Codex 网页数值"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動のウェブスナップショット · ユーザーが入力した Codex ウェブの値"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動網頁快照 · 使用者輸入的 Codex 網頁數值"
+          }
+        }
+      }
+    },
+    "MiniMax Token Plan" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax Token Plan"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax Token Plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax Token Plan"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax Token Plan"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax Token Plan"
+          }
+        }
+      }
+    },
+    "MiniMax usage unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax 사용량을 가져올 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax usage unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 MiniMax 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MiniMax の使用量を取得できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 MiniMax 用量"
+          }
+        }
+      }
+    },
+    "No Claude JSONL usage rows yet" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 Claude JSONL 사용 기록이 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No Claude JSONL usage rows yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无 Claude JSONL 使用记录"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude JSONL の使用記録はまだありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無 Claude JSONL 使用記錄"
+          }
+        }
+      }
+    },
+    "No rate limit data yet" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 한도 데이터가 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No rate limit data yet"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚无限额数据"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上限データはまだありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "尚無限額數據"
+          }
+        }
+      }
+    },
+    "OpenRouter credits" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter 크레딧"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter credits"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter 额度"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter のクレジット"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter 額度"
+          }
+        }
+      }
+    },
+    "OpenRouter usage unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter 사용량을 가져올 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter usage unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 OpenRouter 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OpenRouter の使用量を取得できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 OpenRouter 用量"
+          }
+        }
+      }
+    },
+    "Provider-reported usage" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "제공자가 보고한 사용량"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Provider-reported usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提供方报告的用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロバイダ報告の使用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提供方回報的用量"
+          }
+        }
+      }
+    },
+    "STALE · local JSONL older than 5 minutes" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 로컬 JSONL이 5분 이상 지났습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · local JSONL older than 5 minutes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 本地 JSONL 已超过 5 分钟"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · ローカル JSONL が 5 分以上前のものです"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 本機 JSONL 已超過 5 分鐘"
+          }
+        }
+      }
+    },
+    "STALE · no opencode activity in 15 minutes" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15분간 opencode 활동이 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · no opencode activity in 15 minutes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分钟内没有 opencode 活动"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分間 opencode の活動がありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分鐘內沒有 opencode 活動"
+          }
+        }
+      }
+    },
+    "STALE · older than 5 minutes" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 5분 이상 지났습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · older than 5 minutes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 已超过 5 分钟"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 5 分以上前のものです"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 已超過 5 分鐘"
+          }
+        }
+      }
+    },
+    "Select Antigravity statusline JSON or legacy Gemini source" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigravity statusline JSON 또는 기존 Gemini 소스를 선택하세요"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select Antigravity statusline JSON or legacy Gemini source"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请选择 Antigravity statusline JSON 或旧版 Gemini 数据源"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Antigravity statusline JSON または従来の Gemini ソースを選択してください"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請選擇 Antigravity statusline JSON 或舊版 Gemini 數據源"
+          }
+        }
+      }
+    },
+    "UNOFFICIAL · Codex app-server limit hints · token handled by Codex CLI" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNOFFICIAL · Codex app-server 한도 힌트 · 인증 토큰은 Codex CLI가 처리합니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNOFFICIAL · Codex app-server limit hints · token handled by Codex CLI"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNOFFICIAL · Codex app-server 限额提示 · 认证令牌由 Codex CLI 处理"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNOFFICIAL · Codex app-server の上限ヒント · 認証トークンは Codex CLI が扱います"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNOFFICIAL · Codex app-server 限額提示 · 認證權杖由 Codex CLI 處理"
+          }
+        }
+      }
+    },
+    "Z.ai GLM plan" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai GLM 플랜"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai GLM plan"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai GLM 套餐"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai GLM プラン"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai GLM 方案"
+          }
+        }
+      }
+    },
+    "Z.ai usage unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai 사용량을 가져올 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai usage unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取 Z.ai 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Z.ai の使用量を取得できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得 Z.ai 用量"
+          }
+        }
+      }
+    },
+    "Connect Claude statusline" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude statusline을 연결하세요"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connect Claude statusline"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请连接 Claude statusline"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Claude statusline を接続してください"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "請連接 Claude statusline"
+          }
+        }
+      }
+    },
+    "Connected · Codex limit hints" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결됨 · Codex 한도 힌트"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected · Codex limit hints"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已连接 · Codex 限额提示"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続済み · Codex の上限ヒント"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連接 · Codex 限額提示"
+          }
+        }
+      }
+    },
+    "Connected · local Codex usage" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "연결됨 · 로컬 Codex 사용량"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected · local Codex usage"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已连接 · 本地 Codex 用量"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "接続済み · ローカル Codex 使用量"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已連接 · 本機 Codex 用量"
+          }
+        }
+      }
+    },
+    "Manual estimate ready (est.)" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수동 추정치 준비됨 (est.)"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Manual estimate ready (est.)"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手动估算已就绪 (est.)"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動の推定値を用意しました (est.)"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "手動估算已就緒 (est.)"
+          }
+        }
+      }
+    },
+    "Provider capacity unavailable" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "제공자 용량 정보를 사용할 수 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Provider capacity unavailable"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法获取提供方容量信息"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "プロバイダの残量情報を利用できません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法取得提供方容量資訊"
+          }
+        }
+      }
+    },
+    "STALE · no Kiro activity in 15 minutes" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15분간 Kiro 활동이 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · no Kiro activity in 15 minutes"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分钟内没有 Kiro 活动"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分間 Kiro の活動がありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "STALE · 15 分鐘內沒有 Kiro 活動"
+          }
+        }
+      }
+    },
+    "newer session has no signals" : {
+      "localizations" : {
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최신 세션에 신호가 없습니다"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "newer session has no signals"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "较新的会话没有信号"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいセッションに信号がありません"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "較新的工作階段沒有訊號"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

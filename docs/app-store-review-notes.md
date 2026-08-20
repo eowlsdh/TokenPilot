@@ -60,4 +60,7 @@ analytics, and no telemetry.
       "Choose the … folder to grant access" state.
 - [ ] `make verify` clean; `gitleaks` clean.
 - [ ] Screenshots taken from the sandboxed build (menu bar block, Overview, History, Settings).
-- [ ] Version and build number bumped in the Xcode project settings.
+- [ ] Version and build number bumped in **project.yml** (`MARKETING_VERSION`,
+      `CURRENT_PROJECT_VERSION`). `build.sh` reads both from there, so there is one place to
+      change and no way for the two bundles to disagree.
+- [ ] Listing copy reviewed against `docs/app-store-listing.md`.

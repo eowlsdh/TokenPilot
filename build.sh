@@ -6,6 +6,7 @@ BUILD_DIR="$PROJECT_DIR/build"
 APP_DIR="$BUILD_DIR/TokenPilot.app"
 ZIP_PATH="$BUILD_DIR/TokenPilot.zip"
 INFO_TEMPLATE="$PROJECT_DIR/Resources/Info.plist"
+PROJECT_SPEC="$PROJECT_DIR/project.yml"
 PRIVACY_MANIFEST="$PROJECT_DIR/Resources/PrivacyInfo.xcprivacy"
 APP_ICON_FILE="$PROJECT_DIR/Resources/TokenPilot.icns"
 RESOURCE_BUNDLE_NAME="TokenMonitor_TokenApp.bundle"
@@ -72,15 +73,35 @@ cp "$APP_ICON_FILE" "$APP_DIR/Contents/Resources/TokenPilot.icns"
 
 # 6. Info.plist 생성: Xcode용 Resources/Info.plist를 단일 원본으로 사용
 echo "⚙️  Step 6: Info.plist 생성..."
-python3 - "$INFO_TEMPLATE" "$APP_DIR/Contents/Info.plist" <<'PY'
+python3 - "$INFO_TEMPLATE" "$APP_DIR/Contents/Info.plist" "$PROJECT_SPEC" <<'PY'
 import plistlib
+import re
 import sys
 from pathlib import Path
 
 template = Path(sys.argv[1])
 destination = Path(sys.argv[2])
+spec = Path(sys.argv[3])
 with template.open('rb') as handle:
     plist = plistlib.load(handle)
+
+
+def spec_setting(name):
+    """Read a build setting from project.yml.
+
+    The version used to be written out here as a literal as well as in project.yml, so the
+    bundle this script produces and the one Xcode produces could disagree about what they
+    were — and an App Store build number that silently goes backwards is rejected. Failing
+    loudly beats a default: a quiet fallback would just recreate the drift.
+    """
+    match = re.search(rf'^\s*{name}:\s*"?([^"\s#]+)"?\s*$', spec.read_text(encoding='utf-8'), re.M)
+    if not match:
+        raise SystemExit(f'{name} not found in {spec}; build.sh and project.yml must agree on the version')
+    return match.group(1)
+
+
+marketing_version = spec_setting('MARKETING_VERSION')
+bundle_version = spec_setting('CURRENT_PROJECT_VERSION')
 
 plist.update({
     'CFBundleExecutable': 'TokenMonitor',
@@ -89,8 +110,8 @@ plist.update({
     'CFBundleIdentifier': 'com.tokenpilot.macos',
     'CFBundleIconFile': 'TokenPilot',
     'CFBundleIconName': 'AppIcon',
-    'CFBundleShortVersionString': '1.0.0',
-    'CFBundleVersion': '1',
+    'CFBundleShortVersionString': marketing_version,
+    'CFBundleVersion': bundle_version,
     'LSMinimumSystemVersion': '14.0',
     'LSUIElement': True,
     'NSHumanReadableCopyright': 'Copyright © 2026 TokenPilot. All rights reserved.',
