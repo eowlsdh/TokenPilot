@@ -48,12 +48,20 @@ public enum ProviderSourceAccess {
             roots.append(URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true))
         }
 
-        // A granted folder is authoritative; the defaults only apply where the process can read them.
         if roots.isEmpty {
+            // Sandboxed with nothing granted: say so rather than hand back a path that cannot be read.
             guard !sandboxed else {
                 return Resolution(roots: [], scopedAccesses: [], needsUserGrant: true)
             }
-            roots = defaults
+            return Resolution(roots: defaults, scopedAccesses: accesses, needsUserGrant: false)
+        }
+
+        // A custom or granted folder ADDS a location. Outside the sandbox the provider's own default
+        // paths stay readable and stay in the list: treating a custom path as a replacement silently
+        // blinded every provider that had one stored.
+        if !sandboxed {
+            let known = Set(roots.map(\.standardizedFileURL.path))
+            roots.append(contentsOf: defaults.filter { !known.contains($0.standardizedFileURL.path) })
         }
         return Resolution(roots: roots, scopedAccesses: accesses, needsUserGrant: false)
     }

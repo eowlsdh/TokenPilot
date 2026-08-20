@@ -109,10 +109,17 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
                 statusMessage: "Choose the opencode folder to grant access"
             )
         }
-        let grantedDatabases = grant.roots.flatMap { root in
-            ["opencode.db", "opencode-next.db"].map { root.appendingPathComponent($0) }
+        let manager = FileManager.default
+        let grantedDatabases = grant.roots.flatMap { root -> [URL] in
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: root.path, isDirectory: &isDirectory) else { return [] }
+            // A granted path is usually the store folder, but a custom path can name the file itself.
+            guard isDirectory.boolValue else { return [root] }
+            return ["opencode.db", "opencode-next.db"].map { root.appendingPathComponent($0) }
         }
-        let databases = grantedDatabases.isEmpty ? (databaseURLs ?? Self.defaultDatabaseURLs()) : grantedDatabases
+        let fallbackDatabases = databaseURLs ?? Self.defaultDatabaseURLs()
+        let knownPaths = Set(grantedDatabases.map(\.standardizedFileURL.path))
+        let databases = grantedDatabases + fallbackDatabases.filter { !knownPaths.contains($0.standardizedFileURL.path) }
         var events: [UsageEvent] = []
         var seenMessageIDs = Set<String>()
         for database in databases {

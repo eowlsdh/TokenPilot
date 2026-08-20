@@ -381,6 +381,39 @@ final class ProviderSourceAccessTests: XCTestCase {
         XCTAssertTrue(resolution.needsUserGrant)
     }
 
+    /// Regression: a stored custom path used to REPLACE the provider's default paths, which blinded
+    /// every provider that had one. Outside the sandbox both are read.
+    func testCustomPathAddsToDefaultsInsteadOfReplacingThem() {
+        var settings = AppSettings()
+        settings.monitoredProviders.customPaths[.codex] = directory.path
+        let defaults = [URL(fileURLWithPath: "/tmp/codex-default", isDirectory: true)]
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .codex,
+            settings: settings,
+            defaults: defaults,
+            sandboxed: false
+        )
+        defer { resolution.release() }
+        let paths = resolution.roots.map(\.standardizedFileURL.path)
+        XCTAssertTrue(paths.contains(directory.standardizedFileURL.path), "the custom folder must be read")
+        XCTAssertTrue(paths.contains("/tmp/codex-default"), "the provider's own default must still be read")
+        XCTAssertEqual(paths.first, directory.standardizedFileURL.path, "the custom folder comes first")
+    }
+
+    func testSandboxedGrantDoesNotPullInUnreadableDefaults() throws {
+        let bookmark = try TokenPilotSecurityScopedBookmarks.makeReadOnlyBookmarkData(for: directory)
+        var settings = AppSettings()
+        settings.monitoredProviders.customBookmarks[.kiro] = bookmark
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .kiro,
+            settings: settings,
+            defaults: [URL(fileURLWithPath: "/tmp/kiro-default", isDirectory: true)],
+            sandboxed: true
+        )
+        defer { resolution.release() }
+        XCTAssertEqual(resolution.roots.count, 1, "a sandboxed build may only read what was granted")
+    }
+
     func testGrantedFolderWinsOverDefaults() {
         var settings = AppSettings()
         settings.monitoredProviders.customPaths[.kiro] = directory.path
@@ -391,7 +424,7 @@ final class ProviderSourceAccessTests: XCTestCase {
             sandboxed: false
         )
         defer { resolution.release() }
-        XCTAssertEqual(resolution.roots.map(\.path), [directory.path])
+        XCTAssertEqual(resolution.roots.first?.path, directory.path, "the chosen folder is read first")
         XCTAssertFalse(resolution.needsUserGrant)
     }
 
