@@ -134,11 +134,17 @@ Four more read-only commands share the same filters and redaction rules:
 | `stats` | Totals with a per-model and per-provider breakdown for the window |
 | `report` | A shareable summary, with `--md`, `--csv`, `--json`, or SVG output |
 | `audit` | Coverage gaps in the stored history — which days and providers are thin |
-| `blocks` | The rolling 5-hour usage blocks, with `--active` / `--recent` filters |
+| `blocks` | The rolling 5-hour usage blocks, with `--active` / `--recent` filters and a live `--watch` view |
 
 All four accept the window selectors (`--period`, `--since`/`--until`, `--days`, `--timezone`,
 `--start-of-week`) and the `--provider`, `--model`, `--project`, and `--sort` filters. Run
 `TokenPilot --help` for the full list.
+
+`blocks --watch` keeps the view open and re-renders it, clearing the screen only when stdout is a
+terminal so a redirected run stays readable. `--interval` accepts 2–60 seconds (default 5); each
+tick re-reads the same local sources a one-shot run does, which is why there is a floor. It cannot
+be combined with `--json`, `--csv`, or `--md` — a repeating stream gives its reader no way to tell
+one render from the next.
 
 ---
 

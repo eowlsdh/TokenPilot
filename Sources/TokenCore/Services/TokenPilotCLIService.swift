@@ -27,9 +27,15 @@ public enum TokenPilotCLICommand: Equatable, Sendable {
     case stats(period: HistoryPeriod = .last7Days, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, includesJSON: Bool = false, weekStartDay: WeekStartDay? = nil, sections: [HistoryPeriod]? = nil, instances: Bool = false, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil, sort: SortKind? = nil)
     case report(period: HistoryPeriod, format: TokenPilotReportFormat, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCost: Bool = true, timeZone: TimeZone? = nil, includesBreakdown: Bool = false, project: String? = nil, sections: [HistoryPeriod]? = nil, weekStartDay: WeekStartDay? = nil, instances: Bool = false, provider: Provider? = nil, model: String? = nil, sort: SortKind? = nil)
     case audit(includesJSON: Bool = false, since: Date? = nil, until: Date? = nil, days: Int? = nil, timeZone: TimeZone? = nil, project: String? = nil, sections: [HistoryPeriod]? = nil, includesCSV: Bool = false, instances: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, model: String? = nil)
-    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil)
+    case blocks(includesJSON: Bool = false, active: Bool = false, recent: Bool = false, timeZone: TimeZone? = nil, since: Date? = nil, until: Date? = nil, days: Int? = nil, includesCSV: Bool = false, includesMarkdown: Bool = false, provider: Provider? = nil, watch: Bool = false, watchIntervalSeconds: Int = TokenPilotCLIService.defaultWatchIntervalSeconds)
     case statusline(components: [StatuslineComponent], provider: Provider? = nil, colorized: Bool = true, timeZone: TimeZone? = nil)
     case help
+}
+
+public extension TokenPilotCLIService {
+    /// A live view re-reads every local source each tick, so the floor is not one second.
+    static let watchIntervalRange = 2...60
+    static let defaultWatchIntervalSeconds = 5
 }
 
 public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
@@ -44,6 +50,7 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
     case invalidWeekStartDay(String)
     case invalidCombination(String)
     case invalidComponents(String)
+    case invalidInterval(String)
     case missingValue(forFlag: String)
 
     public var errorDescription: String? {
@@ -62,6 +69,8 @@ public enum TokenPilotCLIError: Error, Equatable, Sendable, LocalizedError {
             return "Unsupported date '\(date)'. Use yyyy-MM-dd (for example 2026-08-13)."
         case .invalidDays(let days):
             return "Unsupported day count '\(days)'. Use a positive integer (for example --days 14)."
+        case .invalidInterval(let interval):
+            return "Unsupported refresh interval '\(interval)'. Use \(TokenPilotCLIService.watchIntervalRange.lowerBound)-\(TokenPilotCLIService.watchIntervalRange.upperBound) seconds (for example --interval 5)."
         case .invalidTimezone(let zone):
             return "Unsupported timezone '\(zone)'. Use an IANA identifier (for example UTC or Asia/Seoul)."
         case .invalidWeekStartDay(let day):
@@ -413,10 +422,23 @@ public enum TokenPilotCLIService {
         var until: Date?
         var days: Int?
         var provider: Provider?
+        var watch = false
+        var watchIntervalSeconds = defaultWatchIntervalSeconds
         var index = 0
         while index < flags.count {
             let flag = flags[index]
             switch flag {
+            case "--watch":
+                watch = true
+            case "--interval":
+                guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
+                index += 1
+                // Bounded on both sides: a sub-second loop re-reads every local source as fast as
+                // the disk allows, and this app has already shipped one runaway refresh.
+                guard let parsed = Int(flags[index]), watchIntervalRange.contains(parsed) else {
+                    return .failure(.invalidInterval(flags[index]))
+                }
+                watchIntervalSeconds = parsed
             case "--json":
                 includesJSON = true
             case "--csv":
@@ -476,7 +498,12 @@ public enum TokenPilotCLIService {
         if includesMarkdown, includesJSON || includesCSV {
             return .failure(.invalidCombination("--md cannot be combined with --json or --csv."))
         }
-        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone, since: since, until: until, days: days, includesCSV: includesCSV, includesMarkdown: includesMarkdown, provider: provider))
+        // A repeating stream is meaningless once piped: whoever reads it cannot tell one render
+        // from the next. Refused rather than quietly ignoring one of the two flags.
+        if watch, includesJSON || includesCSV || includesMarkdown {
+            return .failure(.invalidCombination("--watch cannot be combined with --json, --csv, or --md"))
+        }
+        return .success(.blocks(includesJSON: includesJSON, active: active, recent: recent, timeZone: timeZone, since: since, until: until, days: days, includesCSV: includesCSV, includesMarkdown: includesMarkdown, provider: provider, watch: watch, watchIntervalSeconds: watchIntervalSeconds))
     }
 
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
@@ -892,7 +919,7 @@ public enum TokenPilotCLIService {
           TokenPilot stats [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--no-cost] [--breakdown] [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--sort tokens|requests|cost]
           TokenPilot report [--period today|last7Days|thisMonth] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--timezone <zone>] [--project <label>] [--provider <name>] [--model <name>] [--start-of-week monday|sunday|...] [--svg|--md|--json|--csv] [--no-cost] [--breakdown] [--sections today,last7Days,thisMonth] [--instances] [--sort tokens|requests|cost]
           TokenPilot audit [--json|--csv|--md] [--sections today,last7Days,thisMonth] [--instances] [--provider <name>] [--model <name>]
-          TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--provider <name>]
+          TokenPilot blocks [--json|--csv|--md] [--active] [--recent] [--timezone <zone>] [--since yyyy-MM-dd] [--until yyyy-MM-dd] [--days N] [--provider <name>] [--watch] [--interval 2-60]
           TokenPilot statusline [--components model,capacity,today,cost,block,burn,session] [--provider <name>] [--timezone <zone>] [--no-color]
           TokenPilot help
 

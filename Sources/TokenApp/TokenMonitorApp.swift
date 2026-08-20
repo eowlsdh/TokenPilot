@@ -382,9 +382,21 @@ private enum TokenPilotCLIRunner {
                 )
             }
             return 0
-        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV, let includesMarkdown, let provider)):
-            let assessments = await loadLatestCapacityAssessments()
+        case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV, let includesMarkdown, let provider, let watch, let watchIntervalSeconds)):
             let calendar = cliCalendar(for: timeZone)
+            if watch {
+                return await runBlocksWatch(
+                    active: active,
+                    recent: recent,
+                    since: since,
+                    until: until,
+                    days: days,
+                    provider: provider,
+                    calendar: calendar,
+                    intervalSeconds: watchIntervalSeconds
+                )
+            }
+            let assessments = await loadLatestCapacityAssessments()
             if includesJSON {
                 do {
                     let data = try TokenPilotCLIService.blocksJSON(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar)
@@ -654,6 +666,58 @@ private enum TokenPilotCLIRunner {
             }
             .values
         return latestBySeries.map { CapacityAssessmentService().assess($0, now: now) }
+    }
+
+    /// Re-renders the blocks view on an interval, the way a live tracker does.
+    ///
+    /// Each tick re-reads the same local sources a one-shot run would, so the interval is floored
+    /// at two seconds — a sub-second loop would hammer every provider's files as fast as the disk
+    /// allows, and this app has already shipped one runaway refresh.
+    ///
+    /// Only for a terminal: `--watch` with `--json`/`--csv`/`--md` is rejected at parse time,
+    /// because a repeating stream gives its reader no way to tell one render from the next. When
+    /// stdout is not a terminal the screen is never cleared, so a redirected run stays readable.
+    private static func runBlocksWatch(
+        active: Bool,
+        recent: Bool,
+        since: Date?,
+        until: Date?,
+        days: Int?,
+        provider: Provider?,
+        calendar: Calendar,
+        intervalSeconds: Int
+    ) async -> Int32 {
+        let interactive = isatty(FileHandle.standardOutput.fileDescriptor) == 1
+        let interval = min(max(intervalSeconds, TokenPilotCLIService.watchIntervalRange.lowerBound), TokenPilotCLIService.watchIntervalRange.upperBound)
+
+        while true {
+            let assessments = await loadLatestCapacityAssessments()
+            let body = TokenPilotCLIService.blocksText(
+                assessments: assessments,
+                active: active,
+                recent: recent,
+                since: since,
+                until: until,
+                days: days,
+                provider: provider,
+                calendar: calendar
+            )
+            var frame = ""
+            if interactive {
+                // Home the cursor and clear, rather than printing screens that scroll away.
+                frame += "\u{001B}[H\u{001B}[2J"
+            }
+            frame += body + "\n"
+            if interactive {
+                frame += "\nRefreshing every \(interval)s · Ctrl-C to stop\n"
+            }
+            // Written and flushed rather than printed: stdout is block-buffered when it is not a
+            // terminal, so `--watch > log.txt` or `| less` showed nothing at all until the buffer
+            // filled — and anything still buffered was lost when the user pressed Ctrl-C.
+            FileHandle.standardOutput.write(Data(frame.utf8))
+            fflush(stdout)
+            try? await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
+        }
     }
 
     private static func writeError(_ text: String) {
