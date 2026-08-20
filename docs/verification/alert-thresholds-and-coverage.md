@@ -135,11 +135,32 @@ fixtures immediately: Codex windows are `.rolling` with a required duration, and
 ID is not a series at all. A third assertion passed for the wrong reason, testing the observed path
 with a series the catalogue creates anyway.
 
+## Correction: Gemini's request cap is not a missing feature
+
+The previous version of this note listed Gemini's daily request cap as the last provider whose
+limit was visible but unwatchable, needing only a count-based condition. Reading the observation
+showed that was wrong on three counts:
+
+- The value is a bare count with **no limit in it**, so there is nothing to threshold against.
+- It carries `compatibilityBridge` stability and `incomparable` comparability; `CapacityAlertRule`
+  requires `supported`, so no rule of any kind can be built for it.
+- The cap it would be measured against is `geminiDailyRequestCap` — a number the **user types in
+  Settings** (default 1000, range 1–20,000), not something Antigravity reports.
+
+An alert here would read "you are at 80% of a limit you invented", presented identically to alerts
+backed by provider-reported quota. That is the one thing this app refuses to do. It is recorded as
+not alertable at the evidence level, with the reason, rather than left as a feature someone will
+eventually build on a false premise.
+
+## Where this leaves alerting
+
+Every series the app measures with provider-reported, supported evidence now gets an alert rule for
+the providers the user watches — including the ones whose identity is only known at runtime. What
+remains unwatched is unwatched because the evidence does not support a truthful warning, and each
+case says which.
+
 ## Still open
 
-- **Gemini's daily request cap.** It is a request *count*, and a percent-threshold rule is rejected
-  for any series not counted in percent, so alerting on it needs a condition kind that does not
-  exist. The one remaining provider whose limit is visible but unwatchable.
 - **The catalogue duplicates the semantics table.** `CapacityAlertCatalogue.alertableSeries`
   hand-lists what `CapacitySeriesID`'s private semantics table already declares. The guard test keeps
   them from diverging, but deriving one from the other would remove the possibility.

@@ -68,15 +68,19 @@ public enum CapacityAlertCatalogue {
     /// from what the evidence store actually saw — which is the same mechanism the other providers
     /// will need, and the reason this is recorded as a third category rather than filed under
     /// "not alertable", which would be false.
-    /// Series that measure something real but that no existing condition can express.
+    /// Series that cannot carry an alert, for reasons deeper than a missing condition kind.
     ///
-    /// A percent-threshold rule requires a percentage: `CapacityAlertRule` rejects one whose series
-    /// is counted in anything else. Gemini publishes a daily *request* cap, so alerting on it needs
-    /// a count-based condition that does not exist yet. Listing it here rather than as alertable
-    /// keeps the catalogue honest — it was claimed as alertable until a test tried to build the rule
-    /// and the model refused.
-    public static let needsAConditionKindThatDoesNotExistYet: [String: String] = [
-        "gemini/daily-requests": "A request count, not a percentage; needs a count-based condition"
+    /// Gemini's daily request cap looked like it only needed count-based thresholds. It does not.
+    /// The observation is a bare count with no limit in it, marked `compatibilityBridge` stability
+    /// and `incomparable` — and `CapacityAlertRule` requires `supported`. The cap it would be
+    /// measured against is `geminiDailyRequestCap`, a number the **user types in Settings**, not
+    /// something Antigravity reports.
+    ///
+    /// So an alert here would say "you are at 80% of a limit you invented", dressed identically to
+    /// alerts backed by provider-reported quota. Building it would break the rule this app is built
+    /// on: never present a user-entered number as provider quota.
+    public static let notAlertableAtTheEvidenceLevel: [String: String] = [
+        "gemini/daily-requests": "Bare count, bridge stability, incomparable; the cap is user-entered"
     ]
 
     public static let alertableOnlyFromObservedSeries: [String: String] = [

@@ -38,7 +38,7 @@ final class CapacityAlertCoverageTests: XCTestCase {
             return !alertable
                 && CapacityAlertCatalogue.deliberatelyNotAlertable[key] == nil
                 && CapacityAlertCatalogue.alertableOnlyFromObservedSeries[key] == nil
-                && CapacityAlertCatalogue.needsAConditionKindThatDoesNotExistYet[key] == nil
+                && CapacityAlertCatalogue.notAlertableAtTheEvidenceLevel[key] == nil
         }
 
         XCTAssertTrue(
