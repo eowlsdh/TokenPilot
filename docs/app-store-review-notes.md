@@ -54,13 +54,33 @@ analytics, and no telemetry.
 
 ## Pre-submission checklist
 
-- [ ] Build with the sandbox entitlements:
+Verified 2026-08-21 against the current build. Split by what a machine can settle and what
+needs a person in front of the screen.
+
+**Settled and re-checkable by running the commands:**
+
+- [x] Sandbox configuration builds at the current floor:
       `TOKENPILOT_ENTITLEMENTS="$PWD/Resources/TokenPilot-AppStore.entitlements" ./build.sh`
-- [ ] Grant one folder in the sandboxed build and confirm the provider leaves the
-      "Choose the … folder to grant access" state.
-- [ ] `make verify` clean; `gitleaks` clean.
-- [ ] Screenshots taken from the sandboxed build (menu bar block, Overview, History, Settings).
-- [ ] Version and build number bumped in **project.yml** (`MARKETING_VERSION`,
-      `CURRENT_PROJECT_VERSION`). `build.sh` reads both from there, so there is one place to
-      change and no way for the two bundles to disagree.
-- [ ] Listing copy reviewed against `docs/app-store-listing.md`.
+      — app-sandbox, user-selected read-only, and network client all present in the signed bundle.
+- [x] `swift build -Xswiftc -warnings-as-errors` clean; `swift test` 768 passing; `gitleaks` clean
+      on history, worktree, and staged diff.
+- [x] Bundle metadata: version 1.0.0 (1), `LSMinimumSystemVersion` 26.0, `LSUIElement`,
+      `com.tokenpilot.macos`, privacy manifest, icon, and string catalog all present, signed with a
+      real Team ID.
+- [x] Version and OS floor each have exactly one source (`project.yml`); tests pin that `build.sh`
+      reads rather than restates them, and that SwiftPM and Xcode agree.
+- [x] Listing copy drafted and length-checked in `docs/app-store-listing.md`; every claim checked
+      against the code (twelve providers, five languages).
+- [x] All four READMEs state the macOS 26 requirement.
+
+**Needs a person — cannot be done headlessly:**
+
+- [ ] **Screenshots.** Five shots specified in `docs/app-store-listing.md`. The popover has to be
+      opened by hand and screen capture needs permission this environment does not have.
+- [ ] **Grant one folder in the sandboxed build** and confirm the provider leaves the
+      "Choose the … folder to grant access" state. Needs the open panel.
+- [ ] **Icon Composer.** The icon is still a legacy `.appiconset` / `.icns`. It renders correctly on
+      macOS 26 but does not get the layered treatment, and producing a `.icon` needs the GUI tool.
+      Cosmetic, not blocking.
+- [ ] App Store Connect: create the record, upload the build, answer App Privacy from the section
+      above.
