@@ -1,14 +1,16 @@
 # TokenPilot
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-macOS%2014+-lightgrey.svg)](https://github.com)
+[![Platform](https://img.shields.io/badge/Platform-macOS%2026+-lightgrey.svg)](https://github.com)
 [![Swift](https://img.shields.io/badge/Swift-6.0-orange.svg)](https://swift.org)
-[![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH-blueviolet.svg)](#localization)
+[![Localization](https://img.shields.io/badge/Locales-EN%2FKO%2FJA%2FZH--Hans%2FZH--Hant-blueviolet.svg)](#localization)
 
 > **A local-first macOS menu bar monitor that keeps AI capacity visible as simple provider percentages.**
 > TokenPilot's signature view is a compact two-row menu metric—provider name above, remaining percentage below. Show selected providers as independent macOS status items or combine them into one item, without opening a dashboard or collecting provider tokens.
 >
 > TokenPilot is not affiliated with OpenAI, Anthropic, Google, DeepSeek, xAI, opencode, or AWS/Kiro.
+
+**Requires macOS 26 or later.** The app will not launch on earlier versions.
 
 [한국어 README](README.ko.md) · [日本語 README](README.ja.md) · [简体中文 README](README.zh-CN.md)
 
@@ -61,10 +63,9 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | ⚡ **Configurable auto-refresh** | Pick the local-source refresh cadence (15 sec to 15 min) from Settings; menu bar tick stays live, and waking the Mac from sleep refreshes right away instead of showing pre-sleep numbers. |
 | 📉 **Menu bar trend or bar** | Provider-metrics blocks draw a mini remaining-percent trend from the stored limit history, a filled remaining bar, or nothing — pick one in Settings. |
 | 🧵 **Terminal status line** | `TokenPilot statusline` prints one compact line (model, tightest remaining quota with its reset countdown, today's tokens and cost) for a CLI status line, ccusage-style. |
-| 🎯 **Daily goal** | Set a local daily token target (Settings > General); Overview shows today's progress with a bar and honest local-activity labeling. |
 | 📬 **Weekly digest** | Optional opt-in summary of this week's local usage every Monday at 09:00, delivered as a macOS notification while TokenPilot is running. |
 | ⌘⇧Space **global shortcut** | Optional opt-in shortcut opens the popover from anywhere; right-click the menu bar item for **Copy summary**. |
-| 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
+| 🌐 **5 languages** | English, 한국어, 日本語, 简体中文, 繁體中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
 
 ---

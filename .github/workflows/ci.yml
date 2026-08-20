@@ -8,12 +8,30 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: macos-15
+    # The app's floor is macOS 26, and a deployment target above the SDK does not build.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+        # Picking the newest installed Xcode instead of pinning a path: the runner image renames
+        # and drops Xcode versions on its own schedule, and a stale path fails with a message that
+        # says nothing about why. Fails loudly when nothing new enough is present.
+        run: |
+          set -euo pipefail
+          newest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -z "$newest" ]; then
+            newest=/Applications/Xcode.app
+          fi
+          sudo xcode-select -s "$newest/Contents/Developer"
+          xcodebuild -version
+          sdk=$(xcrun --sdk macosx --show-sdk-version)
+          echo "macOS SDK: $sdk"
+          floor=$(sed -n 's/^ *macOS: *"\([0-9]*\).*/\1/p' project.yml | head -1)
+          if [ "${sdk%%.*}" -lt "$floor" ]; then
+            echo "::error::SDK $sdk is older than the project's macOS $floor floor" >&2
+            exit 1
+          fi
 
       - name: Install XcodeGen
         env:

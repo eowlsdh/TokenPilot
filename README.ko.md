@@ -2,6 +2,7 @@
 
 **TokenPilot**은 AI coding provider의 남은 비율을 macOS 메뉴바에서 가장 단순하게 확인하는 local-first 유틸리티입니다. 핵심 화면은 위에 provider 이름, 아래에 남은 퍼센트를 표시하는 2단 지표이며, 선택한 provider를 각각 독립 메뉴바 항목으로 올리거나 하나로 합칠 수 있습니다.
 
+- **요구 사양**: **macOS 26 이상.** 이전 버전에서는 실행되지 않습니다.
 - **상태**: GitHub Release 후보 준비, 로컬 빌드/테스트/앱 bundle/zip 검증 경로 유지
 - **앱 표시 이름**: `TokenPilot`
 - **Swift Package / 실행 타깃 이름**: `TokenMonitor`
@@ -39,14 +40,13 @@
 - **CLI export / summary**: `TokenPilot export --format json|csv`, `TokenPilot summary`로 터미널에서 로컬 사용량을 출력합니다. GUI export와 동일한 redaction 규칙을 따릅니다.
 - **메뉴 바 추세선/잔여 막대**: provider 지표 블록에 저장된 한도 이력 기반 미니 추세선, 지금 남은 비율을 채운 막대, 또는 아무것도 표시하지 않기 중 하나를 설정에서 고릅니다.
 - **터미널 상태 표시줄**: `TokenPilot statusline`이 모델, 가장 빠듯한 남은 한도와 리셋 카운트다운, 오늘 토큰·비용을 한 줄로 출력합니다(ccusage statusline 방식).
-- **일일 목표**: 로컬 일일 토큰 목표(설정 > 일반)를 Overview에서 진행률 바와 함께 확인합니다. 로컬 활동임을 명시합니다.
 - **주간 요약 알림**: 옵트인 시 TokenPilot이 실행되는 동안 매주 월요일 09:00에 이번 주 로컬 사용량 요약을 macOS 알림으로 보냅니다.
 - **새로고침 간격 설정**: 로컬 소스를 다시 읽는 주기를 15초~15분 사이에서 설정할 수 있으며, 메뉴 막대 틱은 계속 실시간으로 동작합니다. 잠자기에서 깨어나면 잠들기 전 값을 그대로 두지 않고 즉시 새로고침합니다.
 - **전역 단축키(⌘⇧Space)**: 옵트인 설정으로 어디서든 팝오버를 열 수 있고, 메뉴 막대 우클릭 메뉴에서 **요약 복사**가 가능합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
 - **Grok/xAI source**: 로컬 context는 `~/.grok/sessions/**/signals.json`의 숫자 메타데이터만 읽습니다(`auth.json`/token/prompt/response는 읽지 않음). 별도로 기본 OFF인 EXPERIMENTAL/UNOFFICIAL OAuth 주간 기능은 명시적 동의 후에만 고정 경로 `~/.grok/auth.json`에서 선택된 access token과 만료 시각만 읽어 1회 billing 요청에 쓰고, token은 메모리에만 두며 표시·로그·저장·진단·export하지 않습니다. 수동 주간 값이 우선합니다.
-- **4개 언어**: English, 한국어, 日本語, 简体中文.
+- **5개 언어**: English, 한국어, 日本語, 简体中文, 繁體中文.
 
 ---
 

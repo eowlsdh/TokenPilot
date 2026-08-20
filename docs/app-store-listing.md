@@ -55,6 +55,12 @@ reviewer notes and the App Privacy answers.
 > TokenPilot is an independent utility and is not affiliated with, endorsed by, or sponsored by
 > Anthropic, OpenAI, Google, xAI, DeepSeek, Amazon, JetBrains, MiniMax, Z.ai, or OpenRouter.
 
+## Availability
+
+**Minimum OS: macOS 26.0.** App Store Connect reads this from the bundle, but the
+description should not imply wider support than that — a buyer on macOS 15 who installs and cannot
+launch it is a refund and a one-star review.
+
 ## Keywords (100 char max, comma separated, no spaces)
 
 ```
