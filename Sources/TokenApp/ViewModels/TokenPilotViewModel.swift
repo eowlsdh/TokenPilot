@@ -22,6 +22,8 @@ final class TokenPilotViewModel: ObservableObject {
         case manual
         case automaticTimer
         case settings
+        /// The Mac woke from sleep, where timers were suspended and stored values went stale.
+        case systemWake
     }
 
     enum Screen: String, CaseIterable, Identifiable {
@@ -42,9 +44,11 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var dataSourceMode: DataSourceMode = .disconnected
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
+    @Published var providerStatusReports: [Provider: ProviderStatusReport] = [:]
     @Published var exportFormat: UsageExportFormat = .json
     @Published var capacityAssessments: [CapacityAssessment] = []
     @Published var capacityPresentations: [CapacityPresentation] = []
+    @Published var capacityEvidenceRecords: [CapacityEvidenceRecord] = []
     @Published var capacityRefreshErrors: [CapacityRefreshError] = []
     @Published var capacityRuntimeRecoveryRequired = false
     @Published private var capacityAlertRuntimeControl = CapacityRuntimeControl()
@@ -58,9 +62,15 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
+    @Published var minimaxAPIKeyInput = ""
+    @Published var zaiAPIKeyInput = ""
+    @Published var openrouterAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
+    @Published var hasSavedMinimaxAPIKey = false
+    @Published var hasSavedZAIAPIKey = false
+    @Published var hasSavedOpenRouterAPIKey = false
     /// Transient presentation-only experimental OAuth weekly result. Never persisted or sunk.
     @Published private(set) var xaiOAuthResult: XAIRefreshResult?
     @Published private var menuBarNow = Date()
@@ -82,12 +92,18 @@ final class TokenPilotViewModel: ObservableObject {
     private let aggregationService = AggregationService()
     private let menuBarStatusService = MenuBarStatusService()
     private let connectionService = DataSourceConnectionService()
+    private let providerStatusService = ProviderStatusService()
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
+    private let weeklyDigestStore = WeeklyDigestStore()
+    private let dailyDigestStore = DailyDigestStore()
+    private let budgetAlertService = BudgetAlertService()
+    private let milestoneNotificationService = MilestoneNotificationService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
     private let capacityEvidenceStore = CapacityEvidenceStore()
+    private let statuslineSnapshotStore = StatuslineSnapshotStore()
     private let capacityRuntimeStore = CapacityRuntimeStore()
     private let capacityAlertRuleStore = CapacityAlertRuleStore()
     private let capacityAlertDeliveryStore = CapacityAlertDeliveryStore()
@@ -96,8 +112,10 @@ final class TokenPilotViewModel: ObservableObject {
     private let capacityPresentationMapper = CapacityPresentationMapper()
     private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
     private let capacityAlertVisibilityBuilder = CapacityAlertVisibilityBuilder()
-    private let menuBarTickInterval: TimeInterval = 1
-    private let dataRefreshInterval: TimeInterval = 5
+    private let menuBarTickInterval: TimeInterval = 30
+    private var dataRefreshInterval: TimeInterval {
+        TimeInterval(max(settings.refreshIntervalSeconds, 5))
+    }
     private let settingsSaveDebounceNanoseconds: UInt64 = 350_000_000
     private let settingsRefreshDebounceNanoseconds: UInt64 = 450_000_000
     private var timer: Timer?
@@ -107,6 +125,8 @@ final class TokenPilotViewModel: ObservableObject {
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRefreshTask: Task<Void, Never>?
     private var experimentalShutdownTask: Task<Void, Never>?
+    private var lastWeeklyDigestAttemptDay: Date?
+    private var lastDailyDigestAttemptDay: Date?
 #if DEBUG
     private let debugFixtureMode: Bool
 #endif
@@ -138,11 +158,29 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func startProductionRuntime() {
         startAutoRefresh()
+        syncLaunchAtLoginFromSystem()
         Task {
             await updatePermissionStatus()
             await refresh(reason: .automaticTimer)
             refreshStoredCredentialPresence()
+            await refreshConnectionDiagnostics()
         }
+    }
+
+    /// Populates provider diagnostics (statuses only — no path adoption, no banner) once at
+    /// startup so Settings reflects connected/stale states without a manual Check Connection.
+    private func refreshConnectionDiagnostics() async {
+        let sources = await connectionService.checkAll(settings: settings)
+        applyDataSources(sources)
+    }
+
+    /// The login item is the system truth; fold its state into settings once at startup.
+    private func syncLaunchAtLoginFromSystem() {
+        let registered = LaunchAtLoginService.isEnabled
+        guard settings.launchAtLogin != registered else { return }
+        var next = settings
+        next.launchAtLogin = registered
+        settings = next
     }
 
 #if DEBUG
@@ -201,12 +239,27 @@ final class TokenPilotViewModel: ObservableObject {
             if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
                 settings.deepseekAPIKeyConfigured = hasDeepSeekKey
             }
+            hasSavedMinimaxAPIKey = ((try? keychain.readSecret(account: Self.minimaxAPIKeyAccount)) ?? nil) != nil
+            hasSavedZAIAPIKey = ((try? keychain.readSecret(account: Self.zaiAPIKeyAccount)) ?? nil) != nil
+            hasSavedOpenRouterAPIKey = ((try? keychain.readSecret(account: Self.openRouterAPIKeyAccount)) ?? nil) != nil
         }
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
+    static let minimaxAPIKeyAccount = "minimax.apiKey"
+    static let zaiAPIKeyAccount = "zai.apiKey"
+    static let openRouterAPIKeyAccount = "openrouter.apiKey"
+
+    static func apiKeyAccount(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyAccount
+        case .zai: return zaiAPIKeyAccount
+        case .openrouter: return openRouterAPIKeyAccount
+        default: return deepSeekAPIKeyAccount
+        }
+    }
     private var menuBarOAuthResult: XAIRefreshResult? {
         guard let result = xaiOAuthResult,
               result.selectedOutcome == .oauthWeekly,
@@ -227,12 +280,36 @@ final class TokenPilotViewModel: ObservableObject {
             xaiOAuthResult: menuBarOAuthResult
         )
     }
+    /// The text layouts split per provider, for `Separate items` grouping.
+    var menuBarTitleSegments: [MenuBarTitleSegment] {
+        menuBarStatusService.titleSegments(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: dataSourceMode.displayLabel,
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
+        )
+    }
+
+    /// What Settings shows under "Current menu bar". With separate items the bar draws each
+    /// segment as its own status item, so the preview spaces them out instead of joining them
+    /// with the separator only the combined item uses.
+    var menuBarPreviewText: String {
+        guard settings.menuBarProviderGrouping == .separate,
+              settings.menuBarDisplayStyle == .detailed || settings.menuBarDisplayStyle == .compact
+        else { return menuBarTitle }
+        let segments = menuBarTitleSegments
+        guard segments.count > 1 else { return menuBarTitle }
+        return segments.map(\.text).joined(separator: "   ")
+    }
+
     var menuBarMetricSegments: [MenuBarProviderMetricSegment] {
         menuBarStatusService.providerMetricsSegments(
             snapshots: snapshots,
             settings: settings,
             now: menuBarNow,
-            xaiOAuthResult: menuBarOAuthResult
+            xaiOAuthResult: menuBarOAuthResult,
+            limitSamples: limitHistorySamples
         )
     }
 
@@ -250,6 +327,20 @@ final class TokenPilotViewModel: ObservableObject {
         case .warning: return TokenPilotDesign.warning
         case .critical: return TokenPilotDesign.danger
         }
+    }
+
+    func copyUsageSummaryToPasteboard() {
+        let events = historySnapshots.flatMap(\.events)
+        let text = TokenPilotCLIService.summaryText(
+            events: events,
+            snapshots: snapshots,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            period: .today,
+            now: menuBarNow
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     var menuBarAccessibilityLabel: String {
@@ -315,6 +406,85 @@ final class TokenPilotViewModel: ObservableObject {
 
     var filteredSnapshots: [ProviderSnapshot] {
         historySnapshots.isEmpty ? enabledSnapshots : historySnapshots
+    }
+
+    /// GitHub-style contribution grid derived from stored usage events.
+    /// The trailing window is selectable (4 / 8 / 12 weeks) and defaults to 12 weeks.
+    @Published var heatmapWeeks: Int = 12
+
+    var historyHeatmapCells: [UsageHeatCell] {
+        aggregationService.heatmapCells(from: historyUsage.events, days: max(heatmapWeeks, 1) * 7)
+    }
+
+
+    var budgetGuardrails: BudgetGuardrailSnapshot {
+        let service = BudgetGuardrailService()
+        let events = overviewUsage.events
+        return BudgetGuardrailSnapshot(
+            daily: service.dailyProgress(events: events, settings: settings.budget),
+            weekly: service.weeklyProgress(events: events, settings: settings.budget, weekStartDay: settings.weekStartDay),
+            monthly: service.monthlyProgress(events: events, settings: settings.budget)
+        )
+    }
+
+    var budgetPaceProjection: BudgetPaceProjection? {
+        BudgetPaceService().projection(progress: budgetGuardrails.daily)
+    }
+
+    var activityMilestones: [ActivityMilestone] {
+        ActivityMilestoneService().achievedMilestones(events: overviewUsage.events)
+    }
+
+    var usageStreak: UsageStreak {
+        UsageStreakService.streak(events: overviewUsage.events)
+    }
+
+    var cacheEfficiency: CacheEfficiencySummary {
+        CacheEfficiencyService.summary(events: overviewUsage.events)
+    }
+
+    var cacheTrend: CacheTrend {
+        CacheTrendService.trend(events: historyUsage.events)
+    }
+
+    var providerCacheEfficiency: ProviderCacheEfficiencySummary {
+        ProviderCacheEfficiencyService().summary(events: historyUsage.events)
+    }
+
+    var requestHistoryTrend: RequestHistoryTrend {
+        RequestHistoryService().trend(events: historyUsage.events)
+    }
+
+    var throughputReading: ThroughputReading {
+        ThroughputService().reading(events: overviewUsage.events)
+    }
+
+    var budgetHistoryTrend: BudgetHistoryTrend {
+        BudgetHistoryService().trend(
+            events: historyUsage.events,
+            dailyBudgetTokens: settings.budget.dailyTokens
+        )
+    }
+
+    var contextHealthAssessments: [ContextHealthAssessment] {
+        ContextHealthService().assess(records: capacityEvidenceRecords)
+    }
+
+    var fiveHourBlocks: [FiveHourUsageBlock] {
+        FiveHourBlocksService.blocks(events: historyUsage.events)
+    }
+
+    var hourlyActivity: HourlyActivitySummary {
+        let buckets = HourlyActivityService.hourlyBuckets(events: historyUsage.events)
+        return HourlyActivitySummary(buckets: buckets)
+    }
+
+    var monthlyTrend: [MonthlyUsageBar] {
+        MonthlyTrendService.monthlyBars(events: historyUsage.events)
+    }
+
+    var costEfficiency: CostEfficiencySummary {
+        CostEfficiencyService.summary(events: historyUsage.events)
     }
 
     var overviewSnapshots: [ProviderSnapshot] {
@@ -544,6 +714,22 @@ final class TokenPilotViewModel: ObservableObject {
         TokenPilotLocalizer.localized(key, language: settings.localization.language)
     }
 
+    var appVersionText: String {
+        TokenPilotVersion.current()
+    }
+
+    /// Localized relative freshness label (e.g. "Updated 3 min ago"), or nil when the
+    /// app has never completed a refresh yet.
+    var lastUpdatedText: String? {
+        guard let format = TokenPilotRelativeTimestamp.format(from: lastRefreshFinishedAt, now: menuBarNow) else {
+            return nil
+        }
+        if let arg = format.arg {
+            return String(format: t(format.key), arg)
+        }
+        return t(format.key)
+    }
+
     func localizedStatus(_ status: String) -> String {
         TokenPilotLocalizer.localized(status, language: settings.localization.language)
     }
@@ -578,6 +764,12 @@ final class TokenPilotViewModel: ObservableObject {
         }
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
+            if isEnabled {
+                // Switching a provider on is the user asking to watch it, so it belongs in the
+                // menu bar too. Without this the provider stayed invisible there until the user
+                // found the separate menu bar provider list and switched it on a second time.
+                next.menuBarMetricProviders.insert(provider)
+            }
             next.normalizeMenuBarComposition()
             settings = next
         } else {
@@ -658,8 +850,36 @@ final class TokenPilotViewModel: ObservableObject {
     func setMenuBarDisplayStyle(_ style: MenuBarDisplayStyle) {
         settings.menuBarDisplayStyle = style
     }
+
+    func setMenuBarPrimaryMetric(_ metric: MenuBarPrimaryMetric) {
+        settings.menuBarPrimaryMetric = metric
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        guard settings.launchAtLogin != enabled else { return }
+        do {
+            try LaunchAtLoginService.apply(enabled)
+            var next = settings
+            next.launchAtLogin = enabled
+            settings = next
+            bannerMessage = nil
+        } catch {
+            bannerMessage = enabled ? t("Could not enable launch at login") : t("Could not disable launch at login")
+        }
+    }
     func setMenuBarProviderGrouping(_ grouping: MenuBarProviderGrouping) {
         settings.menuBarProviderGrouping = grouping
+    }
+
+    func setMenuBarTrendStyle(_ style: MenuBarTrendStyle) {
+        settings.menuBarTrendStyle = style
+    }
+
+    func setMenuBarWidthLimit(_ limit: MenuBarWidthLimit) {
+        settings.menuBarWidthLimit = limit
     }
 
     func setMenuBarMetricProvider(_ provider: Provider, isVisible: Bool) {
@@ -766,10 +986,154 @@ final class TokenPilotViewModel: ObservableObject {
         menuBarNow = Date()
     }
 
+    /// Publishes the capacity windows the `statusline` CLI reads on every editor prompt.
+    ///
+    /// Off the main actor and best effort: the status line is a convenience, and
+    /// a failed write only means the CLI falls back to the full evidence store.
+    private func writeStatuslineSnapshot(assessments: [CapacityAssessment], observedAt: Date) {
+        let windows = StatuslineService.windows(from: assessments)
+        guard !windows.isEmpty else { return }
+        let snapshot = StatuslineSnapshot(generatedAt: observedAt, windows: windows)
+        let store = statuslineSnapshotStore
+        Task.detached(priority: .utility) {
+            store.save(snapshot)
+        }
+    }
+
+    /// Refreshes right after the Mac wakes, unless a refresh just finished.
+    ///
+    /// Timers do not fire during sleep, so without this the menu bar keeps a
+    /// pre-sleep percentage and a stale reset countdown until the next tick.
+    func refreshAfterSystemWake(now: Date = Date()) async {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
+        menuBarNow = now
+        guard WakeRefreshGate.shouldRefresh(lastRefreshFinishedAt: lastRefreshFinishedAt, now: now) else { return }
+        await refresh(reason: .systemWake)
+    }
+
     private func handleAutoRefreshTick() async {
         menuBarNow = Date()
+        await checkWeeklyDigest(now: menuBarNow)
+        await checkDailyDigest(now: menuBarNow)
         guard shouldRunDataRefresh(at: menuBarNow) else { return }
         await refresh(reason: .automaticTimer)
+    }
+
+    private func checkDailyDigest(now: Date) async {
+        guard settings.dailyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              !Calendar.current.isDate(now, inSameDayAs: lastDailyDigestAttemptDay ?? .distantPast) else {
+            return
+        }
+        lastDailyDigestAttemptDay = now
+        let lastSent = dailyDigestStore.loadLastSent()
+        let schedule = DailyDigestSchedule(hour: settings.dailyDigestHour, minute: settings.dailyDigestMinute)
+        guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now,
+            budget: settings.budget
+        )
+        do {
+            try await localNotificationService.send(title: t("Daily digest"), body: text)
+            dailyDigestStore.saveLastSent(now)
+        } catch {}
+    }
+
+    private func checkWeeklyDigest(now: Date) async {
+        guard settings.weeklyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              !Calendar.current.isDate(now, inSameDayAs: lastWeeklyDigestAttemptDay ?? .distantPast) else {
+            return
+        }
+        lastWeeklyDigestAttemptDay = now
+        let lastSent = weeklyDigestStore.loadLastSent()
+        let schedule = WeeklyDigestSchedule(hour: settings.weeklyDigestHour, minute: settings.weeklyDigestMinute)
+        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule, weekStartDay: settings.weekStartDay) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now,
+            weekStartDay: settings.weekStartDay,
+            budget: settings.budget
+        )
+        do {
+            try await localNotificationService.send(title: t("Weekly digest"), body: text)
+            weeklyDigestStore.saveLastSent(now)
+        } catch {}
+    }
+
+    private func checkBudgetAlerts() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              settings.budget.hasAnyBudget else {
+            return
+        }
+        let candidates = budgetAlertService.crossingCandidates(
+            events: overviewUsage.events,
+            settings: settings.budget,
+            now: Date()
+        )
+        guard !candidates.isEmpty else { return }
+        for candidate in candidates {
+            let windowLabel: String
+            switch candidate.window {
+            case .daily: windowLabel = t("Today")
+            case .weekly: windowLabel = t("This week")
+            case .monthly: windowLabel = t("This month")
+            }
+            let body = String(
+                format: t("Budget %@: %@ / %@ tok reached %d%% (est.)"),
+                windowLabel,
+                TokenPilotFormatters.compactNumber(candidate.tokens),
+                TokenPilotFormatters.compactNumber(candidate.budgetTokens),
+                candidate.percent
+            )
+            do {
+                try await localNotificationService.send(title: t("Budget guardrails"), body: body)
+            } catch {}
+        }
+        budgetAlertService.markDelivered(candidates)
+    }
+
+    private func checkMilestoneNotifications() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled else {
+            return
+        }
+        let newly = milestoneNotificationService.newlyAchieved(milestones: activityMilestones)
+        guard !newly.isEmpty else { return }
+        for milestone in newly {
+            do {
+                try await localNotificationService.send(
+                    title: t("Milestones"),
+                    body: milestoneBody(milestone)
+                )
+            } catch {}
+        }
+        milestoneNotificationService.markNotified(newly)
+    }
+
+    private func milestoneBody(_ milestone: ActivityMilestone) -> String {
+        switch milestone.dimension {
+        case .lifetimeTokens:
+            return String(format: t("Reached %@ lifetime local tokens (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .activeDays:
+            return String(format: t("Reached %d active local days (est.)"), milestone.threshold)
+        case .totalRequests:
+            return String(format: t("Reached %@ total local requests (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .longestStreak:
+            return String(format: t("Reached a %d-day longest local streak (est.)"), milestone.threshold)
+        }
     }
 
     private func shouldRunDataRefresh(at now: Date) -> Bool {
@@ -849,6 +1213,8 @@ final class TokenPilotViewModel: ObservableObject {
         )
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
+        await checkBudgetAlerts()
+        await checkMilestoneNotifications()
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {
@@ -881,6 +1247,8 @@ final class TokenPilotViewModel: ObservableObject {
             return .automaticTimer
         case .settings:
             return .settingsChanged
+        case .systemWake:
+            return .automaticTimer
         }
     }
     private func processCapacity(result: UsageStore.Result, settingsAtStart: AppSettings) async {
@@ -889,6 +1257,7 @@ final class TokenPilotViewModel: ObservableObject {
         if !result.capacityObservations.isEmpty {
             _ = await capacityEvidenceStore.record(result.capacityObservations)
         }
+        capacityEvidenceRecords = (await capacityEvidenceStore.loadSnapshot()).records
 
         let runtimeLoad = await capacityRuntimeStore.load()
         capacityRuntimeRecoveryRequired = runtimeLoad.recoveryStatus.recoveryRequired
@@ -901,6 +1270,7 @@ final class TokenPilotViewModel: ObservableObject {
             : []
         capacityAssessments = assessments
         capacityPresentations = presentationEnabled ? assessments.map(capacityPresentationMapper.map) : []
+        writeStatuslineSnapshot(assessments: assessments, observedAt: result.observedAt)
 
         let officialDeepSeekBalance = result.snapshots.first {
             $0.provider == .deepseek && $0.dataSource == .officialTelemetry && !$0.isStale
@@ -1177,6 +1547,46 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
 
+    /// Grants one provider's source folder.
+    ///
+    /// The Developer ID build reads the default home paths directly, so this is for a non-standard
+    /// install location. A sandboxed build cannot read those paths at all, and this is the only way
+    /// the provider ever gets data — the grant is stored as a read-only security-scoped bookmark.
+    func chooseProviderSourceFolder(_ provider: Provider) {
+        chooseLocalSource(
+            provider: provider,
+            prompt: t("Grant access"),
+            message: t("Choose this provider's local data folder. TokenPilot keeps read-only access to it."),
+            canChooseDirectories: true
+        ) { [weak self] url, bookmarkData in
+            guard let self else { return }
+            var next = self.settings
+            next.monitoredProviders.customPaths[provider] = url.path
+            next.monitoredProviders.customBookmarks[provider] = bookmarkData
+            self.settings = next
+        }
+    }
+
+    /// Drops a previously granted folder so the provider falls back to its default paths.
+    func clearProviderSourceFolder(_ provider: Provider) {
+        var next = settings
+        next.monitoredProviders.customPaths.removeValue(forKey: provider)
+        next.monitoredProviders.customBookmarks.removeValue(forKey: provider)
+        settings = next
+        Task { await checkConnection(provider) }
+    }
+
+    /// Folder name of the granted source, for display. Never the full path.
+    func grantedSourceFolderName(_ provider: Provider) -> String? {
+        guard let path = settings.monitoredProviders.customPaths[provider], !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    /// True when this build runs sandboxed, where providers only read folders the user granted.
+    var requiresSourceGrants: Bool {
+        ProviderSourceAccess.isSandboxed
+    }
+
     private func chooseLocalSource(
         provider: Provider,
         prompt: String,
@@ -1242,6 +1652,44 @@ final class TokenPilotViewModel: ObservableObject {
             applyDataSources(initialSources)
             bannerMessage = t("Connection check complete.")
         }
+        await refreshProviderStatuses()
+    }
+
+    /// Fetches official status-page readings for enabled providers that publish one.
+    /// Reads use a TTL cache and never block a refresh pass; failures keep the
+    /// previous cached reading or report unknown.
+    func refreshProviderStatuses() async {
+        let enabled = Set(settings.enabledProviders)
+        let providers = ProviderStatusService.statuspageEndpoints.keys.filter { enabled.contains($0) }
+        var reports: [Provider: ProviderStatusReport] = providerStatusReports
+        for provider in providers {
+            let report = await providerStatusService.refreshStatus(for: provider)
+            reports[provider] = report
+        }
+        providerStatusReports = reports
+    }
+
+    func providerStatusText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Not checked") }
+        switch report.health {
+        case .operational: return t("Operational")
+        case .degraded: return t("Degraded")
+        case .outage: return t("Outage")
+        case .unknown: return t("Unknown")
+        }
+    }
+
+    func providerStatusDetailText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Run a check to read the official status page") }
+        var parts: [String] = []
+        if !report.description.isEmpty {
+            parts.append(report.description)
+        }
+        if let format = TokenPilotRelativeTimestamp.format(from: report.checkedAt, now: Date()) {
+            let updated = format.arg.map { String(format: t(format.key), $0) } ?? t(format.key)
+            parts.append(updated)
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {
@@ -1443,6 +1891,72 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    /// Exports app settings as a JSON backup. Credentials (bot tokens, webhooks,
+    /// DeepSeek/xAI API keys) live in the Keychain and are never part of the
+    /// payload; the Telegram chat ID is scrubbed on export.
+    func exportSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            let data = try SettingsBackupService().exportData(settings: settings)
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "TokenPilot-settings.json"
+            panel.canCreateDirectories = true
+            panel.title = t("Export Settings")
+            panel.message = t("Exports settings without credentials, chat IDs, webhooks, or API keys. Saved secrets stay in the Keychain.")
+            if panel.runModal() == .OK, let url = panel.url {
+                try data.write(to: url, options: .atomic)
+                bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
+            }
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    /// Imports app settings from a JSON backup created by `exportSettings`.
+    /// Keychain-stored credentials are never part of the backup, so any
+    /// configured integrations must be re-entered after importing.
+    func importSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = t("Import Settings")
+        panel.message = t("Imports settings from a TokenPilot backup. Keychain-stored credentials must be re-entered.")
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else {
+            return
+        }
+        do {
+            let imported = try SettingsBackupService().importSettings(from: data)
+            settings = imported
+            bannerMessage = t("Settings imported")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    /// Resets all preferences to factory defaults. Keychain-stored credentials
+    /// are left untouched; only in-app settings reset.
+    func resetSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let alert = NSAlert()
+        alert.messageText = t("Reset settings?")
+        alert.informativeText = t("All preferences return to factory defaults. Keychain-stored credentials are kept.")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: t("Reset"))
+        alert.addButton(withTitle: t("Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        settings = settingsStore.resetToDefaults()
+        bannerMessage = t("Settings reset")
+    }
+
     func parseCodexStatus() {
         var parsed = CodexStatusParser.safeParse(
             settings.codexManual.pastedStatusOutput,
@@ -1594,6 +2108,76 @@ final class TokenPilotViewModel: ObservableObject {
             settings.deepseekAPIKeyConfigured = false
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func apiKeyInput(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyInput
+        case .zai: return zaiAPIKeyInput
+        case .openrouter: return openrouterAPIKeyInput
+        default: return deepSeekAPIKeyInput
+        }
+    }
+
+    func setAPIKeyInput(_ value: String, for provider: Provider) {
+        switch provider {
+        case .minimax: minimaxAPIKeyInput = value
+        case .zai: zaiAPIKeyInput = value
+        case .openrouter: openrouterAPIKeyInput = value
+        default: deepSeekAPIKeyInput = value
+        }
+    }
+
+    func hasSavedAPIKey(for provider: Provider) -> Bool {
+        switch provider {
+        case .minimax: return hasSavedMinimaxAPIKey
+        case .zai: return hasSavedZAIAPIKey
+        case .openrouter: return hasSavedOpenRouterAPIKey
+        default: return hasSavedDeepSeekAPIKey
+        }
+    }
+
+    func saveAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let key = apiKeyInput(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            bannerMessage = t("Enter an API key first.")
+            return
+        }
+        do {
+            try keychain.saveSecret(key, account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = true
+            case .zai: hasSavedZAIAPIKey = true
+            case .openrouter: hasSavedOpenRouterAPIKey = true
+            default: break
+            }
+            bannerMessage = t("API key saved in TokenPilot Keychain item.")
+        } catch {
+            bannerMessage = localizedErrorMessage(error)
+        }
+    }
+
+    func deleteAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            try keychain.deleteSecret(account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = false
+            case .zai: hasSavedZAIAPIKey = false
+            case .openrouter: hasSavedOpenRouterAPIKey = false
+            default: break
+            }
+            bannerMessage = t("API key deleted.")
         } catch {
             bannerMessage = localizedErrorMessage(error)
         }

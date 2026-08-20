@@ -115,31 +115,52 @@ enum TokenPilotDesign {
                 contrast: contrast
             )
         }
+
+        func nsColor(contrast: ColorSchemeContrast? = nil) -> NSColor {
+            TokenPilotDesign.semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        }
     }
 
     enum Typography {
-        static let appTitle = Font.system(size: 15, weight: .semibold, design: .rounded)
-        static let sectionTitle = Font.system(size: 12, weight: .bold, design: .rounded)
-        static let cardTitle = Font.system(size: 13, weight: .semibold, design: .rounded)
-        static let label = Font.system(size: 11, weight: .medium)
-        static let caption = Font.system(size: 10, weight: .medium)
-        static let micro = Font.system(size: 9, weight: .semibold, design: .monospaced)
-        static let metric = Font.system(size: 12, weight: .semibold, design: .monospaced)
-        static let metricLarge = Font.system(size: 34, weight: .semibold, design: .monospaced)
-        static let badge = Font.system(size: 10, weight: .bold, design: .monospaced)
+        static let appTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
+        static let sectionTitle = Font.system(size: 13, weight: .bold, design: .rounded)
+        static let cardTitle = Font.system(size: 14, weight: .semibold, design: .rounded)
+        static let label = Font.system(size: 12, weight: .medium)
+        static let caption = Font.system(size: 11, weight: .medium)
+        /// Multi-line explanatory copy. Regular weight so a paragraph does not read as a label,
+        /// and 11pt rather than the 10pt `.caption2` this replaced across Settings.
+        static let explanation = Font.system(size: 11, weight: .regular)
+        static let micro = Font.system(size: 10, weight: .semibold, design: .monospaced)
+        static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
+        static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
+        static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
+        /// Chart axis ticks and heatmap month labels. Was 7-8pt inline, which is below the floor
+        /// for anything a reader is expected to actually read.
+        static let axis = Font.system(size: 9, weight: .medium, design: .monospaced)
+        /// Leading glyph inside a chip, sized to sit with `micro` text.
+        static let chipGlyph = Font.system(size: 9, weight: .semibold)
+        static let glyph = Font.system(size: 12, weight: .semibold)
     }
 
     enum Spacing {
-        static let xxs: CGFloat = 2
-        static let xs: CGFloat = 3
-        static let sm: CGFloat = 5
-        static let md: CGFloat = 7
-        static let lg: CGFloat = 9
-        static let xl: CGFloat = 12
-        static let section: CGFloat = 9
+        static let xxs: CGFloat = 3
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 9
+        static let lg: CGFloat = 11
+        static let xl: CGFloat = 14
+        static let section: CGFloat = 12
     }
 
     enum Radius {
+        /// Progress bars and other 2-4pt fills.
+        static let xxs: CGFloat = 2
         static let xs: CGFloat = 4
         static let sm: CGFloat = 6
         static let md: CGFloat = 8
@@ -269,9 +290,13 @@ enum TokenPilotDesign {
     )
     static let textSecondary = textSecondaryDefinition.color()
 
+    // Tertiary carries 10-11pt labels, so it is held to the 4.5:1 small-text bar on
+    // every surface it lands on. The previous values measured 3.47:1 (light, card),
+    // 3.01:1 (light, muted card) and 4.44:1 (dark, card); these clear 4.5:1 against
+    // card, background, and muted card in both appearances.
     private static let textTertiaryDefinition = SemanticColorDefinition(
-        light: rgb(0.520, 0.540, 0.590),
-        dark: rgb(0.478, 0.478, 0.518),
+        light: rgb(0.408, 0.424, 0.464),
+        dark: rgb(0.526, 0.526, 0.570),
         lightHighContrast: rgb(0.305, 0.330, 0.390),
         darkHighContrast: rgb(0.690, 0.700, 0.750)
     )
@@ -285,8 +310,9 @@ enum TokenPilotDesign {
     )
     static let danger = dangerDefinition.color()
 
+    // Light-mode warning sits on muted cards too, where the old value measured 4.16:1.
     private static let warningDefinition = SemanticColorDefinition(
-        light: rgb(0.700, 0.355, 0.000),
+        light: rgb(0.660, 0.330, 0.000),
         dark: rgb(0.961, 0.647, 0.141),
         lightHighContrast: rgb(0.500, 0.245, 0.000),
         darkHighContrast: rgb(1.000, 0.780, 0.250)
@@ -319,6 +345,9 @@ enum TokenPilotDesign {
 
     static let cardRadius = Radius.card
     static let cardPadding = Spacing.xl
+    /// Denser cards (charts, list cards) still share one rhythm instead of the 10/12/14 mix that
+    /// made neighbouring cards look mismatched.
+    static let cardPaddingCompact = Spacing.section
     static let rowSpacing = Spacing.md
     static let sectionSpacing = Spacing.section
 
@@ -392,7 +421,7 @@ enum TokenPilotDesign {
         switch provider {
         case .claude:
             return SemanticColorDefinition(
-                light: rgb(0.780, 0.360, 0.040),
+                light: rgb(0.700, 0.300, 0.010),
                 dark: rgb(1.000, 0.640, 0.230),
                 lightHighContrast: rgb(0.590, 0.235, 0.000),
                 darkHighContrast: rgb(1.000, 0.720, 0.330)
@@ -400,7 +429,7 @@ enum TokenPilotDesign {
             .color(contrast: contrast)
         case .codex:
             return SemanticColorDefinition(
-                light: rgb(0.000, 0.520, 0.230),
+                light: rgb(0.000, 0.480, 0.210),
                 dark: rgb(0.160, 0.740, 0.370),
                 lightHighContrast: rgb(0.000, 0.380, 0.155),
                 darkHighContrast: rgb(0.310, 0.880, 0.480)
@@ -446,6 +475,48 @@ enum TokenPilotDesign {
                 darkHighContrast: rgb(0.830, 0.630, 1.000)
             )
             .color(contrast: contrast)
+        case .commandcode:
+            // Rose-plum: the one hue band no other provider uses, and it clears 4.5:1 on
+            // card and muted card in light appearance as well as on the dark card.
+            return SemanticColorDefinition(
+                light: rgb(0.700, 0.100, 0.450),
+                dark: rgb(1.000, 0.420, 0.720),
+                lightHighContrast: rgb(0.520, 0.040, 0.360),
+                darkHighContrast: rgb(1.000, 0.560, 0.800)
+            )
+            .color(contrast: contrast)
+        case .jetbrains:
+            return SemanticColorDefinition(
+                light: rgb(0.740, 0.260, 0.080),
+                dark: rgb(1.000, 0.520, 0.260),
+                lightHighContrast: rgb(0.670, 0.200, 0.050),
+                darkHighContrast: rgb(1.000, 0.620, 0.360)
+            )
+            .color(contrast: contrast)
+        case .minimax:
+            return SemanticColorDefinition(
+                light: rgb(0.000, 0.470, 0.510),
+                dark: rgb(0.160, 0.760, 0.800),
+                lightHighContrast: rgb(0.000, 0.420, 0.460),
+                darkHighContrast: rgb(0.330, 0.850, 0.880)
+            )
+            .color(contrast: contrast)
+        case .zai:
+            return SemanticColorDefinition(
+                light: rgb(0.230, 0.400, 0.780),
+                dark: rgb(0.420, 0.620, 1.000),
+                lightHighContrast: rgb(0.120, 0.270, 0.620),
+                darkHighContrast: rgb(0.570, 0.730, 1.000)
+            )
+            .color(contrast: contrast)
+        case .openrouter:
+            return SemanticColorDefinition(
+                light: rgb(0.620, 0.220, 0.220),
+                dark: rgb(0.900, 0.380, 0.360),
+                lightHighContrast: rgb(0.480, 0.110, 0.110),
+                darkHighContrast: rgb(0.960, 0.520, 0.470)
+            )
+            .color(contrast: contrast)
         }
     }
 
@@ -455,9 +526,22 @@ enum TokenPilotDesign {
 
     private static func riskColor(_ percent: Int?, contrast: ColorSchemeContrast?) -> Color {
         guard let percent else { return textSecondaryDefinition.color(contrast: contrast) }
-        if percent >= 85 { return dangerDefinition.color(contrast: contrast) }
-        if percent >= 70 { return warningDefinition.color(contrast: contrast) }
-        return calmDefinition.color(contrast: contrast)
+        switch CapacityRisk.forUsedPercent(percent) {
+        case .critical: return dangerDefinition.color(contrast: contrast)
+        case .warning: return warningDefinition.color(contrast: contrast)
+        default: return calmDefinition.color(contrast: contrast)
+        }
+    }
+
+    /// Risk color for AppKit drawing, from the same definitions and thresholds the
+    /// popover uses, so one window never reads amber in the menu bar and calm inside.
+    static func riskNSColor(_ risk: CapacityRisk) -> NSColor {
+        switch risk {
+        case .critical: return dangerDefinition.nsColor()
+        case .warning: return warningDefinition.nsColor()
+        case .normal: return calmDefinition.nsColor()
+        case .informational, .stale, .unavailable: return textSecondaryDefinition.nsColor()
+        }
     }
 
     static func quotaRiskColor(_ risk: CapacityRisk, eligibility: CapacityAlertEligibility) -> Color {
@@ -521,7 +605,28 @@ enum TokenPilotDesign {
         darkHighContrast: NSColor? = nil,
         contrast: ColorSchemeContrast? = nil
     ) -> Color {
-        Color(NSColor(name: nil) { appearance in
+        Color(
+            semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        )
+    }
+
+    /// The same dynamic color as `semanticColor`, for AppKit surfaces (the menu bar
+    /// draws with `NSColor`, and drawing it with `.systemRed`/`.systemOrange` was how
+    /// the menu bar ended up ignoring the high-contrast variants).
+    private static func semanticNSColor(
+        light: NSColor,
+        dark: NSColor,
+        lightHighContrast: NSColor? = nil,
+        darkHighContrast: NSColor? = nil,
+        contrast: ColorSchemeContrast? = nil
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
             let match = appearance.bestMatch(from: [
                 .accessibilityHighContrastDarkAqua,
                 .darkAqua,
@@ -543,7 +648,7 @@ enum TokenPilotDesign {
             default:
                 return useHighContrast ? (lightHighContrast ?? light) : light
             }
-        })
+        }
     }
 
     private static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, alpha: CGFloat = 1.0) -> NSColor {
@@ -568,6 +673,9 @@ private struct TokenPilotReduceTransparencyOverrideKey: EnvironmentKey {
 
 private struct TokenPilotContrastOverrideKey: EnvironmentKey {
     static let defaultValue: ColorSchemeContrast? = nil
+}
+private struct TokenPilotDifferentiateWithoutColorKey: EnvironmentKey {
+    static let defaultValue: Bool = false
 }
 private struct TokenPilotSemanticPaletteKey: EnvironmentKey {
     static let defaultValue = TokenPilotDesign.SemanticPalette(colorSchemeContrast: .standard)
@@ -596,6 +704,11 @@ extension EnvironmentValues {
         set { self[TokenPilotContrastOverrideKey.self] = newValue }
     }
 
+    var tokenPilotDifferentiateWithoutColor: Bool {
+        get { self[TokenPilotDifferentiateWithoutColorKey.self] }
+        set { self[TokenPilotDifferentiateWithoutColorKey.self] = newValue }
+    }
+
     var tokenPilotSemanticPalette: TokenPilotDesign.SemanticPalette {
         get { self[TokenPilotSemanticPaletteKey.self] }
         set { self[TokenPilotSemanticPaletteKey.self] = newValue }
@@ -604,13 +717,16 @@ extension EnvironmentValues {
 
 private struct TokenPilotSemanticPaletteModifier: ViewModifier {
     @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
     @Environment(\.tokenPilotContrastOverride) private var contrastOverride
 
     func body(content: Content) -> some View {
-        content.environment(
-            \.tokenPilotSemanticPalette,
-            TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
-        )
+        content
+            .environment(
+                \.tokenPilotSemanticPalette,
+                TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
+            )
+            .environment(\.tokenPilotDifferentiateWithoutColor, systemDifferentiateWithoutColor)
     }
 }
 

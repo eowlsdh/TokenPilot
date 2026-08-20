@@ -43,7 +43,7 @@ extension AppSettings {
             return claudeStatusFileBookmarkData
         case .gemini:
             return geminiTelemetrySourceBookmarkData
-        case .codex, .deepseek, .xai, .opencode, .kiro:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             return nil
         }
     }
@@ -54,7 +54,7 @@ extension AppSettings {
             claudeStatusFileBookmarkData = data
         case .gemini:
             geminiTelemetrySourceBookmarkData = data
-        case .codex, .deepseek, .xai, .opencode, .kiro:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             break
         }
     }
@@ -92,6 +92,11 @@ extension AppSettings {
         case .xai: return xaiEnabled
         case .opencode: return opencodeEnabled
         case .kiro: return kiroEnabled
+        case .jetbrains: return jetbrainsEnabled
+        case .minimax: return minimaxEnabled
+        case .zai: return zaiEnabled
+        case .openrouter: return openrouterEnabled
+        case .commandcode: return commandcodeEnabled
         }
     }
 
@@ -104,6 +109,25 @@ extension AppSettings {
         xaiEnabled = safeProviders.contains(.xai)
         opencodeEnabled = safeProviders.contains(.opencode)
         kiroEnabled = safeProviders.contains(.kiro)
+        jetbrainsEnabled = safeProviders.contains(.jetbrains)
+        minimaxEnabled = safeProviders.contains(.minimax)
+        zaiEnabled = safeProviders.contains(.zai)
+        openrouterEnabled = safeProviders.contains(.openrouter)
+        commandcodeEnabled = safeProviders.contains(.commandcode)
         monitoredProviders.enabledProviders = safeProviders
+    }
+}
+
+extension AppSettings {
+    public var claudeUsageProbeEnabled: Bool {
+        experimentalUsage.claudeProbeEnabled
+    }
+
+    public var codexUsageProbeEnabled: Bool {
+        experimentalUsage.codexProbeEnabled
+    }
+
+    public var grokTierProbeEnabled: Bool {
+        experimentalUsage.grokTierProbeEnabled
     }
 }

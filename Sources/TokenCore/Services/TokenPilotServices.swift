@@ -191,17 +191,39 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
     /// Local context metadata is treated as stale when the newest valid signals file is older than this.
     private static let staleThreshold: TimeInterval = 15 * 60
     private let sessionRoots: [URL]
+    private let makeTierProbe: (@Sendable () -> GrokTierProbe)?
 
-    public init(sessionRoots: [URL]? = nil) {
+    public init(sessionRoots: [URL]? = nil, makeTierProbe: (@Sendable () -> GrokTierProbe)? = nil) {
         self.sessionRoots = sessionRoots ?? [
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".grok", isDirectory: true)
                 .appendingPathComponent("sessions", isDirectory: true)
         ]
+        self.makeTierProbe = makeTierProbe
     }
 
     public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
-        let snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+        let resolution = ProviderSourceAccess.resolve(provider: .xai, settings: settings, defaults: sessionRoots)
+        defer { resolution.release() }
+        var snapshot: ProviderSnapshot
+        if resolution.needsUserGrant {
+            snapshot = Self.unavailableSnapshot(now: now)
+            snapshot.statusMessage = "Choose the Grok folder to grant access"
+        } else {
+            snapshot = Self.newestSnapshot(in: resolution.roots, now: now) ?? Self.unavailableSnapshot(now: now)
+        }
+
+        if settings.grokTierProbeEnabled, let makeProbe = makeTierProbe {
+            switch await makeProbe().probe(settings: settings) {
+            case .success(let tier):
+                snapshot.statusMessage = "EXPERIMENTAL · UNOFFICIAL · \(tier)"
+                snapshot.isExperimental = true
+                snapshot.updatedAt = now
+            case .failure:
+                break
+            }
+        }
+
         return ProviderRefreshResult(
             snapshot: snapshot,
             capacityObservations: [],
@@ -964,7 +986,29 @@ public enum CapacityObservationFactory {
             break
         case .opencode:
             // Consent-gated probe result: provider-reported quota, so comparable unlike the
-            // token/cost activity signals below.
+            // token/cost activity signals below. The official usage API reports three windows
+            // (rolling 5h, weekly, monthly); each is surfaced as its own observation so the
+            // overview can show them all. Weekly keeps the established `rate-limit` series id.
+            if let rolling = snapshot.fiveHour,
+               rolling.providerWindowID == "opencode-go-rolling",
+               let used = rolling.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, durationMinutes: 300),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: rolling.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
             if let weekly = snapshot.weekly,
                weekly.providerWindowID == "rate-limit",
                let used = weekly.usedPercent,
@@ -974,6 +1018,26 @@ public enum CapacityObservationFactory {
                 seriesID: series,
                 observedAt: observedAt,
                 resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if let monthly = snapshot.monthly,
+               monthly.providerWindowID == "opencode-go-monthly",
+               let used = monthly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, durationMinutes: 43_200),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: monthly.resetAt,
                 value: value,
                 authority: .providerReported,
                 stability: .supported,
@@ -1067,6 +1131,70 @@ public enum CapacityObservationFactory {
             if let contextPercent = snapshot.contextWindowUsedPercent,
                let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent),
                let value = try? CapacityValue(usedPercent: contextPercent),
+                let observation = try? CapacityObservation(
+                 seriesID: series,
+                 observedAt: observedAt,
+                 value: value,
+                 authority: .localDerived,
+                 stability: .supported,
+                 consent: .notRequired,
+                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                 comparability: .incomparable,
+                 parserRevision: "kiroContextV1",
+                 now: observedAt
+                ) {
+                 observations.append(observation)
+             }
+        case .jetbrains:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "jetbrains-quota",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .jetbrains, providerWindowID: "jetbrains-quota", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .comparable,
+                parserRevision: "jetbrainsQuotaV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .minimax:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "minimax-token-plan",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .minimax, providerWindowID: "minimax-token-plan", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "minimaxTokenPlanV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .commandcode:
+            // Command Code meters its plans in dollars over rolling 5-hour and 7-day windows, but
+            // publishes those meters only through `/usage` and Studio, behind the API key. Local
+            // transcripts therefore yield activity evidence only: spend and tokens, both
+            // incomparable to provider quota and alert-ineligible.
+            if let balance = snapshot.balance,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "session-cost", kind: .balance, unit: .currency),
+               let value = try? CapacityValue(money: balance.toppedUpBalance, currency: balance.currency),
                let observation = try? CapacityObservation(
                 seriesID: series,
                 observedAt: observedAt,
@@ -1076,7 +1204,66 @@ public enum CapacityObservationFactory {
                 consent: .notRequired,
                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
                 comparability: .incomparable,
-                parserRevision: "kiroContextV1",
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if snapshot.todayTokens > 0,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "context", kind: .context, unit: .tokens),
+               let value = try? CapacityValue(tokens: snapshot.todayTokens),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .zai:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "zai-tokens-limit",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .zai, providerWindowID: "zai-tokens-limit", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "zaiTokensLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .openrouter:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "openrouter-credits",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .openrouter, providerWindowID: "openrouter-credits", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "openrouterCreditsV1",
                 now: observedAt
                ) {
                 observations.append(observation)
@@ -1180,6 +1367,17 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         }
     }
 
+    /// Persists a fresh `AppSettings()` (factory defaults) and returns it.
+    /// Keychain-stored credentials are left untouched; only preferences reset.
+    public func resetToDefaults() -> AppSettings {
+        let defaults = AppSettings()
+        lock.withLock {
+            guard let data = try? encoder.encode(normalize(defaults)) else { return }
+            self.defaults.set(data, forKey: key)
+        }
+        return defaults
+    }
+
     private func normalize(_ settings: AppSettings) -> AppSettings {
         var copy = settings
         let existingIDs = Set(copy.alertRules.map(\.id))
@@ -1187,6 +1385,7 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.alertRules.append(rule)
         }
         copy.geminiDailyRequestCap = max(copy.geminiDailyRequestCap, 1)
+        copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 15), 900)
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)
@@ -1391,18 +1590,26 @@ public final class UsageStore: @unchecked Sendable {
         let kiroSessionRoots = pathResolver.resolveDefaultPaths(for: .kiro)
             .filter { ["ide_sessions", "cli_sessions"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let commandCodeProjectRoots = pathResolver.resolveDefaultPaths(for: .commandcode)
+            .filter { $0.kind == "projects" && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
 
         return [
-            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
+            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots, makeUsageProbe: { ClaudeOAuthUsageProbe() }),
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
-            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
+            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots, makeUsageProbe: { CodexOAuthUsageProbe() }),
             DeepSeekBalanceAdapter(),
-            GrokLocalSignalsAdapter(),
+            GrokLocalSignalsAdapter(makeTierProbe: { GrokTierProbe() }),
             OpenCodeSessionAdapter(
                 databaseURLs: openCodeDatabases.isEmpty ? nil : openCodeDatabases,
                 legacyMessageRoots: openCodeLegacyRoots.isEmpty ? nil : openCodeLegacyRoots
             ),
-            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots)
+            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots),
+            CommandCodeLocalSessionAdapter(projectRoots: commandCodeProjectRoots.isEmpty ? nil : commandCodeProjectRoots),
+            JetBrainsAIAssistantAdapter(),
+            MiniMaxTokenPlanAdapter(),
+            ZAIUsageAdapter(),
+            OpenRouterAdapter()
         ]
     }
 
@@ -2137,6 +2344,8 @@ public enum TokenPilotFormatters {
             units = ("時間", "分")
         case .zhHans:
             units = ("小时", "分钟")
+        case .zhHant:
+            units = ("小時", "分鐘")
         }
         if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute)" }
         return "\(minutes)\(units.minute)"
@@ -2150,6 +2359,18 @@ public enum TokenPilotFormatters {
         if hours > 0 { return "\(hours)h" }
         let minutes = (seconds % 3_600) / 60
         return "\(minutes)m"
+    }
+
+    /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s".
+    /// Used for live ticking reset timers; the label is localized, the separators are not.
+    public static func countdown(until date: Date, now: Date = Date()) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remainingSeconds = seconds % 60
+        if hours > 0 { return "\(hours)h \(minutes)m \(remainingSeconds)s" }
+        if minutes > 0 { return "\(minutes)m \(remainingSeconds)s" }
+        return "\(remainingSeconds)s"
     }
 
     private static let clockFormatters = OSAllocatedUnfairLock(initialState: [String: DateFormatter]())
@@ -2186,6 +2407,8 @@ public enum TokenPilotFormatters {
             return "ja_JP"
         case .zhHans:
             return "zh_Hans_CN"
+        case .zhHant:
+            return "zh_Hant_TW"
         }
     }
 }

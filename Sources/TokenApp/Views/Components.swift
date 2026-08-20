@@ -27,6 +27,9 @@ struct TokenPilotSectionHeader<Accessory: View>: View {
                     .font(TokenPilotDesign.Typography.sectionTitle)
                     .foregroundStyle(palette.text(.primary))
                     .lineLimit(1)
+                    // Korean, Japanese, and Chinese titles run longer than the English source;
+                    // shrinking a little beats clipping a word.
+                    .minimumScaleFactor(0.85)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -100,6 +103,7 @@ struct CompactProviderStatusRow<Trailing: View>: View {
                     .font(TokenPilotDesign.Typography.cardTitle)
                     .foregroundStyle(palette.text(.primary))
                     .lineLimit(1)
+                    .minimumScaleFactor(0.85)
 
                 if let subtitle, !subtitle.isEmpty {
                     Text(subtitle)
@@ -270,7 +274,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
             HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                 summary()
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(palette.text(.secondary))
                     .rotationEffect(.degrees(isExpanded ? 180 : 0))
                     .accessibilityHidden(true)
@@ -311,6 +315,126 @@ struct DisclosureCard<Summary: View, Content: View>: View {
     }
 }
 
+
+/// A collapsible group of cards under one header.
+///
+/// Unlike `DisclosureCard` this adds no card chrome of its own, so the cards inside keep their own
+/// surface instead of nesting a card in a card. History and Overview use it to keep a long screen
+/// scannable: a reader sees the group titles first and opens only the one they came for.
+struct CollapsibleSection<Content: View>: View {
+    let title: String
+    var subtitle: String? = nil
+    var systemImage: String? = nil
+    var badge: String? = nil
+    var initiallyExpanded: Bool = false
+    private let content: Content
+
+    @State private var isExpanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+    @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotSemanticPalette) private var palette
+
+    init(
+        title: String,
+        subtitle: String? = nil,
+        systemImage: String? = nil,
+        badge: String? = nil,
+        initiallyExpanded: Bool = false,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.systemImage = systemImage
+        self.badge = badge
+        self.initiallyExpanded = initiallyExpanded
+        self.content = content()
+        self._isExpanded = State(initialValue: initiallyExpanded)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+            header
+            if isExpanded {
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
+                    content
+                }
+                .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    private var header: some View {
+        Button {
+            toggle()
+        } label: {
+            HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(TokenPilotDesign.Typography.glyph)
+                        .foregroundStyle(palette.text(.secondary))
+                        .accessibilityHidden(true)
+                }
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                    Text(title)
+                        .font(TokenPilotDesign.Typography.sectionTitle)
+                        .foregroundStyle(palette.text(.primary))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(TokenPilotDesign.Typography.caption)
+                            .foregroundStyle(palette.text(.secondary))
+                            .lineLimit(1)
+                    }
+                }
+
+                Spacer(minLength: TokenPilotDesign.Spacing.sm)
+
+                if let badge, !badge.isEmpty {
+                    Text(badge)
+                        .font(TokenPilotDesign.Typography.micro)
+                        .monospacedDigit()
+                        .foregroundStyle(palette.text(.secondary))
+                        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+                        .padding(.vertical, 2)
+                        .background(palette.surface(.chip), in: Capsule())
+                        .accessibilityHidden(true)
+                }
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(palette.text(.secondary))
+                    .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                    .accessibilityHidden(true)
+            }
+            .contentShape(Rectangle())
+            .frame(minHeight: 28)
+        }
+        .buttonStyle(.plain)
+        .focusable()
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel(badge.map { "\(title), \($0)" } ?? title)
+        .accessibilityValue(localized(isExpanded ? "Expanded" : "Collapsed", language: language))
+        .accessibilityHint(localized("Show or hide this group", language: language))
+    }
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    private func toggle() {
+        if reduceMotion {
+            isExpanded.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.18)) {
+                isExpanded.toggle()
+            }
+        }
+    }
+}
 
 struct TokenPilotSeparator: View {
     var axis: Axis = .horizontal
@@ -416,17 +540,17 @@ struct TokenPilotBrandMark: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
                 .fill(palette.surface(.cardElevated))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
                         .stroke(
                             palette.borderColor(),
                             lineWidth: palette.borderWidth()
                         )
                 )
             Text("TP")
-                .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                .font(.system(size: 11, weight: .heavy, design: .monospaced))
                 .foregroundStyle(palette.text(.primary))
             Circle()
                 .fill(palette.status(.calm))
@@ -466,6 +590,11 @@ private extension Provider {
         case .xai: return 0.28
         case .opencode: return 0.34
         case .kiro: return 0.40
+        case .jetbrains: return 0.46
+        case .minimax: return 0.52
+        case .zai: return 0.58
+        case .openrouter: return 0.64
+        case .commandcode: return 0.70
         }
     }
 }
@@ -511,6 +640,7 @@ struct MetricRow: View {
 struct ProgressLine: View {
     @Environment(\.tokenPilotLanguage) private var language
     @Environment(\.tokenPilotSemanticPalette) private var palette
+    @Environment(\.tokenPilotDifferentiateWithoutColor) private var differentiateWithoutColor
 
     let percent: Int?
     let color: Color?
@@ -525,7 +655,9 @@ struct ProgressLine: View {
                     ProgressTrack(palette: palette)
                     ProgressFill(
                         color: color ?? palette.status(.neutral),
-                        width: progressWidth(in: geo.size.width)
+                        width: progressWidth(in: geo.size.width),
+                        capHeight: progressHeight,
+                        hatched: differentiateWithoutColor
                     )
                 }
             }
@@ -589,11 +721,50 @@ struct ProgressLine: View {
     private struct ProgressFill: View {
         let color: Color
         let width: CGFloat
+        let capHeight: CGFloat
+        let hatched: Bool
 
         var body: some View {
-            Capsule()
-                .fill(color)
-                .frame(width: width)
+            ZStack {
+                Capsule()
+                    .fill(color)
+
+                if hatched {
+                    DiagonalHatch()
+                        .stroke(
+                            Color(white: 1.0).opacity(capHeight >= 5 ? 0.34 : 0.26),
+                            lineWidth: 1
+                        )
+                        .clipShape(Capsule())
+                } else {
+                    // Subtle top gloss for premium depth; keeps the fill readable.
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [Color(white: 1.0).opacity(0.22), Color.clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                }
+            }
+            .frame(width: width, height: capHeight)
+        }
+    }
+
+    /// Diagonal hatch used to convey progress without relying on color (Differentiate Without Color).
+    private struct DiagonalHatch: Shape {
+        func path(in rect: CGRect) -> Path {
+            var path = Path()
+            let spacing: CGFloat = 4
+            guard rect.width > 0, rect.height > 0 else { return path }
+            var x = rect.minX
+            while x <= rect.maxX + rect.height {
+                path.move(to: CGPoint(x: x, y: rect.maxY))
+                path.addLine(to: CGPoint(x: x - rect.height, y: rect.minY))
+                x += spacing
+            }
+            return path
         }
     }
 }
@@ -622,9 +793,16 @@ struct EmptyStateCard: View {
             HStack(spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(palette.text(.secondary))
+                    .foregroundStyle(palette.status(.goal))
                     .frame(width: 24, height: 24)
-                    .background(palette.surface(.cardMuted))
+                    .background(palette.status(.goal).opacity(palette.colorSchemeContrast == .increased ? 0.16 : 0.10))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous)
+                            .stroke(
+                                palette.status(.goal).opacity(palette.colorSchemeContrast == .increased ? 0.45 : 0.28),
+                                lineWidth: palette.borderWidth()
+                            )
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
                     .accessibilityHidden(true)
 
@@ -660,7 +838,7 @@ struct StatusBadge: View {
         HStack(spacing: TokenPilotDesign.Spacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.chipGlyph)
                     .accessibilityHidden(true)
             }
 
@@ -709,6 +887,19 @@ struct SemanticChip: View {
             case .danger: return .danger
             }
         }
+
+        /// Non-color glyph used when "Differentiate Without Color" is enabled so status is
+        /// communicated independently of hue.
+        var differentiationGlyph: String? {
+            switch self {
+            case .neutral: return "smallcircle.filled.circle"
+            case .truth: return "checkmark.seal"
+            case .action: return "arrow.right.circle"
+            case .success: return "checkmark.circle"
+            case .warning: return "exclamationmark.triangle"
+            case .danger: return "exclamationmark.octagon"
+            }
+        }
     }
 
     let label: String
@@ -717,6 +908,7 @@ struct SemanticChip: View {
     private let role: Role?
 
     @Environment(\.tokenPilotSemanticPalette) private var palette
+    @Environment(\.tokenPilotDifferentiateWithoutColor) private var differentiateWithoutColor
 
     init(label: String, systemImage: String? = nil, color: Color? = nil) {
         self.label = label
@@ -736,7 +928,11 @@ struct SemanticChip: View {
         HStack(spacing: TokenPilotDesign.Spacing.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 8, weight: .semibold))
+                    .font(TokenPilotDesign.Typography.chipGlyph)
+                    .accessibilityHidden(true)
+            } else if differentiateWithoutColor, let glyph = role?.differentiationGlyph {
+                Image(systemName: glyph)
+                    .font(TokenPilotDesign.Typography.chipGlyph.weight(.bold))
                     .accessibilityHidden(true)
             }
 
@@ -801,5 +997,32 @@ struct GlassCard<Content: View>: View {
                 LiquidGlassBackground(cornerRadius: cornerRadius, intensity: intensity, surface: surface)
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+    }
+}
+
+/// Live ticking countdown to a reset moment. Re-renders every second unless Reduce Motion is
+/// enabled; the view is hidden from VoiceOver because the parent card already announces the
+/// reset via its accessibility label, so ticks never spam the reader.
+struct LiveResetCountdown: View {
+    let resetAt: Date
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    var body: some View {
+        if reduceMotion {
+            Text(TokenPilotFormatters.countdown(until: resetAt))
+                .monospacedDigit()
+                .accessibilityHidden(true)
+        } else {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date))
+                    .monospacedDigit()
+                    .accessibilityHidden(true)
+            }
+        }
     }
 }

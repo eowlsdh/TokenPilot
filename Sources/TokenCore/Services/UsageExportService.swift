@@ -39,14 +39,16 @@ public final class UsageExportService {
         dataMode: String,
         format: UsageExportFormat,
         generatedAt: Date = Date(),
-        capacityAssessments: [CapacityAssessment] = []
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true,
+        sort: SortKind? = nil
     ) throws -> Data {
-        let exportUsage = sanitizedUsageForExport(usage)
+        let exportUsage = sanitizedUsageForExport(usage, now: generatedAt)
         switch format {
         case .json:
-            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments)
+            return try makeJSONData(usage: exportUsage, snapshots: snapshots, dataMode: dataMode, generatedAt: generatedAt, capacityAssessments: capacityAssessments, includesCost: includesCost, sort: sort)
         case .csv:
-            return makeCSVData(usage: exportUsage)
+            return makeCSVData(usage: exportUsage, includesCost: includesCost, sort: sort)
         }
     }
 
@@ -55,16 +57,51 @@ public final class UsageExportService {
         snapshots: [ProviderSnapshot],
         dataMode: String,
         generatedAt: Date = Date(),
-        capacityAssessments: [CapacityAssessment] = []
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true,
+        sort: SortKind? = nil
     ) throws -> Data {
-        let exportUsage = sanitizedUsageForExport(usage)
-        let payload = UsageExportPayload(
+        let payload = makeJSONPayload(
+            usage: usage,
+            snapshots: snapshots,
+            dataMode: dataMode,
+            generatedAt: generatedAt,
+            capacityAssessments: capacityAssessments,
+            includesCost: includesCost,
+            sort: sort
+        )
+        return try encodeJSONPayload(payload)
+    }
+
+    /// Encodes a pre-built payload struct, so callers can attach per-project groups
+    /// (`--instances` style) before serializing without a decode/re-encode round trip.
+    public func encodeJSONPayload(_ payload: UsageExportPayload) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(payload)
+    }
+
+    /// Builds the JSON export payload struct so callers can assemble multi-period
+    /// envelopes (`--sections` style) without decoding/re-encoding intermediate JSON.
+    public func makeJSONPayload(
+        usage: AggregatedUsage,
+        snapshots: [ProviderSnapshot],
+        dataMode: String,
+        generatedAt: Date = Date(),
+        capacityAssessments: [CapacityAssessment] = [],
+        includesCost: Bool = true,
+        sort: SortKind? = nil
+    ) -> UsageExportPayload {
+        let sanitized = sanitizedUsageForExport(usage, now: generatedAt)
+        let exportUsage = includesCost ? sanitized : costStripped(sanitized)
+        return UsageExportPayload(
             generatedAt: generatedAt,
             period: usage.period,
             dataMode: dataMode,
             metrics: exportUsage.metrics,
             sevenDayBars: exportUsage.sevenDayBars,
-            providerShare: exportUsage.providerShare,
+            providerShare: TokenPilotCLIService.sortedProviderShares(exportUsage.providerShare, sort: sort),
             snapshots: snapshots.map(SnapshotExport.init(snapshot:)),
             events: exportUsage.events.sorted(by: { $0.timestamp < $1.timestamp }).map(EventExport.init(event:)),
             capacity: capacityAssessments.isEmpty ? nil : CapacityExportSection(assessments: capacityAssessments),
@@ -79,22 +116,96 @@ public final class UsageExportService {
                 )
             }
         )
+    }
+
+    /// Encodes one export payload per requested period in a single envelope with a
+    /// totals object last (ccusage `--sections` style).
+    public func makeSectionsJSON(
+        payloads: [UsageExportPayload],
+        generatedAt: Date = Date(),
+        includesCost: Bool = true
+    ) throws -> Data {
+        let envelope = UsageExportEnvelope(
+            generatedAt: generatedAt,
+            sections: payloads,
+            totals: UsageExportTotals(
+                totalTokens: payloads.reduce(0) { $0 + $1.metrics.totalTokens },
+                requestCount: payloads.reduce(0) { $0 + $1.metrics.requestCount },
+                estimatedCostUSD: includesCost
+                    ? payloads.compactMap { $0.metrics.estimatedCostUSD > 0 ? $0.metrics.estimatedCostUSD : nil }.reduce(Decimal(0), +)
+                    : nil
+            )
+        )
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
-        return try encoder.encode(payload)
+        return try encoder.encode(envelope)
     }
 
-    private func sanitizedUsageForExport(_ usage: AggregatedUsage) -> AggregatedUsage {
+    private func sanitizedUsageForExport(_ usage: AggregatedUsage, now: Date = Date()) -> AggregatedUsage {
         let events = usage.events.filter(\.isWebQuotaComparable)
         let snapshots = Provider.allCases.map { provider in
             ProviderSnapshot(provider: provider, events: events.filter { $0.provider == provider })
         }
-        return AggregationService().aggregate(snapshots: snapshots, period: usage.period)
+        return AggregationService().aggregate(snapshots: snapshots, period: usage.period, now: now)
     }
 
-    public func makeCSVString(usage: AggregatedUsage) -> String {
-        let exportUsage = sanitizedUsageForExport(usage)
+    /// Returns a copy of the aggregated usage with every cost field blanked so
+    /// `--no-cost` exports never leak estimated cost figures.
+    private func costStripped(_ usage: AggregatedUsage) -> AggregatedUsage {
+        AggregatedUsage(
+            period: usage.period,
+            metrics: UsageMetrics(
+                totalTokens: usage.metrics.totalTokens,
+                inputTokens: usage.metrics.inputTokens,
+                outputTokens: usage.metrics.outputTokens,
+                cacheTokens: usage.metrics.cacheTokens,
+                requestCount: usage.metrics.requestCount,
+                estimatedCostUSD: 0,
+                mostUsedProvider: usage.metrics.mostUsedProvider,
+                busiestHour: usage.metrics.busiestHour
+            ),
+            sevenDayBars: usage.sevenDayBars,
+            providerShare: usage.providerShare.map { share in
+                ProviderShare(
+                    provider: share.provider,
+                    tokens: share.tokens,
+                    percent: share.percent,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil
+                )
+            },
+            events: usage.events.map { event in
+                var stripped = event
+                stripped.estimatedCostUSD = nil
+                return stripped
+            },
+            modelBreakdown: usage.modelBreakdown.map { share in
+                ModelUsageShare(
+                    provider: share.provider,
+                    model: share.model,
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil,
+                    tokenPercent: share.tokenPercent
+                )
+            },
+            projectBreakdown: usage.projectBreakdown.map { share in
+                ProjectUsageShare(
+                    provider: share.provider,
+                    label: share.label,
+                    tokens: share.tokens,
+                    requestCount: share.requestCount,
+                    estimatedCostUSD: nil,
+                    tokenPercent: share.tokenPercent
+                )
+            }
+        )
+    }
+
+    public func makeCSVString(usage: AggregatedUsage, includesCost: Bool = true, sort: SortKind? = nil) -> String {
+        let sanitized = sanitizedUsageForExport(usage)
+        let exportUsage = includesCost ? sanitized : costStripped(sanitized)
         var rows: [[String]] = [[
             "row_type",
             "period",
@@ -133,7 +244,7 @@ public final class UsageExportService {
         rows.append(summaryRow(period: exportUsage.period, label: "output", outputTokens: metrics.outputTokens))
         rows.append(summaryRow(period: exportUsage.period, label: "cache", cacheTokens: metrics.cacheTokens))
 
-        for share in exportUsage.providerShare {
+        for share in TokenPilotCLIService.sortedProviderShares(exportUsage.providerShare, sort: sort) {
             rows.append([
                 "provider_share",
                 exportUsage.period.rawValue,
@@ -188,8 +299,8 @@ public final class UsageExportService {
         return rows.map { $0.map(Self.escapeCSV).joined(separator: ",") }.joined(separator: "\n") + "\n"
     }
 
-    private func makeCSVData(usage: AggregatedUsage) -> Data {
-        Data(makeCSVString(usage: usage).utf8)
+    private func makeCSVData(usage: AggregatedUsage, includesCost: Bool = true, sort: SortKind? = nil) -> Data {
+        Data(makeCSVString(usage: usage, includesCost: includesCost, sort: sort).utf8)
     }
 
     private func summaryRow(
@@ -241,6 +352,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
     public var snapshots: [SnapshotExport]
     public var events: [EventExport]
     public var capacity: CapacityExportSection?
+    public var projects: [ExportProjectGroup]?
 
     private enum CodingKeys: String, CodingKey {
         case schemaVersion
@@ -254,6 +366,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         case snapshots
         case events
         case capacity
+        case projects
     }
 
     public init(
@@ -268,7 +381,8 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         events: [EventExport],
         capacity: CapacityExportSection? = nil,
         localActivity: LocalActivityExport? = nil,
-        modelBreakdown: [ModelUsageShare] = []
+        modelBreakdown: [ModelUsageShare] = [],
+        projects: [ExportProjectGroup]? = nil
     ) {
         let resolvedLocalActivity = localActivity ?? LocalActivityExport(
             sevenDayBars: sevenDayBars,
@@ -286,6 +400,7 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         self.snapshots = snapshots
         self.events = events
         self.capacity = capacity
+        self.projects = projects
     }
 
     public init(from decoder: Decoder) throws {
@@ -306,6 +421,17 @@ public struct UsageExportPayload: Codable, Equatable, Sendable {
         snapshots = try container.decodeIfPresent([SnapshotExport].self, forKey: .snapshots) ?? []
         events = try container.decodeIfPresent([EventExport].self, forKey: .events) ?? []
         capacity = try container.decodeIfPresent(CapacityExportSection.self, forKey: .capacity)
+        projects = try container.decodeIfPresent([ExportProjectGroup].self, forKey: .projects)
+    }
+}
+
+public struct ExportProjectGroup: Codable, Equatable, Sendable {
+    public var project: String
+    public var payload: UsageExportPayload
+
+    public init(project: String, payload: UsageExportPayload) {
+        self.project = project
+        self.payload = payload
     }
 }
 
@@ -469,4 +595,30 @@ public struct EventExport: Codable, Equatable, Sendable {
 
 private func decimalString(_ value: Decimal) -> String {
     NSDecimalNumber(decimal: value).stringValue
+}
+
+/// Multi-period export envelope (ccusage `--sections` style): one export payload per
+/// requested period plus a totals object last, mirroring the report/stats envelopes.
+public struct UsageExportEnvelope: Codable, Equatable, Sendable {
+    public var generatedAt: Date
+    public var sections: [UsageExportPayload]
+    public var totals: UsageExportTotals
+
+    public init(generatedAt: Date, sections: [UsageExportPayload], totals: UsageExportTotals) {
+        self.generatedAt = generatedAt
+        self.sections = sections
+        self.totals = totals
+    }
+}
+
+public struct UsageExportTotals: Codable, Equatable, Sendable {
+    public var totalTokens: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
+
+    public init(totalTokens: Int, requestCount: Int, estimatedCostUSD: Decimal?) {
+        self.totalTokens = totalTokens
+        self.requestCount = requestCount
+        self.estimatedCostUSD = estimatedCostUSD
+    }
 }

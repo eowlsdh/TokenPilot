@@ -20,7 +20,7 @@
 
 | 화면 | 역할 |
 |---|---|
-| **메뉴바** | 위에는 provider 이름, 아래에는 남은 퍼센트를 표시합니다. provider별 표시 여부를 선택하고 **개별 항목** 또는 **통합 항목**으로 배치할 수 있습니다. |
+| **메뉴바** | 위에는 provider 이름, 아래에는 남은 퍼센트를 표시합니다. provider별 표시 여부를 선택하고 **개별 항목** 또는 **통합 항목**으로 배치할 수 있습니다. 개별 항목은 상세/간략 레이아웃에도 적용되어 기본 provider와 보조 provider가 각각 별도 항목이 됩니다. **메뉴 막대 너비**(전체/표준/좁게)로 차지하는 폭을 제한할 수 있으며, 좁힐 때는 초기화 카운트다운 → 창 표시 → 두 번째 값 순으로 통째로 생략하고 단어를 잘라내지 않습니다. |
 | **개요** | 현재 남은 한도, provider별 수용량 상태, DeepSeek topped-up balance, 오늘 토큰, 알림 상태를 보여주는 capacity-first 화면입니다. |
 | **기록** | 저장된 이벤트와 최신 한도 증거 타임라인을 보여주며, 로컬 활동 집계는 quota가 아닌 export-only JSON/CSV 데이터로만 제공합니다. |
 | **설정** | Provider Diagnostics, Codex Limit Hints Connector, DeepSeek balance/API key 설정, Grok 로컬 context diagnostics, manual fallback, 알림, Telegram/Discord, 언어, 설정 가이드, privacy 경계를 제공합니다. |
@@ -32,9 +32,17 @@
 - **심플한 provider 퍼센트**: 선택한 AI별 남은 비율을 2단 `NSStatusItem`으로 항상 확인하며, 각 항목을 독립 배치하거나 하나로 합칠 수 있습니다.
 - **남은 한도 중심 UI**: 사용한 비율보다 “얼마나 남았는지”를 먼저 보여줍니다.
 - **Claude / Codex / Antigravity(레거시 Gemini telemetry) / DeepSeek / Grok/xAI 통합**: 각 provider의 로컬 메타데이터, 선택형 balance 신호, Grok 로컬 context 메타데이터를 한 화면에 정리합니다.
+- **Command Code**: `~/.commandcode/projects/<프로젝트>/<세션>.jsonl` 세션 기록에서 턴별 토큰과 비용을 읽습니다. `auth.json`은 읽지 않으며, 5시간·7일 롤링 금액 한도는 Command Code 자체 `/usage`에만 공개되므로 로컬 지출은 활동으로만 표시합니다.
 - **정직한 confidence label**: official, local, manual, estimated, experimental, limit hint를 구분합니다.
 - **Provider Diagnostics**: 연결 상태, confidence, 마지막 확인 시간, 다음 조치를 표시합니다.
 - **History / Export**: 기록 탭은 저장된 이벤트와 최신 한도 증거 타임라인을 보여주고, 로컬 활동 집계는 quota가 아닌 데이터로 JSON/CSV export에만 포함합니다.
+- **CLI export / summary**: `TokenPilot export --format json|csv`, `TokenPilot summary`로 터미널에서 로컬 사용량을 출력합니다. GUI export와 동일한 redaction 규칙을 따릅니다.
+- **메뉴 바 추세선/잔여 막대**: provider 지표 블록에 저장된 한도 이력 기반 미니 추세선, 지금 남은 비율을 채운 막대, 또는 아무것도 표시하지 않기 중 하나를 설정에서 고릅니다.
+- **터미널 상태 표시줄**: `TokenPilot statusline`이 모델, 가장 빠듯한 남은 한도와 리셋 카운트다운, 오늘 토큰·비용을 한 줄로 출력합니다(ccusage statusline 방식).
+- **일일 목표**: 로컬 일일 토큰 목표(설정 > 일반)를 Overview에서 진행률 바와 함께 확인합니다. 로컬 활동임을 명시합니다.
+- **주간 요약 알림**: 옵트인 시 TokenPilot이 실행되는 동안 매주 월요일 09:00에 이번 주 로컬 사용량 요약을 macOS 알림으로 보냅니다.
+- **새로고침 간격 설정**: 로컬 소스를 다시 읽는 주기를 15초~15분 사이에서 설정할 수 있으며, 메뉴 막대 틱은 계속 실시간으로 동작합니다. 잠자기에서 깨어나면 잠들기 전 값을 그대로 두지 않고 즉시 새로고침합니다.
+- **전역 단축키(⌘⇧Space)**: 옵트인 설정으로 어디서든 팝오버를 열 수 있고, 메뉴 막대 우클릭 메뉴에서 **요약 복사**가 가능합니다.
 - **알림**: macOS local notification + 선택형 Telegram/Discord threshold/reset alert.
 - **DeepSeek balance**: 사용자가 API key를 저장한 경우 공식 `/user/balance`의 `topped_up_balance`를 native currency로 표시하고, 수동 fallback과 $5 low-balance alert를 제공합니다.
 - **Grok/xAI source**: 로컬 context는 `~/.grok/sessions/**/signals.json`의 숫자 메타데이터만 읽습니다(`auth.json`/token/prompt/response는 읽지 않음). 별도로 기본 OFF인 EXPERIMENTAL/UNOFFICIAL OAuth 주간 기능은 명시적 동의 후에만 고정 경로 `~/.grok/auth.json`에서 선택된 access token과 만료 시각만 읽어 1회 billing 요청에 쓰고, token은 메모리에만 두며 표시·로그·저장·진단·export하지 않습니다. 수동 주간 값이 우선합니다.
@@ -188,6 +196,31 @@ swift build -Xswiftc -warnings-as-errors
 make verify
 # build + tests + release bundle smoke
 ```
+
+CLI 사용:
+
+```bash
+TokenPilot summary
+# 오늘 로컬 사용량 요약 출력
+
+TokenPilot export --format csv --period today --out usage.csv
+# 오늘 사용량을 CSV 파일로 내보내기
+
+TokenPilot export --period today --capacity
+# 시리즈별 최신 capacity 증거를 JSON에 포함해 내보내기
+
+TokenPilot statusline
+# 에디터 상태 표시줄용 한 줄 출력
+
+TokenPilot statusline --components capacity,block,burn --provider claude --no-color
+# 표시 항목과 순서 지정, provider 한정, 색상 제거
+```
+
+`statusline`은 `모델 | 남은 한도 | 오늘 토큰 | 오늘 비용`을 한 줄로 출력합니다(ccusage `statusline` 방식). 호출자가 세션 JSON을 stdin으로 넘기면 모델 이름과 세션 비용만 사용하고, 없으면 저장된 로컬 사용량만으로 렌더링합니다. `--components`는 `model,capacity,today,cost,block,burn,session` 중에서 표시 항목과 순서를 정하고, `--provider`는 capacity 구간과 로컬 합계를 한 provider로 제한하며, `--timezone`은 `today`와 5시간 블록의 기준 날짜를 정하고, `--no-color`는 ANSI 색상을 끕니다(`NO_COLOR` 환경 변수도 동일). 퍼센트로 표시되는 값은 신선한 provider 보고 quota 창뿐이며, 신선도 정책을 넘긴 증거는 현재 값으로 위장하지 않고 `·S`로 표시됩니다. 경로·프로젝트 라벨·세션 식별자는 출력되지 않습니다.
+
+Claude Code에서 쓰려면 먼저 이 명령을 상태 표시줄 명령으로 지정한 뒤 **Settings → Setup Guide → Connect Claude Code**의 브리지를 설치하세요. 브리지가 Claude 한도를 수집하면서 기존에 설정돼 있던 명령을 이어 실행하므로 둘 다 동작합니다. **Settings → Setup Guide → 터미널 상태 표시줄**에서 현재 빌드에 맞는 명령을 복사할 수 있습니다.
+
+`export`는 `--format json|csv`(기본 `json`), `--period today|last7Days|thisMonth`(기본 `last7Days`), `--out <path>`, `--capacity`(최신 capacity 증거 포함)를 지원합니다. 출력에는 프롬프트·응답·로컬 경로·채팅 ID·웹훅·provider 자격 증명이 포함되지 않습니다.
 
 앱 번들 생성:
 

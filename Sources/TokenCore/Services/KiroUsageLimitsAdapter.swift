@@ -230,7 +230,10 @@ public struct KiroUsageLimitsObserver: Sendable {
 
     private static func percentUsed(in object: [String: Any]) -> Int? {
         if let direct = doubleValue(object["percent_used"]) ?? doubleValue(object["percentUsed"]) {
-            return Int(direct.rounded())
+            // `percent_used` is normally an integer percentage, but a deployment may report a
+            // fraction (0..1) instead. Normalize like the codex session parser so 0.5 means 50%.
+            let normalized = direct > 0 && direct < 1 ? direct * 100 : direct
+            return Int(normalized.rounded())
         }
         // Derive from raw counts when the API reports usage and limit instead of a percentage.
         let used = doubleValue(object["currentUsageWithPrecision"])

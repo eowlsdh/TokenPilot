@@ -135,8 +135,17 @@ else
         done
     fi
 
+    # Entitlements are selectable so the sandboxed App Store configuration can be built and tested
+    # locally: TOKENPILOT_ENTITLEMENTS=Resources/TokenPilot-AppStore.entitlements ./build.sh
+    ENTITLEMENTS_FILE="${TOKENPILOT_ENTITLEMENTS:-$PROJECT_DIR/Resources/TokenPilot.entitlements}"
+    ENTITLEMENTS_ARGS=()
+    if [ -f "$ENTITLEMENTS_FILE" ]; then
+        ENTITLEMENTS_ARGS=(--entitlements "$ENTITLEMENTS_FILE")
+        echo "   entitlements: $(basename "$ENTITLEMENTS_FILE")"
+    fi
+
     if [ -n "$SIGN_IDENTITY" ] && codesign --force --deep --options runtime --timestamp=none \
-        --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null; then
+        "${ENTITLEMENTS_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null; then
         SIGN_AUTHORITY="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^Authority=' | head -1 | cut -d= -f2-)"
         SIGN_TEAM="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^TeamIdentifier=' | head -1 | cut -d= -f2-)"
         echo "   서명 신원: ${SIGN_AUTHORITY:-unknown}"

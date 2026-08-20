@@ -8,3 +8,21 @@ description = "Historical completion checklist prose; gitleaks treats the creden
 commits = ["e431acb604693d83c9bebd5471c8b87a9c6a5a91"]
 paths = ['''COMPLETION_REPORT\.md$''']
 regexes = ['''(?i)credentials:\s+[a-z]+''']
+
+[[allowlists]]
+description = "Synthetic credential-shaped strings used only in TokenPilotPrivacyRedactor tests to prove redaction."
+paths = ['''Tests/OpenCodeKiroAdapterTests\.swift$''']
+regexes = [
+  '''sk-(live|proj|Y7B)-[A-Za-z0-9-]{6,}''',
+  '''api_key=sk-[A-Za-z0-9-]{6,}''',
+  '''key=sk-[A-Za-z0-9-]{6,}''',
+  '''access_token=[A-Za-z0-9-]{6,}''',
+  '''refresh_token=[A-Za-z0-9-]{6,}'''
+]
+
+[[allowlists]]
+description = "Local-only tool state directories (.gjc, .omo) are gitignored and never committed; their SDK session files hold machine-local tokens."
+paths = [
+  '''\.gjc/''',
+  '''\.omo/'''
+]

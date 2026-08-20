@@ -54,6 +54,89 @@ final class OpenCodeAdapterTests: XCTestCase {
         XCTAssertEqual(snapshot.events.count, 1)
     }
 
+    func testAttachesWorkspaceFolderLabelFromSessionTable() async throws {
+        let database = directory.appendingPathComponent("opencode.db")
+        let now = Date()
+        try makeSessionAwareDatabase(at: database, messages: [
+            (sessionID: "ses_a", payload: Self.assistantPayload(at: now)),
+            (sessionID: "ses_b", payload: Self.assistantPayload(at: now.addingTimeInterval(-60)))
+        ])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 2)
+        let labels = Set(snapshot.events.compactMap(\.projectLabel))
+        XCTAssertEqual(labels, ["TokenPilot", "OtherProject"])
+        XCTAssertTrue(snapshot.events.allSatisfy { $0.projectLabel != nil })
+        XCTAssertTrue(snapshot.events.allSatisfy { !($0.projectLabel?.contains("/") ?? false) },
+                      "Labels must be workspace folder names, never full paths.")
+    }
+
+    func testMissingSessionTableLeavesProjectLabelNil() async throws {
+        let database = directory.appendingPathComponent("opencode.db")
+        try makeDatabase(at: database, table: "message", payloads: [Self.assistantPayload(at: Date())])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1)
+        XCTAssertNil(snapshot.events.first?.projectLabel)
+    }
+
+    func testDatabaseReadKeepsDistinctParallelMessagesRoundedToTheSameSecond() async throws {
+        let now = Date()
+        let second = floor(now.timeIntervalSince1970)
+        let database = directory.appendingPathComponent("opencode.db")
+        // 0.2s and the previous second's 0.9s both round to `second`; a content-based dedup key
+        // merged them and dropped one real usage event. The read path dedups by message id, so
+        // both must survive.
+        let stamp1 = Int64((second + 0.2) * 1000)
+        let stamp2 = Int64((second - 0.1) * 1000)
+        let payload = Self.assistantPayload(at: Date(timeIntervalSince1970: second))
+        try makeDatabase(at: database, table: "message", payloads: [payload, payload], timestamps: [stamp1, stamp2])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 2, "Distinct parallel messages must not be merged by second-rounding.")
+        XCTAssertEqual(snapshot.todayTokens, 3_200)
+    }
+
+    func testCrossDatabaseReadsDeduplicateByRealMessageID() async throws {
+        let first = directory.appendingPathComponent("opencode.db")
+        let second = directory.appendingPathComponent("opencode-next.db")
+        let payload = Self.assistantPayload(at: Date())
+        // Both rows are inserted with the same id ("row-0") — the same message observed through
+        // overlapping databases must be read exactly once.
+        try makeDatabase(at: first, table: "message", payloads: [payload])
+        try makeDatabase(at: second, table: "session_message", payloads: [payload])
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [first, second], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1, "Same message id across databases must be read once.")
+        XCTAssertEqual(snapshot.todayTokens, 1_600)
+    }
+
+    func testDatabaseReadIgnoresMessagesOutsideRetentionWindow() async throws {
+        let now = Date()
+        let database = directory.appendingPathComponent("opencode.db")
+        let old = Int64((now.timeIntervalSince1970 - 46 * 24 * 3_600) * 1000)
+        let recent = Int64(now.timeIntervalSince1970 * 1000)
+        try makeDatabase(
+            at: database,
+            table: "message",
+            payloads: [Self.assistantPayload(at: now), Self.assistantPayload(at: now)],
+            timestamps: [old, recent]
+        )
+
+        let snapshot = await OpenCodeSessionAdapter(databaseURLs: [database], legacyMessageRoots: [])
+            .snapshot(settings: Self.enabledSettings())
+
+        XCTAssertEqual(snapshot.events.count, 1, "Rows older than the 44-day retention window must not be read.")
+    }
+
     func testOpenCodeUsageIsMeasuredNotEstimated() async throws {
         let database = directory.appendingPathComponent("opencode.db")
         try makeDatabase(at: database, table: "message", payloads: [Self.assistantPayload(at: Date())])
@@ -165,7 +248,60 @@ final class OpenCodeAdapterTests: XCTestCase {
         """
     }
 
-    private func makeDatabase(at url: URL, table: String, payloads: [String]) throws {
+    /// Builds a DB matching opencode's session-aware schema: a `session` table with
+    /// `directory`, plus a `message` table whose rows reference `session_id`.
+    private func makeSessionAwareDatabase(
+        at url: URL,
+        messages: [(sessionID: String, payload: String)]
+    ) throws {
+        var handle: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
+              let handle else {
+            if let handle { sqlite3_close_v2(handle) }
+            throw XCTSkip("Unable to create SQLite fixture")
+        }
+        defer { sqlite3_close_v2(handle) }
+
+        let sessionDDL = "CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT NOT NULL, title TEXT NOT NULL);"
+        XCTAssertEqual(sqlite3_exec(handle, sessionDDL, nil, nil, nil), SQLITE_OK)
+        let messageDDL = "CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT NOT NULL, data TEXT NOT NULL, time_created INTEGER NOT NULL);"
+        XCTAssertEqual(sqlite3_exec(handle, messageDDL, nil, nil, nil), SQLITE_OK)
+
+        let sessionSQL = "INSERT INTO session (id, directory, title) VALUES (?, ?, ?);"
+        for (id, directory, title) in [
+            ("ses_a", "/Users/test/TokenPilot", "A"),
+            ("ses_b", "/Users/test/OtherProject", "B")
+        ] {
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(handle, sessionSQL, -1, &statement, nil), SQLITE_OK)
+            let bound = try XCTUnwrap(statement)
+            sqlite3_bind_text(bound, 1, id, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 2, directory, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 3, title, -1, sqliteTransient)
+            XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
+            sqlite3_finalize(bound)
+        }
+
+        let messageSQL = "INSERT INTO message (id, session_id, data, time_created) VALUES (?, ?, ?, ?);"
+        for (index, message) in messages.enumerated() {
+            var statement: OpaquePointer?
+            XCTAssertEqual(sqlite3_prepare_v2(handle, messageSQL, -1, &statement, nil), SQLITE_OK)
+            let bound = try XCTUnwrap(statement)
+            sqlite3_bind_text(bound, 1, "msg-\(index)", -1, sqliteTransient)
+            sqlite3_bind_text(bound, 2, message.sessionID, -1, sqliteTransient)
+            sqlite3_bind_text(bound, 3, message.payload, -1, sqliteTransient)
+            sqlite3_bind_int64(bound, 4, Int64(Date().timeIntervalSince1970 * 1_000))
+            XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
+            sqlite3_finalize(bound)
+        }
+    }
+
+    private func makeDatabase(
+        at url: URL,
+        table: String,
+        payloads: [String],
+        timestamps: [Int64]? = nil
+    ) throws {
         var handle: OpaquePointer?
         guard sqlite3_open_v2(url.path, &handle, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil) == SQLITE_OK,
               let handle else {
@@ -184,7 +320,8 @@ final class OpenCodeAdapterTests: XCTestCase {
             let bound = try XCTUnwrap(statement)
             sqlite3_bind_text(bound, 1, "row-\(index)", -1, sqliteTransient)
             sqlite3_bind_text(bound, 2, payload, -1, sqliteTransient)
-            sqlite3_bind_int64(bound, 3, Int64(Date().timeIntervalSince1970 * 1_000))
+            let stamp = timestamps?[index] ?? Int64(Date().timeIntervalSince1970 * 1_000)
+            sqlite3_bind_int64(bound, 3, stamp)
             XCTAssertEqual(sqlite3_step(bound), SQLITE_DONE)
             sqlite3_finalize(bound)
         }
@@ -514,10 +651,11 @@ final class ModelBreakdownTests: XCTestCase {
 
 final class SevenDayTrendTests: XCTestCase {
     func testSevenDayBarsAlwaysCoverSevenDaysEndingToday() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 500), Self.event(daysAgo: 3, tokens: 200)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 500, relativeTo: now), Self.event(daysAgo: 3, tokens: 200, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.count, 7)
         XCTAssertEqual(usage.sevenDayBars.map(\.dayLabel).count, Set(usage.sevenDayBars.map(\.dayLabel)).count,
@@ -526,20 +664,22 @@ final class SevenDayTrendTests: XCTestCase {
     }
 
     func testDaysWithoutActivityStayZeroRatherThanMissing() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 100)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 100, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.filter { $0.tokens == 0 }.count, 6)
         XCTAssertEqual(usage.sevenDayBars.last?.tokens, 100, "today is the trailing bar")
     }
 
     func testTrendIgnoresEventsOutsideTheSevenDayWindow() {
+        let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
-        snapshot.events = [Self.event(daysAgo: 0, tokens: 50), Self.event(daysAgo: 30, tokens: 9_000)]
+        snapshot.events = [Self.event(daysAgo: 0, tokens: 50, relativeTo: now), Self.event(daysAgo: 30, tokens: 9_000, relativeTo: now)]
 
-        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days)
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, now: now)
 
         XCTAssertEqual(usage.sevenDayBars.reduce(0) { $0 + $1.tokens }, 50)
     }
@@ -548,8 +688,8 @@ final class SevenDayTrendTests: XCTestCase {
         XCTAssertEqual(DailyUsageBar(dayLabel: "Mon", tokens: -5).tokens, 0)
     }
 
-    private static func event(daysAgo: Int, tokens: Int) -> UsageEvent {
-        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: Date()) ?? Date()
+    private static func event(daysAgo: Int, tokens: Int, relativeTo now: Date) -> UsageEvent {
+        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: now) ?? now
         return UsageEvent(
             provider: .opencode,
             model: "opencode/test",
@@ -583,7 +723,13 @@ final class DebugFixtureFreshnessTests: XCTestCase {
     }
 
     func testEventsAnchoredLikeTheFixturePopulateEveryHistoryPeriod() {
-        let anchor = Date().addingTimeInterval(-300)
+        let now = Date()
+        // Anchor inside today without landing in the future: the max of today's
+        // midnight and 5 minutes ago. Just after midnight (00:00-00:05) a naive
+        // `now - 300s` falls into the previous day; a fixed midnight+1h anchor
+        // would be in the future and get filtered out by the aggregator.
+        let startOfToday = Calendar.current.startOfDay(for: now)
+        let anchor = max(startOfToday, now.addingTimeInterval(-300))
         var snapshot = ProviderSnapshot(provider: .claude, dataSource: .officialStatusline)
         snapshot.events = [
             Self.event(at: anchor, tokens: 5_000, model: "claude-sonnet"),
@@ -592,10 +738,10 @@ final class DebugFixtureFreshnessTests: XCTestCase {
         ]
         let aggregator = AggregationService()
 
-        let today = aggregator.aggregate(snapshots: [snapshot], period: .today)
+        let today = aggregator.aggregate(snapshots: [snapshot], period: .today, now: now)
         XCTAssertEqual(today.events.count, 1, "fixture QA must not show an empty Today screen")
 
-        let week = aggregator.aggregate(snapshots: [snapshot], period: .last7Days)
+        let week = aggregator.aggregate(snapshots: [snapshot], period: .last7Days, now: now)
         XCTAssertEqual(week.events.count, 3)
         XCTAssertEqual(week.metrics.totalTokens, 10_000)
         XCTAssertTrue(week.sevenDayBars.contains { $0.tokens > 0 }, "trend card needs at least one non-zero bar")
@@ -931,6 +1077,22 @@ final class KiroUsageLimitsTests: XCTestCase {
         }
     }
 
+    /// A `percent_used`/`percentUsed` reported as a fraction (0..1) must be treated as a percentage
+    /// rather than collapsing to 0%, matching how the codex session parser interprets fractions.
+    func testParsesPercentUsedAsFractionWithoutCollapsingToZero() throws {
+        let now = Date()
+
+        let snake = try XCTUnwrap(#"{"limits":[{"percent_used":0.5}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(snake, now: now)?.usedPercent, 50)
+
+        let camel = try XCTUnwrap(#"{"limits":[{"percentUsed":0.37}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(camel, now: now)?.usedPercent, 37)
+
+        // Integer percentages stay untouched.
+        let integer = try XCTUnwrap(#"{"limits":[{"percent_used":0}]}"#.data(using: .utf8))
+        XCTAssertEqual(KiroUsageLimitsObserver.parse(integer, now: now)?.usedPercent, 0)
+    }
+
     func testCredentialExtractionIgnoresRefreshTokenAndOtherFields() throws {
         let envelope = #"{"access_token":"AT","refresh_token":"RT","expires_at":"2030-01-01T00:00:00Z","provider":"google","profile_arn":"arn:aws:codewhisperer:us-east-1:1:profile/X"}"#
         let credential = try XCTUnwrap(KiroLocalBearerTokenLoader.extractCredential(from: envelope))
@@ -1010,15 +1172,20 @@ private final class SpyOpenCodeCredentialLoader: OpenCodeCredentialLoading, @unc
 }
 
 private struct StubOpenCodeProbe: OpenCodeRateLimitProbing {
-    let headers: [String: String]
-    func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason> {
-        .success(headers)
+    let data: Data
+    func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason> {
+        .success(data)
     }
 }
 
+private func usagePayload(_ windows: [String: [String: Any]]) -> Data {
+    let payload: [String: Any] = ["usage": windows]
+    return try! JSONSerialization.data(withJSONObject: payload)
+}
+
 final class OpenCodeRateLimitTests: XCTestCase {
-    /// opencode exposes quota only through response headers, so the probe is opt-in: without consent
-    /// nothing reads the token store and no request is sent.
+    /// opencode quota is provider-reported, so the probe is opt-in: without consent nothing reads
+    /// the token store and no request is sent.
     func testConsentGateBlocksTheCredentialReadAndProbe() async {
         let spy = SpyOpenCodeCredentialLoader()
         var settings = AppSettings()
@@ -1027,7 +1194,7 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { spy },
-            makeProbe: { StubOpenCodeProbe(headers: [:]) }
+            makeProbe: { StubOpenCodeProbe(data: Data()) }
         ).observe(settings: settings)
 
         XCTAssertFalse(spy.loaded, "no consent must mean no credential read and no probe request")
@@ -1041,39 +1208,51 @@ final class OpenCodeRateLimitTests: XCTestCase {
         XCTAssertFalse(AppSettings().openCode.rateLimitProbeEnabled, "default must be off")
     }
 
-    func testParsesStandardAndPrefixedRateLimitHeaders() {
+    func testParsesOfficialUsageAPIWindows() {
         let now = Date()
+        let reset = "2026-08-15T12:00:00+09:00"
+        let data = usagePayload([
+            "rolling": ["status": "ok", "percent": 19.5, "resetsAt": reset],
+            "weekly": ["status": "ok", "percent": 29.7, "resetsAt": reset],
+            "monthly": ["status": "ok", "percent": 25.0, "resetsAt": reset]
+        ])
 
-        XCTAssertEqual(
-            OpenCodeRateLimitObserver.parse(headers: ["ratelimit-limit": "1000", "ratelimit-remaining": "250"], now: now)?.usedPercent,
-            75
-        )
-        XCTAssertEqual(
-            OpenCodeRateLimitObserver.parse(headers: ["x-ratelimit-limit": "10", "x-ratelimit-remaining": "3"], now: now)?.usedPercent,
-            70
-        )
-        XCTAssertNil(OpenCodeRateLimitObserver.parse(headers: [:], now: now))
-        XCTAssertNil(
-            OpenCodeRateLimitObserver.parse(headers: ["ratelimit-limit": "0", "ratelimit-remaining": "0"], now: now),
-            "a zero limit cannot yield a percentage"
-        )
+        let limit = OpenCodeRateLimitObserver.parse(data: data, now: now)
+        XCTAssertEqual(limit?.rolling?.usedPercent, 20)
+        XCTAssertEqual(limit?.weekly?.usedPercent, 30)
+        XCTAssertEqual(limit?.monthly?.usedPercent, 25)
+        XCTAssertNotNil(limit?.monthly?.resetAt)
     }
 
-    func testResetAcceptsBothSecondsRemainingAndUnixTimestamps() throws {
+    func testParseSkipsNonOKAndMissingWindowsButKeepsValidOnes() {
         let now = Date()
+        let data = usagePayload([
+            "rolling": ["status": "rate-limited"],
+            "weekly": ["status": "ok", "percent": 50],
+            "monthly": ["nope": true]
+        ])
 
-        let relative = try XCTUnwrap(OpenCodeRateLimitObserver.parse(
-            headers: ["ratelimit-limit": "10", "ratelimit-remaining": "5", "ratelimit-reset": "3600"],
-            now: now
-        ))
-        XCTAssertNotNil(relative.resetAt)
-        XCTAssertGreaterThan(try XCTUnwrap(relative.resetAt), now)
+        let limit = OpenCodeRateLimitObserver.parse(data: data, now: now)
+        XCTAssertNil(limit?.rolling, "non-ok windows must be dropped")
+        XCTAssertEqual(limit?.weekly?.usedPercent, 50)
+        XCTAssertNil(limit?.monthly)
+    }
 
-        let absolute = try XCTUnwrap(OpenCodeRateLimitObserver.parse(
-            headers: ["ratelimit-limit": "10", "ratelimit-remaining": "5", "ratelimit-reset": "\(Int(now.timeIntervalSince1970) + 7_200)"],
-            now: now
-        ))
-        XCTAssertNotNil(absolute.resetAt)
+    func testParseRejectsMalformedPayloads() {
+        let now = Date()
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: Data("not json".utf8), now: now))
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: Data("{}".utf8), now: now))
+        XCTAssertNil(OpenCodeRateLimitObserver.parse(data: usagePayload(["rolling": ["status": "ok", "percent": "abc"]]), now: now))
+    }
+
+    func testResetParsesOffsetISOTimestamp() throws {
+        let now = Date()
+        let reset = "2026-08-15T03:00:00Z"
+        let data = usagePayload([
+            "weekly": ["status": "ok", "percent": 40, "resetsAt": reset]
+        ])
+        let limit = try XCTUnwrap(OpenCodeRateLimitObserver.parse(data: data, now: now))
+        XCTAssertEqual(limit.weekly?.resetAt, ISO8601DateFormatter().date(from: reset))
     }
 
     func testExpiredTokenReportsAnActionableReason() async {
@@ -1088,7 +1267,7 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { ExpiredLoader() },
-            makeProbe: { StubOpenCodeProbe(headers: [:]) }
+            makeProbe: { StubOpenCodeProbe(data: Data()) }
         ).observe(settings: settings)
 
         guard case .failure(let reason) = result else { return XCTFail("expected failure") }
@@ -1105,19 +1284,25 @@ final class OpenCodeRateLimitTests: XCTestCase {
         snapshot.updatedAt = now
         snapshot.todayTokens = 5_000
         snapshot = OpenCodeSessionAdapter.applyingRateLimit(
-            OpenCodeRateLimit(usedPercent: 75, resetAt: now.addingTimeInterval(3_600), observedAt: now),
+            OpenCodeRateLimit(
+                rolling: OpenCodeRateLimitWindow(usedPercent: 60, resetAt: now.addingTimeInterval(3_600)),
+                weekly: OpenCodeRateLimitWindow(usedPercent: 75, resetAt: now.addingTimeInterval(86_400)),
+                monthly: OpenCodeRateLimitWindow(usedPercent: 50, resetAt: now.addingTimeInterval(2_592_000)),
+                observedAt: now
+            ),
             to: snapshot
         )
 
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 60)
         XCTAssertEqual(snapshot.weekly?.usedPercent, 75)
-        XCTAssertEqual(snapshot.primaryUsedPercent.map { 100 - $0 }, 25)
+        XCTAssertEqual(snapshot.monthly?.usedPercent, 50)
         XCTAssertEqual(snapshot.confidence, .high)
 
         let observations = CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now)
-        let quota = observations.filter { $0.seriesID.providerWindowID == "rate-limit" }
-        XCTAssertEqual(quota.count, 1)
-        XCTAssertTrue(quota.allSatisfy { $0.comparability == .comparable })
-        XCTAssertTrue(quota.map { CapacityAssessmentService().assess($0, now: now) }
+        let quotaIDs = observations.filter { $0.comparability == .comparable }.map(\.seriesID.providerWindowID)
+        XCTAssertEqual(quotaIDs.sorted(), ["opencode-go-monthly", "opencode-go-rolling", "rate-limit"])
+        XCTAssertTrue(observations.filter { $0.seriesID.providerWindowID == "rate-limit" }
+            .map { CapacityAssessmentService().assess($0, now: now) }
             .allSatisfy { $0.alertEligibility == .percent })
     }
 
@@ -1132,36 +1317,41 @@ final class OpenCodeRateLimitTests: XCTestCase {
         snapshot.updatedAt = now
         snapshot.todayTokens = 5_000
         snapshot = OpenCodeSessionAdapter.applyingRateLimit(
-            OpenCodeRateLimit(usedPercent: 75, resetAt: nil, observedAt: now),
+            OpenCodeRateLimit(
+                rolling: OpenCodeRateLimitWindow(usedPercent: 90, resetAt: nil),
+                weekly: OpenCodeRateLimitWindow(usedPercent: 75, resetAt: nil),
+                monthly: OpenCodeRateLimitWindow(usedPercent: 40, resetAt: nil),
+                observedAt: now
+            ),
             to: snapshot
         )
 
+        let display = MenuBarStatusService().displayWindow(for: snapshot)
+        XCTAssertEqual(display?.usedPercent, 75, "the menu bar must keep the weekly window as headline even when a rolling window exists")
         let segments = MenuBarStatusService().providerMetricsSegments(snapshots: [snapshot], settings: settings, now: now)
         XCTAssertTrue(segments.contains { $0.provider == .opencode && $0.displayValue.contains("25%") },
                       "quota must outrank the token display: \(segments.map(\.displayValue))")
     }
 
-    /// Live checks on 2026-07-29 showed opencode Zen has no usage endpoint and sends no rate-limit
-    /// headers, so the UI must say the quota is unavailable instead of implying it can be fetched.
-    func testSettingsUIStatesQuotaIsNotAvailableYet() throws {
+    func testSettingsUIStatesOfficialUsageAPI() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("Sources/TokenApp/Views/SettingsScreen.swift"))
 
         XCTAssertTrue(
-            source.contains("no rate-limit headers, so remaining quota cannot be read yet"),
-            "the UI must state plainly that opencode quota cannot be read today"
+            source.contains("Read opencode Go usage from the official usage API"),
+            "the UI must describe the official usage API"
         )
         XCTAssertTrue(
-            source.contains("spends one authenticated request per refresh and today returns nothing"),
+            source.contains("one authenticated request per refresh"),
             "the cost of enabling the probe must stay disclosed"
         )
         XCTAssertTrue(source.contains("openCodeRateLimitBinding"))
     }
 
     func testProbeReturnsNoQuotaRatherThanAFabricatedPercentage() async {
-        struct EmptyHeaderProbe: OpenCodeRateLimitProbing {
-            func probeRateLimit(credential: OpenCodeCredential) async -> Result<[String: String], OpenCodeRateLimitUnavailableReason> {
-                .success(["content-type": "application/json"])
+        struct EmptyPayloadProbe: OpenCodeRateLimitProbing {
+            func probeRateLimit(credential: OpenCodeCredential) async -> Result<Data, OpenCodeRateLimitUnavailableReason> {
+                .success(Data("{}".utf8))
             }
         }
         struct KeyLoader: OpenCodeCredentialLoading {
@@ -1173,13 +1363,13 @@ final class OpenCodeRateLimitTests: XCTestCase {
 
         let result = await OpenCodeRateLimitObserver(
             makeCredentialLoader: { KeyLoader() },
-            makeProbe: { EmptyHeaderProbe() }
+            makeProbe: { EmptyPayloadProbe() }
         ).observe(settings: settings)
 
         guard case .failure(let reason) = result else {
-            return XCTFail("a response without rate-limit headers must not yield a percentage")
+            return XCTFail("a response without usage windows must not yield a percentage")
         }
-        XCTAssertEqual(reason, .headersMissing)
+        XCTAssertEqual(reason, .usageUnavailable)
     }
 
     func testReadsThePlanAPIKeyAndIgnoresNonAPIEntries() throws {

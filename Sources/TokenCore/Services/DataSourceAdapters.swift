@@ -525,11 +525,13 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
     private let overrideFileURL: URL?
     private let fallbackProjectRoots: [URL]?
     private let staleThreshold: TimeInterval
+    private let makeUsageProbe: (@Sendable () -> ClaudeOAuthUsageProbe)?
 
-    public init(fileURL: URL? = nil, fallbackProjectRoots: [URL]? = nil, staleThreshold: TimeInterval = 300) {
+    public init(fileURL: URL? = nil, fallbackProjectRoots: [URL]? = nil, staleThreshold: TimeInterval = 300, makeUsageProbe: (@Sendable () -> ClaudeOAuthUsageProbe)? = nil) {
         self.overrideFileURL = fileURL
         self.fallbackProjectRoots = fallbackProjectRoots
         self.staleThreshold = staleThreshold
+        self.makeUsageProbe = makeUsageProbe
     }
 
     public func snapshot(settings: AppSettings) async -> ProviderSnapshot {
@@ -554,8 +556,18 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
             return parseStatuslineFile(fileURL, bookmarkData: bookmarkData)
         }
 
-        if shouldUseLocalJSONLFallback(fileURL: fileURL, settings: settings), let fallback = parseLocalJSONLFallback() {
-            return fallback
+        if shouldUseLocalJSONLFallback(fileURL: fileURL, settings: settings) {
+            // The statusline file has its own bookmark; the projects fallback needs its own grant,
+            // because a sandboxed build cannot walk ~/.claude/projects without one.
+            let resolution = ProviderSourceAccess.resolve(
+                provider: .claude,
+                settings: settings,
+                defaults: fallbackProjectRoots ?? defaultClaudeProjectRoots()
+            )
+            defer { resolution.release() }
+            if !resolution.needsUserGrant, let fallback = parseLocalJSONLFallback(roots: resolution.roots) {
+                return fallback
+            }
         }
 
         return ProviderSnapshot(
@@ -710,6 +722,7 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         let now = Date()
         let todayEvents = events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayCacheReadTokens = todayEvents.reduce(0) { $0 + $1.cacheReadTokens }
         let newest = events.map(\.timestamp).max() ?? Date()
         let isStale = Date().timeIntervalSince(newest) > staleThreshold
         let retainedStart = calendar.date(byAdding: .day, value: -31, to: calendar.startOfDay(for: now)) ?? now
@@ -721,11 +734,14 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
             provider: .claude,
             updatedAt: newest,
             todayTokens: todayTokens,
+            todayCacheReadTokens: todayCacheReadTokens,
             todayCostUSD: cost > 0 ? cost : nil,
             confidence: .medium,
             dataSource: .localLog,
             isStale: isStale,
-            statusMessage: isStale ? "STALE · local JSONL older than 5 minutes" : "Local JSONL · rate limits unavailable",
+            // "rate limits unavailable" was true and useless: Claude Code does not write limits
+            // to its local JSONL, the statusline bridge supplies them, and nothing said so.
+            statusMessage: isStale ? "STALE · local JSONL older than 5 minutes" : "Local JSONL · connect the statusline for limits",
             model: model,
             events: retained
         )
@@ -898,7 +914,9 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             )
         }
         guard !events.isEmpty else {
-            let message = readError == nil ? "No Antigravity or Gemini token events yet" : "Antigravity/Gemini data could not be read"
+            // A resolved, readable, empty source is the bridge sitting installed and never written
+            // — worth saying, because "no events yet" reads as a fault the user should chase.
+            let message = readError == nil ? "Statusline connected · waiting for the first session" : "Antigravity/Gemini data could not be read"
             return ProviderSnapshot(provider: .gemini, confidence: .low, dataSource: .unknown, isStale: readError != nil, statusMessage: message)
         }
 
@@ -911,6 +929,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
         let retainedStart = min(startOfLast7Days, startOfMonth)
         let retainedEvents = events.filter { $0.timestamp >= retainedStart }
         let todayTokens = todayEvents.reduce(0) { $0 + $1.totalTokens }
+        let todayCacheReadTokens = todayEvents.reduce(0) { $0 + $1.cacheReadTokens }
         let todayRequests = todayEvents.reduce(0) { $0 + $1.requestCount }
         let shouldShowDailyRequests = todayRequests > 0
         let newestTimestamp = events.map(\.timestamp).max() ?? Date.distantPast
@@ -925,6 +944,7 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             dailyRequestsUsed: shouldShowDailyRequests ? todayRequests : nil,
             dailyRequestsLimit: shouldShowDailyRequests ? settings.geminiDailyRequestCap : nil,
             todayTokens: todayTokens,
+            todayCacheReadTokens: todayCacheReadTokens,
             confidence: confidence,
             dataSource: dataSource,
             isStale: isStale,
@@ -2010,11 +2030,13 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     private let maxSessionFiles: Int
     private let largeFileFullScanLimitBytes: UInt64
     private let largeFileTailBytes: UInt64
+    private let makeUsageProbe: (@Sendable () -> CodexOAuthUsageProbe)?
 
-    public init(sessionRoots: [URL]? = nil, manualFallback: CodexManualAdapter = CodexManualAdapter(), webUsageAdapter: any ProviderAdapter = CodexWebUsageAdapter(appServerClient: CodexAppServerRateLimitProcessClient(), allowLegacyDirectHTTP: false)) {
+    public init(sessionRoots: [URL]? = nil, manualFallback: CodexManualAdapter = CodexManualAdapter(), webUsageAdapter: any ProviderAdapter = CodexWebUsageAdapter(appServerClient: CodexAppServerRateLimitProcessClient(), allowLegacyDirectHTTP: false), makeUsageProbe: (@Sendable () -> CodexOAuthUsageProbe)? = nil) {
         self.sessionRoots = sessionRoots
         self.manualFallback = manualFallback
         self.webUsageAdapter = webUsageAdapter
+        self.makeUsageProbe = makeUsageProbe
         self.environment = ProcessInfo.processInfo.environment
         self.currentHomeDirectory = FileManager.default.homeDirectoryForCurrentUser
         self.additionalHomeDirectories = nil
@@ -2032,11 +2054,13 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         additionalHomeDirectories: [URL]? = nil,
         maxSessionFiles: Int = 8,
         largeFileFullScanLimitBytes: UInt64 = 4 * 1_024 * 1_024,
-        largeFileTailBytes: UInt64 = 4 * 1_024 * 1_024
+        largeFileTailBytes: UInt64 = 4 * 1_024 * 1_024,
+        makeUsageProbe: (@Sendable () -> CodexOAuthUsageProbe)? = nil
     ) {
         self.sessionRoots = sessionRoots
         self.manualFallback = manualFallback
         self.webUsageAdapter = webUsageAdapter
+        self.makeUsageProbe = makeUsageProbe
         self.environment = environment
         self.currentHomeDirectory = currentHomeDirectory
         self.additionalHomeDirectories = additionalHomeDirectories
@@ -2058,7 +2082,21 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             return await manualFallback.snapshot(settings: settings)
         }
 
-        let roots = sessionRoots ?? defaultCodexSessionRoots()
+        let resolution = ProviderSourceAccess.resolve(
+            provider: .codex,
+            settings: settings,
+            defaults: sessionRoots ?? defaultCodexSessionRoots()
+        )
+        defer { resolution.release() }
+        guard !resolution.needsUserGrant else {
+            return ProviderSnapshot(
+                provider: .codex,
+                confidence: .low,
+                dataSource: .unknown,
+                statusMessage: "Choose the Codex folder to grant access"
+            )
+        }
+        let roots = resolution.roots
         let allFiles = candidateFiles(in: roots, allowedExtensions: ["jsonl"], maxFiles: maxSessionFiles * 3)
         let now = Date()
         let calendar = Calendar.current
@@ -2103,11 +2141,14 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             fiveHour: latestRateLimits?.fiveHour ?? manual.fiveHour,
             weekly: latestRateLimits?.weekly ?? manual.weekly,
             todayTokens: events.reduce(0) { $0 + $1.totalTokens },
+            todayCacheReadTokens: events.reduce(0) { $0 + $1.cacheReadTokens },
             confidence: .medium,
             dataSource: .localLog,
             isExperimental: true,
             isStale: false,
-            statusMessage: "EXPERIMENTAL · local Codex log · not web quota",
+            statusMessage: (latestRateLimits?.fiveHour != nil || latestRateLimits?.weekly != nil)
+                ? "Codex rate limits · provider-reported · local Codex session log"
+                : "EXPERIMENTAL · local Codex log · not web quota",
             model: model,
             events: events
         )
@@ -2128,11 +2169,46 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         }
 
         let snapshot = await snapshot(settings: settings)
-        let observedAt = snapshot.updatedAt
+        var merged = snapshot
+
+        if settings.codexUsageProbeEnabled, let makeProbe = makeUsageProbe {
+            switch await makeProbe().probe(settings: settings) {
+            case .success(let reading):
+                if let five = reading.fiveHourUsedPercent {
+                    merged.fiveHour = LimitWindow(
+                        kind: .fiveHour,
+                        usedPercent: five,
+                        resetAt: reading.fiveHourResetAt,
+                        confidence: .low,
+                        providerWindowID: "codex-oauth-experimental"
+                    )
+                }
+                if let seven = reading.sevenDayUsedPercent {
+                    merged.weekly = LimitWindow(
+                        kind: .weekly,
+                        usedPercent: seven,
+                        resetAt: reading.sevenDayResetAt,
+                        confidence: .low,
+                        providerWindowID: "codex-oauth-experimental"
+                    )
+                }
+                if reading.fiveHourUsedPercent != nil || reading.sevenDayUsedPercent != nil {
+                    merged.confidence = .low
+                    merged.isExperimental = true
+                    merged.isStale = false
+                    merged.updatedAt = now
+                    merged.statusMessage = "EXPERIMENTAL · UNOFFICIAL · Codex OAuth usage"
+                }
+            case .failure:
+                break
+            }
+        }
+
+        let observedAt = merged.updatedAt
         return ProviderRefreshResult(
-            snapshot: snapshot,
-            capacityObservations: CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: observedAt),
-            typedErrors: CapacityObservationFactory.errors(from: snapshot, provider: .codex),
+            snapshot: merged,
+            capacityObservations: CapacityObservationFactory.observations(from: merged, settings: settings, observedAt: observedAt),
+            typedErrors: CapacityObservationFactory.errors(from: merged, provider: .codex),
             observedAt: observedAt
         )
     }
@@ -2240,7 +2316,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
                 requestCount: 1,
                 source: "codex-session-jsonl",
                 dataSource: .localLog,
-                isEstimated: true,
+                // Server-reported token counts from the session log are exact, not estimates;
+                // the experimental flag reflects the parsing path, not the data.
+                isEstimated: false,
                 isExperimental: true,
                 totalTokensOverride: usage.total
             )
@@ -2420,7 +2498,9 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             return nil
         }
         guard used != nil || resetAt != nil else { return nil }
-        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium, providerWindowID: nil, durationMinutes: durationMinutes)
+        // The local session log carries the same server-reported quota the app-server connector
+        // returns; mark the window so the menu bar can present it as provider-reported percent.
+        return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: .medium, providerWindowID: "rate-limit", durationMinutes: durationMinutes)
     }
 
     private func firstCodexSessionValue(in dictionary: [String: Any], keys: [String]) -> Any? {
@@ -2906,11 +2986,56 @@ public final class CodexManualAdapter: ProviderAdapter, Sendable {
     }
 }
 
-extension ClaudeStatuslineAdapter: ProviderRefreshAdapter {}
+extension ClaudeStatuslineAdapter: ProviderRefreshAdapter {
+    public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
+        let snapshot = await snapshot(settings: settings)
+        var merged = snapshot
+
+        if settings.claudeUsageProbeEnabled, let makeProbe = makeUsageProbe {
+            switch await makeProbe().probe(settings: settings) {
+            case .success(let reading):
+                if let five = reading.fiveHourUsedPercent {
+                    merged.fiveHour = LimitWindow(
+                        kind: .fiveHour,
+                        usedPercent: five,
+                        resetAt: reading.fiveHourResetAt,
+                        confidence: .low,
+                        providerWindowID: "claude-oauth-experimental"
+                    )
+                }
+                if let seven = reading.sevenDayUsedPercent {
+                    merged.weekly = LimitWindow(
+                        kind: .weekly,
+                        usedPercent: seven,
+                        resetAt: reading.sevenDayResetAt,
+                        confidence: .low,
+                        providerWindowID: "claude-oauth-experimental"
+                    )
+                }
+                if reading.fiveHourUsedPercent != nil || reading.sevenDayUsedPercent != nil {
+                    merged.confidence = .low
+                    merged.isExperimental = true
+                    merged.isStale = false
+                    merged.updatedAt = now
+                    merged.statusMessage = "EXPERIMENTAL · UNOFFICIAL · Claude OAuth usage"
+                }
+            case .failure:
+                break
+            }
+        }
+
+        return ProviderRefreshResult(
+            snapshot: merged,
+            capacityObservations: CapacityObservationFactory.observations(from: merged, settings: settings, observedAt: merged.updatedAt),
+            typedErrors: CapacityObservationFactory.errors(from: merged, provider: provider),
+            observedAt: merged.updatedAt
+        )
+    }
+}
 extension GeminiTelemetryAdapter: ProviderRefreshAdapter {}
 extension CodexWebUsageAdapter: ProviderRefreshAdapter {}
-extension CodexLocalSessionAdapter: ProviderRefreshAdapter {}
 extension DeepSeekBalanceAdapter: ProviderRefreshAdapter {}
+extension CodexLocalSessionAdapter: ProviderRefreshAdapter {}
 extension CodexManualAdapter: ProviderRefreshAdapter {}
 // MARK: - Private helpers
 
@@ -2923,28 +3048,18 @@ private func isDirectory(_ url: URL) -> Bool {
     return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
 }
 
+/// The newest `maxFiles` files under `roots`, newest first.
+///
+/// This used to stop walking after `maxFiles * 4` entries and sort those by modification date,
+/// which ranks an arbitrary slice of the tree rather than the tree — see ``NewestFileScan``.
 private func candidateFiles(in roots: [URL], allowedExtensions: Set<String>, maxFiles: Int) -> [URL] {
-    var files: [URL] = []
-    for root in roots {
-        guard FileManager.default.fileExists(atPath: root.path), !isForbiddenCredentialPath(root) else { continue }
-        if !isDirectory(root) {
-            if allowedExtensions.contains(root.pathExtension.lowercased()) {
-                files.append(root)
-            }
-            continue
-        }
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.contentModificationDateKey, .isRegularFileKey], options: [.skipsHiddenFiles]) else { continue }
-        for case let file as URL in enumerator {
-            guard files.count < maxFiles * 4 else { break }
-            guard allowedExtensions.contains(file.pathExtension.lowercased()), !isForbiddenCredentialPath(file) else { continue }
-            files.append(file)
-        }
+    NewestFileScan.newestFiles(
+        in: roots.filter { !isForbiddenCredentialPath($0) },
+        limit: maxFiles
+    ) { file in
+        allowedExtensions.contains(file.pathExtension.lowercased()) && !isForbiddenCredentialPath(file)
     }
-
-    return files
-        .sorted { (fileModificationDate($0) ?? Date.distantPast) > (fileModificationDate($1) ?? Date.distantPast) }
-        .prefix(maxFiles)
-        .map { $0 }
+    .files
 }
 
 private func isForbiddenCredentialPath(_ url: URL) -> Bool {

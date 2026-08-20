@@ -45,16 +45,25 @@ Select exactly which providers appear. Use **Separate items** so macOS can place
 | Feature | Description |
 |---------|-------------|
 | 🍎 **Glanceable provider percentages** | Native two-row `NSStatusItem` blocks keep each selected provider's remaining percentage visible; show them separately or combined. |
-| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, and Kiro credits in one place. |
+| 📊 **Multi-provider monitoring + setup** | Claude Code, Codex, Antigravity CLI with legacy Gemini telemetry, DeepSeek balance, local Grok context metadata, opencode session tokens/cost, Kiro credits, and Command Code session tokens/cost in one place. |
 | 🧮 **Per-model breakdown** | The History screen ranks every model by tokens for the selected period, with request counts and estimated cost where the provider reports it. Included in JSON export under `localActivity.modelBreakdown`. |
 | 📈 **7-day trend** | The History screen charts the last seven days of local token activity, highlighting the peak day and counting active days. Inactive days stay visible as zero so gaps are obvious. |
+| 📁 **Per-project breakdown** | opencode History ranks workspaces by tokens, requests, and cost for the selected period using only workspace folder names; never included in exports. |
 | 🧭 **Remaining-first quota UI** | Limit cards prioritize what is left, not what was consumed. |
 | 🔒 **Local-first by default** | Reads local usage metadata; optional connectors and notifications are user-enabled. |
 | 🏷️ **Honest confidence labels** | Official, local, manual, estimated, experimental, and limit-hint data are visibly distinct. |
 | 🔔 **Alerts** | macOS notifications plus optional Telegram/Discord threshold and reset alerts. |
+| 🚀 **Launch at login** | Optional login item starts TokenPilot automatically at log in, so monitoring and alerts keep working after a reboot without opening the app. |
 | 💵 **DeepSeek balance** | Optional `/user/balance` integration shows official `topped_up_balance`, native currency, manual fallback, and low-balance alerts. |
 | 🧰 **Grok/xAI source** | Local context reads only numeric metadata from `~/.grok/sessions/**/signals.json` (never `auth.json`/tokens/prompts/responses). A separate default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly feature may, after explicit consent, read only the selected access token and expiry from fixed `~/.grok/auth.json` for one billing request; the token stays memory-only and is never logged, stored, diagnosed, or exported. |
 | 📈 **History + export** | Capacity evidence history, usage event totals, and JSON/CSV export; local activity seven-day/provider-share summaries are compatibility export fields only. |
+| 🖥️ **CLI export + summary** | `TokenPilot export --format json|csv [--capacity]` and `TokenPilot summary` print local usage from the terminal with the same redaction rules as GUI export. |
+| ⚡ **Configurable auto-refresh** | Pick the local-source refresh cadence (15 sec to 15 min) from Settings; menu bar tick stays live, and waking the Mac from sleep refreshes right away instead of showing pre-sleep numbers. |
+| 📉 **Menu bar trend or bar** | Provider-metrics blocks draw a mini remaining-percent trend from the stored limit history, a filled remaining bar, or nothing — pick one in Settings. |
+| 🧵 **Terminal status line** | `TokenPilot statusline` prints one compact line (model, tightest remaining quota with its reset countdown, today's tokens and cost) for a CLI status line, ccusage-style. |
+| 🎯 **Daily goal** | Set a local daily token target (Settings > General); Overview shows today's progress with a bar and honest local-activity labeling. |
+| 📬 **Weekly digest** | Optional opt-in summary of this week's local usage every Monday at 09:00, delivered as a macOS notification while TokenPilot is running. |
+| ⌘⇧Space **global shortcut** | Optional opt-in shortcut opens the popover from anywhere; right-click the menu bar item for **Copy summary**. |
 | 🌐 **4 languages** | English, 한국어, 日本語, 简体中文. |
 | 📦 **No third-party packages** | Pure Swift / SwiftUI / AppKit bridge. |
 
@@ -87,6 +96,36 @@ open TokenPilot.xcodeproj
 # Press Cmd+R
 ```
 
+### Option 4: Command line
+
+The app binary doubles as a read-only CLI (ccusage/toktrack-style) for local usage:
+
+```bash
+# Print today's local usage totals
+TokenPilot summary
+
+# Export the last 7 days as JSON to stdout
+TokenPilot export --period last7Days
+
+# Export today as CSV to a file
+TokenPilot export --format csv --period today --out usage.csv
+
+# Include the latest capacity evidence per series in the JSON payload
+TokenPilot export --period today --capacity
+
+# Print one compact line for an editor status line
+TokenPilot statusline
+
+# Pick and order the segments, restrict them to one provider, drop the colors
+TokenPilot statusline --components capacity,block,burn --provider claude --no-color
+```
+
+`statusline` renders `model | quota | today | cost` on a single line for a CLI status line (ccusage `statusline` style). It reads the caller's session JSON from stdin when one is piped in — only the model name and session cost are used — and otherwise renders from stored local usage alone. `--components` picks and orders segments from `model,capacity,today,cost,block,burn,session`, `--provider` restricts the capacity segment and local totals to one provider, `--timezone` decides which day `today` and the 5-hour block belong to, and `--no-color` drops the ANSI colors (`NO_COLOR` does the same). Only fresh provider-reported quota windows are shown as percentages; evidence older than its freshness policy is marked `·S` rather than presented as current, and paths, project labels, and session identifiers are never printed.
+
+To use it with Claude Code, set it as your status line command first, then install the TokenPilot bridge from **Settings → Setup Guide → Connect Claude Code** — the bridge captures Claude's limits and chains to the command that was already configured, so both keep working. **Settings → Setup Guide → Terminal status line** copies the exact command for this build.
+
+`export` accepts `--format json|csv` (default `json`), `--period today|last7Days|thisMonth` (default `last7Days`), `--out <path>`, and `--capacity` (append latest stored capacity evidence). Output never includes prompts, responses, local paths, chat IDs, webhooks, or provider credentials.
+
 ---
 
 ## How It Works
@@ -102,6 +141,7 @@ TokenPilot reads **usage metadata** from local files and explicitly configured s
 | **Grok / xAI** | Numeric local context metadata from `~/.grok/sessions/**/signals.json`; optional default-off EXPERIMENTAL/UNOFFICIAL OAuth weekly usage after explicit consent | Local context shows remaining context (`100 - contextWindowUsage`), not subscription quota. Manual weekly truth has precedence. Experimental OAuth weekly is presentation-only and may break. |
 | **opencode** | Read-only local session store: `~/.local/share/opencode/opencode.db` (or `opencode-next.db`), with pre-1.2 `storage/message` JSON as fallback. Honors `XDG_DATA_HOME` | High for token counts and cost: opencode records exact per-message values. Local activity only — opencode publishes no subscription window, so this is never shown as quota. |
 | **Kiro** | Read-only local sessions: IDE `usage_summary` credits under `~/.kiro/sessions/<workspace>/sess_*/messages.jsonl`, plus CLI context-window percentage from `~/.kiro/sessions/cli/*.json` | High for the values Kiro itself reports. Kiro meters in **credits**, not tokens, so TokenPilot shows credits as credits and never estimates token counts from transcript text. |
+| **Command Code** | Read-only local session transcripts: `~/.commandcode/projects/<project>/<session>.jsonl`. Never reads `~/.commandcode/auth.json` | High for the tokens and cost Command Code records per turn. Command Code meters plans in **dollars over rolling 5-hour and 7-day windows** and publishes those meters only through its own `/usage` view, so TokenPilot shows local spend as activity and never as remaining quota. |
 
 ### Provider diagnostics
 
@@ -149,7 +189,9 @@ CODEX   GROK
  77%     80%
 ```
 
-Choose **Separate items** for independently registered `NSStatusItem`s, or **Combined item** to keep every selected provider in one status item. Detailed, compact, and icon-only layouts remain available for users who prefer window labels, local-activity fallback text, or a minimal icon.
+Choose **Separate items** for independently registered `NSStatusItem`s, or **Combined item** to keep every selected provider in one status item. Detailed, compact, and icon-only layouts remain available for users who prefer window labels, local-activity fallback text, or a minimal icon. **Separate items** applies to those text layouts too: the primary and secondary providers each get their own status item instead of sharing one wide one.
+
+**Menu bar width** caps how much room the text layouts may take — `Full`, `Standard`, or `Narrow`. A narrower setting drops whole components in order of least value first: reset countdowns, then window tags, then the second reading. Nothing is ever cut mid-word or replaced with an ellipsis, so what remains is still a number you can act on.
 
 ---
 
@@ -244,6 +286,7 @@ make verify
 | 한국어 | ✅ Full |
 | 日本語 | ✅ Fallback supported |
 | 简体中文 | ✅ Fallback supported |
+| 繁體中文 | ✅ Fallback supported |
 
 ---
 

@@ -95,6 +95,7 @@ public final class UsageHistoryStore: @unchecked Sendable {
             let providerEvents = eventsByProvider[snapshot.provider] ?? []
             copy.events = providerEvents
             copy.todayTokens = todayTokens(in: providerEvents, referenceDate: referenceDate)
+            copy.todayCacheReadTokens = todayCacheReadTokens(in: providerEvents, referenceDate: referenceDate)
             if let todayCostUSD = todayCostUSD(in: providerEvents, referenceDate: referenceDate) {
                 copy.todayCostUSD = todayCostUSD
             }
@@ -167,6 +168,13 @@ public final class UsageHistoryStore: @unchecked Sendable {
         return events
             .filter { calendar.isDate($0.timestamp, inSameDayAs: referenceDate) }
             .reduce(0) { $0 + $1.totalTokens }
+    }
+
+    private func todayCacheReadTokens(in events: [UsageEvent], referenceDate: Date) -> Int {
+        let calendar = Calendar.current
+        return events
+            .filter { calendar.isDate($0.timestamp, inSameDayAs: referenceDate) }
+            .reduce(0) { $0 + $1.cacheReadTokens }
     }
 
     private func todayCostUSD(in events: [UsageEvent], referenceDate: Date) -> Decimal? {
