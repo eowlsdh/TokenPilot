@@ -1358,7 +1358,8 @@ final class TokenPilotViewModel: ObservableObject {
                     macOS: settingsAtStart.macOSNotificationsEnabled,
                     telegram: settingsAtStart.telegramNotificationsEnabled,
                     discord: settingsAtStart.discordNotificationsEnabled
-                )
+                ),
+                observed: assessments
             )
             if reconciliation.didChange {
                 let save = await capacityAlertRuleStore.save(reconciliation.rules)

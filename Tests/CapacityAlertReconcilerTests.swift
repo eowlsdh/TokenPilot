@@ -114,6 +114,117 @@ final class CapacityAlertReconcilerTests: XCTestCase {
         XCTAssertGreaterThan(providers.count, 5)
     }
 
+    // MARK: - Series the app cannot name in advance
+
+    private static let now = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func assessment(
+        provider: Provider,
+        windowID: String,
+        kind: CapacitySeriesKind = .fixedReset,
+        durationMinutes: Int? = nil,
+        usedPercent: Int = 40,
+        authority: CapacityAuthority = .providerReported,
+        stability: CapacityStability = .supported
+    ) throws -> CapacityAssessment {
+        let series = try CapacitySeriesID(
+            provider: provider,
+            providerWindowID: windowID,
+            kind: kind,
+            unit: .percent,
+            durationMinutes: durationMinutes
+        )
+        let observation = try CapacityObservation(
+            seriesID: series,
+            observedAt: Self.now,
+            resetAt: Self.now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: usedPercent),
+            authority: authority,
+            stability: stability,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: Self.now
+        )
+        return CapacityAssessmentService().assess(observation, now: Self.now)
+    }
+
+    /// Codex sets its own window durations, and a duration is part of a series identity, so no
+    /// static entry can name them. They have to come from what was actually observed.
+    func testCodexGetsRulesFromWhatWasObserved() throws {
+        let observed = [
+            try assessment(provider: .codex, windowID: "primary", kind: .rolling, durationMinutes: 15),
+            try assessment(provider: .codex, windowID: "secondary", kind: .rolling, durationMinutes: 240)
+        ]
+
+        let result = CapacityAlertReconciler.reconcile(
+            existing: [],
+            enabledProviders: [.codex],
+            routing: routing,
+            observed: observed
+        )
+
+        XCTAssertEqual(result.rules.map(\.seriesID.providerWindowID).sorted(), ["primary", "secondary"])
+        XCTAssertEqual(result.rules.compactMap(\.seriesID.durationMinutes).sorted(), [15, 240])
+    }
+
+    /// A window whose duration changed is a different series, so it gets its own rule rather than
+    /// silently inheriting one meant for a different period.
+    func testAChangedWindowDurationIsADifferentRule() throws {
+        let first = CapacityAlertReconciler.reconcile(
+            existing: [],
+            enabledProviders: [.codex],
+            routing: routing,
+            observed: [try assessment(provider: .codex, windowID: "primary", kind: .rolling, durationMinutes: 15)]
+        )
+        let second = CapacityAlertReconciler.reconcile(
+            existing: first.rules,
+            enabledProviders: [.codex],
+            routing: routing,
+            observed: [try assessment(provider: .codex, windowID: "primary", kind: .rolling, durationMinutes: 300)]
+        )
+
+        XCTAssertEqual(second.rules.count, 2)
+        XCTAssertTrue(second.didChange)
+    }
+
+    /// Only what the pipeline itself calls alertable. Deriving it again here would be a second
+    /// opinion that could disagree with the engine that actually delivers.
+    ///
+    /// Uses a Codex window deliberately: it is not in the catalogue, so the observed path is the
+    /// only thing that could create it. Asserting this with a catalogued series would have passed
+    /// for the wrong reason — the catalogue creates those regardless of what was observed.
+    func testAnUnofficialObservationCreatesNothing() throws {
+        let localDerived = try assessment(
+            provider: .codex,
+            windowID: "primary",
+            kind: .rolling,
+            durationMinutes: 15,
+            authority: .localDerived
+        )
+
+        let result = CapacityAlertReconciler.reconcile(
+            existing: [],
+            enabledProviders: [.codex],
+            routing: routing,
+            observed: [localDerived]
+        )
+
+        XCTAssertTrue(result.rules.isEmpty, "an unofficial reading must not create an alert rule")
+    }
+
+    /// Observing a series the user does not watch must not quietly switch alerting on for it.
+    func testAnObservationForAnUnwatchedProviderIsIgnored() throws {
+        let result = CapacityAlertReconciler.reconcile(
+            existing: [],
+            enabledProviders: [.claude],
+            routing: routing,
+            observed: [try assessment(provider: .codex, windowID: "primary", kind: .rolling, durationMinutes: 15)]
+        )
+
+        XCTAssertFalse(result.rules.contains { $0.provider == .codex })
+    }
+
     func testNewRulesCarryTheDefaultThresholds() throws {
         let result = CapacityAlertReconciler.reconcile(existing: [], enabledProviders: [.jetbrains], routing: routing)
 

@@ -33,29 +33,49 @@ public enum CapacityAlertReconciler {
     ///     provider off and on again does not accumulate duplicates and an unused provider does not
     ///     carry alerting machinery.
     ///   - routing: the channels a newly created rule delivers on. Existing rules keep their own.
+    ///   - observed: assessments from this refresh. Series whose identity the app cannot know in
+    ///     advance are picked up from here — Codex sets its own window durations, and a duration is
+    ///     part of a series identity, so no static entry can name them. `alertEligibility` is the
+    ///     pipeline's own answer to "can this be alerted on", which is a better source than
+    ///     re-deriving it from the unit and kind.
     public static func reconcile(
         existing: [CapacityAlertRule],
         enabledProviders: Set<Provider>,
-        routing: CapacityAlertRouting
+        routing: CapacityAlertRouting,
+        observed: [CapacityAssessment] = []
     ) -> Result {
         var byID = Dictionary(existing.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var created: [String] = []
 
-        for entry in CapacityAlertCatalogue.alertableSeries where enabledProviders.contains(entry.provider) {
-            guard let seriesID = entry.seriesID,
+        func add(provider: Provider, seriesID: CapacitySeriesID) {
+            guard enabledProviders.contains(provider),
                   let rule = try? CapacityAlertRule(
-                      provider: entry.provider,
+                      provider: provider,
                       seriesID: seriesID,
                       authority: .providerReported,
                       stability: .supported,
                       enabled: true,
                       routing: routing,
                       condition: CapacityAlertCatalogue.defaultThresholds
-                  ) else { continue }
-
-            guard byID[rule.id] == nil else { continue }
+                  ),
+                  byID[rule.id] == nil else { return }
             byID[rule.id] = rule
             created.append(rule.id)
+        }
+
+        // Known series first, so a provider has alerts before its first observation arrives rather
+        // than only after the user has already been running against a limit for a while.
+        for entry in CapacityAlertCatalogue.alertableSeries {
+            guard let seriesID = entry.seriesID else { continue }
+            add(provider: entry.provider, seriesID: seriesID)
+        }
+
+        for assessment in observed {
+            let observation = assessment.observation
+            guard assessment.alertEligibility == .percent,
+                  observation.authority == .providerReported,
+                  observation.stability == .supported else { continue }
+            add(provider: observation.seriesID.provider, seriesID: observation.seriesID)
         }
 
         return Result(
