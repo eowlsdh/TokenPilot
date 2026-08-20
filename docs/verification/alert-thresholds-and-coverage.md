@@ -112,11 +112,34 @@ no fixed series identity to write down. Filing it under "not alertable" would ha
 - Verified end to end on this machine: rules went from 3 to 6, opencode's three windows gained
   alerts, and nothing already stored changed.
 
+## Closed since: editing, and the series the app cannot name
+
+**Thresholds are editable.** The model accepted any percentage and Settings had no control for it,
+which made it a capability nobody could use — the same shape as the three inert settings found
+earlier this week, from the other direction. Each percent rule now carries chips for reset and
+50/75/80/90/95/100, covering what the benchmarked trackers default to. Any percentage already stored
+appears alongside them, so editing one threshold cannot silently drop another. Two states are
+refused rather than explained afterwards: the last threshold cannot be removed, because a rule with
+nothing switched on still looks configured while watching nothing, and edits are declined while the
+rule store is recovering rather than writing into a file that could not be fully read.
+
+**Codex is covered.** A static catalogue cannot name every alertable series — Codex sets its own
+window durations, and a duration is part of a series identity. Reconciliation now also reads the
+refresh's assessments and creates a rule for any provider-reported, supported series the pipeline
+marks `alertEligibility == .percent`. Using the pipeline's own answer rather than re-deriving it
+matters: a second opinion could disagree with the engine that delivers.
+
+`CapacitySeriesID` validates against a declared semantics table, and that table — not the
+observation factory's source — is the real authority on which series exist. It caught two wrong test
+fixtures immediately: Codex windows are `.rolling` with a required duration, and an invented window
+ID is not a series at all. A third assertion passed for the wrong reason, testing the observed path
+with a series the catalogue creates anyway.
+
 ## Still open
 
-- **Codex, JetBrains, MiniMax, Z.ai, OpenRouter, Kiro** gain rules the moment they are enabled and
-  observed; Codex's need to come from observed series rather than the catalogue, since its window
-  durations are provider-set.
-- **Gemini's daily request cap** needs a count-based alert condition, which does not exist.
-- **Threshold editing UI.** The model accepts any percentage; Settings has no control for it yet, so
-  today the defaults (reset, 80%, 100%) are what everyone gets.
+- **Gemini's daily request cap.** It is a request *count*, and a percent-threshold rule is rejected
+  for any series not counted in percent, so alerting on it needs a condition kind that does not
+  exist. The one remaining provider whose limit is visible but unwatchable.
+- **The catalogue duplicates the semantics table.** `CapacityAlertCatalogue.alertableSeries`
+  hand-lists what `CapacitySeriesID`'s private semantics table already declares. The guard test keeps
+  them from diverging, but deriving one from the other would remove the possibility.
