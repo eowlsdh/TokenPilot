@@ -43,14 +43,32 @@ final class WorkingTokenTests: XCTestCase {
         XCTAssertEqual(event().workingTokens, 0)
     }
 
-    /// An override arrives as an opaque total, so there are no components to subtract from and
-    /// pretending otherwise would silently shrink a provider's numbers.
-    func testAnOverriddenTotalIsReportedWhole() {
+    /// An override replaces the total, not the breakdown. Codex reports `usage.total` and
+    /// `usage.cached` together, so reading the override as opaque counted re-sent context as new
+    /// work and one conversation could blow a daily budget.
+    func testAnOverriddenTotalStillSubtractsTheCacheReadTheSourceReported() {
+        var overridden = event(cacheRead: 200_000)
+        overridden.totalTokensOverride = 220_000
+
+        XCTAssertEqual(overridden.totalTokens, 220_000, "history and export keep every token")
+        XCTAssertEqual(overridden.workingTokens, 20_000, "budgets and goals count new work only")
+    }
+
+    /// A source that overrides the total *and* reports no cache read has nothing to subtract, which
+    /// is the case the opaque reading was written for.
+    func testAnOverriddenTotalWithNoReportedCacheReadIsWhole() {
+        var overridden = event()
+        overridden.totalTokensOverride = 1_234
+
+        XCTAssertEqual(overridden.workingTokens, 1_234)
+    }
+
+    /// The subtraction can never invert the total, whatever a source reports.
+    func testAnOverriddenTotalNeverGoesNegative() {
         var overridden = event(cacheRead: 900_000)
         overridden.totalTokensOverride = 1_234
 
-        XCTAssertEqual(overridden.totalTokens, 1_234)
-        XCTAssertEqual(overridden.workingTokens, 1_234)
+        XCTAssertEqual(overridden.workingTokens, 0)
     }
 
     func testSnapshotSubtractsOnlyWhatTheSourceReported() {

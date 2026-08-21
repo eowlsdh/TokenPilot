@@ -388,8 +388,12 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     /// today figure — uses this. History's totals, the model breakdown, and the export keep every
     /// token, because full accounting is exactly what those surfaces are for.
     public var workingTokens: Int {
-        // An override arrives as an opaque total with no components to subtract from.
-        if totalTokensOverride != nil { return totalTokens }
+        // An override replaces the *total*, not the breakdown. Codex reports both — `usage.total`
+        // alongside `usage.cached` — so treating the override as opaque counted its cache reads as
+        // new work, and a single Codex conversation could blow a daily budget with ~90% re-sent
+        // context. Where a source really has no breakdown its cache read is zero and this is a
+        // no-op, which is the case the opaque reading was written for.
+        if totalTokensOverride != nil { return max(totalTokens - cacheReadTokens, 0) }
         return max(componentTokenTotal - cacheReadTokens, 0)
     }
 
