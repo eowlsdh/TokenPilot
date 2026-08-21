@@ -52,4 +52,16 @@ public enum FiveHourBlocksService {
         let blockIndex = Int(secondsSinceMidnight / blockDuration)
         return dayStart.addingTimeInterval(Double(blockIndex) * blockDuration)
     }
+
+    /// When that block actually ends.
+    ///
+    /// Not simply `start + 5h`. The buckets restart at local midnight, so the last one of the day
+    /// (20:00) runs four hours, not five — anything after midnight belongs to the next day's first
+    /// block. A countdown built on the raw duration told the user at 23:30 that they had an hour
+    /// and a half left, and the total reset thirty minutes later. Every evening, on every install.
+    public static func blockEnd(of start: Date, calendar: Calendar = .current) -> Date {
+        let nextMidnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))
+            ?? start.addingTimeInterval(blockDuration)
+        return min(start.addingTimeInterval(blockDuration), nextMidnight)
+    }
 }

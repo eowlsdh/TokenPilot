@@ -266,6 +266,34 @@ final class StatuslineRenderTests: XCTestCase {
         XCTAssertEqual(line, "blk 60K 3h0m | 2K/min | ses $0.40")
     }
 
+    /// The buckets restart at local midnight, so the last one of the day runs 20:00-24:00, not
+    /// 20:00-01:00. Counting down a flat five hours told the user at 23:30 that ninety minutes
+    /// remained, and the total reset thirty minutes later.
+    func testTheLastBlockOfTheDayCountsDownToMidnightNotPastIt() throws {
+        let calendar = StatuslineFixtures.calendar
+        let lateEvening = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 23, minute: 30))!
+        let line = StatuslineService.render(
+            events: [StatuslineFixtures.event(at: lateEvening.addingTimeInterval(-30 * 60), input: 60_000, output: 0)],
+            windows: StatuslineService.windows(from: []),
+            components: [.block],
+            now: lateEvening,
+            calendar: calendar
+        )
+        XCTAssertEqual(line, "blk 60K 30m")
+
+        let blockStart = FiveHourBlocksService.blockStart(of: lateEvening, calendar: calendar)
+        XCTAssertEqual(
+            FiveHourBlocksService.blockEnd(of: blockStart, calendar: calendar),
+            calendar.date(from: DateComponents(year: 2030, month: 3, day: 18, hour: 0))!
+        )
+        // An earlier block is untouched: 10:00 still runs its full five hours.
+        let midday = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 10))!
+        XCTAssertEqual(
+            FiveHourBlocksService.blockEnd(of: midday, calendar: calendar),
+            calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 15))!
+        )
+    }
+
     func testEventsOutsideTodayAreExcluded() throws {
         let now = StatuslineFixtures.now()
         let line = StatuslineService.render(

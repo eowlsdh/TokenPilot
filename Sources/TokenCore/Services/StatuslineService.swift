@@ -289,7 +289,7 @@ public enum StatuslineService {
     /// activity, never a provider billing window.
     private static func blockSegment(events: [UsageEvent], now: Date, calendar: Calendar) -> String? {
         let start = FiveHourBlocksService.blockStart(of: now, calendar: calendar)
-        let end = start.addingTimeInterval(FiveHourBlocksService.blockDuration)
+        let end = FiveHourBlocksService.blockEnd(of: start, calendar: calendar)
         let tokens = events
             .filter { $0.timestamp >= start && $0.timestamp <= now }
             .reduce(0) { $0 + $1.totalTokens }
