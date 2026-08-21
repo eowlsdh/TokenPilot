@@ -190,13 +190,13 @@ struct SettingsScreen: View {
 
                 HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Export Settings")) { model.exportSettings() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                     Button(model.t("Import Settings")) { model.importSettings() }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                     Spacer()
                     Button(model.t("Reset Settings")) { model.resetSettings() }
-                        .buttonStyle(.bordered)
-                        .tint(TokenPilotDesign.status(.danger))
+                        .buttonStyle(.glass)
+                        .foregroundStyle(TokenPilotDesign.status(.danger))
                 }
             }
         }
@@ -285,10 +285,10 @@ struct SettingsScreen: View {
 
                 HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .tint(TokenPilotDesign.calm)
                     Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
 
                 Text(model.t("Auto-detect checks local default metadata and user-selected files only. Diagnostics hide raw paths, raw events, prompts, responses, and secrets."))
@@ -523,7 +523,7 @@ struct SettingsScreen: View {
                 }
 
                 Button(model.t("Check all providers")) { Task { await model.checkAllConnections() } }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(TokenPilotDesign.calm)
             }
         }
@@ -555,9 +555,9 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Copy Setup Script")) { model.copyToClipboard(claudeStatuslineSnippet) }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.claude) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.claude)), \(model.t("Check Connection"))")
             sourceGrantRow(.claude)
             TokenPilotSeparator()
@@ -588,13 +588,13 @@ struct SettingsScreen: View {
             HStack {
                 ForEach([1000, 1500, 2000], id: \.self) { cap in
                     Button("\(cap)") { model.settings.geminiDailyRequestCap = cap }
-                        .buttonStyle(.bordered)
-                        .tint(model.settings.geminiDailyRequestCap == cap ? TokenPilotDesign.calm : .secondary)
+                        .buttonStyle(.glass)
+                        .foregroundStyle(model.settings.geminiDailyRequestCap == cap ? TokenPilotDesign.calm : .secondary)
                 }
                 Stepper(String(format: model.t("Custom: %d"), model.settings.geminiDailyRequestCap), value: $model.settings.geminiDailyRequestCap, in: 1...20_000, step: 100)
             }
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.gemini)), \(model.t("Check Connection"))")
         }
     }
@@ -618,13 +618,13 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveDeepSeekAPIKey() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(TokenPilotDesign.calm)
                 Button(model.t("Delete API Key"), role: .destructive) { model.deleteDeepSeekAPIKey() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .disabled(!model.hasSavedDeepSeekAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.deepseek) } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(model.providerDisplayName(.deepseek)), \(model.t("Check Connection"))")
             }
             TokenPilotSeparator()
@@ -692,7 +692,7 @@ struct SettingsScreen: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.xai) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.xai)), \(model.t("Check Connection"))")
             sourceGrantRow(.xai)
 
@@ -726,7 +726,7 @@ struct SettingsScreen: View {
             Button(model.t("Refresh OAuth weekly usage")) {
                 Task { await model.refresh(reason: .manual) }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .disabled(!model.isExperimentalOAuthWeeklyConsentEnabled)
 
             TokenPilotSeparator()
@@ -805,7 +805,7 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.opencode) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.opencode)), \(model.t("Check Connection"))")
             sourceGrantRow(.opencode)
         }
@@ -842,7 +842,7 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.kiro) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.kiro)), \(model.t("Check Connection"))")
             sourceGrantRow(.kiro)
         }
@@ -858,7 +858,7 @@ struct SettingsScreen: View {
             TokenPilotSeparator()
             HStack(spacing: TokenPilotDesign.Spacing.sm) {
                 Button(model.t("Choose Folder")) { model.chooseProviderSourceFolder(provider) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(model.providerDisplayName(provider)), \(model.t("Choose Folder"))")
                 if let folder = model.grantedSourceFolderName(provider) {
                     Text(folder)
@@ -901,7 +901,7 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.warning)
                 .fixedSize(horizontal: false, vertical: true)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.commandcode) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.commandcode)), \(model.t("Check Connection"))")
             sourceGrantRow(.commandcode)
         }
@@ -965,7 +965,7 @@ struct SettingsScreen: View {
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.codex) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.codex)), \(model.t("Check Connection"))")
             sourceGrantRow(.codex)
             TokenPilotSeparator()
@@ -989,7 +989,7 @@ struct SettingsScreen: View {
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.jetbrains) } }
-                .buttonStyle(.bordered)
+                .buttonStyle(.glass)
                 .accessibilityLabel("\(model.providerDisplayName(.jetbrains)), \(model.t("Check Connection"))")
             sourceGrantRow(.jetbrains)
         }
@@ -1007,13 +1007,13 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .minimax) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(TokenPilotDesign.calm)
                 Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .minimax) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .disabled(!model.hasSavedMinimaxAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.minimax) } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(model.providerDisplayName(.minimax)), \(model.t("Check Connection"))")
             }
         }
@@ -1031,13 +1031,13 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .zai) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(TokenPilotDesign.calm)
                 Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .zai) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .disabled(!model.hasSavedZAIAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.zai) } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(model.providerDisplayName(.zai)), \(model.t("Check Connection"))")
             }
         }
@@ -1055,13 +1055,13 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 Button(model.t("Save API Key")) { model.saveAPIKey(for: .openrouter) }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
                     .tint(TokenPilotDesign.calm)
                 Button(model.t("Delete API Key"), role: .destructive) { model.deleteAPIKey(for: .openrouter) }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .disabled(!model.hasSavedOpenRouterAPIKey)
                 Button(model.t("Check Connection")) { Task { await model.checkConnection(.openrouter) } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(model.providerDisplayName(.openrouter)), \(model.t("Check Connection"))")
             }
         }
@@ -1593,13 +1593,13 @@ struct SettingsScreen: View {
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(model.t("Refresh provider health")) { Task { await model.refresh() } }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .controlSize(.small)
             }
         }
         .padding(TokenPilotDesign.Spacing.md)
         .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
         .overlay(
@@ -2182,7 +2182,7 @@ struct SettingsScreen: View {
         }
         .padding(TokenPilotDesign.Spacing.md)
         .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
@@ -2202,7 +2202,7 @@ struct SettingsScreen: View {
         }
         .padding(TokenPilotDesign.Spacing.md)
         .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
@@ -2233,8 +2233,8 @@ struct SettingsScreen: View {
             )
         )
         .toggleStyle(.button)
-        .buttonStyle(.bordered)
-        .tint(model.isProviderEnabled(provider) ? TokenPilotDesign.accent(for: provider) : .secondary)
+        .buttonStyle(.glass)
+        .foregroundStyle(model.isProviderEnabled(provider) ? TokenPilotDesign.accent(for: provider) : .secondary)
         .frame(maxWidth: .infinity)
     }
 
@@ -2670,7 +2670,7 @@ struct CapacityAlertRuleRow: View {
         .padding(.horizontal, TokenPilotDesign.Spacing.md)
         .padding(.vertical, TokenPilotDesign.Spacing.sm)
         .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
@@ -2762,18 +2762,18 @@ struct GuideCard: View {
             }
             HStack {
                 Button(primaryAction, action: onPrimary)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                     .accessibilityLabel("\(title), \(primaryAction)")
                 if copyText != nil, let onCopy {
                     Button(localized("Copy", language: language), action: onCopy)
-                        .buttonStyle(.bordered)
+                        .buttonStyle(.glass)
                 }
                 Spacer()
             }
         }
         .padding(TokenPilotDesign.Spacing.md)
         .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.lg, intensity: 0.55, surface: .cardMuted)
+            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.lg, surface: .cardMuted)
         }
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.lg, style: .continuous))
     }

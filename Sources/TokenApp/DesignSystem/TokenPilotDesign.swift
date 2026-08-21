@@ -775,9 +775,20 @@ struct VisualEffectBackground: NSViewRepresentable {
 }
 
 /// Native utility surface with an opaque semantic fallback when Reduce Transparency is enabled.
+/// The single surface every card in the app sits on.
+///
+/// This used to hand-roll Liquid Glass out of four stacked fills — `.regularMaterial`, a tint, a
+/// surface colour at 46–76% opacity, and a highlight — because macOS did not offer it. macOS 26
+/// does, and `glassEffect` samples what is actually behind the view, reacts to motion and lighting,
+/// and carries the system's own edge treatment. Four hand-tuned opacity ramps cannot do any of that.
+///
+/// Two things are kept rather than handed over. `reduceTransparency` still swaps in a flat opaque
+/// surface, because that setting means "no translucency" and the accessibility contrast guarantees
+/// in `DesignConsistencyTests` are computed against those opaque tokens. And the border stroke stays:
+/// glass supplies its own rim, but in light appearance a card on a near-white background loses its
+/// edge without it — checked by rendering both.
 struct LiquidGlassBackground: View {
     var cornerRadius: CGFloat = TokenPilotDesign.Radius.md
-    var intensity: CGFloat = 1.0
     var surface: TokenPilotDesign.Surface = .card
 
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
@@ -787,17 +798,9 @@ struct LiquidGlassBackground: View {
     var body: some View {
         ZStack {
             if reduceTransparency {
-                shape
-                    .fill(palette.surface(surface))
+                shape.fill(palette.surface(surface))
             } else {
-                shape
-                    .fill(.regularMaterial)
-                shape
-                    .fill(palette.glassTint.opacity(Double(0.75 * clampedIntensity)))
-                shape
-                    .fill(palette.surface(surface).opacity(Double(surfaceOverlayOpacity)))
-                shape
-                    .fill(palette.glassHighlight.opacity(Double(highlightOpacity)))
+                Color.clear.glassEffect(.regular, in: shape)
             }
 
             shape
@@ -809,38 +812,11 @@ struct LiquidGlassBackground: View {
         }
     }
 
-    private var colorSchemeContrast: ColorSchemeContrast {
-        palette.colorSchemeContrast
-    }
-
     private var reduceTransparency: Bool {
         reduceTransparencyOverride ?? systemReduceTransparency
     }
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-    }
-
-    private var clampedIntensity: CGFloat {
-        min(max(intensity, 0), 1)
-    }
-
-    private var surfaceOverlayOpacity: CGFloat {
-        switch surface {
-        case .background:
-            return 0.18 + (0.16 * clampedIntensity)
-        case .card:
-            return 0.46 + (0.12 * clampedIntensity)
-        case .cardElevated:
-            return 0.50 + (0.14 * clampedIntensity)
-        case .cardMuted:
-            return 0.60 + (0.16 * clampedIntensity)
-        case .chip, .badge, .progressTrack, .separator:
-            return 0.68 + (0.12 * clampedIntensity)
-        }
-    }
-
-    private var highlightOpacity: CGFloat {
-        colorSchemeContrast == .increased ? 0.22 : 0.14
     }
 }

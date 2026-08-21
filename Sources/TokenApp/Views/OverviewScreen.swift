@@ -153,7 +153,6 @@ struct TokenPilotRootView: View {
             .background {
                 LiquidGlassBackground(
                     cornerRadius: TokenPilotDesign.Radius.sm,
-                    intensity: 0.70,
                     surface: .chip
                 )
             }
@@ -185,8 +184,7 @@ struct TokenPilotRootView: View {
         GlassCard(
             padding: TokenPilotDesign.Spacing.lg,
             surface: .cardMuted,
-            cornerRadius: TokenPilotDesign.Radius.md,
-            intensity: 0.70
+            cornerRadius: TokenPilotDesign.Radius.md
         ) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "info.circle")
@@ -302,7 +300,7 @@ struct OverviewScreen: View {
             Button(model.t("Open Settings")) {
                 model.selectedScreen = .settings
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.glassProminent)
             .tint(TokenPilotDesign.status(.goal))
             .focusable()
         }
@@ -1532,8 +1530,7 @@ struct AlertsStatusRow: View {
         GlassCard(
             padding: TokenPilotDesign.Spacing.md,
             surface: .cardMuted,
-            cornerRadius: TokenPilotDesign.Radius.md,
-            intensity: 0.55
+            cornerRadius: TokenPilotDesign.Radius.md
         ) {
             HStack(spacing: TokenPilotDesign.Spacing.md) {
                 Image(systemName: "bell.badge")

@@ -381,7 +381,7 @@ struct CurrentCapacitySignalCard: View {
                 }
                 .font(TokenPilotDesign.Typography.micro)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .controlSize(.small)
             .accessibilityLabel("\(model.t("Action")): \(actionTitle(for: item))")
             .focusable()
@@ -2008,7 +2008,7 @@ struct HistoryExportCard: View {
                     .focusable()
 
                     Button(model.t("Save")) { model.exportHistory() }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.glassProminent)
                         .controlSize(.small)
                         .tint(TokenPilotDesign.trust)
                         .focusable()
@@ -2053,8 +2053,8 @@ struct HistoryCapacityEmptyState: View {
                     Button(model.t("Open Provider Diagnostics")) {
                         model.selectedScreen = .settings
                     }
-                    .buttonStyle(.bordered)
-                    .tint(TokenPilotDesign.calm)
+                    .buttonStyle(.glass)
+                    .foregroundStyle(TokenPilotDesign.calm)
                     .focusable()
                 }
             }
@@ -2089,8 +2089,8 @@ struct HistoryEmptyState: View {
                     Button(model.t("Open Provider Diagnostics")) {
                         model.selectedScreen = .settings
                     }
-                    .buttonStyle(.bordered)
-                    .tint(TokenPilotDesign.calm)
+                    .buttonStyle(.glass)
+                    .foregroundStyle(TokenPilotDesign.calm)
                     .focusable()
                 }
             }

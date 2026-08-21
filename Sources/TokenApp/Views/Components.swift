@@ -972,20 +972,17 @@ struct GlassCard<Content: View>: View {
     var padding: CGFloat = TokenPilotDesign.cardPadding
     var surface: TokenPilotDesign.Surface = .card
     var cornerRadius: CGFloat = TokenPilotDesign.cardRadius
-    var intensity: CGFloat = 1.0
     private let content: Content
 
     init(
         padding: CGFloat = TokenPilotDesign.cardPadding,
         surface: TokenPilotDesign.Surface = .card,
         cornerRadius: CGFloat = TokenPilotDesign.cardRadius,
-        intensity: CGFloat = 1.0,
         @ViewBuilder content: () -> Content
     ) {
         self.padding = padding
         self.surface = surface
         self.cornerRadius = cornerRadius
-        self.intensity = intensity
         self.content = content()
     }
 
@@ -994,7 +991,7 @@ struct GlassCard<Content: View>: View {
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background {
-                LiquidGlassBackground(cornerRadius: cornerRadius, intensity: intensity, surface: surface)
+                LiquidGlassBackground(cornerRadius: cornerRadius, surface: surface)
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
     }
