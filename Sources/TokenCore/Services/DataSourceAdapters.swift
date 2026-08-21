@@ -1122,7 +1122,10 @@ public final class GeminiTelemetryAdapter: ProviderAdapter, Sendable {
             raw = nil
         }
         guard let raw else { return nil }
-        let percent = raw > 0 && raw <= 1 ? raw * 100 : raw
+        // `< 1`, not `<= 1`: an integer 1 means one percent used. Read as the fraction 1.0 it
+        // rescaled a window that had just reset to 100% — a critical menu bar reading and a
+        // "limit reached" alert for a window that was 99% free. `KiroUsageLimitsAdapter` is right.
+        let percent = raw > 0 && raw < 1 ? raw * 100 : raw
         return min(max(Int(percent.rounded()), 0), 100)
     }
 
@@ -2002,7 +2005,10 @@ public final class CodexWebUsageAdapter: ProviderAdapter, @unchecked Sendable {
             raw = nil
         }
         guard let raw else { return nil }
-        let percent = raw > 0 && raw <= 1 ? raw * 100 : raw
+        // `< 1`, not `<= 1`: an integer 1 means one percent used. Read as the fraction 1.0 it
+        // rescaled a window that had just reset to 100% — a critical menu bar reading and a
+        // "limit reached" alert for a window that was 99% free. `KiroUsageLimitsAdapter` is right.
+        let percent = raw > 0 && raw < 1 ? raw * 100 : raw
         return min(max(Int(percent.rounded()), 0), 100)
     }
 
@@ -2579,7 +2585,10 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
 
     private func codexSessionPercentValue(_ value: Any?) -> Int? {
         guard let raw = value.flatMap(codexSessionNumericValue) else { return nil }
-        let percent = raw > 0 && raw <= 1 ? raw * 100 : raw
+        // `< 1`, not `<= 1`: an integer 1 means one percent used. Read as the fraction 1.0 it
+        // rescaled a window that had just reset to 100% — a critical menu bar reading and a
+        // "limit reached" alert for a window that was 99% free. `KiroUsageLimitsAdapter` is right.
+        let percent = raw > 0 && raw < 1 ? raw * 100 : raw
         return min(max(Int(percent.rounded()), 0), 100)
     }
 

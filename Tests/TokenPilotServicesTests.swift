@@ -5547,6 +5547,27 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(snapshot.statusMessage?.contains("fixture-malformed-value") == true)
     }
 
+    /// `used_percent: 1` means one percent used, and the fraction normalization read it as the
+    /// fraction 1.0 and rescaled it to 100. A window that had just reset showed as exhausted in
+    /// critical red, and the `.hundred` alert rule fired "limit reached" on a window 99% free.
+    func testCodexOnePercentUsedIsNotRescaledToExhausted() async throws {
+        let response = """
+        {"id":2,"result":{"planType":"plus","rateLimits":{"primary":{"used_percent":1,"window_minutes":300,"resets_at":"2027-01-15T00:00:00Z"},"secondary":{"used_percent":0.5,"window_minutes":10080,"resets_at":1800000000}}}}
+        """.data(using: .utf8)!
+        var settings = AppSettings(showMockDataWhenDisconnected: false)
+        settings.codexManual.webConnectorEnabled = true
+
+        let snapshot = await CodexWebUsageAdapter(
+            authFileURL: URL(fileURLWithPath: "/missing/auth.json"),
+            httpClient: RecordingCodexWebUsageHTTPClient(data: Data(), failIfCalled: true),
+            appServerClient: StubCodexAppServerRateLimitClient(data: response)
+        ).snapshot(settings: settings)
+
+        XCTAssertEqual(snapshot.fiveHour?.usedPercent, 1, "an integer 1 is one percent, not a full window")
+        // A true fraction is still normalized, which is what the branch exists for.
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 50)
+    }
+
     func testCodexWebUsageAdapterPrefersCodexAppServerRateLimitRpcOverTokenHttp() async throws {
         let response = """
         {"id":2,"result":{"planType":"plus","rateLimits":{"primary":{"used_percent":0.42,"window_minutes":300,"resets_at":"2027-01-15T00:00:00Z"},"secondary":{"used_percent":"18%","window_minutes":10080,"resets_at":1800000000}}}}
