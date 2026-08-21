@@ -238,4 +238,78 @@ final class LocalizationSurfaceTests: XCTestCase {
             "Overview"
         )
     }
+
+    // MARK: - Coverage
+
+    /// Every other guard in this file starts from a surface that already exists — the catalog, or the
+    /// shared table — and checks it is complete. A string that reached the localizer while being in
+    /// *neither* surface is invisible to all of them, and twenty of them shipped that way: banner
+    /// messages, provider setup guidance and the whole `stats`/`blocks` CLI vocabulary, all reaching
+    /// a Korean user in English. This one starts from the call sites instead.
+    func testEveryLocalizedLiteralInTheSourceIsDeclaredForEveryShippedLanguage() throws {
+        // English is the development region: the key *is* the English string, so `en` needs no
+        // declaration and demanding one only produces noise. And a key with no letters in it —
+        // an em dash placeholder, a unit — has nothing to translate.
+        let required = Self.shippedLanguages.filter { $0 != "en" }
+        let keys = try localizedLiteralsInSource()
+            .filter { $0.key.contains(where: \.isLetter) }
+
+        XCTAssertGreaterThan(keys.count, 400, "the source scan found almost no localized literals; check the walk")
+
+        let catalog = try catalog()
+        var offenders: [String] = []
+
+        for (key, site) in keys.sorted(by: { $0.key < $1.key }) {
+            let undeclared = required.filter { code in
+                if let value = catalog[key]?[code], !value.isEmpty { return false }
+                guard let language = Self.language(forCode: code) else { return true }
+                return TokenPilotLocalizer.fallbackValue(key, language: language) == nil
+            }
+            if !undeclared.isEmpty {
+                offenders.append("\(site): \"\(key)\" — missing \(undeclared.joined(separator: ", "))")
+            }
+        }
+
+        XCTAssertTrue(
+            offenders.isEmpty,
+            "these strings reach the localizer but no surface declares them, so they ship in English:\n"
+                + offenders.joined(separator: "\n")
+        )
+    }
+
+    private static func language(forCode code: String) -> TokenPilotLanguage? {
+        TokenPilotLanguage.allCases.first { $0.bundleCode == code }
+    }
+
+    /// `t("…")` in the app layer and `localized("…")` in the services both land on
+    /// `TokenPilotLocalizer`. A key built at runtime cannot be scanned for and is out of scope here.
+    private func localizedLiteralsInSource() throws -> [String: String] {
+        let sources = projectRoot().appendingPathComponent("Sources")
+        let pattern = try NSRegularExpression(pattern: #"\b(?:t|localized)\(\s*"((?:[^"\\]|\\.)*)""#)
+
+        var found: [String: String] = [:]
+        let walker = try XCTUnwrap(FileManager.default.enumerator(at: sources, includingPropertiesForKeys: nil))
+
+        for case let url as URL in walker where url.pathExtension == "swift" {
+            let text = try String(contentsOf: url, encoding: .utf8)
+            let range = NSRange(text.startIndex..<text.endIndex, in: text)
+            for match in pattern.matches(in: text, range: range) {
+                guard let literal = Range(match.range(at: 1), in: text) else { continue }
+                let key = Self.unescaped(String(text[literal]))
+                guard !key.isEmpty, found[key] == nil else { continue }
+                let line = text[text.startIndex..<literal.lowerBound].filter { $0 == "\n" }.count + 1
+                found[key] = "\(url.lastPathComponent):\(line)"
+            }
+        }
+
+        return found
+    }
+
+    private static func unescaped(_ literal: String) -> String {
+        literal
+            .replacingOccurrences(of: "\\n", with: "\n")
+            .replacingOccurrences(of: "\\t", with: "\t")
+            .replacingOccurrences(of: "\\\"", with: "\"")
+            .replacingOccurrences(of: "\\\\", with: "\\")
+    }
 }
