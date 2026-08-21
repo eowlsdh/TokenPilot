@@ -2032,6 +2032,10 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     private let largeFileTailBytes: UInt64
     private let makeUsageProbe: (@Sendable () -> CodexOAuthUsageProbe)?
 
+    /// Matches the freshness the capacity pipeline already applies to Codex's windows
+    /// (`maximumAge: 15 * 60`) and the threshold its sibling local-log adapters use.
+    static let sessionStaleThreshold: TimeInterval = 15 * 60
+
     public init(sessionRoots: [URL]? = nil, manualFallback: CodexManualAdapter = CodexManualAdapter(), webUsageAdapter: any ProviderAdapter = CodexWebUsageAdapter(appServerClient: CodexAppServerRateLimitProcessClient(), allowLegacyDirectHTTP: false), makeUsageProbe: (@Sendable () -> CodexOAuthUsageProbe)? = nil) {
         self.sessionRoots = sessionRoots
         self.manualFallback = manualFallback
@@ -2134,6 +2138,7 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         let newestEvent = events.map(\.timestamp).max()
         let newest = [newestEvent, latestRateLimits?.timestamp].compactMap { $0 }.max() ?? now
         let model = events.reversed().first { $0.model?.isEmpty == false }?.model ?? latestModel ?? manual.model
+        let isStale = now.timeIntervalSince(newest) > Self.sessionStaleThreshold
 
         return ProviderSnapshot(
             provider: .codex,
@@ -2145,10 +2150,17 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
             confidence: .medium,
             dataSource: .localLog,
             isExperimental: true,
-            isStale: false,
-            statusMessage: (latestRateLimits?.fiveHour != nil || latestRateLimits?.weekly != nil)
-                ? "Codex rate limits · provider-reported · local Codex session log"
-                : "EXPERIMENTAL · local Codex log · not web quota",
+            // Every sibling local-log adapter derives this; Codex alone had it hardcoded to false,
+            // so a Codex card read from a session log two hours old still said "Connected" with no
+            // stale marker, while Claude, Kiro, opencode and Grok all showed one. A five-hour window
+            // that was full two hours ago may have reset since, and presenting it as current
+            // provider-reported quota is the one claim this app does not make.
+            isStale: isStale,
+            statusMessage: isStale
+                ? "STALE · no Codex activity in 15 minutes"
+                : ((latestRateLimits?.fiveHour != nil || latestRateLimits?.weekly != nil)
+                    ? "Codex rate limits · provider-reported · local Codex session log"
+                    : "EXPERIMENTAL · local Codex log · not web quota"),
             model: model,
             events: events
         )
