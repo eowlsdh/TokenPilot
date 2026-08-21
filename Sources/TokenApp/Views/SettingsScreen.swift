@@ -1598,9 +1598,7 @@ struct SettingsScreen: View {
             }
         }
         .padding(TokenPilotDesign.Spacing.md)
-        .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
-        }
+        .glassSurface(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous)
@@ -2181,9 +2179,7 @@ struct SettingsScreen: View {
                 .foregroundStyle(TokenPilotDesign.textSecondary)
         }
         .padding(TokenPilotDesign.Spacing.md)
-        .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
-        }
+        .glassSurface(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
     private func providerStatusRow(_ provider: Provider) -> some View {
@@ -2201,9 +2197,7 @@ struct SettingsScreen: View {
                 .foregroundStyle(providerStatusColor(provider))
         }
         .padding(TokenPilotDesign.Spacing.md)
-        .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
-        }
+        .glassSurface(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
 
@@ -2669,9 +2663,7 @@ struct CapacityAlertRuleRow: View {
         }
         .padding(.horizontal, TokenPilotDesign.Spacing.md)
         .padding(.vertical, TokenPilotDesign.Spacing.sm)
-        .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
-        }
+        .glassSurface(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
     }
 }
@@ -2772,9 +2764,7 @@ struct GuideCard: View {
             }
         }
         .padding(TokenPilotDesign.Spacing.md)
-        .background {
-            LiquidGlassBackground(cornerRadius: TokenPilotDesign.Radius.lg, surface: .cardMuted)
-        }
+        .glassSurface(cornerRadius: TokenPilotDesign.Radius.lg, surface: .cardMuted)
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.lg, style: .continuous))
     }
 }

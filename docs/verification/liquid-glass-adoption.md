@@ -80,33 +80,42 @@ which is what `NSVisualEffectView(.sidebar, blendingMode: .behindWindow)` does �
 material is already the system's glass. Rendering the panel with and without the manual tint overlay
 showed no meaningful difference, so it was left alone rather than churned.
 
-## A landmine found by rendering it
+## A landmine found by rendering it, then removed
 
 `GlassEffectContainer` is the documented way to group glass elements. Wrapping the app's cards in one
-produces **smeared, unreadable text**:
+produced **smeared, unreadable text** — the effect was applied as `.background { Color.clear
+.glassEffect(...) }`, and inside a container that form composites the card's own content into its own
+sampling. Applying the effect to the content instead renders crisply.
 
-The cards apply glass as `.background { Color.clear.glassEffect(...) }`. Inside a container, that form
-composites the card's own content into the sampling. Applying the effect to the content instead is
-container-safe and renders crisply — but that is a different shape from the six other call sites, so
-the change was not made. A guard fails if a container is added while the background form is in use,
-which turns a silent visual bug into a test failure.
+The first pass shipped the background form and guarded against containers. That left a trap for
+whoever reached for the documented pattern next, so the second pass closed it: `LiquidGlassBackground`
+became a `GlassSurface` **modifier** that glazes the content, and all seven surfaces — six call sites
+plus `GlassCard` — went through it. Verified on the running app before and after: the popover is
+visually identical, which is the point. The change buys correctness, not a new look.
+
+`GlassEffectContainer` is still not used. It earns its keep when glass shapes sit close enough to
+blend or morph into each other; these cards are separated by spacing and never overlap, and rendering
+them both ways showed no difference. It is available now rather than dangerous, which is what this
+pass was for.
 
 ## Verification
 
-- `swift build -Xswiftc -warnings-as-errors` clean; `swift test`: **861 tests, 0 failures**.
-- Six new guards, each checked by reverting the change: putting one button back on `.bordered` names
-  `SettingsScreen.swift:198`; restoring `.fill(.regularMaterial)` fails both card assertions; adding a
-  `GlassEffectContainer` names the line.
-- **Verified on the running app**, not only in a harness: the bundle was rebuilt, relaunched, and the
-  popover opened and captured. Clicking and capturing had to happen inside one `osascript` — as
-  separate steps the popover dismissed before the capture, which is why earlier attempts came back
-  empty. The captured popover shows the converted cards, the segmented picker, and the glass capsule
-  buttons, with text contrast intact and no layout breakage.
+- `swift build -Xswiftc -warnings-as-errors` clean; `swift test`: **862 tests, 0 failures**.
+- Seven guards, each checked by reverting the change: putting one button back on `.bordered` names
+  `SettingsScreen.swift:198`; restoring `.fill(.regularMaterial)` fails both card assertions; glazing
+  a clear background again names the line; and the surface count fails if the conversion is left
+  half-applied.
+- **Verified on the running app**, not only in a harness, for both passes: the bundle was rebuilt,
+  relaunched, and the popover opened and captured each time. The captures show the converted cards,
+  the segmented picker and the glass capsule buttons, with text crisp, contrast intact and no layout
+  breakage — and the two passes are indistinguishable from each other, which is what a
+  correctness-only change should look like.
 - `make security-scan`: no leaks.
 
-## Not done
+## Capturing the running app
 
-The six non-card call sites still use `LiquidGlassBackground` as a `.background`, which is why the
-container question is deferred rather than settled. Converting `GlassCard` to apply the effect to its
-content would close that, and it should be done as its own change with its own before-and-after
-capture.
+Worth writing down, because three attempts failed first. The popover dismisses if the click and the
+capture are separate steps, so both have to happen inside one `osascript`. A luminance check for
+"is the popover open" gives false positives — any dark window in front reads the same. And none of it
+works while another app is full-screen, because the menu bar is unreachable; activating Finder first
+is what made it repeatable.

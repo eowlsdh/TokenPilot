@@ -26,7 +26,8 @@ final class LiquidGlassAdoptionTests: XCTestCase {
         let design = try appSources().first { $0.name == "TokenPilotDesign.swift" }
         let body = try XCTUnwrap(design?.lines.joined(separator: "\n"))
 
-        XCTAssertTrue(body.contains("glassEffect(.regular, in: shape)"))
+        XCTAssertTrue(body.contains("content.glassEffect(.regular, in: shape)"),
+                      "the effect belongs on the content, not behind it")
         XCTAssertFalse(
             body.contains(".fill(.regularMaterial)"),
             "stacking a material with opacity layers is the hand-rolled glass this replaced"
@@ -38,7 +39,7 @@ final class LiquidGlassAdoptionTests: XCTestCase {
     func testReduceTransparencyStillGetsAnOpaqueSurface() throws {
         let design = try appSources().first { $0.name == "TokenPilotDesign.swift" }
         let lines = try XCTUnwrap(design?.lines)
-        let start = try XCTUnwrap(lines.firstIndex { $0.contains("struct LiquidGlassBackground") })
+        let start = try XCTUnwrap(lines.firstIndex { $0.contains("struct GlassSurface") })
         let end = try XCTUnwrap(lines[start...].firstIndex { $0 == "}" })
         let view = lines[start...end]
 
@@ -92,29 +93,34 @@ final class LiquidGlassAdoptionTests: XCTestCase {
         XCTAssertTrue(body.contains("VisualEffectBackground(material: .sidebar, blendingMode: .behindWindow)"))
     }
 
-    /// A landmine, caught by rendering it: the cards apply glass through `.background { Color.clear
-    /// .glassEffect(...) }`, and wrapping that form in a `GlassEffectContainer` — the documented
-    /// pattern for grouping glass — composites the card's own text into the sampling and comes out
-    /// smeared and unreadable. Applying the effect to the content instead is container-safe, but that
-    /// is a different shape than the six other call sites use.
-    ///
-    /// So containers stay out until `GlassCard` changes shape, and this fails rather than shipping
-    /// blurred text if someone adds one first.
-    func testNoGlassEffectContainerIsAddedWhileCardsApplyGlassAsABackground() throws {
-        var containers: [String] = []
-        var backgroundForm = false
-
+    /// The landmine this closed. Glazing a `Color.clear` behind the content looks identical on its
+    /// own, and inside a `GlassEffectContainer` it composites the card's own text into the sampling
+    /// and comes out smeared. Applied to the content it stays crisp, so the container is safe to add
+    /// — and this keeps the background form from creeping back in and quietly breaking that.
+    func testNoCardGlazesAClearBackgroundInstead() throws {
+        var offenders: [String] = []
         for source in try appSources() {
-            for (index, line) in source.lines.enumerated() {
-                if line.contains("GlassEffectContainer") { containers.append("\(source.name):\(index + 1)") }
-                if line.contains("Color.clear.glassEffect") { backgroundForm = true }
+            for (index, line) in source.lines.enumerated() where line.contains("Color.clear.glassEffect") {
+                offenders.append("\(source.name):\(index + 1)")
             }
         }
-
-        XCTAssertTrue(backgroundForm, "the background form is gone; this guard needs revisiting")
         XCTAssertTrue(
-            containers.isEmpty,
-            "a container smears text for cards drawn with the background form: \(containers)"
+            offenders.isEmpty,
+            "glazing a clear background smears text inside a GlassEffectContainer: \(offenders)"
         )
+    }
+
+    /// One surface for every card, so the conversion cannot be half-applied.
+    func testEveryCardSurfaceComesFromTheOneModifier() throws {
+        var background = 0
+        var modifier = 0
+        for source in try appSources() {
+            for line in source.lines {
+                if line.contains("LiquidGlassBackground") { background += 1 }
+                if line.contains(".glassSurface(") { modifier += 1 }
+            }
+        }
+        XCTAssertEqual(background, 0, "the old background view is gone")
+        XCTAssertGreaterThanOrEqual(modifier, 7, "expected every card surface plus GlassCard itself")
     }
 }

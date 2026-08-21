@@ -782,12 +782,17 @@ struct VisualEffectBackground: NSViewRepresentable {
 /// does, and `glassEffect` samples what is actually behind the view, reacts to motion and lighting,
 /// and carries the system's own edge treatment. Four hand-tuned opacity ramps cannot do any of that.
 ///
+/// It is a modifier rather than a background view on purpose. Glazing a `Color.clear` behind the
+/// content looks identical on its own and is not the same thing: inside a `GlassEffectContainer`
+/// that form composites the card's own text into its sampling and the text comes out smeared and
+/// unreadable. Applied to the content, it stays crisp — checked by rendering both.
+///
 /// Two things are kept rather than handed over. `reduceTransparency` still swaps in a flat opaque
 /// surface, because that setting means "no translucency" and the accessibility contrast guarantees
-/// in `DesignConsistencyTests` are computed against those opaque tokens. And the border stroke stays:
-/// glass supplies its own rim, but in light appearance a card on a near-white background loses its
-/// edge without it — checked by rendering both.
-struct LiquidGlassBackground: View {
+/// in `DesignConsistencyTests` are computed against those opaque tokens. And the border stroke
+/// stays: glass supplies its own rim, but in light appearance a card on a near-white background
+/// loses its edge without it.
+struct GlassSurface: ViewModifier {
     var cornerRadius: CGFloat = TokenPilotDesign.Radius.md
     var surface: TokenPilotDesign.Surface = .card
 
@@ -795,21 +800,22 @@ struct LiquidGlassBackground: View {
     @Environment(\.tokenPilotReduceTransparencyOverride) private var reduceTransparencyOverride
     @Environment(\.tokenPilotSemanticPalette) private var palette
 
-    var body: some View {
-        ZStack {
+    func body(content: Content) -> some View {
+        Group {
             if reduceTransparency {
-                shape.fill(palette.surface(surface))
+                content.background { shape.fill(palette.surface(surface)) }
             } else {
-                Color.clear.glassEffect(.regular, in: shape)
+                content.glassEffect(.regular, in: shape)
             }
-
+        }
+        .overlay(
             shape
                 .stroke(
                     palette.borderColor(emphasized: surface == .cardElevated),
                     lineWidth: palette.borderWidth(emphasized: surface == .cardElevated)
                 )
                 .padding(0.5)
-        }
+        )
     }
 
     private var reduceTransparency: Bool {
@@ -818,5 +824,14 @@ struct LiquidGlassBackground: View {
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+    }
+}
+
+extension View {
+    func glassSurface(
+        cornerRadius: CGFloat = TokenPilotDesign.Radius.md,
+        surface: TokenPilotDesign.Surface = .card
+    ) -> some View {
+        modifier(GlassSurface(cornerRadius: cornerRadius, surface: surface))
     }
 }

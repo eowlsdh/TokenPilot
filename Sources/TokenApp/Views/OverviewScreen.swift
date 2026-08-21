@@ -150,12 +150,7 @@ struct TokenPilotRootView: View {
                 }
             }
             .frame(width: 30, height: 30)
-            .background {
-                LiquidGlassBackground(
-                    cornerRadius: TokenPilotDesign.Radius.sm,
-                    surface: .chip
-                )
-            }
+            .glassSurface(cornerRadius: TokenPilotDesign.Radius.sm, surface: .chip)
         }
         .buttonStyle(.plain)
         .foregroundStyle(TokenPilotDesign.text(.secondary))

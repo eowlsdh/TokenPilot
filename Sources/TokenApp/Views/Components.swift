@@ -990,10 +990,8 @@ struct GlassCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                LiquidGlassBackground(cornerRadius: cornerRadius, surface: surface)
-            }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .glassSurface(cornerRadius: cornerRadius, surface: surface)
     }
 }
 
