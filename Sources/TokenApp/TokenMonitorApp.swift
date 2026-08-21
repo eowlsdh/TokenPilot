@@ -107,7 +107,7 @@ private enum TokenPilotCLIRunner {
                     TokenPilotCLIService.summaryText(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        language: .en,
+                        language: settings.localization.language,
                         period: period,
                         since: effectiveSince,
                         until: until,
@@ -194,7 +194,7 @@ private enum TokenPilotCLIRunner {
                     TokenPilotCLIService.statsText(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        language: .en,
+                        language: settings.localization.language,
                         period: period,
                         since: effectiveSince,
                         until: until,
@@ -256,7 +256,7 @@ private enum TokenPilotCLIRunner {
                     TokenPilotCLIService.reportText(
                         events: events,
                         enabledProviders: settings.enabledProviders,
-                        language: .en,
+                        language: settings.localization.language,
                         period: period,
                         since: effectiveSince,
                         until: until,
@@ -318,6 +318,7 @@ private enum TokenPilotCLIRunner {
         case .success(.audit(let includesJSON, let since, let until, let days, let timeZone, let project, let sections, let includesCSV, let instances, let includesMarkdown, let provider, let model)):
             let events = UsageHistoryStore().loadEvents()
             let calendar = cliCalendar(for: timeZone)
+            let settings = TokenPilotSettingsStore().load()
             if includesCSV {
                 print(
                     TokenPilotCLIService.auditCSVText(
@@ -370,7 +371,7 @@ private enum TokenPilotCLIRunner {
                 print(
                     TokenPilotCLIService.auditText(
                         events: events,
-                        language: .en,
+                        language: settings.localization.language,
                         since: since,
                         until: until,
                         days: days,
@@ -384,8 +385,10 @@ private enum TokenPilotCLIRunner {
             return 0
         case .success(.blocks(let includesJSON, let active, let recent, let timeZone, let since, let until, let days, let includesCSV, let includesMarkdown, let provider, let watch, let watchIntervalSeconds)):
             let calendar = cliCalendar(for: timeZone)
+            let settings = TokenPilotSettingsStore().load()
             if watch {
                 return await runBlocksWatch(
+                    language: settings.localization.language,
                     active: active,
                     recent: recent,
                     since: since,
@@ -413,7 +416,7 @@ private enum TokenPilotCLIRunner {
             } else if includesMarkdown {
                 print(TokenPilotCLIService.blocksMarkdownText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             } else {
-                print(TokenPilotCLIService.blocksText(assessments: assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
+                print(TokenPilotCLIService.blocksText(assessments: assessments, language: settings.localization.language, active: active, recent: recent, since: since, until: until, days: days, provider: provider, calendar: calendar))
             }
             return 0
         case .success(.statusline(let components, let provider, let colorized, let timeZone)):
@@ -678,6 +681,7 @@ private enum TokenPilotCLIRunner {
     /// because a repeating stream gives its reader no way to tell one render from the next. When
     /// stdout is not a terminal the screen is never cleared, so a redirected run stays readable.
     private static func runBlocksWatch(
+        language: TokenPilotLanguage,
         active: Bool,
         recent: Bool,
         since: Date?,
@@ -694,6 +698,7 @@ private enum TokenPilotCLIRunner {
             let assessments = await loadLatestCapacityAssessments()
             let body = TokenPilotCLIService.blocksText(
                 assessments: assessments,
+                language: language,
                 active: active,
                 recent: recent,
                 since: since,

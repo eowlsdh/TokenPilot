@@ -3124,6 +3124,7 @@ public enum TokenPilotCLIService {
     /// has not elapsed; `recent` keeps only freshly observed blocks. Aggregates only.
     public static func blocksText(
         assessments: [CapacityAssessment],
+        language: TokenPilotLanguage = .en,
         active: Bool = false,
         recent: Bool = false,
         since: Date? = nil,
@@ -3135,25 +3136,25 @@ public enum TokenPilotCLIService {
     ) -> String {
         let blocks = filteredBlocks(assessments, active: active, recent: recent, since: since, until: until, days: days, provider: provider, now: now, calendar: calendar)
         var lines: [String] = []
-        lines.append("TokenPilot · \(localized("Blocks", language: .en))")
+        lines.append("TokenPilot · \(localized("Blocks", language: language))")
         for assessment in blocks {
             let observation = assessment.observation
             let series = observation.seriesID
             guard let usedPercent = observation.value.usedPercent else { continue }
             let remaining = min(max(100 - usedPercent, 0), 100)
-            var line = "\(localized(series.provider.displayName, language: .en)) (\(series.providerWindowID)): " +
-                "\(usedPercent)% \(localized("used", language: .en)) · \(remaining)% \(localized("remaining", language: .en))"
+            var line = "\(localized(series.provider.displayName, language: language)) (\(series.providerWindowID)): " +
+                "\(usedPercent)% \(localized("used", language: language)) · \(remaining)% \(localized("remaining", language: language))"
             if let resetAt = observation.resetAt {
                 let formatter = DateFormatter()
                 formatter.locale = Locale(identifier: "en_US_POSIX")
                 formatter.calendar = calendar
                 formatter.timeZone = calendar.timeZone
                 formatter.dateFormat = "HH:mm"
-                line += " · \(localized("resets", language: .en)) \(formatter.string(from: resetAt))"
+                line += " · \(localized("resets", language: language)) \(formatter.string(from: resetAt))"
             }
             lines.append(line)
         }
-        lines.append(localized("Local activity, not provider quota", language: .en))
+        lines.append(localized("Local activity, not provider quota", language: language))
         return lines.joined(separator: "\n")
     }
 

@@ -10301,6 +10301,46 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(utc, try XCTUnwrap(calendar.date(from: components)))
     }
 
+    /// `blocks` was the only human-readable CLI formatter with no `language:` parameter, so it
+    /// pinned every label to English while `stats`, `report` and `audit` next to it answered in the
+    /// configured language. A Korean user got one command in Korean and the next in English.
+    func testCLIBlocksTextAnswersInTheConfiguredLanguage() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let series = try CapacitySeriesID(
+            provider: .claude,
+            providerWindowID: "five-hour",
+            kind: .fixedReset,
+            unit: .percent,
+            durationMinutes: 300
+        )
+        let observation = try CapacityObservation(
+            seriesID: series,
+            observedAt: now,
+            resetAt: now.addingTimeInterval(3_600),
+            value: try CapacityValue(usedPercent: 62),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "blocksV1",
+            now: now
+        )
+        let record = try CapacityEvidenceRecord(observation: observation)
+        let assessment = CapacityAssessmentService().assess(try record.observationForAssessment(now: now), now: now)
+
+        let korean = TokenPilotCLIService.blocksText(assessments: [assessment], language: .ko, now: now, calendar: calendar)
+        XCTAssertTrue(korean.contains("TokenPilot · 블록"), korean)
+        XCTAssertTrue(korean.contains("62% 사용"), korean)
+        XCTAssertTrue(korean.contains("38% 남음"), korean)
+        XCTAssertTrue(korean.contains("초기화"), korean)
+        XCTAssertFalse(korean.contains("remaining"), "an English label survived the translation:\n\(korean)")
+
+        // The default stays English, so a script that never passes a language sees no change.
+        let english = TokenPilotCLIService.blocksText(assessments: [assessment], now: now, calendar: calendar)
+        XCTAssertTrue(english.contains("38% remaining"), english)
+    }
+
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
