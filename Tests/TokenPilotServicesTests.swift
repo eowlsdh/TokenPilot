@@ -622,6 +622,19 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "0"]), .failure(.invalidDays("0")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--days", "-3"]), .failure(.invalidDays("-3")))
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["report", "--timezone", "Mars/Olympus"]), .failure(.invalidTimezone("Mars/Olympus")))
+        // A swapped pair is an ordinary typo, and it used to abort the process on a ClosedRange trap.
+        for command in ["report", "stats", "audit", "export", "summary"] {
+            XCTAssertEqual(
+                TokenPilotCLIService.parse(arguments: [command, "--since", "2026-08-10", "--until", "2026-08-01"]),
+                .failure(.invalidCombination("--until must not be earlier than --since.")),
+                "\(command) accepted an inverted window"
+            )
+        }
+        XCTAssertNotEqual(
+            TokenPilotCLIService.parse(arguments: ["report", "--since", "2026-08-01", "--until", "2026-08-01"]),
+            .failure(.invalidCombination("--until must not be earlier than --since.")),
+            "a single-day window is not inverted"
+        )
         XCTAssertEqual(TokenPilotCLIService.parse(arguments: ["export", "--timezone"]), .failure(.missingValue(forFlag: "--timezone")))
     }
 
@@ -9908,6 +9921,9 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(coverage.newestEventDay, calendar.startOfDay(for: day(0)))
     }
 
+    /// Coverage counted every stored active day against `windowDays`, so a user active on more
+    /// days than the window read "102% of last 45 days" — and the "oldest stored" day it printed
+    /// alongside sat outside the window it was describing.
     func testUsageCoverageIgnoresDaysOutsideTheWindowItReports() throws {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
@@ -10253,6 +10269,36 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(markdown.hasSuffix("_Local activity, not provider quota._"))
         // Aggregates only: no per-event source labels leak.
         XCTAssertFalse(markdown.contains("md-audit-test"))
+    }
+
+    /// `--since`/`--until` days were parsed in the *system* zone regardless of `--timezone`,
+    /// because the flag loop parsed them before it knew the zone. Asking for one day in another
+    /// zone returned a window offset by the difference — a different day's usage entirely.
+    func testCLIDayBoundariesFollowTheRequestedTimeZone() throws {
+        func since(of result: Result<TokenPilotCLICommand, TokenPilotCLIError>) throws -> Date {
+            guard case .success(.report(_, _, let since, _, _, _, _, _, _, _, _, _, _, _, _)) = result else {
+                throw XCTSkip("report parse shape changed")
+            }
+            return try XCTUnwrap(since)
+        }
+
+        let newYork = try since(of: TokenPilotCLIService.parse(
+            arguments: ["report", "--since", "2026-08-10", "--timezone", "America/New_York"]
+        ))
+        let utc = try since(of: TokenPilotCLIService.parse(
+            arguments: ["report", "--since", "2026-08-10", "--timezone", "UTC"]
+        ))
+
+        // Midnight in New York on that date is four hours after midnight UTC.
+        XCTAssertEqual(newYork.timeIntervalSince(utc), 4 * 3_600, accuracy: 1)
+
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 8
+        components.day = 10
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        XCTAssertEqual(utc, try XCTUnwrap(calendar.date(from: components)))
     }
 
     func testCLIBlocksTextAndJSONReportWindowStatus() throws {

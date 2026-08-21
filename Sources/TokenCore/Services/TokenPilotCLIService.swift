@@ -122,8 +122,8 @@ public enum TokenPilotCLIService {
 
     private static func parseAudit(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var includesJSON = false
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var timeZone: TimeZone?
         var project: String?
@@ -142,17 +142,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -203,6 +203,15 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
+        }
         if days != nil, since != nil || until != nil {
             return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
         }
@@ -229,8 +238,8 @@ public enum TokenPilotCLIService {
 
     private static func parseSummary(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var period = HistoryPeriod.today
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var timeZone: TimeZone?
         var includesBreakdown = false
@@ -259,17 +268,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -339,6 +348,15 @@ public enum TokenPilotCLIService {
                 return .failure(.unknownCommand(flag))
             }
             index += 1
+        }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
         }
         if days != nil, since != nil || until != nil {
             return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
@@ -418,8 +436,8 @@ public enum TokenPilotCLIService {
         var active = false
         var recent = false
         var timeZone: TimeZone?
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var provider: Provider?
         var watch = false
@@ -466,17 +484,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -488,6 +506,15 @@ public enum TokenPilotCLIService {
                 return .failure(.unknownCommand(flag))
             }
             index += 1
+        }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
         }
         if days != nil, since != nil || until != nil {
             return .failure(.invalidCombination("--days cannot be combined with --since or --until."))
@@ -509,8 +536,8 @@ public enum TokenPilotCLIService {
     private static func parseReport(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var period = HistoryPeriod.last7Days
         var format = TokenPilotReportFormat.text
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var includesCost = true
         var timeZone: TimeZone?
@@ -536,17 +563,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -619,6 +646,15 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
+        }
         if sections != nil, since != nil || until != nil || days != nil {
             return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
         }
@@ -642,8 +678,8 @@ public enum TokenPilotCLIService {
         var period = HistoryPeriod.last7Days
         var outputPath: String?
         var includesCapacity = false
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var includesCost = true
         var timeZone: TimeZone?
@@ -675,17 +711,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -754,6 +790,15 @@ public enum TokenPilotCLIService {
             }
             index += 1
         }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
+        }
         if sections != nil, since != nil || until != nil || days != nil {
             return .failure(.invalidCombination("--sections cannot be combined with --since, --until, or --days."))
         }
@@ -774,8 +819,8 @@ public enum TokenPilotCLIService {
 
     private static func parseStats(_ flags: [String]) -> Result<TokenPilotCLICommand, TokenPilotCLIError> {
         var period = HistoryPeriod.last7Days
-        var since: Date?
-        var until: Date?
+        var sinceText: String?
+        var untilText: String?
         var days: Int?
         var includesCost = true
         var timeZone: TimeZone?
@@ -804,17 +849,17 @@ public enum TokenPilotCLIService {
             case "--since":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                since = parsed
+                sinceText = flags[index]
             case "--until":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
-                guard let parsed = parseDay(flags[index]) else {
+                guard parseDay(flags[index], in: .current) != nil else {
                     return .failure(.invalidDate(flags[index]))
                 }
-                until = parsed
+                untilText = flags[index]
             case "--days":
                 guard index + 1 < flags.count else { return .failure(.missingValue(forFlag: flag)) }
                 index += 1
@@ -884,6 +929,15 @@ public enum TokenPilotCLIService {
                 return .failure(.unknownCommand(flag))
             }
             index += 1
+        }
+        // `--timezone` can appear after `--since`, so the day is anchored once the whole command
+        // is known. Parsing it during the loop pinned midnight to the *system* zone, and a report
+        // asked for in another zone came back showing the wrong day entirely.
+        let dayZone = timeZone ?? .current
+        let since = sinceText.flatMap { parseDay($0, in: dayZone) }
+        let until = untilText.flatMap { parseDay($0, in: dayZone) }
+        if let since, let until, until < since {
+            return .failure(.invalidCombination("--until must not be earlier than --since."))
         }
         if weekStartDay != nil, since != nil || until != nil || days != nil {
             return .failure(.invalidCombination("--start-of-week cannot be combined with --since, --until, or --days."))
@@ -3399,10 +3453,11 @@ public enum TokenPilotCLIService {
     }
 
     /// Parses a strict `yyyy-MM-dd` date (CLI `--since`/`--until` values).
-    private static func parseDay(_ value: String) -> Date? {
+    private static func parseDay(_ value: String, in timeZone: TimeZone) -> Date? {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = timeZone
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.isLenient = false
         return formatter.date(from: value)
@@ -3457,7 +3512,13 @@ public enum TokenPilotCLIService {
 
     /// Converts the report window bounds into a closed range for aggregation filtering.
     private static func range(from window: (start: Date, endExclusive: Date)) -> ClosedRange<Date> {
-        window.start...(window.endExclusive.addingTimeInterval(-0.001))
+        let end = window.endExclusive.addingTimeInterval(-0.001)
+        // An inverted window used to trap here and abort the process with a stack dump. A swapped
+        // `--since`/`--until` pair is caught at parse time now, but `--until` alone can still land
+        // before the period's own start, and that asks for a window with no days in it — which is
+        // an empty report, not a crash.
+        guard end >= window.start else { return window.start...window.start }
+        return window.start...end
     }
 
     /// Closed date range implied by CLI `--since`/`--until`/`--days` values, or nil when none is set.
