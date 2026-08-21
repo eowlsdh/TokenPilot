@@ -1401,14 +1401,13 @@ struct HistoryHourlyActivityCard: View {
         return max(CGFloat(ratio) * 40, 2)
     }
 
+    /// Intensity, not risk. The busiest hour is by definition at ratio 1.0, so painting the top of
+    /// the ramp in the danger colour meant a normal working afternoon rendered in the same red the
+    /// card above uses for "Critical" quota. This is the heatmap's ramp: it says *how much*, and
+    /// leaves *how risky* to the surfaces that actually know.
     private func hourColor(_ bucket: HourlyActivityBucket, peak: Int) -> Color {
         let ratio = peak > 0 ? Double(bucket.tokens) / Double(peak) : 0
-        if ratio == 0 { return TokenPilotDesign.surface(.separator).opacity(0.5) }
-        switch ratio {
-        case 0.66...: return TokenPilotDesign.status(.danger)
-        case 0.33..<0.66: return TokenPilotDesign.status(.warning)
-        default: return TokenPilotDesign.trust
-        }
+        return TokenPilotDesign.activityIntensity(ratio)
     }
 }
 
@@ -1485,13 +1484,10 @@ struct HistoryFiveHourBlocksCard: View {
         return Double(block.tokens) / Double(peak)
     }
 
+    /// See `hourColor`: these bars report volume, and the app's risk colours belong to quota.
     private func blockColor(_ block: FiveHourUsageBlock, peak: Int) -> Color {
         let ratio = peak > 0 ? Double(block.tokens) / Double(peak) : 0
-        switch ratio {
-        case 0.66...: return TokenPilotDesign.status(.danger)
-        case 0.33..<0.66: return TokenPilotDesign.status(.warning)
-        default: return TokenPilotDesign.trust
-        }
+        return TokenPilotDesign.activityIntensity(ratio)
     }
 }
 

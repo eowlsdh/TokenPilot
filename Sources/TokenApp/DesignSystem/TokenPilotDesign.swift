@@ -539,6 +539,22 @@ enum TokenPilotDesign {
         riskColor(percent, contrast: nil)
     }
 
+    /// How much, on a 0...1 scale — deliberately not the risk palette.
+    ///
+    /// The activity charts used `danger`/`warning` for their top two bands, so the busiest hour of
+    /// a perfectly normal day rendered in the same red as a critical quota sitting two cards above
+    /// it. Volume gets its own quiet ramp; red stays reserved for something being wrong. Matches
+    /// the heatmap, which was already doing this.
+    static func activityIntensity(_ ratio: Double) -> Color {
+        switch ratio {
+        case ..<0.001: return surface(.separator).opacity(0.5)
+        case ..<0.25: return trust.opacity(0.30)
+        case ..<0.50: return trust.opacity(0.50)
+        case ..<0.75: return trust.opacity(0.72)
+        default: return calm.opacity(0.85)
+        }
+    }
+
     private static func riskColor(_ percent: Int?, contrast: ColorSchemeContrast?) -> Color {
         guard let percent else { return textSecondaryDefinition.color(contrast: contrast) }
         switch CapacityRisk.forUsedPercent(percent) {
