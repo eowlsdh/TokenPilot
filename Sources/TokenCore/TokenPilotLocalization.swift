@@ -30,9 +30,27 @@ public enum TokenPilotLocalizer {
 
     private static let xcstringsCatalog: [String: [String: String]] = loadXcstringsCatalog()
 
+    /// What the tables alone would answer, with the catalog out of the way. Only the drift test uses
+    /// this: whichever surface a given build reads, both have to say the same thing.
+    static func fallbackValue(_ key: String, language: TokenPilotLanguage) -> String? {
+        if let values = supplementalFallback[key], let value = values[language] {
+            return value
+        }
+
+        switch language {
+        case .ko: return koreanFallback[key]
+        case .zhHans: return chineseFallback[key]
+        case .zhHant: return chineseTraditionalFallback[key]
+        case .ja: return japaneseFallback[key]
+        case .en, .system: return englishFallback[key]
+        }
+    }
+
+    /// Same rule as the catalog lookup: answer in the requested language or not at all. Borrowing
+    /// English here would stop a key that this table covers in four languages from ever reaching the
+    /// per-language table that covers it in the fifth.
     private static func localizedFromSupplementalFallback(_ key: String, language: TokenPilotLanguage) -> String? {
-        guard let values = supplementalFallback[key] else { return nil }
-        return values[language] ?? values[.en]
+        supplementalFallback[key]?[language]
     }
 
     private static let supplementalFallback: [String: [TokenPilotLanguage: String]] = [
@@ -569,7 +587,7 @@ public enum TokenPilotLocalizer {
         "Unsupported source": [.en: "Unsupported source", .ko: "지원되지 않는 소스", .ja: "未対応ソース", .zhHans: "不支持的来源", .zhHant: "不支持的來源"],
         "Use Manual DeepSeek Balance": [.en: "Use Manual DeepSeek Balance", .ko: "수동 DeepSeek 잔액 사용", .ja: "手動DeepSeek残高を使用", .zhHans: "使用手动 DeepSeek 余额", .zhHant: "使用手動 DeepSeek 餘額"],
         "Used": [.en: "Used", .ko: "사용됨", .ja: "使用済み", .zhHans: "已用", .zhHant: "已用"],
-        "Weekly window": [.en: "Weekly window", .ko: "주간 윈도우", .ja: "週次ウィンドウ", .zhHans: "每周窗口", .zhHant: "每周窗口"],
+        "Weekly window": [.en: "Weekly window", .ko: "주간 창", .ja: "週次ウィンドウ", .zhHans: "每周窗口", .zhHant: "每週視窗"],
         "5-hour window": [.en: "5-hour window", .ko: "5시간 윈도우", .ja: "5時間ウィンドウ", .zhHans: "5 小时窗口", .zhHant: "5 小時窗口"],
         "capacity.notification.balance.body": [.en: "%@ balance is below %@ %@.", .ko: "%@ 잔액이 %@ %@ 미만입니다.", .ja: "%@ の残高が %@ %@ を下回りました。", .zhHans: "%@ 余额低于 %@ %@。", .zhHant: "%@ 餘額低於 %@ %@。"],
         "capacity.notification.percent.body": [.en: "%@ %@ reached %@%% used.", .ko: "%@ %@ 사용량이 %@%%에 도달했습니다.", .ja: "%@ の %@ 使用量が %@%% に達しました。", .zhHans: "%@ %@ 已达到 %@%% 使用量。", .zhHant: "%@ %@ 已達到 %@%% 使用量。"],
@@ -646,14 +664,30 @@ public enum TokenPilotLocalizer {
     ]
 
     private static func localizedFromCatalog(_ key: String, language: TokenPilotLanguage) -> String? {
-        if let direct = localizedFromXcstrings(key: key, language: language) {
+        if let direct = catalogValue(key, langCode: language.bundleCode, in: xcstringsCatalog) {
             return direct
         }
 
+        return bundleValue(key, in: candidateBundles(for: language))
+    }
+
+    /// Answers only in the language that was asked for. Falling back to the catalog's English here
+    /// sounds harmless and is not: English is filled in for every key, so a language the catalog is
+    /// incomplete for returned English and the translation tables below were never consulted.
+    static func catalogValue(
+        _ key: String,
+        langCode: String?,
+        in catalog: [String: [String: String]]
+    ) -> String? {
+        guard let langCode, let value = catalog[langCode]?[key], !value.isEmpty else { return nil }
+        return value
+    }
+
+    static func bundleValue(_ key: String, in bundles: [Bundle]) -> String? {
         let placeholder = "__tokenpilot_missing_localized__"
         let tablePriority = ["Localizable", nil]
 
-        for bundle in candidateBundles(for: language) {
+        for bundle in bundles {
             for table in tablePriority {
                 let localized = bundle.localizedString(forKey: key, value: placeholder, table: table)
                 if localized != placeholder {
@@ -665,33 +699,49 @@ public enum TokenPilotLocalizer {
         return nil
     }
 
-    private static func localizedFromXcstrings(key: String, language: TokenPilotLanguage) -> String? {
-        guard let langCode = language.bundleCode else { return nil }
+    /// SwiftPM keeps a target's resources in a nested `<Package>_<Target>.bundle`, and `build.sh`
+    /// copies that bundle into the app whole. Declared in one place because `build.sh` names the
+    /// same bundle, and a test asserts the two agree.
+    static let resourceBundleName = "TokenMonitor_TokenApp.bundle"
 
-        if let byLang = xcstringsCatalog[langCode], let value = byLang[key], !value.isEmpty {
-            return value
+    /// `url(forResource:)` does not descend into a nested bundle, so the catalog `build.sh` checks
+    /// for was present in the shipped app and unreadable from it — every string came from the
+    /// tables below, while Xcode's build compiled the same catalog into `.lproj` folders and used
+    /// it. Two builds of one app localized differently. The bundle is matched by name rather than
+    /// by scanning for `.bundle` children so a neighbouring app's catalog can never be picked up.
+    static func catalogURLs(searchingFrom roots: [URL]) -> [URL] {
+        var found: [URL] = []
+        var seen: Set<URL> = []
+
+        func consider(_ bundleURL: URL) {
+            guard let bundle = Bundle(url: bundleURL),
+                  let url = bundle.url(forResource: "Localizable", withExtension: "xcstrings"),
+                  seen.insert(url.standardizedFileURL).inserted else {
+                return
+            }
+            found.append(url)
         }
 
-        if langCode != "en", let fallback = xcstringsCatalog["en"], let value = fallback[key], !value.isEmpty {
-            return value
+        for root in roots {
+            consider(root)
+            consider(root.appendingPathComponent("Contents/Resources/\(resourceBundleName)"))
+            consider(root.appendingPathComponent(resourceBundleName))
+            // Under `swift test` the resource bundle sits beside the test binary, not inside it.
+            consider(root.deletingLastPathComponent().appendingPathComponent(resourceBundleName))
         }
 
-        return nil
+        return found
     }
 
     private static func loadXcstringsCatalog() -> [String: [String: String]] {
         var catalog: [String: [String: String]] = [:]
 
-        var candidates = Set<URL>()
-        candidates.insert(Bundle(for: TokenPilotLocalizationBundleMarker.self).bundleURL)
-        candidates.insert(Bundle.main.bundleURL)
+        let roots = [
+            Bundle(for: TokenPilotLocalizationBundleMarker.self).bundleURL,
+            Bundle.main.bundleURL
+        ]
 
-        for url in candidates {
-            guard let bundle = Bundle(url: url),
-                  let sourceURL = bundle.url(forResource: "Localizable", withExtension: "xcstrings") else {
-                continue
-            }
-
+        for sourceURL in catalogURLs(searchingFrom: roots) {
             guard let data = try? Data(contentsOf: sourceURL),
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let strings = json["strings"] as? [String: [String: Any]] else {
@@ -713,7 +763,14 @@ public enum TokenPilotLocalizer {
         return catalog
     }
 
-    private static func candidateBundles(for language: TokenPilotLanguage) -> [Bundle] {
+    static func defaultBaseBundles() -> [Bundle] {
+        [Bundle(for: TokenPilotLocalizationBundleMarker.self), Bundle.main]
+    }
+
+    static func candidateBundles(
+        for language: TokenPilotLanguage,
+        bases: [Bundle] = defaultBaseBundles()
+    ) -> [Bundle] {
         var out: [Bundle] = []
         var seen: Set<URL> = []
 
@@ -724,10 +781,17 @@ public enum TokenPilotLocalizer {
             }
         }
 
-        append(languageSpecificBundle(for: language, baseBundle: Bundle(for: TokenPilotLocalizationBundleMarker.self)))
-        append(Bundle(for: TokenPilotLocalizationBundleMarker.self))
-        append(languageSpecificBundle(for: language, baseBundle: Bundle.main))
-        append(Bundle.main)
+        for base in bases {
+            append(languageSpecificBundle(for: language, baseBundle: base))
+        }
+
+        // A bundle that is not language-specific resolves in whatever language the *system* prefers,
+        // which is the wrong answer for someone reading the app in one language and running macOS in
+        // another. It also masked missing translations: the app's development region is English, so
+        // a key absent from `zh-Hant.lproj` came back in English before the tables below were tried.
+        if language == .en || language == .system {
+            bases.forEach(append)
+        }
 
         return out
     }
@@ -1189,7 +1253,7 @@ public enum TokenPilotLocalizer {
         "Connect a data source.": "请连接数据源。",
         "tok": "令牌",
         "Use Codex Web Snapshot": "使用手动限额快照",
-        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "输入你手动看到的限额数值。TokenPilot 只保存这些数字，不保存 Cookie 或登录 Token。",
+        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "输入你自己看到的限额值。TokenPilot 只保存这些数字，不保存 Cookie 或登录 Token。",
         "Web today tokens: %d": "手动今日 Token：%d",
         "Mark Web Snapshot Now": "将手动快照标记为当前",
         "Captured": "捕获时间",
@@ -1743,9 +1807,9 @@ public enum TokenPilotLocalizer {
         "Use Codex Limit Hints Connector": "Codex 上限ヒントコネクタを使う",
         "Asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot does not read, store, display, or export Codex access tokens.": "任意のベータ機能です。ローカルの Codex CLI app-server に account/rateLimits/read を依頼します。TokenPilot は Codex アクセストークンを読み取り・保存・表示・書き出しません。",
         "Codex app-server limit hints are unofficial and may break if the Codex CLI changes. Disable to fall back to local activity/manual values.": "Codex CLI app-server 経由の非公式ベータです。値はヒントであり、公式上限として保証されません。オフにするとローカル活動量/手動値に戻ります。",
-        "Manual / personal calibration fallback": "手動上限ヒントのフォールバック",
+        "Manual / personal calibration fallback": "手動の上限ヒント補正値",
         "Use Codex Web Snapshot": "手動上限スナップショットを使う",
-        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "自分で確認した上限値を入力します。TokenPilotはCookieやログイントークンではなく数値だけを保存します。",
+        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "自分で確認した上限値を入力してください。TokenPilot は数値だけを保存し、Cookie やログイントークンは保存しません。",
         "Web today tokens: %d": "手動今日トークン：%d",
         "Mark Web Snapshot Now": "手動スナップショットを現在時刻にする",
         "Captured": "取得時刻",
@@ -2052,9 +2116,9 @@ public enum TokenPilotLocalizer {
         "Use Codex Limit Hints Connector": "Codex 한도 힌트 커넥터 사용",
         "Asks the local Codex CLI app-server for account/rateLimits/read. TokenPilot does not read, store, display, or export Codex access tokens.": "선택 베타 기능입니다. 로컬 Codex CLI app-server에 account/rateLimits/read를 요청합니다. TokenPilot은 Codex access token을 읽거나 저장하거나 표시하거나 내보내지 않습니다.",
         "Codex app-server limit hints are unofficial and may break if the Codex CLI changes. Disable to fall back to local activity/manual values.": "Codex CLI app-server 경유 비공식 베타입니다. 값은 공식 한도 보장값이 아닌 힌트입니다. 끄면 로컬 활동량/수동값으로 돌아갑니다.",
-        "Manual / personal calibration fallback": "수동 한도 힌트 fallback",
+        "Manual / personal calibration fallback": "수동 한도 힌트 보정값",
         "Use Codex Web Snapshot": "수동 한도 스냅샷 사용",
-        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "직접 확인한 한도 값을 입력하세요. TokenPilot은 쿠키나 로그인 토큰 없이 숫자만 저장합니다.",
+        "Enter values you see on Codex web. TokenPilot stores only these numbers, not cookies or login tokens.": "직접 확인한 한도 값을 입력하세요. TokenPilot은 숫자만 저장하고 쿠키나 로그인 토큰은 저장하지 않습니다.",
         "Web today tokens: %d": "수동 오늘 토큰: %d",
         "Mark Web Snapshot Now": "수동 스냅샷 현재로 표시",
         "Captured": "캡처 시각",

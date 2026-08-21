@@ -14,6 +14,17 @@
     <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
+    <!-- The Developer ID artifact ships its translations as a string catalog rather than as .lproj
+         folders, so without this macOS reads the app as English-only: no per-app language override,
+         and an English-only entry wherever the system lists what an app speaks. -->
+    <key>CFBundleLocalizations</key>
+    <array>
+        <string>en</string>
+        <string>ja</string>
+        <string>ko</string>
+        <string>zh-Hans</string>
+        <string>zh-Hant</string>
+    </array>
     <key>CFBundleName</key>
     <string>$(PRODUCT_NAME)</string>
     <key>CFBundlePackageType</key>

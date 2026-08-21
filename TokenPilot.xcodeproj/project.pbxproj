@@ -37,6 +37,7 @@
 		4495EB2C19FE2ACFD8F5D3F5 /* TokenMonitorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AF85435D216D4CCE4759C5D /* TokenMonitorApp.swift */; };
 		47A593E59AE01612E3CFEAAB /* GrokOAuthWeeklyUsageAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */; };
 		4B1738998CA4BFC1D592F863 /* CodexStatusParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC7A087E3AFC24BF561B671B /* CodexStatusParser.swift */; };
+		4BCFE65E428E010B5ABF7477 /* CapacityAlertCatalogue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F351E22ED414FE2F0D16C52F /* CapacityAlertCatalogue.swift */; };
 		4D6450BAFB9C2CA19D33AA27 /* ProviderSelectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05472E429144F9DCC9A7A7F1 /* ProviderSelectionService.swift */; };
 		4F94CC557F1CC664A5E90C8E /* UsageStreakService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3635441070AF53BF41E144DA /* UsageStreakService.swift */; };
 		55BE3DC64E9BCA41F31C1A18 /* DataSourceAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3855DCDF95929B71178DF5D3 /* DataSourceAdapters.swift */; };
@@ -77,6 +78,7 @@
 		D2CD6B78A5EC4A48F24EDDAF /* WakeRefreshGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 165CFC5DEE6A0B03E4E6F62C /* WakeRefreshGate.swift */; };
 		D4DA58A2377F9DF829574F97 /* TokenPilotModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B39A9C5F1DD41AB3B6B169F /* TokenPilotModels.swift */; };
 		DFA418B6DEA30C6B06505A94 /* ExperimentalUsageAdapters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68ECF3CA8ED87CBD71369496 /* ExperimentalUsageAdapters.swift */; };
+		E0213850AD9844FF91E2AA72 /* CapacityAlertReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F8776E09331508FD8D157ED /* CapacityAlertReconciler.swift */; };
 		E99EF4B5E6C970AF938CF7E3 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A0828BDA679ABB71EFC367 /* LaunchAtLoginService.swift */; };
 		ED728F1C925713865F7FDA5B /* CommandCodeAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10E0AE18928604BEA0CEB15D /* CommandCodeAdapter.swift */; };
 		EE02BB3E4156E59AFA382D9F /* BudgetAlertService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85538A9ACEAEAC6365630811 /* BudgetAlertService.swift */; };
@@ -120,6 +122,7 @@
 		0922767665B5AD16E3641F13 /* TokenPilotViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TokenPilotViewModel.swift; sourceTree = "<group>"; };
 		0D9BF8AEB4219BBD6B6CFF6B /* HistoryScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryScreen.swift; sourceTree = "<group>"; };
 		0DD40933E2EA8DCB74662733 /* GrokOAuthWeeklyUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GrokOAuthWeeklyUsageAdapter.swift; sourceTree = "<group>"; };
+		0F8776E09331508FD8D157ED /* CapacityAlertReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityAlertReconciler.swift; sourceTree = "<group>"; };
 		10E0AE18928604BEA0CEB15D /* CommandCodeAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandCodeAdapter.swift; sourceTree = "<group>"; };
 		165CFC5DEE6A0B03E4E6F62C /* WakeRefreshGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WakeRefreshGate.swift; sourceTree = "<group>"; };
 		18D2A1FD6D400908B5565B66 /* DefaultPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultPathResolver.swift; sourceTree = "<group>"; };
@@ -184,6 +187,7 @@
 		D17FADC229B794976AE83D48 /* MenuBarTextWidth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarTextWidth.swift; sourceTree = "<group>"; };
 		D24E8B9DD0974672A92EA580 /* DailyDigestService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailyDigestService.swift; sourceTree = "<group>"; };
 		E4EED30F2F00F8FF408170B3 /* TokenCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = TokenCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		F351E22ED414FE2F0D16C52F /* CapacityAlertCatalogue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CapacityAlertCatalogue.swift; sourceTree = "<group>"; };
 		F417840E7E6C1164FF7B7487 /* TokenPilot.icns */ = {isa = PBXFileReference; lastKnownFileType = image.icns; path = TokenPilot.icns; sourceTree = "<group>"; };
 		F65C9970C005825EF762D0E0 /* BudgetGuardrailService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BudgetGuardrailService.swift; sourceTree = "<group>"; };
 		F6F0796566D1988515D5CA15 /* WeeklyDigestService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyDigestService.swift; sourceTree = "<group>"; };
@@ -314,6 +318,8 @@
 				FDEBC31FAA69F0200D8F485F /* BudgetPaceService.swift */,
 				80CDBA16D917A9ECEFCE9336 /* CacheEfficiencyService.swift */,
 				B9F3DFF57EA7869285E764AB /* CacheTrendService.swift */,
+				F351E22ED414FE2F0D16C52F /* CapacityAlertCatalogue.swift */,
+				0F8776E09331508FD8D157ED /* CapacityAlertReconciler.swift */,
 				00CC87718FDD5EA3C969871A /* CapacityAssessmentService.swift */,
 				41D5EA4EE7381EBC76C46AA1 /* CapacityEvidenceStore.swift */,
 				AB1DCCFE3239237F51E4359C /* CapacityPaceService.swift */,
@@ -481,6 +487,8 @@
 				0D20695994609E49AA3EA374 /* BudgetPaceService.swift in Sources */,
 				04F3DA98B4323A82012969BB /* CacheEfficiencyService.swift in Sources */,
 				1D1236C7C9B92281F22C0C2B /* CacheTrendService.swift in Sources */,
+				4BCFE65E428E010B5ABF7477 /* CapacityAlertCatalogue.swift in Sources */,
+				E0213850AD9844FF91E2AA72 /* CapacityAlertReconciler.swift in Sources */,
 				11EB729D3C14FFF9F484CC0A /* CapacityAssessmentService.swift in Sources */,
 				BBBB46093FB37F60B6BCD53F /* CapacityEvidenceStore.swift in Sources */,
 				42D0E68728803E336ADF7DFC /* CapacityPaceService.swift in Sources */,
