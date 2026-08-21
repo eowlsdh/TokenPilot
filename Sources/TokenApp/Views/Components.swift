@@ -226,7 +226,10 @@ struct DisclosureCard<Summary: View, Content: View>: View {
     var accessibilityLabel: String? = nil
     var accessibilityValue: String? = nil
     private let summary: () -> Summary
-    private let content: Content
+    /// Held as a closure, not a built value. `content()` in the initializer looked equivalent and was
+    /// not: a collapsed card constructed its whole body on every pass and threw it away. Settings is
+    /// nine of these and cost 289 ms to build; the closure form is what makes collapsed mean cheap.
+    private let content: () -> Content
 
     @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -241,7 +244,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
         accessibilityLabel: String? = nil,
         accessibilityValue: String? = nil,
         @ViewBuilder summary: @escaping () -> Summary,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) {
         self.padding = padding
         self.surface = surface
@@ -249,7 +252,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
         self.summary = summary
-        self.content = content()
+        self.content = content
         self._isExpanded = State(initialValue: initiallyExpanded)
     }
 
@@ -259,7 +262,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
                 disclosureButton
 
                 if isExpanded {
-                    content
+                    content()
                         .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
                 }
             }
@@ -327,7 +330,8 @@ struct CollapsibleSection<Content: View>: View {
     var systemImage: String? = nil
     var badge: String? = nil
     var initiallyExpanded: Bool = false
-    private let content: Content
+    /// Deferred for the same reason as `DisclosureCard`: a collapsed group must not build its body.
+    private let content: () -> Content
 
     @State private var isExpanded: Bool
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -341,14 +345,14 @@ struct CollapsibleSection<Content: View>: View {
         systemImage: String? = nil,
         badge: String? = nil,
         initiallyExpanded: Bool = false,
-        @ViewBuilder content: () -> Content
+        @ViewBuilder content: @escaping () -> Content
     ) {
         self.title = title
         self.subtitle = subtitle
         self.systemImage = systemImage
         self.badge = badge
         self.initiallyExpanded = initiallyExpanded
-        self.content = content()
+        self.content = content
         self._isExpanded = State(initialValue: initiallyExpanded)
     }
 
@@ -357,7 +361,7 @@ struct CollapsibleSection<Content: View>: View {
             header
             if isExpanded {
                 VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
-                    content
+                    content()
                 }
                 .transition(reduceMotion ? .identity : .opacity.combined(with: .move(edge: .top)))
             }

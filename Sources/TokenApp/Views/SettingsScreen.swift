@@ -1993,19 +1993,36 @@ struct SettingsScreen: View {
         }
     }
 
+    /// Reads the presence the ViewModel already keeps, rather than querying the Keychain from
+    /// inside a view body — this ran a synchronous `SecItemCopyMatching` on every render.
     private func hasSavedAPIKey(_ provider: Provider) -> Bool {
-        guard let stored = try? KeychainService().readSecret(account: "\(provider.rawValue).apiKey") else { return false }
-        return !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        switch provider {
+        case .deepseek: return model.hasSavedDeepSeekAPIKey
+        case .minimax: return model.hasSavedMinimaxAPIKey
+        case .zai: return model.hasSavedZAIAPIKey
+        case .openrouter: return model.hasSavedOpenRouterAPIKey
+        default: return false
+        }
+    }
+
+    /// The four providers that cannot report anything until a key is stored.
+    ///
+    /// Only DeepSeek used to be asked. The other three said "API key required" in the same trust
+    /// colour and the same `key.slash` glyph as the providers that say "No secret required", so the
+    /// one provider actually blocked looked exactly like the ones that were fine.
+    private func providerNeedsAPIKey(_ provider: Provider) -> Bool {
+        switch provider {
+        case .deepseek, .minimax, .zai, .openrouter: return !hasSavedAPIKey(provider)
+        default: return false
+        }
     }
 
     private func providerSecretColor(_ provider: Provider) -> Color {
-        provider == .deepseek && !model.hasSavedDeepSeekAPIKey
-            ? TokenPilotDesign.warning
-            : TokenPilotDesign.trust
+        providerNeedsAPIKey(provider) ? TokenPilotDesign.warning : TokenPilotDesign.trust
     }
 
     private func providerSecretSystemImage(_ provider: Provider) -> String {
-        provider == .deepseek && !model.hasSavedDeepSeekAPIKey ? "key" : "key.slash"
+        providerNeedsAPIKey(provider) ? "key" : "key.slash"
     }
 
     private func statusIndicatesError(_ status: String) -> Bool {

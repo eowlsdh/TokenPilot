@@ -227,22 +227,52 @@ final class TokenPilotViewModel: ObservableObject {
     }
 #endif
 
+    /// Whether each stored secret exists — never the secret itself.
+    ///
+    /// Settings calls this on every appear. It used to run six `SecItemCopyMatching` queries on the
+    /// main actor and then publish six times whether or not anything had changed, and every publish
+    /// rebuilds the popover — on the screen that is already the most expensive to lay out. The
+    /// queries now run off the main actor together, and an unchanged answer publishes nothing.
     func refreshStoredCredentialPresence() {
 #if DEBUG
         guard !debugFixtureMode else { return }
 #endif
+        let keychain = self.keychain
+        let accounts = [
+            Self.telegramTokenAccount,
+            Self.discordWebhookAccount,
+            Self.deepSeekAPIKeyAccount,
+            Self.minimaxAPIKeyAccount,
+            Self.zaiAPIKeyAccount,
+            Self.openRouterAPIKeyAccount
+        ]
+
         Task {
-            hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
-            hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
-            let hasDeepSeekKey = ((try? keychain.readSecret(account: Self.deepSeekAPIKeyAccount)) ?? nil) != nil
-            hasSavedDeepSeekAPIKey = hasDeepSeekKey
-            if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
-                settings.deepseekAPIKeyConfigured = hasDeepSeekKey
+            let present = await Task.detached(priority: .utility) {
+                accounts.map { ((try? keychain.readSecret(account: $0)) ?? nil) != nil }
+            }.value
+
+            publishIfChanged(present[0], to: \.hasSavedTelegramToken)
+            publishIfChanged(present[1], to: \.hasSavedDiscordWebhook)
+            publishIfChanged(present[2], to: \.hasSavedDeepSeekAPIKey)
+            publishIfChanged(present[3], to: \.hasSavedMinimaxAPIKey)
+            publishIfChanged(present[4], to: \.hasSavedZAIAPIKey)
+            publishIfChanged(present[5], to: \.hasSavedOpenRouterAPIKey)
+
+            if settings.deepseekAPIKeyConfigured != present[2] {
+                settings.deepseekAPIKeyConfigured = present[2]
             }
-            hasSavedMinimaxAPIKey = ((try? keychain.readSecret(account: Self.minimaxAPIKeyAccount)) ?? nil) != nil
-            hasSavedZAIAPIKey = ((try? keychain.readSecret(account: Self.zaiAPIKeyAccount)) ?? nil) != nil
-            hasSavedOpenRouterAPIKey = ((try? keychain.readSecret(account: Self.openRouterAPIKeyAccount)) ?? nil) != nil
         }
+    }
+
+    /// `@Published` fires on every write, not on every change. Assigning the same value again costs
+    /// a full popover rebuild for nothing.
+    private func publishIfChanged<Value: Equatable>(
+        _ value: Value,
+        to keyPath: ReferenceWritableKeyPath<TokenPilotViewModel, Value>
+    ) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
     }
 
     static let telegramTokenAccount = "telegram.botToken"
