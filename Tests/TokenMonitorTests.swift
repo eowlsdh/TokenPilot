@@ -1390,6 +1390,27 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(coreSource.contains("guard !key.label.isEmpty else { return nil }"))
     }
 
+    func testLongWindowChartsReadEveryStoredEventNotThePeriodSlice() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        for property in ["historyHeatmapCells", "monthlyTrend"] {
+            let start = try XCTUnwrap(
+                lines.firstIndex { $0.contains("var \(property):") },
+                "\(property) is gone; this guard needs rewriting"
+            )
+            let end = try XCTUnwrap(lines[start...].firstIndex { $0.hasSuffix("    }") })
+            let body = lines[start...end].joined(separator: "\n")
+
+            XCTAssertTrue(
+                body.contains("historyEventsAllTime"),
+                "\(property) carries its own window, so a second period filter can only empty it:\n\(body)"
+            )
+            XCTAssertFalse(body.contains("historyUsage.events"), "\(property) is still period-filtered:\n\(body)")
+        }
+    }
+
     func testStartupPopulatesProviderDiagnosticsWithoutManualCheck() throws {
         let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
 

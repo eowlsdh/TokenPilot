@@ -36,7 +36,17 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var selectedScreen: Screen = .overview
     @Published var selectedHistoryPeriod: HistoryPeriod = .last7Days
     @Published var snapshots: [ProviderSnapshot] = []
-    @Published var historySnapshots: [ProviderSnapshot] = []
+    @Published var historySnapshots: [ProviderSnapshot] = [] {
+        didSet { historyEventsAllTime = historySnapshots.flatMap(\.events) }
+    }
+
+    /// Every stored event, independent of the History period picker.
+    ///
+    /// The heatmap (4/8/12 weeks) and the monthly trend (12 months) carry their own window and were
+    /// being handed the period-filtered set as well. With the period on "Today" the grid drew 84
+    /// cells of which one could ever be non-zero, and the trend drew twelve empty months — which
+    /// reads as "I did no work for three months" while the data sits in the store.
+    private(set) var historyEventsAllTime: [UsageEvent] = []
     @Published var limitHistorySamples: [ProviderLimitSample] = []
     @Published var overviewUsage = AggregatedUsage(period: .today)
     @Published var historyUsage = AggregatedUsage(period: .today)
@@ -441,7 +451,7 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var heatmapWeeks: Int = 12
 
     var historyHeatmapCells: [UsageHeatCell] {
-        aggregationService.heatmapCells(from: historyUsage.events, days: max(heatmapWeeks, 1) * 7)
+        aggregationService.heatmapCells(from: historyEventsAllTime, days: max(heatmapWeeks, 1) * 7)
     }
 
 
@@ -508,7 +518,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var monthlyTrend: [MonthlyUsageBar] {
-        MonthlyTrendService.monthlyBars(events: historyUsage.events)
+        MonthlyTrendService.monthlyBars(events: historyEventsAllTime)
     }
 
     var costEfficiency: CostEfficiencySummary {

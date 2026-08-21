@@ -185,12 +185,18 @@ public final class AggregationService: Sendable {
         let startOfToday = calendar.startOfDay(for: now)
         let start = calendar.date(byAdding: .day, value: -(days - 1), to: startOfToday) ?? startOfToday
 
-        let dailyTokens = (0..<days).map { offset in
+        // Bucket the events once instead of rescanning them per day. The grid is 84 cells and a
+        // busy store is thousands of events, so the previous shape ran ~84 × N calendar
+        // comparisons on every History body pass.
+        var tokensByDay: [Date: Int] = [:]
+        for event in events where event.timestamp >= start {
+            let day = calendar.startOfDay(for: event.timestamp)
+            tokensByDay[day, default: 0] += event.totalTokens
+        }
+
+        let dailyTokens = (0..<days).map { offset -> (Date, Int) in
             let date = calendar.date(byAdding: .day, value: offset, to: start) ?? start
-            let tokens = events
-                .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
-                .reduce(0) { $0 + $1.totalTokens }
-            return (date, tokens)
+            return (date, tokensByDay[calendar.startOfDay(for: date)] ?? 0)
         }
 
         let peak = max(dailyTokens.map(\.1).max() ?? 0, 1)
