@@ -1069,8 +1069,26 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func togglePopoverFromHotkey() {
-        guard let button = standardStatusItem?.button else { return }
+        guard let button = hotkeyAnchorButton() else { return }
         togglePopover(using: button)
+    }
+
+    /// The popover hangs off a menu bar button, and the standard item is removed whenever the menu
+    /// bar draws one item per provider — the layout the README recommends. ⌘⇧Space then found no
+    /// button and returned, so the shortcut did nothing at all and said nothing about it.
+    ///
+    /// Falls back in the order the items are drawn, not dictionary order, so the popover always
+    /// appears under the same item instead of jumping between providers.
+    private func hotkeyAnchorButton() -> NSStatusBarButton? {
+        if let button = standardStatusItem?.button {
+            return button
+        }
+        for provider in model.settings.effectiveMenuBarMetricProviders {
+            if let button = separateMetricItems[provider]?.statusItem.button {
+                return button
+            }
+        }
+        return separateTitleItems.first?.button
     }
 
     private func syncGlobalHotkey() {
