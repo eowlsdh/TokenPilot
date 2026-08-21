@@ -649,8 +649,10 @@ final class TokenPilotViewModel: ObservableObject {
     private var currentCapacityAlertChannels: CapacityAlertChannelSettings {
         CapacityAlertChannelSettings(
             settings: settings,
-            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Saved only: automatic delivery reads the Keychain, so an unsaved field must not
+            // make a channel look available that would then fail every send.
+            telegramCredentialPresent: hasSavedTelegramToken,
+            discordCredentialPresent: hasSavedDiscordWebhook
         )
     }
 
@@ -1405,8 +1407,10 @@ final class TokenPilotViewModel: ObservableObject {
         capacityAlertDeliveryRecoveryStatus = deliveryLoad.recoveryStatus
         let channels = CapacityAlertChannelSettings(
             settings: settingsAtStart,
-            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Saved only: automatic delivery reads the Keychain, so an unsaved field must not
+            // make a channel look available that would then fail every send.
+            telegramCredentialPresent: hasSavedTelegramToken,
+            discordCredentialPresent: hasSavedDiscordWebhook
         )
         let transition = capacityAlertTransitionEngine.evaluate(
             rules: activeRules,
@@ -2378,7 +2382,7 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         do {
-            let token = try telegramTokenForUse()
+            let token = try telegramTokenForUse(preferringInput: true)
             let chatID = try await telegramService.findChatID(token: token)
             settings.telegram.chatID = chatID
             settings.telegram.connectionStatus = "Connected"
@@ -2389,8 +2393,13 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
-    private func telegramTokenForUse() throws -> String {
-        if !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    /// The typed-but-unsaved field wins only for something the user just pressed.
+    ///
+    /// It used to win everywhere. Half a pasted token sitting in Settings silently replaced the
+    /// working saved one for automatic alerts, so alerts stopped arriving and only a rising
+    /// failed-delivery count said so.
+    private func telegramTokenForUse(preferringInput: Bool = false) throws -> String {
+        if preferringInput, !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return telegramTokenInput
         }
         if let saved = try keychain.readSecret(account: Self.telegramTokenAccount) {
@@ -2399,8 +2408,9 @@ final class TokenPilotViewModel: ObservableObject {
         throw TelegramError.notConfigured
     }
 
+    /// Only the Send Test action reaches this, so it tests what the user is looking at.
     private func sendTelegram(text: String) async throws {
-        let token = try telegramTokenForUse()
+        let token = try telegramTokenForUse(preferringInput: true)
         try await telegramService.sendMessage(token: token, chatID: settings.telegram.chatID, text: text)
     }
 
@@ -2459,8 +2469,10 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
-    private func discordWebhookForUse() throws -> String {
-        if !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    /// See `telegramTokenForUse`: an unsaved field is for the button the user just pressed, not
+    /// for the alerts that fire while nobody is looking.
+    private func discordWebhookForUse(preferringInput: Bool = false) throws -> String {
+        if preferringInput, !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return discordWebhookInput
         }
         if let saved = try keychain.readSecret(account: Self.discordWebhookAccount) {
@@ -2470,7 +2482,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func sendDiscord(text: String) async throws {
-        let webhookURL = try discordWebhookForUse()
+        let webhookURL = try discordWebhookForUse(preferringInput: true)
         try await discordService.sendMessage(webhookURL: webhookURL, content: text)
     }
 
