@@ -90,6 +90,7 @@ public enum TokenPilotLocalizer {
         "JetBrains AI quota file not found": [.en: "JetBrains AI quota file not found", .ko: "JetBrains AI 할당량 파일을 찾을 수 없습니다", .ja: "JetBrains AI のクォータファイルが見つかりません", .zhHans: "未找到 JetBrains AI 配额文件", .zhHant: "找不到 JetBrains AI 配額檔案"],
         "LOCAL · Grok Build context window unavailable · newer session has no signals": [.en: "LOCAL · Grok Build context window unavailable · newer session has no signals", .ko: "LOCAL · Grok Build 컨텍스트 창을 사용할 수 없습니다 · 최신 세션에 신호가 없습니다", .ja: "LOCAL · Grok Build のコンテキストウィンドウを利用できません · 新しいセッションに信号がありません", .zhHans: "LOCAL · 无法获取 Grok Build 上下文窗口 · 较新的会话没有信号", .zhHant: "LOCAL · 無法取得 Grok Build 上下文視窗 · 較新的工作階段沒有訊號"],
         "Local IDE quota cache": [.en: "Local IDE quota cache", .ko: "로컬 IDE 할당량 캐시", .ja: "ローカル IDE のクォータキャッシュ", .zhHans: "本地 IDE 配额缓存", .zhHant: "本機 IDE 配額快取"],
+        "STALE · local IDE quota cache": [.en: "STALE · local IDE quota cache", .ko: "STALE · 로컬 IDE 할당량 캐시", .ja: "STALE · ローカル IDE のクォータキャッシュ", .zhHans: "STALE · 本地 IDE 配额缓存", .zhHant: "STALE · 本機 IDE 配額快取"],
         "MOCK · manual estimate": [.en: "MOCK · manual estimate", .ko: "MOCK · 수동 추정치", .ja: "MOCK · 手動の推定値", .zhHans: "MOCK · 手动估算", .zhHant: "MOCK · 手動估算"],
         "MOCK · sample data": [.en: "MOCK · sample data", .ko: "MOCK · 샘플 데이터", .ja: "MOCK · サンプルデータ", .zhHans: "MOCK · 示例数据", .zhHant: "MOCK · 範例數據"],
         "MOCK · sample telemetry": [.en: "MOCK · sample telemetry", .ko: "MOCK · 샘플 텔레메트리", .ja: "MOCK · サンプルテレメトリ", .zhHans: "MOCK · 示例遥测", .zhHant: "MOCK · 範例遙測"],

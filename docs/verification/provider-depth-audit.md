@@ -73,15 +73,80 @@ literal put back it still names the exact line, 2151.
 
 ## Verification
 
-- `swift test`: **846 tests, 0 failures**. Both new guards were checked by putting the hardcode back:
-  the behavioural one fails on a 130-minute-old session, the source one names line 2151.
+- `swift test`: **855 tests, 0 failures** across both rounds. Every guard was checked by putting the
+  defect back: the Codex behavioural one fails on a 130-minute-old session and the source scan names
+  line 2151; the JetBrains set fails six ways including a 21-day gap between the stamped and the real
+  reading time; the DeepSeek one fails when its cached fallback is dressed as current.
 - Re-measured on this machine after the fix:
   `codex  localLog  medium  stale=true  age=135m  5h=100%  STALE · no Codex activity in 15 minutes`
 - The five correct rows were confirmed against file modification times, not taken on trust.
+- The existing localization guard caught the two new status strings before they shipped untranslated,
+  which is what it is for.
 
-## What this leaves
+## Round two: the six that could not be exercised here
 
-Six providers could not be measured here because the tool is not installed or needs a key this
-machine does not hold: jetbrains, minimax, zai, openrouter, commandcode, deepseek. Their adapters
-returned `Disabled`, which is correct but is not evidence that they work. Depth for those six stays
-**unknown**, and the honest place to record that is here rather than in a claim of twelve.
+jetbrains, minimax, zai, openrouter, commandcode and deepseek returned `Disabled` on this machine —
+correct, and not evidence that they work. None of them needs the real tool to be measured: JetBrains
+reads a file, the other three take an injectable HTTP client and a keychain backend, and commandcode
+reads a project tree. Fixtures were built from each one's real format and the adapters driven end to
+end.
+
+The existing tests covered every one of these **parsers** and none of the adapters around them.
+That distinction is exactly where the Codex defect lived: the parser was right and the adapter
+mislabelled what it produced.
+
+### JetBrains: a three-week-old cache reported as a reading taken now
+
+Worse than the Codex defect, for a specific reason:
+
+```swift
+updatedAt: now,          // the quota file is a cache the IDE wrote whenever it last synced
+confidence: .high,
+dataSource: .localLog,
+isStale: false,
+```
+
+Codex at least carried the true observation time, so the capacity pipeline's 15-minute freshness
+policy could still catch it. JetBrains stamps `now`, which makes the pipeline's own check
+(`maximumAge: 24 * 60 * 60`) **unreachable** — a quota cache from three weeks ago is assessed as an
+observation from this instant, at high confidence, with no stale marker on any surface.
+
+Fixed: the reading is dated when the cache was written, staleness derives from that against the same
+24 hours the pipeline uses, and a stale cache drops to medium confidence and says so.
+
+### The other five were already right
+
+| Provider | Shape | Verdict |
+|---|---|---|
+| minimax, zai, openrouter | live fetch, no cache, `updatedAt: now` | correct — a fetch made this second *is* fresh, and a failure returns no window at all |
+| deepseek | live fetch **with** a cached fallback | correct, and the only place in the app that already had this right: the fallback drops to medium confidence and says `stale · last successful value` |
+| commandcode | local project tree | already covered end to end, staleness included |
+
+DeepSeek's cached fallback is the pattern Codex and JetBrains were missing, and it had no test. It
+has one now, because it is the behaviour the other two were fixed *to*.
+
+### The guard that missed it, and why
+
+`testNoLocalLogSnapshotHardcodesFreshness` was written in round one and passed. It read one file —
+the one Codex lives in. JetBrains lives in another. Scanning a single file while looking complete is
+the same failure the alert-catalogue scanner had earlier this month, and the fix is the same: walk
+the directory, and assert the scan found enough to be believable.
+
+Widening it surfaced two more `updatedAt: now` sites, both false positives: a "quota file not found"
+and a "context window unavailable" snapshot, neither of which carries a reading whose age could be
+misreported. The guard now requires the snapshot to carry a `LimitWindow` or token total before it
+counts. That is the second over-broad source scan this session; both were caught by looking at what
+they flagged rather than trusting the count.
+
+## Where depth stands now
+
+| Provider | Measured how | Verdict |
+|---|---|---|
+| claude, gemini, xai, opencode, kiro | real sources on this machine | correct |
+| codex | real sources on this machine | defect found and fixed |
+| jetbrains | fixture in the real file format | defect found and fixed |
+| minimax, zai, openrouter | fixture responses, injected client and keychain | correct |
+| deepseek | fixture responses, cached-fallback path | correct, now pinned |
+| commandcode | project-tree fixture | correct, already pinned |
+
+Twelve of twelve are now backed by something other than a count.

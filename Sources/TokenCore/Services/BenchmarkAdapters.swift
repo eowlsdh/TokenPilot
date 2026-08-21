@@ -124,6 +124,11 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
         return results
     }
 
+    /// Matches the freshness the capacity pipeline already applies to `jetbrains-quota`
+    /// (`maximumAge: 24 * 60 * 60`), so the provider row and the capacity card cannot disagree about
+    /// the same reading.
+    static let quotaCacheStaleThreshold: TimeInterval = 24 * 60 * 60
+
     public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
         guard settings.isProviderEnabled(.jetbrains) else {
             let snapshot = ProviderSnapshot(provider: .jetbrains, updatedAt: now, confidence: .low, statusMessage: "Disabled")
@@ -160,7 +165,7 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
             }
         }
 
-        guard let (_, quota) = latest else {
+        guard let (quotaURL, quota) = latest else {
             let snapshot = ProviderSnapshot(provider: .jetbrains, updatedAt: now, confidence: .low, dataSource: .localLog, statusMessage: "JetBrains AI quota file not found")
             return ProviderRefreshResult(
                 snapshot: snapshot,
@@ -169,14 +174,22 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
             )
         }
 
+        // The quota file is a cache the IDE writes when it last talked to the service, so the reading
+        // was taken whenever that happened — not now. Stamping `now` made the pipeline's own
+        // freshness check (`maximumAge: 24 * 60 * 60`) unreachable: a quota file three weeks old was
+        // assessed as an observation from this instant, at high confidence, with no stale marker.
+        let observedAt = (try? manager.attributesOfItem(atPath: quotaURL.path)[.modificationDate] as? Date) ?? nil
+        let readingTakenAt = observedAt ?? now
+        let isStale = now.timeIntervalSince(readingTakenAt) > Self.quotaCacheStaleThreshold
+
         let snapshot = ProviderSnapshot(
             provider: .jetbrains,
-            updatedAt: now,
+            updatedAt: readingTakenAt,
             weekly: LimitWindow(kind: .weekly, usedPercent: quota.usedPercent, resetAt: quota.resetAt, confidence: .high, providerWindowID: "jetbrains-quota"),
-            confidence: .high,
+            confidence: isStale ? .medium : .high,
             dataSource: .localLog,
-            isStale: false,
-            statusMessage: "Local IDE quota cache"
+            isStale: isStale,
+            statusMessage: isStale ? "STALE · local IDE quota cache" : "Local IDE quota cache"
         )
         return ProviderRefreshResult(
             snapshot: snapshot,

@@ -45,7 +45,7 @@ Scored against the definition above. Evidence is a measurement or a file, never 
 | Axis | Target | Now | Verdict |
 |---|---|---|---|
 | Provider coverage | more than any benchmarked tool | 12 in `Provider.allCases` | **beyond** |
-| Provider depth | every enabled provider reports fresh, correct data | 6 measured on real sources, 5 correct, 1 defect fixed; 6 not installable here | **at, for what can be measured** |
+| Provider depth | every enabled provider reports fresh, correct data | 12 of 12 measured — 6 against real sources, 6 against fixtures in their real formats; 2 defects found and fixed | **at** |
 | Truthfulness of measurement | activity never shown as quota | authority / comparability / stability / freshness per observation | **differentiator** |
 | CLI | ccusage/toktrack parity | 8 commands, shared flag vocabulary, 4 output formats, `blocks --watch` | **at or beyond** |
 | Menu bar | claude-status parity | separate or combined items, width budget, trend or remaining bar | **beyond** |
@@ -53,16 +53,16 @@ Scored against the definition above. Evidence is a measurement or a file, never 
 | Alerting | any threshold, every watched provider | 1–100, editable, reaches every provider-reported series | **at** |
 | Localization | complete in every shipped language | 746 keys × 5, single reachable surface | **at** (was 18% for zh-Hant) |
 | Resource behaviour | invisible when idle | 0.0% CPU idle; ~2.5 GB/day writes | **partial** — was 8.5 GB/day |
-| Test & guard quality | a failing test means a real defect | 846 tests; every fix's guard verified by reintroducing the defect | **at** |
+| Test & guard quality | a failing test means a real defect | 855 tests; every fix's guard verified by reintroducing the defect | **at** |
 | Release readiness | shippable artifact | signed unsandboxed build; screenshots/ASC outstanding | **blocked on a person** |
 
 One axis is not green. **Resource behaviour is partial**: a four-megabyte envelope is still
 re-committed to append three records, and that is a store redesign rather than a fix.
 
-Provider depth was the **unknown** when this table was first written; §4 measured it and it is now
-the strongest row backed by evidence rather than by a count — five of six locally installed providers
-were correct, the sixth had a real defect, and the six that cannot be exercised on this machine are
-recorded as unmeasured rather than counted as working.
+Provider depth was the **unknown** when this table was first written. §4 measured all twelve — six
+against this machine's real sources and six against fixtures built from their real formats — and
+found two providers reporting cold data as current. Both are fixed. The row is now backed by
+measurement rather than by a count.
 
 ## 3. The method
 
@@ -107,7 +107,10 @@ Done — recorded in `provider-depth-audit.md`. It found one defect: Codex was t
 adapter that could never go stale, so a session log two hours old still read "Connected" and its
 five-hour window at 100% was presented as current provider-reported quota.
 
-The loop's next pointer, by the same rule (weakest row, least evidence): **provider depth for the six
-that could not be exercised here** — jetbrains, minimax, zai, openrouter, commandcode, deepseek. That
-needs either the tool installed or a fixture built from its real file format, and a fixture is the
-honest option since it can be checked into the repo.
+Round two covered those six with fixtures in their real formats and found a second defect: JetBrains
+reported a quota cache written three weeks ago as a reading taken now, which made the pipeline's own
+freshness check unreachable. Both rounds are in `provider-depth-audit.md`.
+
+The loop's next pointer, by the same rule: **resource behaviour**, now the only row that is not at
+target. The remaining cost is structural — a four-megabyte envelope re-committed to append three
+records — so the next step there is a design decision about the store, not another measurement.
