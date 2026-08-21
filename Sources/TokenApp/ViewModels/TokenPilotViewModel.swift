@@ -2059,6 +2059,22 @@ final class TokenPilotViewModel: ObservableObject {
         }
     }
 
+    /// A modal yes/no for something the app cannot undo.
+    ///
+    /// Reset Settings — which keeps the credentials — asked, and the five deletions that destroy a
+    /// Keychain item did not. Delete sits beside Replace in the same row with the same metrics, and
+    /// a Discord webhook cannot be shown again after saving: a mis-click meant a trip back to
+    /// Discord to mint a new one.
+    private func confirmDestructive(title: String, body: String, confirmTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: t("Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
     /// Resets all preferences to factory defaults. Keychain-stored credentials
     /// are left untouched; only in-app settings reset.
     func resetSettings() {
@@ -2220,6 +2236,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the DeepSeek API key?"), body: t("TokenPilot forgets the key and stops reading your official balance. The key itself stays valid — you would paste it again to reconnect."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.deepSeekAPIKeyAccount)
             deepSeekAPIKeyInput = ""
@@ -2287,6 +2304,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete this API key?"), body: t("TokenPilot forgets the key and stops reading this provider's official usage. The key itself stays valid — you would paste it again to reconnect."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.apiKeyAccount(for: provider))
             setAPIKeyInput("", for: provider)
@@ -2326,6 +2344,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the Telegram bot token?"), body: t("TokenPilot forgets the token and turns Telegram alerts off. The bot itself is untouched — you would paste its token again to reconnect."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.telegramTokenAccount)
             telegramTokenInput = ""
@@ -2411,6 +2430,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the Discord webhook?"), body: t("TokenPilot forgets the webhook and turns Discord alerts off. Discord cannot show a webhook URL again, so reconnecting means creating a new one."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.discordWebhookAccount)
             discordWebhookInput = ""
