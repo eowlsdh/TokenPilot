@@ -1390,6 +1390,33 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(coreSource.contains("guard !key.label.isEmpty else { return nil }"))
     }
 
+    /// Reset Settings — which *keeps* the credentials — asked before acting, and the four actions
+    /// that destroy a Keychain item did not. Delete sits beside Replace with identical metrics, and
+    /// a Discord webhook cannot be shown again once saved, so a mis-click meant minting a new one.
+    func testEveryKeychainDeletionAsksFirst() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        var checked = 0
+
+        for deletion in ["deleteDeepSeekAPIKey", "deleteAPIKey", "deleteTelegramToken", "deleteDiscordWebhook"] {
+            let body = try XCTUnwrap(source.swiftFunctionBody(named: deletion))
+            XCTAssertTrue(body.contains("keychain.deleteSecret"), "\(deletion) no longer deletes a secret")
+            XCTAssertTrue(
+                body.contains("guard confirmDestructive("),
+                "\(deletion) destroys a Keychain item without asking"
+            )
+            checked += 1
+        }
+
+        XCTAssertEqual(checked, 4)
+        // Nothing else in the app layer may delete a secret without going through one of those.
+        let deletions = source.components(separatedBy: "keychain.deleteSecret").count - 1
+        XCTAssertEqual(deletions, 4, "a new deletion appeared; it needs a confirmation too")
+    }
+
+    /// The heatmap picks its own 4/8/12-week window and the monthly trend its own twelve months.
+    /// Both were also handed the History period picker's filtered events, so with the period on
+    /// "Today" the grid drew 84 cells that could never be filled and the trend drew twelve empty
+    /// months — data the store was holding all along.
     func testLongWindowChartsReadEveryStoredEventNotThePeriodSlice() throws {
         let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
 
@@ -1409,6 +1436,76 @@ final class TokenMonitorTests: XCTestCase {
             )
             XCTAssertFalse(body.contains("historyUsage.events"), "\(property) is still period-filtered:\n\(body)")
         }
+    }
+
+    /// A typed-but-unsaved bot token or webhook used to win over the saved one everywhere. Half a
+    /// pasted token left in Settings replaced the working credential for every automatic alert, and
+    /// the only symptom was a rising failed-delivery count. The field is for the button the user
+    /// just pressed; nothing that fires on a timer may read it.
+    func testAutomaticAlertDeliveryNeverUsesAnUnsavedCredentialField() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        for accessor in ["telegramTokenForUse", "discordWebhookForUse"] {
+            let body = try XCTUnwrap(source.swiftFunctionBody(named: accessor))
+            XCTAssertTrue(
+                body.contains("preferringInput,"),
+                "\(accessor) reads the unsaved field unconditionally, so timer-driven sends use it"
+            )
+        }
+
+        let delivery = try XCTUnwrap(source.swiftFunctionBody(named: "deliverCapacity"))
+        XCTAssertTrue(delivery.contains("telegramTokenForUse()"), "delivery must take the saved-only default")
+        XCTAssertTrue(delivery.contains("discordWebhookForUse()"), "delivery must take the saved-only default")
+        XCTAssertFalse(
+            delivery.contains("preferringInput"),
+            "automatic delivery opted into the unsaved field:\n\(delivery)"
+        )
+
+        // A channel must not advertise itself as available on the strength of an unsaved field,
+        // or every alert routed to it fails.
+        let channels = try XCTUnwrap(source.swiftFunctionBody(named: "capacityAlertChannelPreferenceSummary"))
+        XCTAssertFalse(channels.isEmpty)
+        XCTAssertFalse(
+            source.contains("telegramCredentialPresent: hasSavedTelegramToken || "),
+            "channel availability still counts an unsaved token that delivery will not use"
+        )
+        XCTAssertFalse(
+            source.contains("discordCredentialPresent: hasSavedDiscordWebhook || "),
+            "channel availability still counts an unsaved webhook that delivery will not use"
+        )
+    }
+
+    /// A once-per-day attempt tracker sat in front of both digest fire windows and was written
+    /// before the window was ever checked. The first tick after midnight burned the day's only
+    /// attempt outside every schedule anyone would pick, so neither digest ever sent — the weekly
+    /// one could not send at all, because its tracker was per-day and its schedule per-week.
+    ///
+    /// The rule that keeps this fixed: nothing that suppresses a later attempt may run before the
+    /// fire-window gate. Deduplication belongs to the gate, which already has `lastSentAt`.
+    func testNoDigestBurnsItsOnlyAttemptBeforeCheckingTheFireWindow() throws {
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        var checked = 0
+
+        for function in ["checkDailyDigest", "checkWeeklyDigest"] {
+            let body = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: function))
+            let lines = body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            let gate = try XCTUnwrap(
+                lines.firstIndex { $0.contains("isInFireWindow") },
+                "\(function) no longer checks a fire window; this guard needs rewriting"
+            )
+            checked += 1
+
+            let suppressors = lines[..<gate].filter {
+                $0.contains("AttemptDay") || $0.contains("saveLastSent(") || $0.contains("Attempted =")
+            }
+            XCTAssertTrue(
+                suppressors.isEmpty,
+                "\(function) records an attempt before it knows whether the schedule was due, "
+                    + "which spends the attempt outside the window:\n" + suppressors.joined(separator: "\n")
+            )
+        }
+
+        XCTAssertEqual(checked, 2, "both digests must be covered")
     }
 
     func testStartupPopulatesProviderDiagnosticsWithoutManualCheck() throws {
