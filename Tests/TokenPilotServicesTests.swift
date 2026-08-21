@@ -470,9 +470,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testSettingsStoreRepairsInvalidMenuBarComposition() {
-        let suite = "TokenPilotMenuBarCompositionTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotMenuBarCompositionTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
 
         var settings = AppSettings()
@@ -3645,9 +3643,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testWeeklyDigestStoreRoundtrip() {
-        let suite = "TokenPilotWeeklyDigestTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotWeeklyDigestTests")
         let store = WeeklyDigestStore(defaults: defaults)
 
         XCTAssertNil(store.loadLastSent())
@@ -3789,9 +3785,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testDailyDigestStoreRoundtrip() {
-        let suite = "TokenPilotDailyDigestTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotDailyDigestTests")
         let store = DailyDigestStore(defaults: defaults)
 
         XCTAssertNil(store.loadLastSent())
@@ -3804,9 +3798,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(AppSettings().refreshIntervalSeconds, 60)
         XCTAssertFalse(AppSettings().menuBarHotkeyEnabled)
 
-        let suite = "TokenPilotRefreshIntervalTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotRefreshIntervalTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
 
         var settings = AppSettings()
@@ -3829,9 +3821,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testSettingsStoreResetToDefaults() {
-        let suite = "TokenPilotSettingsResetTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotSettingsResetTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
 
         var custom = AppSettings()
@@ -4018,7 +4008,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testLimitHistoryStoreRecordsPercentSamplesWhenTokenEventsAreUnavailable() {
-        let defaults = UserDefaults(suiteName: "TokenPilotLimitHistoryTests-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("TokenPilotLimitHistoryTests")
         let key = "limit-samples"
         defaults.removeObject(forKey: key)
         let store = LimitHistoryStore(defaults: defaults, key: key)
@@ -4133,7 +4123,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testNotificationThresholdDeduplicatesWithinResetCycle() {
-        let defaults = UserDefaults(suiteName: "TokenPilotTests-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = AlertDeduplicationStore(defaults: defaults, key: "state")
         let service = NotificationRuleService(store: store)
         var settings = AppSettings(showMockDataWhenDisconnected: false)
@@ -4159,7 +4149,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
 
     func testNotificationResetDoesNotFireJustBecauseResetTimeMovesWhileUsageIsHigh() {
-        let defaults = UserDefaults(suiteName: "TokenPilotTests-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = AlertDeduplicationStore(defaults: defaults, key: "state")
         let service = NotificationRuleService(store: store)
         var settings = AppSettings(showMockDataWhenDisconnected: false)
@@ -4181,7 +4171,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testNotificationResetFiresWhenUsageDropsNearZeroAfterRealUsage() {
-        let defaults = UserDefaults(suiteName: "TokenPilotTests-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = AlertDeduplicationStore(defaults: defaults, key: "state")
         let service = NotificationRuleService(store: store)
         var settings = AppSettings(showMockDataWhenDisconnected: false)
@@ -5071,9 +5061,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testCodexWebSnapshotRoundTripsThroughSettingsStoreAndClampsValues() {
-        let suite = "TokenPilotTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
         var settings = AppSettings()
         settings.codexManual.webSnapshotEnabled = true
@@ -5091,9 +5079,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testSettingsStoreParsesAndDropsRawCodexStatusOutput() {
-        let suite = "TokenPilotTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
         var settings = AppSettings()
         settings.codexManual.pastedStatusOutput = "Plan: Pro\nSession (5h): 82% resets 1h24m\nWeek (7d): 47%"
@@ -6518,9 +6504,7 @@ final class TokenPilotServicesTests: XCTestCase {
     // MARK: - Usage history
 
     func testUsageHistoryStoreRetainsCostOnlySnapshotsWithZeroTokensAndRequestsForExport() throws {
-        let suite = "TokenPilotCostOnlyHistoryTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotCostOnlyHistoryTests")
         let store = UsageHistoryStore(defaults: defaults, key: "history")
         let now = Date()
         let cost = Decimal(string: "1.23")!
@@ -6582,9 +6566,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageHistoryStoreDefaultKeyIgnoresLegacyV1AndV2Blobs() {
-        let suite = "TokenPilotTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotTests")
         let legacyEvent = UsageEvent(provider: .codex, timestamp: Date(), inputTokens: 10, outputTokens: 0, source: "codex-session-jsonl")
         let legacyData = try? JSONEncoder().encode([legacyEvent])
         defaults.set(legacyData, forKey: "tokenPilot.usageEvents.v1")
@@ -6596,7 +6578,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageHistoryStoreCreatesDailySnapshotEventsWithoutDuplicatingRefreshes() {
-        let defaults = UserDefaults(suiteName: "TokenPilotTests-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = UsageHistoryStore(defaults: defaults, key: "history")
         let now = Date()
         let first = ProviderSnapshot(provider: .claude, updatedAt: now, todayTokens: 1_000, model: "Claude")
@@ -6635,9 +6617,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageHistoryStoreKeepsExperimentalCodexLocalLogEventsForInAppStats() {
-        let suite = "TokenPilotTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotTests")
         let store = UsageHistoryStore(defaults: defaults, key: "history")
         let codexLocal = UsageEvent(
             provider: .codex,
@@ -7371,9 +7351,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(CapacityObservationFactory.observations(from: snapshot, settings: settings, observedAt: now), [])
         XCTAssertEqual(CapacityObservationFactory.errors(from: snapshot, provider: .xai), [])
 
-        let suite = "TokenPilotXAINotificationTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotXAINotificationTests")
         let notifications = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults))
             .evaluate(snapshots: [snapshot], settings: AppSettings())
 
@@ -7388,9 +7366,7 @@ final class TokenPilotServicesTests: XCTestCase {
 
         XCTAssertEqual(settings.xAI.teamID, teamID)
 
-        let suite = "TokenPilotXAISettingsTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotXAISettingsTests")
         let store = TokenPilotSettingsStore(defaults: defaults)
         store.save(settings)
         let loaded = store.load()
@@ -7579,13 +7555,13 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(snapshot.model, "$4.99")
         XCTAssertEqual(snapshot.confidence, .manual)
 
-        let events = NotificationRuleService(store: AlertDeduplicationStore(defaults: UserDefaults(suiteName: "deepseek-alert-\(UUID().uuidString)")!))
+        let events = NotificationRuleService(store: AlertDeduplicationStore(defaults: makeTestDefaults("deepseek-alert")))
             .evaluate(snapshots: [snapshot], settings: settings)
         XCTAssertTrue(events.isEmpty)
     }
 
     func testDeepSeekLowBalanceAlertDedupesWithinCycleAndResetsNextCycle() {
-        let defaults = UserDefaults(suiteName: "deepseek-alert-cycle-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("deepseek-alert-cycle")
         let service = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults))
         var settings = AppSettings()
         settings.deepSeekBalance.lowBalanceThreshold = 5
@@ -7627,9 +7603,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageHistoryStoreDoesNotDoubleCountClaudeStatuslineDailySnapshots() {
-        let suite = "TokenPilotUsageHistoryStatuslineTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotUsageHistoryStatuslineTests")
         let store = UsageHistoryStore(defaults: defaults, key: "usage-statusline-test")
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
@@ -7653,9 +7627,7 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(result.metrics.totalTokens, 100)
     }
     func testUsageHistoryStoreDoesNotDoubleCountAntigravityStatuslineDailySnapshots() {
-        let suite = "TokenPilotUsageHistoryAntigravityTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotUsageHistoryAntigravityTests")
         let store = UsageHistoryStore(defaults: defaults, key: "usage-antigravity-statusline-test")
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
@@ -7680,9 +7652,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testUsageHistoryStorePrunesPersistedEventsWhenRefreshHasNoIncomingEvents() throws {
-        let suite = "TokenPilotUsageHistoryEmptyRefreshTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotUsageHistoryEmptyRefreshTests")
         let key = "usage-empty-refresh-test"
         let store = UsageHistoryStore(defaults: defaults, key: key, maxAgeDays: 1)
         let now = Date()
@@ -7696,9 +7666,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testLimitHistoryStorePrunesPersistedSamplesWhenRefreshHasNoIncomingSamples() throws {
-        let suite = "TokenPilotLimitHistoryEmptyRefreshTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotLimitHistoryEmptyRefreshTests")
         let key = "limit-empty-refresh-test"
         let store = LimitHistoryStore(defaults: defaults, key: key, maxAgeDays: 1)
         let now = Date()
@@ -8415,9 +8383,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testLimitHistoryStoreFreezesLegacyWritesAfterCommittedMigrationMarker() throws {
-        let suite = "TokenPilotLimitHistoryFrozenTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotLimitHistoryFrozenTests")
         let key = "limit-frozen-test"
         let directory = try capacityTempDirectory()
         let files = CapacityEvidenceFileSet(directory: directory)
@@ -8436,9 +8402,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testLimitHistoryStoreBlocksCorruptLegacyBytesBeforeMarker() throws {
-        let suite = "TokenPilotLimitHistoryCorruptTests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotLimitHistoryCorruptTests")
         let key = "limit-corrupt-test"
         let corrupt = Data("not-provider-limit-samples".utf8)
         defaults.set(corrupt, forKey: key)
@@ -9206,9 +9170,7 @@ final class TokenPilotServicesTests: XCTestCase {
     // MARK: - MilestoneNotificationService
 
     func testMilestoneNotificationReportsNewlyAchievedOnce() throws {
-        let suite = "milestone-notification-test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("milestone-notification-test")
         let store = MilestoneNotificationStore(defaults: defaults)
         let service = MilestoneNotificationService(store: store)
 
@@ -9232,9 +9194,7 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testMilestoneNotificationStoreRoundtrip() {
-        let suite = "milestone-notification-test-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("milestone-notification-test")
         let store = MilestoneNotificationStore(defaults: defaults)
 
         XCTAssertTrue(store.notifiedIDs().isEmpty)
@@ -9301,7 +9261,7 @@ final class TokenPilotServicesTests: XCTestCase {
             UsageEvent(provider: .opencode, timestamp: now, inputTokens: 9_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
         ]
 
-        let store = BudgetAlertDedupStore(defaults: UserDefaults(suiteName: "budget-alert-test-\(UUID().uuidString)")!)
+        let store = BudgetAlertDedupStore(defaults: makeTestDefaults("budget-alert-test"))
         store.markDelivered([])
         let service = BudgetAlertService(store: store)
 
@@ -9328,7 +9288,7 @@ final class TokenPilotServicesTests: XCTestCase {
     func testBudgetAlertServiceSkipsDisabledAndUnderThreshold() throws {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let calendar = Calendar(identifier: .gregorian)
-        let store = BudgetAlertDedupStore(defaults: UserDefaults(suiteName: "budget-alert-test-\(UUID().uuidString)")!)
+        let store = BudgetAlertDedupStore(defaults: makeTestDefaults("budget-alert-test"))
         let service = BudgetAlertService(store: store)
 
         let disabled = BudgetGuardrailSettings()
@@ -9747,7 +9707,7 @@ final class TokenPilotServicesTests: XCTestCase {
             .init(status: 200, data: operationalData),
             .init(status: 500, data: Data()),
         ])
-        let defaults = UserDefaults(suiteName: "provider-status-test-\(UUID().uuidString)")!
+        let defaults = makeTestDefaults("provider-status-test")
         let service = ProviderStatusService(
             httpClient: client,
             session: URLSession(configuration: .ephemeral),
@@ -9775,7 +9735,7 @@ final class TokenPilotServicesTests: XCTestCase {
         let service = ProviderStatusService(
             httpClient: client,
             session: URLSession(configuration: .ephemeral),
-            defaults: UserDefaults(suiteName: "provider-status-test-\(UUID().uuidString)")!
+            defaults: makeTestDefaults("provider-status-test")
         )
         let report = await service.refreshStatus(for: .opencode)
         XCTAssertEqual(report.health, .unknown)
@@ -11004,11 +10964,9 @@ final class GrokOAuthWeeklyUsageTests: XCTestCase {
     }
 
     func testLimitHistoryAdmissionExcludesExperimentalOAuthWeeklyAndAcceptsStandard() {
-        let suite = "TokenPilotOAuthLimitAdmission-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = makeTestDefaults("TokenPilotOAuthLimitAdmission")
         let key = "limit-samples"
         defaults.removeObject(forKey: key)
-        defer { defaults.removePersistentDomain(forName: suite) }
         let store = LimitHistoryStore(defaults: defaults, key: key)
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let standard = ProviderSnapshot(
@@ -11091,9 +11049,7 @@ final class GrokOAuthWeeklyUsageTests: XCTestCase {
     }
 
     func testNotificationAdmissionExcludesExperimentalOAuthWeeklyAndAcceptsStandard() {
-        let suite = "TokenPilotOAuthNotificationAdmission-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = makeTestDefaults("TokenPilotOAuthNotificationAdmission")
         let service = NotificationRuleService(store: AlertDeduplicationStore(defaults: defaults, key: "state"))
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.alertRules = [
