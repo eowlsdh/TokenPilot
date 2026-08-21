@@ -9908,6 +9908,25 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(coverage.newestEventDay, calendar.startOfDay(for: day(0)))
     }
 
+    func testUsageCoverageIgnoresDaysOutsideTheWindowItReports() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!
+        let day = { (offset: Int) -> Date in calendar.date(byAdding: .day, value: offset, to: now)! }
+
+        // Active every day for ten days, asked about the last three.
+        let events = (-9...0).map { offset in
+            UsageEvent(provider: .opencode, timestamp: day(offset), inputTokens: 500, outputTokens: 0, source: "coverage-test", dataSource: .localLog)
+        }
+
+        let coverage = UsageCoverageService.coverage(events: events, windowDays: 3, now: now, calendar: calendar)
+        XCTAssertEqual(coverage.activeDays, 3)
+        XCTAssertEqual(coverage.coverageRatio, 1.0, accuracy: 0.0001)
+        XCTAssertLessThanOrEqual(coverage.coverageRatio, 1.0, "coverage can never exceed the window")
+        XCTAssertEqual(coverage.oldestEventDay, calendar.startOfDay(for: day(-2)), "oldest must sit inside the window")
+        XCTAssertEqual(coverage.newestEventDay, calendar.startOfDay(for: day(0)))
+        XCTAssertEqual(coverage.gapRunCount, 0)
+    }
+
     func testUsageCoverageEmptyHistory() throws {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!

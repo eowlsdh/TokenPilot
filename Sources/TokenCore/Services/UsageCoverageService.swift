@@ -59,10 +59,14 @@ public enum UsageCoverageService {
         let startOfToday = calendar.startOfDay(for: now)
         let windowStart = calendar.date(byAdding: .day, value: -(window - 1), to: startOfToday) ?? startOfToday
 
+        // Bucket first, then keep only the days this summary is about. Counting every stored day
+        // against `windowDays` reported coverage over 100%, and named an "oldest stored" day that
+        // sat outside the window in the same breath.
         let activeDays = Set(
             events
                 .filter { $0.totalTokens > 0 || $0.requestCount > 0 }
                 .map { calendar.startOfDay(for: $0.timestamp) }
+                .filter { $0 >= windowStart && $0 <= startOfToday }
         )
 
         guard !activeDays.isEmpty else {
