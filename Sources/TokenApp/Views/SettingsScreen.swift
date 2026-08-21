@@ -2695,6 +2695,8 @@ struct CapacityAlertThresholdChip: View {
     let accessibilityLabel: String
     let action: () async -> Void
 
+    @Environment(\.tokenPilotLanguage) private var language
+
     var body: some View {
         Button {
             Task { await action() }
@@ -2712,7 +2714,10 @@ struct CapacityAlertThresholdChip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(isOn ? Text("On") : Text("Off"))
+        // The state is the only thing separating an armed threshold from a disarmed one for a
+        // non-sighted user — the visual difference is colour and border. It was spoken in English
+        // inside an otherwise Korean card.
+        .accessibilityValue(Text(localized(isOn ? "ON" : "OFF", language: language)))
         .accessibilityAddTraits(isOn ? [.isButton, .isSelected] : .isButton)
     }
 }

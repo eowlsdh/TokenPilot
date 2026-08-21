@@ -202,6 +202,15 @@ struct TokenPilotRootView: View {
                     .focusable()
             }
         }
+        // The banner is the app's only answer to "did that work?", and it appears at the top of the
+        // popover — often hundreds of points away from the button that was just pressed, outside
+        // that screen's ScrollView. A VoiceOver user pressing Save with an empty field kept focus
+        // on the button and heard nothing at all. Speaking it is the whole fix.
+        .accessibilityAddTraits(.updatesFrequently)
+        .onChange(of: message) { _, newMessage in
+            AccessibilityNotification.Announcement(newMessage).post()
+        }
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
     }
 }
 
@@ -1172,9 +1181,11 @@ struct ProviderOverviewList: View {
                 }
             }
         }
-        .accessibilityElement(children: .combine)
+        // `.contain`, not `.combine`: each row already builds a full label with its percentage,
+        // risk and reset. Combining flattened all of them into one element whose value was just the
+        // provider names, so the whole point of this screen was inaudible.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(localized("Providers", language: language))
-        .accessibilityValue(providerOrder.map { localized($0.displayName, language: language) }.joined(separator: ", "))
     }
 
     private var items: [CapacityDisplayItem] {
