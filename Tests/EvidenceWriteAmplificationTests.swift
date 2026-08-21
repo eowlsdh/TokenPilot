@@ -109,11 +109,10 @@ final class EvidenceWriteAmplificationTests: XCTestCase {
         XCTAssertEqual(stored, [start, nextBucket])
     }
 
-    /// The limit of what this fix reaches, recorded rather than glossed over. opencode's Zen/Go API
-    /// answers `resetsAt` for the rolling window as request-time plus five hours, so every poll
-    /// reports a reset instant ninety seconds later than the last one. That is a different reading by
-    /// any definition available here, so the envelope is still re-committed — which is why the
-    /// measured write rate on an install with the opencode probe enabled does not change.
+    /// The store cannot tell a sliding horizon from a moving reset — a later instant is a different
+    /// reading, and it commits. That is correct here and is why the fix has to sit upstream, where the
+    /// adapter knows its own API answers "your window resets its own length from now" (see
+    /// `ResetInstantTests`). This pins the store's half of the split.
     func testASlidingResetHorizonStillCommitsEveryTime() async throws {
         let directory = try directory()
         await record(
@@ -165,5 +164,78 @@ final class EvidenceWriteAmplificationTests: XCTestCase {
         await record(unofficial, at: later, in: directory)
 
         XCTAssertGreaterThan(try generation(in: directory), committed)
+    }
+}
+
+/// The two reset-instant defects behind the remaining churn: a boundary described with a different
+/// fraction of a second on every poll, and a "reset" that is really the window's own length ahead of
+/// whenever it was asked.
+final class ResetInstantTests: XCTestCase {
+    private let start = Date(timeIntervalSince1970: 1_800_000_000)
+
+    private func observation(resetAt: Date?) throws -> CapacityObservation {
+        try CapacityObservation(
+            seriesID: try CapacitySeriesID(
+                provider: .opencode,
+                providerWindowID: "rate-limit",
+                kind: .fixedReset,
+                unit: .percent
+            ),
+            observedAt: start,
+            resetAt: resetAt,
+            value: try CapacityValue(usedPercent: 15),
+            authority: .providerReported,
+            stability: .supported,
+            freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 3_600),
+            comparability: .comparable,
+            parserRevision: "test",
+            now: start
+        )
+    }
+
+    /// Measured on a real install: the same daily boundary arrived as `…00:00:00.865Z` and then
+    /// `…00:00:00.705Z`, because the provider recomputes it per request.
+    func testAResetInstantIsHeldToTheSecond() throws {
+        let boundary = start.addingTimeInterval(3_600)
+        let first = try observation(resetAt: boundary.addingTimeInterval(0.865))
+        let second = try observation(resetAt: boundary.addingTimeInterval(0.705))
+
+        XCTAssertEqual(first.resetAt, boundary)
+        XCTAssertEqual(second.resetAt, boundary)
+        XCTAssertEqual(first.cycleID, second.cycleID)
+    }
+
+    func testAResetInstantKeepsItsWholeSeconds() throws {
+        let boundary = start.addingTimeInterval(3_661)
+
+        XCTAssertEqual(try observation(resetAt: boundary).resetAt, boundary)
+        XCTAssertNil(try observation(resetAt: nil).resetAt)
+    }
+
+    /// opencode's rolling window at 0% reported a reset exactly 5:00:00.536 after the observation —
+    /// its own length. A countdown on that reads `5h 0m` at every poll, forever.
+    func testAWindowReportingItsOwnLengthAheadHasNoResetInstant() {
+        let horizon = start.addingTimeInterval(300 * 60 + 0.536)
+
+        XCTAssertNil(OpenCodeSessionAdapter.resetInstant(horizon, observedAt: start, durationMinutes: 300))
+    }
+
+    /// A real instant is kept, which is what the same API reports once a window has usage in it.
+    func testARealResetInstantSurvives() {
+        let real = start.addingTimeInterval(8 * 86_400)
+
+        XCTAssertEqual(
+            OpenCodeSessionAdapter.resetInstant(real, observedAt: start, durationMinutes: 43_200),
+            real
+        )
+    }
+
+    /// A window with no declared length has nothing to compare against, so its reset is left alone.
+    func testAWindowWithNoDeclaredLengthKeepsItsReset() {
+        let reset = start.addingTimeInterval(300 * 60)
+
+        let absent: Date? = nil
+        XCTAssertEqual(OpenCodeSessionAdapter.resetInstant(reset, observedAt: start, durationMinutes: nil), reset)
+        XCTAssertNil(OpenCodeSessionAdapter.resetInstant(absent, observedAt: start, durationMinutes: 300))
     }
 }

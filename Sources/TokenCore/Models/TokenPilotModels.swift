@@ -2390,7 +2390,14 @@ public struct CapacityObservation: Codable, Equatable, Sendable {
         guard value.kind == seriesID.unit else { throw CapacityContractError.invalidValue }
         guard resetAt == nil || seriesID.supportsReset else { throw CapacityContractError.invalidReset }
 
-        let derivedCycleID = Self.cycleID(seriesID: seriesID, resetAt: resetAt)
+        // A quota window resets on a second, not a fraction of one, and the cycle id derived just
+        // below already says so — it truncates. The instant itself did not, so a boundary a provider
+        // recomputes per request (`2026-08-24T00:00:00.865Z`, then `…00.705Z` ninety seconds later)
+        // read as two different resets of one cycle, and every poll stored a new record for a window
+        // that had not moved.
+        let normalizedReset = resetAt.map { Date(timeIntervalSince1970: $0.timeIntervalSince1970.rounded(.down)) }
+
+        let derivedCycleID = Self.cycleID(seriesID: seriesID, resetAt: normalizedReset)
         if let decodedCycleID {
             guard !decodedCycleID.isEmpty, decodedCycleID == derivedCycleID else { throw CapacityContractError.invalidReset }
         }
@@ -2400,7 +2407,7 @@ public struct CapacityObservation: Codable, Equatable, Sendable {
 
         self.seriesID = seriesID
         self.observedAt = observedAt
-        self.resetAt = resetAt
+        self.resetAt = normalizedReset
         self.cycleID = derivedCycleID
         self.value = value
         self.authority = authority

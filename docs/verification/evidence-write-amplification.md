@@ -54,28 +54,42 @@ reading it has until the reading itself changes. Sameness is decided by comparin
 with the timestamp set aside, so a field added later is covered without anyone remembering to list
 it — a different value, authority, or reset instant still wins.
 
-**2. A daily reset boundary carries sub-second jitter.** `rate-limit`'s reset moved from
-`2026-08-24T00:00:00.865Z` to `2026-08-24T00:00:00.705Z` — the same instant, described twice with
-different milliseconds, because the provider computes it from request time. Not fixed here:
-normalising reset instants changes what `cycleID` is derived from, and that deserves its own pass.
+**2. A daily reset boundary carried sub-second jitter.** `rate-limit`'s reset moved from
+`2026-08-24T00:00:00.865Z` to `2026-08-24T00:00:00.705Z` — one instant described twice, because the
+provider recomputes it per request. The `cycleID` derived from that same value already truncates to
+the second, so the stored instant disagreed with its own cycle identity. **Fixed:** a reset instant
+is held to the second, matching the identity that was always derived from it.
 
-**3. opencode's rolling window has no reset instant to report.** Its `resetsAt` was 5h00m00.596s
-after one reading and 5h00m00.429s after the next: the API answers "five hours from now", every
-time. A five-hour *rolling* window does not reset, so there is nothing here for a reset field to
-hold — but as evidence it is a genuinely different reading every poll, and the app is faithfully
-recording what it was told.
+**3. opencode's rolling window had no reset instant to report.** Its `resetsAt` sat 5h00m00.536s
+after the observation — the window's own length — and did again on the next poll: the API answers
+"five hours from now", every time. That is a horizon, not a reset. A countdown built on it reads
+`5h 0m` forever, which is the app showing a number it cannot stand behind. **Fixed:** a window whose
+reset sits its own length ahead of the moment it was asked is recorded with no reset instant. The
+same API reports a real instant once a window has usage in it, which is what the monthly window does
+at 99%, and those are untouched.
 
-## What this changes today, honestly: nothing measurable
+## What it changed, measured
 
-Cause 1 is fixed, and on an install without opencode's quota probe it is the whole story. On *this*
-machine the probe is on, so cause 3 still makes the envelope differ every poll and the file is still
-rewritten every 90 seconds. The fix is a precondition for the saving, not the saving.
+Same install, same probes, before and after:
 
-The structural fix is to stop rewriting a four-megabyte envelope to append three records — an
-append-and-compact journal rather than a whole-file commit. That is a redesign of a store built
-around atomic replacement with transaction markers, checksums, and a backup generation, and it is
-not something to start without the owner deciding it is worth the risk. Recorded here with the
-numbers, rather than half-done.
+| | write interval | per day |
+|---|---|---|
+| Before | 90 seconds | ~7.7 GB |
+| After | ~6 minutes | ~1.9 GB |
+
+Roughly a quarter of the disk traffic, and the residue is now the bucket boundary itself — one
+sample per series per five minutes, which is what the retention design says it wants. Read back from
+the live store afterwards:
+
+```
+opencode-go-rolling  used=0   resetAt=None
+rate-limit           used=15  resetAt=2026-08-24T00:00:00.000Z
+```
+
+The remaining structural question — an append-and-compact journal instead of re-committing a
+four-megabyte envelope — is no longer urgent at this cadence, and it is a redesign of a store built
+around atomic replacement with transaction markers, checksums and a backup generation. Left alone
+deliberately.
 
 ## Also found
 
@@ -87,12 +101,15 @@ than being given one.
 
 ## Verification
 
-- `swift build -Xswiftc -warnings-as-errors` clean; `swift test`: **833 tests**, and the five new
-  ones were each checked by reverting the fix and watching the right one fail.
+- `swift build -Xswiftc -warnings-as-errors` clean; `swift test`: **833 tests, 0 failures**, and each
+  new guard was checked by reverting its fix and watching the right one fail.
 - The saving test fails without the fix with `("5") is not equal to ("1")` — five commits for one
   unchanged quota read five times.
-- The sliding-horizon case is pinned by a test that asserts the commit *does* still happen, so the
-  limit of the fix is recorded in the suite and not only here.
+- The store cannot tell a sliding horizon from a moving reset, and a test asserts it still commits
+  for one, which is why the third fix sits in the adapter that knows its own API rather than in the
+  store.
+- Live cadence re-measured on the rebuilt app: two writes in ten minutes, against forty an hour
+  before.
 
 ## Unrelated worktree activity during this pass
 

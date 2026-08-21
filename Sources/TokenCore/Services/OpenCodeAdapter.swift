@@ -154,6 +154,22 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
     /// snapshot. The weekly window keeps the established `rate-limit` series identity so the
     /// existing capacity pipeline recognizes it as comparable provider quota; rolling (5h) and
     /// monthly are carried as supplementary windows so the overview can show them too.
+    /// opencode answers `resetsAt` for a window with nothing in it as the request time plus the
+    /// window's own length — "five hours from now", and five hours from now again on the next poll.
+    /// That is a horizon, not a reset: a countdown built on it reads `5h 0m` forever, and as stored
+    /// evidence it makes every poll a different reading of a window that never moved. Once the window
+    /// has usage in it the API reports a real instant, which is what the monthly window does at 99%.
+    ///
+    /// A window whose reset sits its own length ahead of the moment it was asked is therefore recorded
+    /// with no reset instant. A cycle that genuinely just began looks the same for a few seconds and
+    /// loses its countdown for that long; the next poll has it back.
+    static func resetInstant(_ resetAt: Date?, observedAt: Date, durationMinutes: Int?) -> Date? {
+        guard let resetAt, let durationMinutes, durationMinutes > 0 else { return resetAt }
+        let ownLength = TimeInterval(durationMinutes * 60)
+        let ahead = resetAt.timeIntervalSince(observedAt)
+        return abs(ahead - ownLength) <= 5 ? nil : resetAt
+    }
+
     public static func applyingRateLimit(_ limit: OpenCodeRateLimit, to snapshot: ProviderSnapshot) -> ProviderSnapshot {
         var updated = snapshot
         var appliedAny = false
@@ -161,7 +177,7 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             updated.fiveHour = LimitWindow(
                 kind: .fiveHour,
                 usedPercent: rolling.usedPercent,
-                resetAt: rolling.resetAt,
+                resetAt: resetInstant(rolling.resetAt, observedAt: limit.observedAt, durationMinutes: 300),
                 confidence: .high,
                 providerWindowID: "opencode-go-rolling",
                 durationMinutes: 300
@@ -182,7 +198,7 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             updated.monthly = LimitWindow(
                 kind: .monthly,
                 usedPercent: monthly.usedPercent,
-                resetAt: monthly.resetAt,
+                resetAt: resetInstant(monthly.resetAt, observedAt: limit.observedAt, durationMinutes: 43_200),
                 confidence: .high,
                 providerWindowID: "opencode-go-monthly",
                 durationMinutes: 43_200
