@@ -198,7 +198,7 @@ public final class ProviderStatusService: @unchecked Sendable {
             checkedAt: report.checkedAt
         )
         guard let data = try? JSONEncoder().encode(cached) else { return }
-        defaults.set(data, forKey: cacheKey(for: report.provider))
+        defaults.setIfChanged(data, forKey: cacheKey(for: report.provider))
     }
 
     private func cacheKey(for provider: Provider) -> String {

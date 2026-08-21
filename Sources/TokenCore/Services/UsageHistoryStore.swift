@@ -113,9 +113,14 @@ public final class UsageHistoryStore: @unchecked Sendable {
         return decoded
     }
 
+    /// Both paths through `record` save unconditionally, including the one taken when a refresh
+    /// brought nothing new — which is every refresh for anyone whose enabled providers report no
+    /// token events. Measured on a real install: 786 KB of preferences rewritten every ninety
+    /// seconds to store bytes identical to the ones already there. The encode was happening anyway;
+    /// comparing its result is what the write costs nothing to avoid.
     private func saveUnlocked(_ events: [UsageEvent]) {
         guard let data = try? encoder.encode(events) else { return }
-        defaults.set(data, forKey: key)
+        defaults.setIfChanged(data, forKey: key)
     }
 
     // MARK: - Private helpers (pure computation, no I/O)

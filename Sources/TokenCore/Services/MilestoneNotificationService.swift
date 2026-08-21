@@ -31,7 +31,7 @@ public final class MilestoneNotificationStore: @unchecked Sendable {
             var notified = self.notifiedIDsLocked()
             notified.formUnion(ids)
             guard let data = try? encoder.encode(notified) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
     }
 

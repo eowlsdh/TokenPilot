@@ -91,6 +91,51 @@ four-megabyte envelope — is no longer urgent at this cadence, and it is a rede
 around atomic replacement with transaction markers, checksums and a backup generation. Left alone
 deliberately.
 
+## The same shape again, in a second store
+
+Checking whether "today: 0 tokens" was a defect (it was not — Claude is switched off on this
+install) turned up the app's preferences file doing the same thing: **786 KB rewritten every ninety
+seconds**. Diffing two consecutive versions by key:
+
+```
+  same   tokenPilot.appSettings.v1              3,518 B
+CHANGED  tokenPilot.limitSamples.v1           107,757 B
+  same   tokenPilot.milestoneNotifications.v1     166 B
+  same   tokenPilot.usageEvents.v3            694,663 B
+```
+
+Two causes, and the second only became visible after fixing the first:
+
+**Saving unconditionally.** Both paths through `UsageHistoryStore.record` save, including the one
+taken when a refresh brought nothing new — which is every refresh for anyone whose enabled providers
+report no token events. 694 KB written to store the bytes already there. `setIfChanged` now guards
+every encoded blob in the app, and a test asserts no store writes one directly.
+
+**The same bucket defect as the evidence store.** `LimitHistoryStore` buckets samples into five
+minutes and kept the newest, so re-reading an unchanged quota replaced the bucket's sample with one
+carrying a later timestamp. Fixed the same way: a bucket keeps its reading until the reading changes.
+
+That ordering matters as a lesson: fixing only the 694 KB blob would have looked like a 87% saving
+and delivered nothing, because the preferences file is written **whole** when any key in it changes.
+Measuring after the first fix is what showed the file still being rewritten on the same schedule.
+
+## Both stores, measured together on the finished build
+
+Ten minutes, one watch:
+
+```
+evidence write 1 at 11:10:49      prefs write 1 at 11:10:58
+evidence write 2 at 11:15:19      prefs write 2 at 11:15:28
+```
+
+Each store now writes once per five-minute bucket instead of once per refresh.
+
+| | before | after |
+|---|---|---|
+| capacity evidence | 8 MB / 90 s → ~7.7 GB/day | 8 MB / ~5 min → ~2.3 GB/day |
+| app preferences | 786 KB / 90 s → ~0.75 GB/day | 786 KB / ~5 min → ~0.22 GB/day |
+| **total** | **~8.5 GB/day** | **~2.5 GB/day** |
+
 ## Also found
 
 **opencode's weekly quota was labelled `roll`.** `windowLabel` groups `rolling`,

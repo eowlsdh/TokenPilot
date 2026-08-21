@@ -59,7 +59,7 @@ public final class BudgetAlertDedupStore: @unchecked Sendable {
             var delivered = self.deliveredKeysLocked()
             delivered.formUnion(keys)
             guard let data = try? encoder.encode(delivered) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
     }
 

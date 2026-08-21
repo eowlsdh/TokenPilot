@@ -1363,7 +1363,7 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
     public func save(_ settings: AppSettings) {
         lock.withLock {
             guard let data = try? encoder.encode(normalize(settings)) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
     }
 
@@ -1373,7 +1373,7 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
         let defaults = AppSettings()
         lock.withLock {
             guard let data = try? encoder.encode(normalize(defaults)) else { return }
-            self.defaults.set(data, forKey: key)
+            self.defaults.setIfChanged(data, forKey: key)
         }
         return defaults
     }
@@ -1799,7 +1799,7 @@ public final class AlertDeduplicationStore: @unchecked Sendable {
     public func save(_ states: [String: AlertDeliveryState]) {
         lock.withLock {
             guard let data = try? encoder.encode(states) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
     }
 
