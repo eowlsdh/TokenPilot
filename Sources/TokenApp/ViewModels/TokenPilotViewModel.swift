@@ -1236,7 +1236,10 @@ final class TokenPilotViewModel: ObservableObject {
     private func shouldRunDataRefresh(at now: Date) -> Bool {
         guard !refreshInProgress else { return false }
         guard let lastRefreshFinishedAt else { return true }
-        return now.timeIntervalSince(lastRefreshFinishedAt) >= dataRefreshInterval
+        // Half a tick of slack. A tick lands a fraction under the deadline — the refresh's own
+        // duration is enough — so a strict `>=` pushed every interval to the *next* tick: the
+        // default "1 min" actually refreshed every 90 seconds, and "30 sec" every 60.
+        return now.timeIntervalSince(lastRefreshFinishedAt) >= dataRefreshInterval - menuBarTickInterval / 2
     }
 
     private func persistSettingsDebounced(_ settingsToSave: AppSettings) {

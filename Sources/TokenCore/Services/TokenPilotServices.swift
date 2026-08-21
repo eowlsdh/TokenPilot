@@ -1385,7 +1385,9 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.alertRules.append(rule)
         }
         copy.geminiDailyRequestCap = max(copy.geminiDailyRequestCap, 1)
-        copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 15), 900)
+        // 30, not 15: the tick that drives refreshes fires every 30 seconds, so a 15-second
+        // setting was a promise the app could not keep. A stored 15 migrates up on load.
+        copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 30), 900)
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)

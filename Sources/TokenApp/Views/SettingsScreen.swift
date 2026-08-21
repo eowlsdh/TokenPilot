@@ -203,7 +203,6 @@ struct SettingsScreen: View {
     }
 
     private static let refreshIntervalPresets: [RefreshIntervalPreset] = [
-        RefreshIntervalPreset(seconds: 15, labelKey: "15 sec"),
         RefreshIntervalPreset(seconds: 30, labelKey: "30 sec"),
         RefreshIntervalPreset(seconds: 60, labelKey: "1 min"),
         RefreshIntervalPreset(seconds: 120, labelKey: "2 min"),

@@ -3804,7 +3804,13 @@ final class TokenPilotServicesTests: XCTestCase {
         var settings = AppSettings()
         settings.refreshIntervalSeconds = 5
         store.save(settings)
-        XCTAssertEqual(store.load().refreshIntervalSeconds, 15)
+        // The floor is the tick that drives refreshes. Anything under it was a cadence the app
+        // could not deliver, so a stored 15 migrates up here rather than silently behaving as 30.
+        XCTAssertEqual(store.load().refreshIntervalSeconds, 30)
+
+        settings.refreshIntervalSeconds = 15
+        store.save(settings)
+        XCTAssertEqual(store.load().refreshIntervalSeconds, 30)
 
         settings.refreshIntervalSeconds = 9_999
         store.save(settings)
