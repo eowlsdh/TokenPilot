@@ -125,8 +125,6 @@ final class TokenPilotViewModel: ObservableObject {
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRefreshTask: Task<Void, Never>?
     private var experimentalShutdownTask: Task<Void, Never>?
-    private var lastWeeklyDigestAttemptDay: Date?
-    private var lastDailyDigestAttemptDay: Date?
 #if DEBUG
     private let debugFixtureMode: Bool
 #endif
@@ -1117,14 +1115,16 @@ final class TokenPilotViewModel: ObservableObject {
         await refresh(reason: .automaticTimer)
     }
 
+    /// A once-per-day attempt tracker used to sit in front of the fire window, and it burned the
+    /// day's only attempt on the first tick after midnight — outside every schedule anyone would
+    /// pick, so the digest never sent. `DailyDigestGate` already dedupes on `lastSentAt`, which is
+    /// the check that belongs here.
     private func checkDailyDigest(now: Date) async {
         guard settings.dailyDigestEnabled,
               settings.globalNotificationsEnabled,
-              settings.macOSNotificationsEnabled,
-              !Calendar.current.isDate(now, inSameDayAs: lastDailyDigestAttemptDay ?? .distantPast) else {
+              settings.macOSNotificationsEnabled else {
             return
         }
-        lastDailyDigestAttemptDay = now
         let lastSent = dailyDigestStore.loadLastSent()
         let schedule = DailyDigestSchedule(hour: settings.dailyDigestHour, minute: settings.dailyDigestMinute)
         guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule) else { return }
@@ -1142,14 +1142,15 @@ final class TokenPilotViewModel: ObservableObject {
         } catch {}
     }
 
+    /// Same defect as the daily digest, worse: the tracker was per-day while the schedule is
+    /// per-week, so the one attempt on digest day happened just after midnight and the weekly
+    /// digest never sent at all.
     private func checkWeeklyDigest(now: Date) async {
         guard settings.weeklyDigestEnabled,
               settings.globalNotificationsEnabled,
-              settings.macOSNotificationsEnabled,
-              !Calendar.current.isDate(now, inSameDayAs: lastWeeklyDigestAttemptDay ?? .distantPast) else {
+              settings.macOSNotificationsEnabled else {
             return
         }
-        lastWeeklyDigestAttemptDay = now
         let lastSent = weeklyDigestStore.loadLastSent()
         let schedule = WeeklyDigestSchedule(hour: settings.weeklyDigestHour, minute: settings.weeklyDigestMinute)
         guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule, weekStartDay: settings.weekStartDay) else { return }
