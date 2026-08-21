@@ -242,11 +242,19 @@ public struct OpenCodeRateLimitObserver: Sendable {
         return OpenCodeRateLimit(rolling: rolling, weekly: weekly, monthly: monthly, observedAt: now)
     }
 
+    /// A window that carries a usable percentage is a reading, whatever `status` says.
+    ///
+    /// This used to require `status == "ok"` and drop the window otherwise, which meant the app went
+    /// blind at the one moment a limit monitor exists for. Measured on a real account: the monthly
+    /// window's records stop dead on 2026-08-19T02:58 with 1,171 samples while the rolling and weekly
+    /// windows carry on to 1,665 — and opencode's own dashboard shows that monthly window at 100%.
+    /// It reached its limit, its status stopped being `ok`, and TokenPilot quietly forgot it existed.
+    ///
+    /// The status vocabulary is not documented and was not observed here — reading the account's
+    /// token to see it is not something this app does. What is observed is that requiring one exact
+    /// value discards a real reading, so the gate is on the reading instead.
     private static func parseWindow(_ value: Any?, now: Date) -> OpenCodeRateLimitWindow? {
-        guard let window = value as? [String: Any],
-              (window["status"] as? String) == "ok" else {
-            return nil
-        }
+        guard let window = value as? [String: Any] else { return nil }
         let percent: Double?
         if let number = window["percent"] as? NSNumber {
             percent = number.doubleValue
