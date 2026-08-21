@@ -417,6 +417,44 @@ public struct CapacityEvidenceRecord: Codable, Equatable, Identifiable, Sendable
         )
     }
 
+    /// The same record read at a different moment. Comparing against this is how a bucket decides
+    /// whether a newer observation actually says anything new: `==` is synthesized over every stored
+    /// property, so a field added later is covered without anyone remembering to list it.
+    fileprivate func withObservedAt(_ date: Date) throws -> CapacityEvidenceRecord {
+        if date == observedAt { return self }
+        let digest = try Self.digest(
+            seriesID: seriesID,
+            observedAt: date,
+            resetAt: resetAt,
+            cycleID: cycleID,
+            value: value,
+            authority: authority,
+            stability: stability,
+            consent: consent,
+            freshnessPolicy: freshnessPolicy,
+            comparability: comparability,
+            parserRevision: parserRevision,
+            retention: retention,
+            dayStart: dayStart
+        )
+        return try CapacityEvidenceRecord(
+            recordDigest: digest,
+            seriesID: seriesID,
+            observedAt: date,
+            resetAt: resetAt,
+            cycleID: cycleID,
+            value: value,
+            authority: authority,
+            stability: stability,
+            consent: consent,
+            freshnessPolicy: freshnessPolicy,
+            comparability: comparability,
+            parserRevision: parserRevision,
+            retention: retention,
+            dayStart: dayStart
+        )
+    }
+
     fileprivate func canonicalObject(includeDigest: Bool = true) -> [String: Any] {
         var seriesObject: [String: Any] = [
             "provider": seriesID.provider.rawValue,
@@ -1045,7 +1083,7 @@ public actor CapacityEvidenceStore {
             let raw = try record.asRetention(.raw)
             let key = bucketKey(for: raw)
             if let existing = rawByBucket[key] {
-                rawByBucket[key] = winner(existing, raw)
+                rawByBucket[key] = try repeatsTheSameReading(existing, raw) ? existing : winner(existing, raw)
             } else {
                 rawByBucket[key] = raw
             }
@@ -1126,6 +1164,19 @@ public actor CapacityEvidenceStore {
     private func bucketKey(for record: CapacityEvidenceRecord) -> String {
         let bucket = Int(floor(record.observedAt.timeIntervalSince1970 / 300))
         return "\(record.seriesID.canonicalID)|\(bucket)"
+    }
+
+    /// A refresh re-reads the same quota every minute or two, and most of the time only `observedAt`
+    /// has moved. Letting that newer reading take the bucket changed the envelope's content, which
+    /// defeated the unchanged-content check above and re-committed the whole file: measured on a real
+    /// install at four megabytes of primary plus four of backup every ninety seconds, to advance a
+    /// timestamp on three records whose values were identical. A bucket now keeps the reading it has
+    /// until the reading itself changes — a genuinely different value, authority, or reset still wins.
+    private func repeatsTheSameReading(
+        _ existing: CapacityEvidenceRecord,
+        _ incoming: CapacityEvidenceRecord
+    ) throws -> Bool {
+        try incoming.withObservedAt(existing.observedAt) == existing
     }
 
     private func winner(_ lhs: CapacityEvidenceRecord, _ rhs: CapacityEvidenceRecord) -> CapacityEvidenceRecord {

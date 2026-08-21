@@ -344,8 +344,13 @@ public enum StatuslineService {
             return "mo"
         case "daily-requests":
             return "req"
-        case "rolling", "opencode-go-rolling", "rate-limit":
+        case "rolling", "opencode-go-rolling":
             return "roll"
+        // `rate-limit` is one id doing two jobs. opencode gives it to the *weekly* window, which was
+        // reading "roll" on screen — a rolling window is the one thing it is not. Anywhere else the
+        // id says only that a provider reported a quota, and naming a period would be a guess.
+        case "rate-limit":
+            return window.provider == .opencode ? "7d" : "quota"
         default:
             return "quota"
         }

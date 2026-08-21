@@ -356,10 +356,10 @@ final class StatuslineRenderTests: XCTestCase {
     }
 
     func testWindowLabelPrefersDurationThenWindowID() {
-        func label(_ windowID: String, _ durationMinutes: Int?) -> String {
+        func label(_ windowID: String, _ durationMinutes: Int?, provider: Provider = .claude) -> String {
             StatuslineService.windowLabel(
                 for: StatuslineCapacityWindow(
-                    provider: .claude,
+                    provider: provider,
                     windowID: windowID,
                     durationMinutes: durationMinutes,
                     usedPercent: 0,
@@ -374,6 +374,30 @@ final class StatuslineRenderTests: XCTestCase {
         XCTAssertEqual(label("opencode-go-monthly", nil), "mo")
         XCTAssertEqual(label("daily-requests", nil), "req")
         XCTAssertEqual(label("something-new", nil), "quota")
+        XCTAssertEqual(label("opencode-go-rolling", 300), "5h")
+        XCTAssertEqual(label("rolling", nil), "roll")
+    }
+
+    /// opencode's weekly quota carries the `rate-limit` id for historical reasons and was reading
+    /// "roll" in the statusline — the one thing a weekly window is not. Elsewhere the id names no
+    /// period, so it stays unlabelled rather than being given one.
+    func testTheWeeklyOpenCodeWindowIsNotLabelledRolling() {
+        func label(_ provider: Provider) -> String {
+            StatuslineService.windowLabel(
+                for: StatuslineCapacityWindow(
+                    provider: provider,
+                    windowID: "rate-limit",
+                    durationMinutes: nil,
+                    usedPercent: 85,
+                    resetAt: nil,
+                    observedAt: StatuslineFixtures.now(),
+                    maximumAgeSeconds: 3_600
+                )
+            )
+        }
+
+        XCTAssertEqual(label(.opencode), "7d")
+        XCTAssertEqual(label(.codex), "quota")
     }
 }
 
