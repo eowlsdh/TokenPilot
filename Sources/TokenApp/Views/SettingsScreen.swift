@@ -281,7 +281,7 @@ struct SettingsScreen: View {
 
     private var sourceHealthDisclosure: some View {
         DisclosureCard(
-            initiallyExpanded: true,
+            initiallyExpanded: healthNeedsAttention,
             remembered: remembered("source"),
             accessibilityLabel: model.t("Source health"),
             accessibilityValue: sourceHealthSummaryText
@@ -510,7 +510,7 @@ struct SettingsScreen: View {
 
     private var providerDiagnosticsDisclosure: some View {
         DisclosureCard(
-            initiallyExpanded: true,
+            initiallyExpanded: healthNeedsAttention,
             remembered: remembered("diagnostics"),
             accessibilityLabel: model.t("Provider Diagnostics"),
             accessibilityValue: providerDiagnosticsSummaryText
@@ -1690,6 +1690,14 @@ struct SettingsScreen: View {
         model.providerDiagnostics.filter { diagnostic in
             diagnostic.status != .disabled
         }.count
+    }
+
+    /// Source health and Provider Diagnostics open by default only when something needs looking at.
+    /// When every source is fine, the summary card above already says so, and opening both cards
+    /// anyway made Settings the most expensive screen to switch to — measured 166 ms per switch with
+    /// them open, ~100 ms closed. The user's own choice is remembered either way.
+    private var healthNeedsAttention: Bool {
+        attentionProviderCount > 0 || model.capacityRuntimeRecoveryRequired
     }
 
     private var attentionProviderCount: Int {
