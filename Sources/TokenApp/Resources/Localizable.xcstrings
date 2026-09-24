@@ -1,6 +1,278 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로그인 시 실행을 마치려면 시스템 설정 → 일반 → 로그인 항목에서 TokenPilot을 허용하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ログイン時の起動を有効にするには、システム設定 → 一般 → ログイン項目で TokenPilot を許可してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请在“系统设置 → 通用 → 登录项”中允许 TokenPilot，以完成登录时启动的设置。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請在「系統設定 → 一般 → 登入項目」中允許 TokenPilot，以完成登入時啟動的設定。"
+          }
+        }
+      }
+    },
+    "Stored history begins %@. Earlier activity is not in these totals.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stored history begins %@. Earlier activity is not in these totals."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "저장된 기록은 %@부터입니다. 그 이전 활동은 이 합계에 포함되지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存された履歴は %@ からです。それ以前の活動はこの合計に含まれません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已存储的记录始于 %@。更早的活动不计入这些总数。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已儲存的記錄始於 %@。更早的活動不計入這些總數。"
+          }
+        }
+      }
+    },
+    "Last week": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Last week"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지난주"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "先週"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上周"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上週"
+          }
+        }
+      }
+    },
+    "Telegram rejected the bot token. It was revoked or mistyped — get a new one from @BotFather and save it again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram rejected the bot token. It was revoked or mistyped — get a new one from @BotFather and save it again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텔레그램이 봇 토큰을 거부했습니다. 폐기되었거나 잘못 입력된 토큰입니다. @BotFather에서 새 토큰을 받아 다시 저장하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram がボットトークンを拒否しました。失効したか入力ミスです。@BotFather で新しいトークンを取得して保存し直してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram 拒绝了机器人令牌。令牌已被吊销或输入有误——请从 @BotFather 获取新令牌并重新保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram 拒絕了機器人令牌。令牌已被撤銷或輸入有誤——請從 @BotFather 取得新令牌並重新儲存。"
+          }
+        }
+      }
+    },
+    "Telegram rejected the chat ID. The bot was removed from the chat, or has never received a message there.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram rejected the chat ID. The bot was removed from the chat, or has never received a message there."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "텔레그램이 채팅 ID를 거부했습니다. 봇이 채팅에서 제거되었거나, 그 채팅에서 메시지를 받은 적이 없습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram がチャット ID を拒否しました。ボットがチャットから削除されたか、そのチャットでメッセージを受け取ったことがありません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram 拒绝了聊天 ID。机器人已被移出该聊天，或从未在该聊天中收到过消息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telegram 拒絕了聊天 ID。機器人已被移出該聊天，或從未在該聊天中收到過訊息。"
+          }
+        }
+      }
+    },
+    "That is not a Discord webhook URL. It must start with https://discord.com/api/webhooks/ — copy it from Server Settings → Integrations → Webhooks.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "That is not a Discord webhook URL. It must start with https://discord.com/api/webhooks/ — copy it from Server Settings → Integrations → Webhooks."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스코드 웹훅 URL이 아닙니다. https://discord.com/api/webhooks/ 로 시작해야 합니다. 서버 설정 → 연동 → 웹후크에서 복사하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord の Webhook URL ではありません。https://discord.com/api/webhooks/ で始まる必要があります。サーバー設定 → 連携サービス → ウェブフック からコピーしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这不是 Discord Webhook URL。它必须以 https://discord.com/api/webhooks/ 开头——请从服务器设置 → 整合 → Webhook 中复制。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這不是 Discord Webhook URL。它必須以 https://discord.com/api/webhooks/ 開頭——請從伺服器設定 → 整合 → Webhook 中複製。"
+          }
+        }
+      }
+    },
+    "Discord no longer recognises this webhook — it was deleted or regenerated. Create a new one and save it again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord no longer recognises this webhook — it was deleted or regenerated. Create a new one and save it again."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "디스코드가 이 웹훅을 더 이상 인식하지 않습니다. 삭제되었거나 다시 생성되었습니다. 새 웹훅을 만들어 다시 저장하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord はこの Webhook を認識しなくなりました。削除されたか再生成されています。新しく作成して保存し直してください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord 不再识别此 Webhook——它已被删除或重新生成。请新建一个并重新保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Discord 不再識別此 Webhook——它已被刪除或重新產生。請新建一個並重新儲存。"
+          }
+        }
+      }
+    },
+    "⌘⇧Space is already used by another app, so the global shortcut was turned off.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘⇧Space is already used by another app, so the global shortcut was turned off."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘⇧Space를 다른 앱이 이미 사용 중이라 전역 단축키를 껐습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘⇧Space は別のアプリが使用中のため、グローバルショートカットをオフにしました。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘⇧Space 已被其他应用占用，因此已关闭全局快捷键。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌘⇧Space 已被其他應用程式佔用，因此已關閉全域快捷鍵。"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "en": {
