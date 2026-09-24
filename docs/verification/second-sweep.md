@@ -84,13 +84,11 @@ selected period starts, instead of letting charts imply there was no earlier act
 
 ## Not fixed, and why
 
-- **History keeps 2 000 events** — on this machine that was 2.5 days of a 45-day retention. Raising
-  the cap grows a UserDefaults blob rewritten on every change (705 KB → ~13 MB); rolling old events
-  up double-counts, because adapters re-emit 31 days each refresh and dedupe keys on raw events.
-  This needs the append-and-compact store redesign. History now at least says where it begins.
-- **Claude events split across two refreshes may count twice.** A real fix needs a stable
-  per-message ID; switching keys would double-count every already-stored Claude event for up to
-  45 days during migration — a certain regression to fix an uncertain one.
+- ~~**History keeps 2 000 events**~~ — fixed in the follow-up below: history is now stored one
+  file per UTC day and keeps the full 45 days.
+- ~~**Claude events split across two refreshes may count twice.**~~ — fixed in the follow-up below:
+  each Claude event carries its message ID, and events stored without one are retired as the same
+  content comes back with it, so the migration does not double-count.
 - **Z.ai window kind** (`TOKENS_LIMIT` may be the 5-hour window, not weekly) — the endpoint is
   undocumented and could not be verified.
 
@@ -102,3 +100,34 @@ selected period starts, instead of letting charts imply there was no earlier act
 - Suite also passed with the Codex adapter clock 200 days ahead.
 - Rebuilt, relaunched; the History popover rendered correctly. Idle CPU as above.
 - `gitleaks dir`: no leaks.
+
+## Follow-up, same day
+
+Seven commits after the sweep above.
+
+| Change | Before → after |
+|---|---|
+| **History store** (aea1861) | One UserDefaults array, capped at 2 000 events (2.5 days on this machine), rewritten whole on every change → one JSON file per UTC day under Application Support, 45 days kept, only changed days written. The old blob is imported once, then removed. A dry run on a copy of the real data kept every event (2 000 events, 768 953 577 tokens); after relaunch the store held 11 days and 13 347 events in 5.6 MB |
+| **Claude double-count** (aea1861) | Keyed by content, so a message read mid-write and again complete counted twice → keyed by message ID; the later reading replaces the earlier |
+| **Failed alerts** (8843936) | Budget and milestone alerts were marked delivered even when delivery failed, so they never retried → only alerts actually shown are marked |
+| **Kiro reset** (8843936) | `days_until_reset` counted from the refresh instant, so the reset time moved on every poll → counted from the start of today |
+| **Problem banners** (5fc1a8a) | Failures used the same banner as confirmations → warning icon and colour, and VoiceOver says "Problem" first |
+| **Settings scroll** (5fc1a8a) | Settings jumped to the top on every return → keeps its position |
+| **Limits as remaining or used** (425cda7) | Remaining % only → Settings › "Show limits as" chooses Remaining (default) or Used; the menu bar, cards and History all say which |
+| **Menu bar trend in Used mode** (dc8ac70) | The number and bar rose as a limit was consumed while the sparkline beside them, drawn from stored remaining history, fell → the sparkline follows the same setting. The Korean explanation also quoted "사용" for an option labelled "사용됨" |
+| **Settings switch cost** (9706a98) | Source health and Provider Diagnostics always opened: ~166 ms per switch to Settings under load → they open by default only when a source needs attention: ~100 ms. A user's own open/closed choice is still remembered |
+| **CI** (7ba826b) | Secret scan runs before the build; the `.gitignore` check runs the real script. The suite no longer needs `--skip SecurityPostureTests` |
+
+Measured and left alone:
+
+- Keeping all three screens alive and switching visibility made every switch slower (130–147 ms
+  for every pair), so it was reverted.
+- The capacity evidence file is written every five minutes, now 50 KB (~30 MB/day of writes).
+  Not worth a redesign yet.
+- Codex still reads its session files whole on each refresh. Its parser carries state across lines,
+  and there was no recent Codex data here to validate an incremental reader against.
+- No opencode monthly readings since Aug 23: the API reading is opt-in, and consent is currently
+  off. While it was on (Aug 14–23), all three windows were recorded.
+- The 11 699 leftover test preference files (`test-preference-leak.md`, about 45 MB) were moved to the
+  Trash, not deleted. No test run since Aug 21 has created one.
+

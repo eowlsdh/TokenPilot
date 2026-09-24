@@ -79,3 +79,7 @@ find ~/Library/Preferences -maxdepth 1 -name "*.plist" | \
 
 Run without `| xargs rm` first to read the list. It matches 11,641 of the 12,157 files and leaves
 every real application's preferences alone.
+
+**2026-09-24:** done. 11 699 matching files (46 MB, dated Apr 25 – Aug 21) were moved to
+`~/.Trash/TokenPilot-test-prefs-2026-09-24` rather than deleted; empty the Trash to finish. None had
+been created since Aug 21, so the leak fix holds.
