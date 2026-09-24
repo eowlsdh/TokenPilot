@@ -2304,10 +2304,23 @@ public enum KeychainError: Error, Equatable, LocalizedError {
 }
 
 public enum TokenPilotFormatters {
+    /// The unit is chosen *after* rounding to one decimal, so 999 950 reads "1M", not "1000K", and a
+    /// lifetime total past a billion reads "1.2B" rather than "1234.5M".
     public static func compactNumber(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000).replacingOccurrences(of: ".0M", with: "M") }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000).replacingOccurrences(of: ".0K", with: "K") }
-        return "\(value)"
+        if value < 0 { return "-" + compactNumber(-value) }
+        let units: [(divisor: Double, suffix: String)] = [(1_000, "K"), (1_000_000, "M"), (1_000_000_000, "B")]
+        guard var index = units.lastIndex(where: { Double(value) >= $0.divisor }) else { return "\(value)" }
+        var scaled = (Double(value) / units[index].divisor * 10).rounded() / 10
+        if scaled >= 1_000, index + 1 < units.count {
+            // Rounded up into the next unit.
+            index += 1
+            scaled = (Double(value) / units[index].divisor * 10).rounded() / 10
+        }
+        return format(scaled, units[index].suffix)
+    }
+
+    private static func format(_ scaled: Double, _ suffix: String) -> String {
+        String(format: "%.1f\(suffix)", scaled).replacingOccurrences(of: ".0\(suffix)", with: suffix)
     }
 
     public static func cost(_ value: Decimal) -> String {

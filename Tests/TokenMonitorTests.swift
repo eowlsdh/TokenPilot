@@ -102,6 +102,14 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_500), "1.5K")
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_000), "1K")
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_000_000), "1M")
+        // The unit is picked after rounding, so the boundary never reads "1000K" or "1000M".
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_950), "1M")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_949), "999.9K")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_999_999), "1B")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(1_234_500_000), "1.2B")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(577_737_023), "577.7M")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999), "999")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(-1_500), "-1.5K")
     }
 
     func testRemainingTimeFormatterLocalizesUnits() {

@@ -147,7 +147,12 @@ public final class UsageExportService {
         let snapshots = Provider.allCases.map { provider in
             ProviderSnapshot(provider: provider, events: events.filter { $0.provider == provider })
         }
-        return AggregationService().aggregate(snapshots: snapshots, period: usage.period, now: now)
+        // `usage` is already windowed by the caller — `--since/--until/--days` included. Filtering it
+        // again by the named period cut an explicit month back to the default seven days, and
+        // `export --since 2026-08-01 --until 2026-08-31` came out empty. Keep exactly what arrived.
+        let timestamps = events.map(\.timestamp)
+        let arrived = timestamps.min().flatMap { first in timestamps.max().map { first...$0 } }
+        return AggregationService().aggregate(snapshots: snapshots, period: usage.period, customRange: arrived, now: now)
     }
 
     /// Returns a copy of the aggregated usage with every cost field blanked so

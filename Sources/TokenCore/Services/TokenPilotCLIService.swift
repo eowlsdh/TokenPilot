@@ -1091,13 +1091,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
 
         var lines: [String] = []
@@ -1164,13 +1164,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(Set(enabledProviders).contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodLabel = periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar)
 
@@ -1209,13 +1209,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
 
         var lines: [String] = []
@@ -1476,13 +1476,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -1581,20 +1581,20 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
         }
         let activeDayStarts = Set(periodEvents.map { calendar.startOfDay(for: $0.timestamp) })
         let activeDays = activeDayStarts.count
-        let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+        let spanDays = calendarDaySpan(window, calendar: calendar)
         let dailyAverage = metrics.totalTokens / spanDays
         let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
         let busiestDay = dayGroups.max { lhs, rhs in
@@ -1662,13 +1662,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(Set(enabledProviders).contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodLabel = periodLabel(period, since: since, until: until, days: days, language: .en, now: now, calendar: calendar)
 
@@ -1706,20 +1706,20 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
         }
         let activeDayStarts = Set(periodEvents.map { calendar.startOfDay(for: $0.timestamp) })
         let activeDays = activeDayStarts.count
-        let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+        let spanDays = calendarDaySpan(window, calendar: calendar)
         let dailyAverage = metrics.totalTokens / spanDays
         let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
         let busiestDay = dayGroups.max { lhs, rhs in
@@ -1969,20 +1969,20 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
         }
         let activeDayStarts = Set(periodEvents.map { calendar.startOfDay(for: $0.timestamp) })
         let activeDays = activeDayStarts.count
-        let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+        let spanDays = calendarDaySpan(window, calendar: calendar)
         let dailyAverage = metrics.totalTokens / spanDays
         let dayGroups = Dictionary(grouping: periodEvents) { calendar.startOfDay(for: $0.timestamp) }
         let busiestDay = dayGroups.max { lhs, rhs in
@@ -2111,13 +2111,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -2189,13 +2189,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -2258,13 +2258,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -2385,13 +2385,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -2659,13 +2659,13 @@ public enum TokenPilotCLIService {
         let providerEvents = provider.map { p in events.filter { $0.provider == p } } ?? events
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let scopedEvents = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let providerSnapshots = Provider.allCases.map { provider in
+        let providerSnapshots = Provider.allCases.filter(enabledSet.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: scopedEvents.filter { $0.provider == provider }
             )
         }
-        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now)
+        let usage = AggregationService().aggregate(snapshots: providerSnapshots, period: period, customRange: range(from: window), now: now, calendar: calendar)
         let metrics = usage.metrics
         let periodEvents = scopedEvents.filter { event in
             enabledSet.contains(event.provider) && event.timestamp >= window.start && event.timestamp < window.endExclusive
@@ -2792,7 +2792,7 @@ public enum TokenPilotCLIService {
         let coverage: UsageCoverageSummary
         if since != nil || until != nil || days != nil {
             let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
-            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let spanDays = calendarDaySpan(window, calendar: calendar)
             let inWindowEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
             coverage = UsageCoverageService.coverage(events: inWindowEvents, windowDays: spanDays, now: window.endExclusive.addingTimeInterval(-1), calendar: calendar)
         } else {
@@ -2884,7 +2884,7 @@ public enum TokenPilotCLIService {
         let coverage: UsageCoverageSummary
         if since != nil || until != nil || days != nil {
             let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
-            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let spanDays = calendarDaySpan(window, calendar: calendar)
             let inWindowEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
             coverage = UsageCoverageService.coverage(events: inWindowEvents, windowDays: spanDays, now: window.endExclusive.addingTimeInterval(-1), calendar: calendar)
         } else {
@@ -3069,13 +3069,13 @@ public enum TokenPilotCLIService {
         if let period {
             // Section window: the period's own bounds bound the audited window.
             let window = reportWindow(period: period, since: nil, until: nil, days: nil, now: now, calendar: calendar)
-            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let spanDays = calendarDaySpan(window, calendar: calendar)
             auditedEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
             anchor = window.endExclusive.addingTimeInterval(-1)
             coverage = UsageCoverageService.coverage(events: auditedEvents, windowDays: spanDays, now: anchor, calendar: calendar)
         } else if since != nil || until != nil || days != nil {
             let window = reportWindow(period: .last7Days, since: since, until: until, days: days, now: now, calendar: calendar)
-            let spanDays = max(Int((window.endExclusive.timeIntervalSince(window.start) / 86_400).rounded()), 1)
+            let spanDays = calendarDaySpan(window, calendar: calendar)
             auditedEvents = scopedEvents.filter { $0.timestamp >= window.start && $0.timestamp < window.endExclusive }
             anchor = window.endExclusive.addingTimeInterval(-1)
             coverage = UsageCoverageService.coverage(events: auditedEvents, windowDays: spanDays, now: anchor, calendar: calendar)
@@ -3509,6 +3509,17 @@ public enum TokenPilotCLIService {
             endExclusive = now.addingTimeInterval(1)
         }
         return (start, endExclusive)
+    }
+
+    /// Calendar days the window touches, counting today whole.
+    ///
+    /// Dividing elapsed seconds by 86 400 and rounding undercounted whenever it ran before noon:
+    /// a seven-day `stats` at 09:00 spans 6.4 days, rounded to 6, so the daily average came out
+    /// about 17% high and `audit --days 7` said "of last 6 days".
+    private static func calendarDaySpan(_ window: (start: Date, endExclusive: Date), calendar: Calendar) -> Int {
+        let first = calendar.startOfDay(for: window.start)
+        let last = calendar.startOfDay(for: window.endExclusive.addingTimeInterval(-1))
+        return max((calendar.dateComponents([.day], from: first, to: last).day ?? 0) + 1, 1)
     }
 
     /// Converts the report window bounds into a closed range for aggregation filtering.

@@ -8,10 +8,11 @@ public final class AggregationService: Sendable {
         snapshots: [ProviderSnapshot],
         period: HistoryPeriod,
         customRange: ClosedRange<Date>? = nil,
-        now: Date = Date()
+        now: Date = Date(),
+        calendar: Calendar = .current
     ) -> AggregatedUsage {
         let usageEvents = snapshots.flatMap { $0.events }
-        let filteredEvents = filterEvents(usageEvents, period: period, customRange: customRange, now: now)
+        let filteredEvents = filterEvents(usageEvents, period: period, customRange: customRange, now: now, calendar: calendar)
 
         let totalTokens = filteredEvents.reduce(0) { $0 + $1.totalTokens }
         let inputTokens = filteredEvents.reduce(0) { $0 + $1.inputTokens }
@@ -53,9 +54,9 @@ public final class AggregationService: Sendable {
                 requestCount: requestCount,
                 estimatedCostUSD: cost,
                 mostUsedProvider: mostUsed,
-                busiestHour: busiestHour(in: filteredEvents)
+                busiestHour: busiestHour(in: filteredEvents, calendar: calendar)
             ),
-            sevenDayBars: sevenDayBars(from: usageEvents, now: now),
+            sevenDayBars: sevenDayBars(from: usageEvents, now: now, calendar: calendar),
             providerShare: share,
             events: filteredEvents,
             modelBreakdown: modelBreakdown(from: filteredEvents, totalTokens: totalTokens),
@@ -131,33 +132,27 @@ public final class AggregationService: Sendable {
         var label: String
     }
 
-    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod, customRange: ClosedRange<Date>?, now: Date) -> [UsageEvent] {
+    private func filterEvents(_ events: [UsageEvent], period: HistoryPeriod, customRange: ClosedRange<Date>?, now: Date, calendar: Calendar) -> [UsageEvent] {
         if let customRange {
             return events.filter { customRange.contains($0.timestamp) }
         }
-        let calendar = Calendar.current
-        let start: Date
-        switch period {
-        case .today:
-            start = calendar.startOfDay(for: now)
-        case .last7Days:
-            start = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? now
-        case .thisMonth:
-            start = calendar.date(from: calendar.dateComponents([.year, .month], from: now)) ?? calendar.startOfDay(for: now)
-        }
+        let start = period.start(now: now, calendar: calendar)
         return events.filter { $0.timestamp >= start && $0.timestamp <= now.addingTimeInterval(1) }
     }
 
-    private func sevenDayBars(from events: [UsageEvent], now: Date) -> [DailyUsageBar] {
-        let calendar = Calendar.current
+    private func sevenDayBars(from events: [UsageEvent], now: Date, calendar: Calendar) -> [DailyUsageBar] {
         let formatter = Self.dayFormatter
+        let today = calendar.startOfDay(for: now)
+        let firstDay = calendar.date(byAdding: .day, value: -6, to: today) ?? today
 
+        // One pass over the store instead of seven calendar comparisons per event per aggregate.
+        var tokensByDay: [Date: Int] = [:]
+        for event in events where event.timestamp >= firstDay {
+            tokensByDay[calendar.startOfDay(for: event.timestamp), default: 0] += event.totalTokens
+        }
         return (0..<7).reversed().map { offset in
-            let date = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now)) ?? now
-            let tokens = events
-                .filter { calendar.isDate($0.timestamp, inSameDayAs: date) }
-                .reduce(0) { $0 + $1.totalTokens }
-            return DailyUsageBar(dayLabel: formatter.withLock { $0.string(from: date) }, tokens: tokens)
+            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? now
+            return DailyUsageBar(dayLabel: formatter.withLock { $0.string(from: date) }, tokens: tokensByDay[date] ?? 0)
         }
     }
 
@@ -168,13 +163,18 @@ public final class AggregationService: Sendable {
         return formatter
     }())
 
-    private func busiestHour(in events: [UsageEvent]) -> Int? {
+    /// In the caller's calendar — `--timezone` included — and ties go to the earlier hour. Picking
+    /// from a Dictionary resolved ties in hash order, so the same data could name a different hour
+    /// on each run.
+    private func busiestHour(in events: [UsageEvent], calendar: Calendar) -> Int? {
         let counts = Dictionary(grouping: events) { event in
-            Calendar.current.component(.hour, from: event.timestamp)
+            calendar.component(.hour, from: event.timestamp)
         }.mapValues { grouped in
             grouped.reduce(0) { $0 + $1.totalTokens }
         }
-        return counts.max(by: { $0.value < $1.value })?.key
+        return counts.max { lhs, rhs in
+            lhs.value != rhs.value ? lhs.value < rhs.value : lhs.key > rhs.key
+        }?.key
     }
 
     /// Builds a GitHub-style contribution grid for the trailing `days` (default 84 = 12 weeks).

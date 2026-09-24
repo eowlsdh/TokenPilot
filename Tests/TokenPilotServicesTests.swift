@@ -380,6 +380,23 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(csv.contains("ConfidentialProjectName"), "Project folder names must never appear in CSV export.")
     }
 
+    /// The CLI windows `usage` with `--since/--until/--days` before exporting. The exporter then
+    /// re-filtered it by the named period (default: seven days), so an explicit month came out with
+    /// only its last week — or empty.
+    func testExportKeepsTheWindowTheCallerAlreadyApplied() throws {
+        let now = Date()
+        let old = openCodeEvent(project: nil, input: 1_000, output: 0, cost: nil, at: now.addingTimeInterval(-20 * 86_400))
+        let recent = openCodeEvent(project: nil, input: 500, output: 0, cost: nil, at: now.addingTimeInterval(-3_600))
+        let snapshot = ProviderSnapshot(provider: .opencode, events: [old, recent])
+        let range = now.addingTimeInterval(-30 * 86_400)...now
+        let usage = AggregationService().aggregate(snapshots: [snapshot], period: .last7Days, customRange: range, now: now)
+        XCTAssertEqual(usage.events.count, 2)
+
+        let payload = UsageExportService().makeJSONPayload(usage: usage, snapshots: [snapshot], dataMode: "CLI", generatedAt: now)
+        XCTAssertEqual(payload.events.count, 2, "the twenty-day-old event was inside the requested window")
+        XCTAssertEqual(payload.metrics.totalTokens, 1_500)
+    }
+
     private func openCodeEvent(project: String?, input: Int, output: Int, cost: Decimal?, at date: Date) -> UsageEvent {
         UsageEvent(
             provider: .opencode,
@@ -2943,6 +2960,56 @@ final class TokenPilotServicesTests: XCTestCase {
         )
         let plainJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: plain) as? [String: Any])
         XCTAssertNil(plainJSON["dailyModelBreakdown"])
+    }
+
+    /// The span was elapsed seconds over 86 400, rounded. Every other test here runs at 23:00, where
+    /// that happens to give 7; at 09:00 it gives 6, and the seven-day average came out ~17% high.
+    func testCLIStatsDailyAverageUsesSevenDaysAtAnyHour() throws {
+        let calendar = Calendar.current
+        for hour in [0, 9, 11, 23] {
+            let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: hour, minute: 5))!
+            let event = UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-60), inputTokens: 7_000, outputTokens: 0, source: "stats-test", dataSource: .localLog)
+            let data = try TokenPilotCLIService.statsJSON(events: [event], enabledProviders: [.opencode], period: .last7Days, includesCost: false, now: now, calendar: calendar)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(json["dailyAverage"] as? Int, 1_000, "at \(hour):05 the week is still seven days")
+        }
+    }
+
+    /// History keeps a provider's events after it is switched off. The per-day rows and breakdowns
+    /// dropped them while the totals kept them, so a report's rows did not add up to its own total,
+    /// and the CSV variants ignored the enabled list altogether.
+    func testCLITotalsCountOnlyEnabledProvidersInEveryFormat() throws {
+        let calendar = Calendar.current
+        let now = calendar.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 15))!
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-60), inputTokens: 3_000, outputTokens: 0, source: "scope-test", dataSource: .localLog),
+            UsageEvent(provider: .claude, timestamp: now.addingTimeInterval(-60), inputTokens: 9_000, outputTokens: 0, source: "scope-test", dataSource: .localLog)
+        ]
+
+        let stats = try TokenPilotCLIService.statsJSON(events: events, enabledProviders: [.opencode], period: .today, includesCost: false, now: now, calendar: calendar)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: stats) as? [String: Any])
+        XCTAssertEqual(json["totalTokens"] as? Int, 3_000, "a disabled provider's events leaked into the total")
+
+        let csv = TokenPilotCLIService.summaryCSVText(events: events, enabledProviders: [.opencode], period: .today, now: now, calendar: calendar)
+        XCTAssertFalse(csv.contains("Claude"), csv)
+        XCTAssertTrue(csv.contains(",3000,"), csv)
+    }
+
+    /// `busiestHour` read `Calendar.current`, so `stats --timezone UTC` on a Seoul machine named an
+    /// hour nine off. Two zones that disagree on the hour have to give two answers.
+    func testCLIBusiestHourFollowsTheRequestedCalendar() throws {
+        var utc = Calendar(identifier: .gregorian)
+        utc.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        var seoul = Calendar(identifier: .gregorian)
+        seoul.timeZone = try XCTUnwrap(TimeZone(identifier: "Asia/Seoul"))
+        let moment = try XCTUnwrap(utc.date(from: DateComponents(year: 2026, month: 8, day: 13, hour: 3, minute: 30)))
+        let event = UsageEvent(provider: .opencode, timestamp: moment, inputTokens: 1_000, outputTokens: 0, source: "tz-test", dataSource: .localLog)
+
+        for (calendar, expected) in [(utc, 3), (seoul, 12)] {
+            let data = try TokenPilotCLIService.statsJSON(events: [event], enabledProviders: [.opencode], period: .last7Days, includesCost: false, now: moment.addingTimeInterval(600), calendar: calendar)
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(json["busiestHour"] as? Int, expected, "in \(calendar.timeZone.identifier)")
+        }
     }
 
     func testCLIStatsJSONPayloadMatchesTextStatistics() throws {

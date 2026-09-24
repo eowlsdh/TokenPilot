@@ -1840,6 +1840,16 @@ public enum HistoryPeriod: String, Codable, CaseIterable, Identifiable, Sendable
         case .thisMonth: return "This month"
         }
     }
+
+    /// Where the period begins, the same bounds `AggregationService` filters by.
+    public func start(now: Date, calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        switch self {
+        case .today: return today
+        case .last7Days: return calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        case .thisMonth: return calendar.dateInterval(of: .month, for: now)?.start ?? today
+        }
+    }
 }
 
 public struct ProviderShare: Codable, Equatable, Identifiable, Sendable {
