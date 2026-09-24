@@ -1173,7 +1173,8 @@ final class TokenPilotViewModel: ObservableObject {
             language: settings.localization.language,
             now: now,
             weekStartDay: settings.weekStartDay,
-            budget: settings.budget
+            budget: settings.budget,
+            span: .previousWeek
         )
         do {
             try await localNotificationService.send(title: t("Weekly digest"), body: text)

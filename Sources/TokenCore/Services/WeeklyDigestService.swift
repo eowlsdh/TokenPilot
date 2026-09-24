@@ -37,9 +37,18 @@ public enum WeeklyDigestGate {
     }
 }
 
+/// Which week a digest describes.
+public enum WeeklyDigestSpan: Sendable {
+    /// From the start of this week to now.
+    case weekToDate
+    /// The whole week that just ended — what the scheduled digest sends. It fires in the first
+    /// hour of the new week, so a week-to-date summary at that moment covered about nine hours.
+    case previousWeek
+}
+
 public enum WeeklyDigestService {
-    /// Week-to-date summary over stored local activity. Only aggregates reach the text; raw
-    /// event fields (source, model names, project labels) never appear.
+    /// Summary over stored local activity. Only aggregates reach the text; raw event fields
+    /// (source, model names, project labels) never appear.
     public static func digestText(
         events: [UsageEvent],
         enabledProviders: [Provider],
@@ -47,12 +56,23 @@ public enum WeeklyDigestService {
         now: Date = Date(),
         calendar: Calendar = .current,
         weekStartDay: WeekStartDay = .monday,
-        budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
+        budget: BudgetGuardrailSettings = BudgetGuardrailSettings(),
+        span: WeeklyDigestSpan = .weekToDate
     ) -> String {
         let enabled = Set(enabledProviders)
-        let weekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) ?? calendar.startOfDay(for: now)
+        let currentWeekStart = weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) ?? calendar.startOfDay(for: now)
+        let rangeStart: Date
+        let rangeEnd: Date
+        switch span {
+        case .weekToDate:
+            rangeStart = currentWeekStart
+            rangeEnd = now
+        case .previousWeek:
+            rangeStart = calendar.date(byAdding: .day, value: -7, to: currentWeekStart) ?? currentWeekStart
+            rangeEnd = currentWeekStart.addingTimeInterval(-0.001)
+        }
         let weekEvents = events.filter {
-            enabled.contains($0.provider) && $0.timestamp >= weekStart && $0.timestamp <= now
+            enabled.contains($0.provider) && $0.timestamp >= rangeStart && $0.timestamp <= rangeEnd
         }
 
         let totalTokens = weekEvents.reduce(0) { $0 + $1.totalTokens }
@@ -62,7 +82,7 @@ public enum WeeklyDigestService {
             .mapValues { $0.reduce(0) { $0 + $1.totalTokens } }
 
         var lines = [
-            localized("This week", language: language),
+            localized(span == .previousWeek ? "Last week" : "This week", language: language),
             "\(localized("Total tokens", language: language)): \(TokenPilotFormatters.compactNumber(totalTokens))",
             "\(localized("Requests", language: language)): \(TokenPilotFormatters.compactNumber(requests))"
         ]
@@ -91,7 +111,7 @@ public enum WeeklyDigestService {
         let weeklyBudget = BudgetGuardrailService().weeklyProgress(
             events: events,
             settings: budget,
-            now: now,
+            now: rangeEnd,
             calendar: calendar,
             weekStartDay: weekStartDay
         )

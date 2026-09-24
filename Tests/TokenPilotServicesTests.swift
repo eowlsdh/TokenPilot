@@ -3483,6 +3483,34 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertTrue(mondayText.contains("Total tokens: 0"))
     }
 
+    /// The scheduled digest fires in the first hour of the new week. Summarising week-to-date at that
+    /// moment covered about nine hours; the week that just ended was never reported at all.
+    func testTheScheduledWeeklyDigestSummarisesTheWeekThatEnded() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
+        let wednesday = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 12, hour: 15)))
+        let mondayMorning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 8)))
+        let digestTime = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 8, day: 17, hour: 9, minute: 5)))
+        let events = [
+            UsageEvent(provider: .opencode, timestamp: wednesday, inputTokens: 40_000, outputTokens: 0, source: "week-test", dataSource: .localLog),
+            UsageEvent(provider: .opencode, timestamp: mondayMorning, inputTokens: 1_000, outputTokens: 0, source: "week-test", dataSource: .localLog)
+        ]
+
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: [.opencode],
+            language: .en,
+            now: digestTime,
+            calendar: calendar,
+            weekStartDay: .monday,
+            budget: BudgetGuardrailSettings(weeklyTokens: 100_000),
+            span: .previousWeek
+        )
+        XCTAssertTrue(text.hasPrefix("Last week"), text)
+        XCTAssertTrue(text.contains("Total tokens: 40K"), "last week's Wednesday, not this Monday morning:\n\(text)")
+        XCTAssertTrue(text.contains("Weekly budget used: 40%"), text)
+    }
+
     func testWeeklyDigestGateFireWindow() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(secondsFromGMT: 0))
