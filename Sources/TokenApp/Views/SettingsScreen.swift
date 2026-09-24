@@ -1969,12 +1969,7 @@ struct SettingsScreen: View {
     }
 
     private func providerDiagnostic(for provider: Provider) -> ProviderConnectionDiagnostic {
-        model.providerDiagnostics.first { $0.provider == provider } ?? ProviderDataSource(
-            provider: provider,
-            isEnabled: model.isProviderEnabled(provider),
-            status: model.isProviderEnabled(provider) ? .notFound : .disabled,
-            confidence: .low
-        ).connectionDiagnostic()
+        model.providerDiagnostic(for: provider)
     }
 
     private func providerSecretSummary(_ provider: Provider) -> String {

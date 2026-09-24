@@ -28,6 +28,30 @@ private enum HistorySourceLabelFormatter {
     }
 }
 
+/// The event-scanning values one History body pass needs, computed once.
+private struct HistoryDerived {
+    let monthlyTrend: [MonthlyUsageBar]
+    let requestHistoryTrend: RequestHistoryTrend
+    let hourlyActivity: HourlyActivitySummary
+    let fiveHourBlocks: [FiveHourUsageBlock]
+    let cacheEfficiency: CacheEfficiencySummary
+    let providerCacheEfficiency: ProviderCacheEfficiencySummary
+    let costEfficiency: CostEfficiencySummary
+    let budgetHistoryTrend: BudgetHistoryTrend
+
+    @MainActor
+    init(model: TokenPilotViewModel) {
+        monthlyTrend = model.monthlyTrend
+        requestHistoryTrend = model.requestHistoryTrend
+        hourlyActivity = model.hourlyActivity
+        fiveHourBlocks = model.fiveHourBlocks
+        cacheEfficiency = model.cacheEfficiency
+        providerCacheEfficiency = model.providerCacheEfficiency
+        costEfficiency = model.costEfficiency
+        budgetHistoryTrend = model.budgetHistoryTrend
+    }
+}
+
 struct HistoryScreen: View {
     @ObservedObject var model: TokenPilotViewModel
 
@@ -40,22 +64,22 @@ struct HistoryScreen: View {
     }
 
     /// Group badges show how much is folded away, so a collapsed group never hides its own weight.
-    private var trendCardCount: Int {
+    private func trendCardCount(_ derived: HistoryDerived) -> Int {
         var count = 1 // the heatmap always renders
         if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) { count += 1 }
-        if model.monthlyTrend.contains(where: { $0.tokens > 0 }) { count += 1 }
-        if model.requestHistoryTrend.totalRequests > 0 { count += 1 }
-        if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) { count += 1 }
-        if !model.fiveHourBlocks.isEmpty { count += 1 }
+        if derived.monthlyTrend.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if derived.requestHistoryTrend.totalRequests > 0 { count += 1 }
+        if derived.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if !derived.fiveHourBlocks.isEmpty { count += 1 }
         return count
     }
 
-    private var efficiencyCardCount: Int {
+    private func efficiencyCardCount(_ derived: HistoryDerived) -> Int {
         var count = 0
-        if model.cacheEfficiency.hasCacheActivity { count += 1 }
-        if model.providerCacheEfficiency.hasAnyActivity { count += 1 }
-        if model.costEfficiency.hasAnyActivity { count += 1 }
-        if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) { count += 1 }
+        if derived.cacheEfficiency.hasCacheActivity { count += 1 }
+        if derived.providerCacheEfficiency.hasAnyActivity { count += 1 }
+        if derived.costEfficiency.hasAnyActivity { count += 1 }
+        if derived.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) { count += 1 }
         return count
     }
 
@@ -67,6 +91,10 @@ struct HistoryScreen: View {
     }
 
     var body: some View {
+        // Read once per pass. Each of these rescans the period's events, and the card counts and the
+        // cards themselves read them again — three or four full scans each, on every publish.
+        let derived = HistoryDerived(model: model)
+
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
                 TokenPilotSectionHeader(
@@ -111,49 +139,49 @@ struct HistoryScreen: View {
                     // so this screen opens as four headers instead of fifteen stacked charts.
                     HistoryUsageSummaryCard(model: model)
 
-                    if trendCardCount > 0 {
+                    if trendCardCount(derived) > 0 {
                         CollapsibleSection(
                             title: model.t("Trends"),
                             systemImage: "chart.xyaxis.line",
-                            badge: "\(trendCardCount)",
+                            badge: "\(trendCardCount(derived))",
                             initiallyExpanded: true
                         ) {
                             if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
                                 HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
                             }
-                            if model.monthlyTrend.contains(where: { $0.tokens > 0 }) {
-                                HistoryMonthlyTrendCard(bars: model.monthlyTrend, model: model)
+                            if derived.monthlyTrend.contains(where: { $0.tokens > 0 }) {
+                                HistoryMonthlyTrendCard(bars: derived.monthlyTrend, model: model)
                             }
-                            if model.requestHistoryTrend.totalRequests > 0 {
-                                HistoryRequestTrendCard(trend: model.requestHistoryTrend, model: model)
+                            if derived.requestHistoryTrend.totalRequests > 0 {
+                                HistoryRequestTrendCard(trend: derived.requestHistoryTrend, model: model)
                             }
-                            if model.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
-                                HistoryHourlyActivityCard(summary: model.hourlyActivity, model: model)
+                            if derived.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
+                                HistoryHourlyActivityCard(summary: derived.hourlyActivity, model: model)
                             }
-                            if !model.fiveHourBlocks.isEmpty {
-                                HistoryFiveHourBlocksCard(blocks: model.fiveHourBlocks, model: model)
+                            if !derived.fiveHourBlocks.isEmpty {
+                                HistoryFiveHourBlocksCard(blocks: derived.fiveHourBlocks, model: model)
                             }
                             HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
                         }
                     }
 
-                    if efficiencyCardCount > 0 {
+                    if efficiencyCardCount(derived) > 0 {
                         CollapsibleSection(
                             title: model.t("Efficiency"),
                             systemImage: "bolt.badge.clock",
-                            badge: "\(efficiencyCardCount)"
+                            badge: "\(efficiencyCardCount(derived))"
                         ) {
-                            if model.cacheEfficiency.hasCacheActivity {
-                                HistoryCacheEfficiencyCard(efficiency: model.cacheEfficiency, model: model)
+                            if derived.cacheEfficiency.hasCacheActivity {
+                                HistoryCacheEfficiencyCard(efficiency: derived.cacheEfficiency, model: model)
                             }
-                            if model.providerCacheEfficiency.hasAnyActivity {
-                                HistoryProviderCacheCard(summary: model.providerCacheEfficiency, model: model)
+                            if derived.providerCacheEfficiency.hasAnyActivity {
+                                HistoryProviderCacheCard(summary: derived.providerCacheEfficiency, model: model)
                             }
-                            if model.costEfficiency.hasAnyActivity {
-                                HistoryCostEfficiencyCard(efficiency: model.costEfficiency, model: model)
+                            if derived.costEfficiency.hasAnyActivity {
+                                HistoryCostEfficiencyCard(efficiency: derived.costEfficiency, model: model)
                             }
-                            if model.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
-                                HistoryBudgetHistoryCard(trend: model.budgetHistoryTrend, model: model)
+                            if derived.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
+                                HistoryBudgetHistoryCard(trend: derived.budgetHistoryTrend, model: model)
                             }
                         }
                     }
@@ -881,19 +909,18 @@ struct HistoryHeatmapCard: View {
         guard !cells.isEmpty else { return [] }
         let calendar = Calendar.current
         // Group by ISO week so columns are Mon..Sun like GitHub's contribution graph.
+        // One shared formatter and one keyed lookup. This built a DateFormatter per cell and, for
+        // each of the 84 slots, flattened every group and scanned it — on every body pass.
         let grouped = Dictionary(grouping: cells) { cell -> Date in
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            formatter.dateFormat = "yyyy-MM-dd"
-            let date = formatter.date(from: cell.dateKey) ?? Date()
+            let date = Self.dateFormatter.date(from: cell.dateKey) ?? Date()
             return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)) ?? date
         }
+        let byKey = Dictionary(cells.map { ($0.dateKey, $0) }, uniquingKeysWith: { first, _ in first })
         let weeks = grouped.keys.sorted()
         return weeks.map { week in
             (0..<7).compactMap { dayOffset in
                 guard let date = calendar.date(byAdding: .day, value: dayOffset, to: week) else { return nil }
-                let key = Self.dateFormatter.string(from: date)
-                return grouped.values.flatMap { $0 }.first { $0.dateKey == key }
+                return byKey[Self.dateFormatter.string(from: date)]
             }
         }
     }

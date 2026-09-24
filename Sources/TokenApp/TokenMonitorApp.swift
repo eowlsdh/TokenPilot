@@ -740,6 +740,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     private var separateTitleItems: [NSStatusItem] = []
     private weak var contextMenuButton: NSStatusBarButton?
     private var modelObservation: AnyCancellable?
+    private var statusItemUpdateScheduled = false
     private var wakeObservation: NSObjectProtocol?
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyEventHandlerRef: EventHandlerRef?
@@ -765,9 +766,14 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         configurePopover()
         configureStatusItem()
         observeSystemWake()
+        // One rebuild per runloop turn. A single refresh publishes about twenty times, and each
+        // used to rebuild every status item and its attributed title — twenty identical redraws.
         modelObservation = model.objectWillChange.sink { [weak self] _ in
+            guard let self, !self.statusItemUpdateScheduled else { return }
+            self.statusItemUpdateScheduled = true
             DispatchQueue.main.async {
-                self?.updateStatusItem()
+                self.statusItemUpdateScheduled = false
+                self.updateStatusItem()
             }
         }
     }

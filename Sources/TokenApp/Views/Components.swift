@@ -478,7 +478,11 @@ struct ProviderSignatureMark: View {
     let provider: Provider
     var size: CGFloat = 28
     var decorative: Bool = true
-    @State private var isVisible = false
+    /// The staggered reveal is a launch flourish. Replayed on every appearance, it scaled every icon
+    /// in again on each tab switch and on scroll — and kept the display cycle animating for well
+    /// over a second after each switch, on the screen transitions that were already the CPU cost.
+    @MainActor private static var hasRevealed = false
+    @State private var isVisible = ProviderSignatureMark.hasRevealed
     @Environment(\.tokenPilotLanguage) private var language
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
@@ -518,6 +522,8 @@ struct ProviderSignatureMark: View {
     }
 
     private func reveal() {
+        guard !isVisible else { return }
+        Self.hasRevealed = true
         if reduceMotion {
             isVisible = true
         } else {
@@ -537,7 +543,9 @@ struct ProviderSignatureMark: View {
 }
 
 struct TokenPilotBrandMark: View {
-    @State private var isVisible = false
+    /// Once per launch, for the same reason as `ProviderSignatureMark`.
+    @MainActor private static var hasRevealed = false
+    @State private var isVisible = TokenPilotBrandMark.hasRevealed
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
     @Environment(\.tokenPilotSemanticPalette) private var palette
@@ -563,6 +571,8 @@ struct TokenPilotBrandMark: View {
         }
         .frame(width: 24, height: 24)
         .onAppear {
+            guard !isVisible else { return }
+            Self.hasRevealed = true
             if reduceMotion {
                 isVisible = true
             } else {

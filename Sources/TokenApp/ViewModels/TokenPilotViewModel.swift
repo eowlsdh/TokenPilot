@@ -1936,26 +1936,31 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var providerDiagnostics: [ProviderConnectionDiagnostic] {
-        Provider.allCases.map { provider in
-            if let source = dataSources[provider] {
-                return source.connectionDiagnostic()
-            }
-            if provider == .deepseek {
-                return ProviderDataSource(
-                    provider: provider,
-                    isEnabled: settings.isProviderEnabled(provider),
-                    status: settings.isProviderEnabled(provider) ? (settings.deepseekAPIKeyConfigured ? .connected : .manual) : .disabled,
-                    confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
-                    statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
-                ).connectionDiagnostic()
-            }
+        Provider.allCases.map(providerDiagnostic(for:))
+    }
+
+    /// One provider's diagnostic without building all twelve. Settings asks "which card should start
+    /// expanded" once per provider card, and answering through the full array rebuilt it roughly
+    /// 150 times per body pass.
+    func providerDiagnostic(for provider: Provider) -> ProviderConnectionDiagnostic {
+        if let source = dataSources[provider] {
+            return source.connectionDiagnostic()
+        }
+        if provider == .deepseek {
             return ProviderDataSource(
                 provider: provider,
                 isEnabled: settings.isProviderEnabled(provider),
-                status: settings.isProviderEnabled(provider) ? .notFound : .disabled,
-                confidence: .low
+                status: settings.isProviderEnabled(provider) ? (settings.deepseekAPIKeyConfigured ? .connected : .manual) : .disabled,
+                confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
+                statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
             ).connectionDiagnostic()
         }
+        return ProviderDataSource(
+            provider: provider,
+            isEnabled: settings.isProviderEnabled(provider),
+            status: settings.isProviderEnabled(provider) ? .notFound : .disabled,
+            confidence: .low
+        ).connectionDiagnostic()
     }
 
     func diagnosticStatusText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
