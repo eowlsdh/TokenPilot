@@ -182,6 +182,15 @@ public enum CapacityPercentDisplay: String, Codable, CaseIterable, Sendable {
         case .used: return used ?? min(max(100 - remaining, 0), 100)
         }
     }
+
+    /// A stored remaining-fraction trend (0...1) turned the same way as the number beside it, so
+    /// in Used mode the line rises as the limit is consumed instead of falling while the number rises.
+    public func shownTrend(remainingFractions: [Double]) -> [Double] {
+        switch self {
+        case .remaining: return remainingFractions
+        case .used: return remainingFractions.map { 1 - $0 }
+        }
+    }
 }
 
 public enum MenuBarPrimaryMetric: String, Codable, CaseIterable, Sendable {

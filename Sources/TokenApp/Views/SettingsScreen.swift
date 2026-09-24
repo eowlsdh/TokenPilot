@@ -410,7 +410,7 @@ struct SettingsScreen: View {
                             }
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar trend"))
-                            Text(model.t("Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now."))
+                            Text(model.t("Trend line draws the stored limit history and the bar fills to the percent shown now; both follow Show limits as."))
                                 .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                                 .fixedSize(horizontal: false, vertical: true)

@@ -182,7 +182,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메뉴 바와 팝오버의 모든 한도에 적용됩니다. \"사용\"은 제공자 사용량 페이지와 같은 기준이며, 색상 경고는 한도가 줄어들 때 그대로 표시됩니다."
+            "value": "메뉴 막대와 팝오버의 모든 한도에 적용됩니다. \"사용됨\"은 제공자 사용량 페이지와 같은 기준이며, 색상 경고는 한도가 줄어들 때 그대로 표시됩니다."
           }
         },
         "ja": {
@@ -24447,36 +24447,36 @@
         }
       }
     },
-    "Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now.": {
+    "Trend line draws the stored limit history and the bar fills to the percent shown now; both follow Show limits as.": {
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "추세선은 저장된 잔여 퍼센트 기록을 그리고, 막대는 지금 표시된 잔여 퍼센트만큼 채웁니다."
+            "value": "추세선은 저장된 한도 기록을 그리고, 막대는 지금 표시된 퍼센트만큼 채웁니다. 둘 다 한도 표시 설정을 따릅니다."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Trend line draws the stored remaining-percent history; the bar fills the remaining percent shown right now."
+            "value": "Trend line draws the stored limit history and the bar fills to the percent shown now; both follow Show limits as."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "趋势线绘制已保存的剩余百分比历史，条形则填充当前显示的剩余百分比。"
+            "value": "趋势线绘制已保存的限额历史，条形填充到当前显示的百分比；两者都遵循“限额显示方式”。"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "トレンドラインは保存された残量パーセントの履歴を描き、バーは現在表示中の残量パーセントを塗りつぶします。"
+            "value": "トレンドラインは保存された上限の履歴を描き、バーは現在表示中のパーセントまで塗りつぶします。どちらも「上限の表示」に従います。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "趨勢線繪製已保存的剩餘百分比歷史，條形則填充當前顯示的剩餘百分比。"
+            "value": "趨勢線繪製已保存的限額歷史，條形填充到目前顯示的百分比；兩者都遵循「限額顯示方式」。"
           }
         }
       }

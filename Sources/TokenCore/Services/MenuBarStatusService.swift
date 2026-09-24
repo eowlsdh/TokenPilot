@@ -675,11 +675,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 providerShortLabel: providerMetricLabel(provider),
                 displayValue: "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%",
                 remainingPercent: remaining,
-                sparklineValues: MenuBarSparklineService.normalizedValues(
+                sparklineValues: settings.capacityPercentDisplay.shownTrend(remainingFractions: MenuBarSparklineService.normalizedValues(
                     samples: limitSamples,
                     provider: provider,
                     window: MenuBarSparklineService.windowKind(forSeriesID: candidate.seriesID)
-                ),
+                )),
                 accessibilityLabel: [
                     localized(provider.displayName, language: settings.localization.language),
                     localizedRemaining(remaining, used: candidate.usedPercent, display: settings.capacityPercentDisplay, language: settings.localization.language),
