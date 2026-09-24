@@ -801,10 +801,15 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         return keys
     }
 
-    private func parseWindow(from dict: [String: Any]?, kind: LimitWindowKind, stale: Bool) -> LimitWindow? {
+    private func parseWindow(from dict: [String: Any]?, kind: LimitWindowKind, stale: Bool, now: Date = Date()) -> LimitWindow? {
         guard let dict else { return nil }
         let used = intValue(dict["used_percentage"] ?? dict["used_percent"] ?? dict["percent"] ?? dict["usage_percent"] ?? dict["usedPercent"])
         let resetAt = dateValue(dict["resets_at"] ?? dict["reset_at"] ?? dict["resetAt"] ?? dict["resetsAt"] ?? dict["reset_at_time"] ?? dict["resetAtTime"])
+        // A window whose reset has passed describes a cycle that is over. Claude Code only rewrites
+        // the statusline while it runs, so after someone stops at 92% the file kept saying 92% for
+        // hours past the reset — a red critical menu bar for a window that had long since refilled.
+        // The Codex parsers already drop these.
+        if let resetAt, resetAt <= now { return nil }
         guard used != nil || resetAt != nil else { return nil }
         return LimitWindow(kind: kind, usedPercent: used, resetAt: resetAt, confidence: stale ? .medium : .high)
     }
@@ -3097,8 +3102,7 @@ private func candidateFiles(in roots: [URL], allowedExtensions: Set<String>, max
 }
 
 private func isForbiddenCredentialPath(_ url: URL) -> Bool {
-    let lower = url.path.lowercased()
-    let forbidden = [
+    isForbiddenCredentialPath(url, fileNameFragments: [
         "auth.json",
         "credentials",
         "credential",
@@ -3110,6 +3114,26 @@ private func isForbiddenCredentialPath(_ url: URL) -> Bool {
         "secret",
         "api_key",
         ".env"
-    ]
-    return forbidden.contains { lower.contains($0) }
+    ])
+}
+
+/// Directory names that hold credentials, matched as whole path components.
+private let credentialDirectoryNames: Set<String> = [
+    "auth", ".auth", "oauth", ".oauth", "credentials", ".credentials",
+    "secrets", ".secrets", "keychains", "cookies", "tokens"
+]
+
+/// The file name is matched by fragment; the directories above it only by whole name.
+///
+/// Matching fragments across the whole path dropped real usage. Claude names each project's
+/// folder after the project path, so every session of a project at `…/oauth-proxy` or
+/// `…/api_key_rotator` was silently skipped, and the Kiro and Command Code filters' "auth" matched
+/// "author" and "authentication-service". Credential stores are files with telling names, and a
+/// folder literally called `credentials` or `secrets` is still refused.
+func isForbiddenCredentialPath(_ url: URL, fileNameFragments: [String]) -> Bool {
+    let name = url.lastPathComponent.lowercased()
+    if fileNameFragments.contains(where: { name.contains($0) }) { return true }
+    return url.deletingLastPathComponent().pathComponents.contains {
+        credentialDirectoryNames.contains($0.lowercased())
+    }
 }

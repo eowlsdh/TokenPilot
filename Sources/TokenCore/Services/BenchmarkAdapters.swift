@@ -157,15 +157,19 @@ public final class JetBrainsAIAssistantAdapter: ProviderRefreshAdapter, @uncheck
         let searchURLs = grantedFiles.isEmpty ? quotaFileURLs : grantedFiles
 
         let manager = FileManager.default
-        var latest: (url: URL, quota: JetBrainsQuotaParser.Quota)?
+        // Newest by modification date. This compared file names, but every IDE version writes the
+        // same `AIAssistantQuotaManager2.xml`, so the comparison never chose: whichever install was
+        // enumerated first won, and a three-week-old 2024.3 cache could hide a fresh 2025.2 one.
+        var latest: (url: URL, quota: JetBrainsQuotaParser.Quota, modified: Date)?
         for url in searchURLs where manager.fileExists(atPath: url.path) {
             guard let data = try? Data(contentsOf: url), let quota = parser.parse(xml: data) else { continue }
-            if latest == nil || url.lastPathComponent > latest!.url.lastPathComponent {
-                latest = (url, quota)
+            let modified = ((try? manager.attributesOfItem(atPath: url.path)[.modificationDate]) as? Date) ?? .distantPast
+            if latest.map({ modified > $0.modified }) ?? true {
+                latest = (url, quota, modified)
             }
         }
 
-        guard let (quotaURL, quota) = latest else {
+        guard let (quotaURL, quota, _) = latest else {
             let snapshot = ProviderSnapshot(provider: .jetbrains, updatedAt: now, confidence: .low, dataSource: .localLog, statusMessage: "JetBrains AI quota file not found")
             return ProviderRefreshResult(
                 snapshot: snapshot,
@@ -233,19 +237,21 @@ public struct MiniMaxTokenPlanParser: Sendable {
     public func parse(_ data: Data) -> Reading? {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
         let models = root["model_remains"] as? [[String: Any]] ?? []
-        let candidates = models.compactMap { item -> Double? in
+        let candidates = models.compactMap { item -> (remaining: Double, item: [String: Any])? in
             if let percent = item["current_interval_remaining_percent"] as? NSNumber {
-                return percent.doubleValue
+                return (percent.doubleValue, item)
             }
-            if let text = item["current_interval_remaining_percent"] as? String {
-                return Double(text)
+            if let text = item["current_interval_remaining_percent"] as? String, let value = Double(text) {
+                return (value, item)
             }
             return nil
         }
-        guard let lowestRemaining = candidates.min() else { return nil }
-        let usedPercent = Int((100 - lowestRemaining).rounded())
+        guard let tightest = candidates.min(by: { $0.remaining < $1.remaining }) else { return nil }
+        let usedPercent = Int((100 - tightest.remaining).rounded())
+        // The reset belongs to the model whose percentage is shown, not to whichever came first;
+        // with models on different intervals the countdown described a different window.
         var resetAt: Date?
-        if let item = models.first, let endText = item["interval_end_time"] as? String {
+        if let endText = tightest.item["interval_end_time"] as? String {
             resetAt = Self.isoDate(endText)
         }
         return Reading(usedPercent: min(max(usedPercent, 0), 100), resetAt: resetAt)
@@ -352,7 +358,10 @@ public struct ZAIQuotaParser: Sendable {
     }
 
     public func parse(_ data: Data) -> Reading? {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        // Tolerant of the `{"code":200,"data":{"limits":[…]},"success":true}` envelope as well as a
+        // bare object. The endpoint is not publicly documented, so both shapes are accepted.
+        let root = (object["data"] as? [String: Any]) ?? object
         let limits = root["limits"] as? [[String: Any]] ?? []
         guard let tokenLimit = limits.first(where: { ($0["type"] as? String) == "TOKENS_LIMIT" }) else { return nil }
         let percent: Double?
@@ -368,6 +377,10 @@ public struct ZAIQuotaParser: Sendable {
         if let text = tokenLimit["nextResetTime"] as? String {
             let iso = ISO8601DateFormatter()
             resetAt = iso.date(from: text)
+        } else if let number = tokenLimit["nextResetTime"] as? NSNumber {
+            // Epoch seconds or milliseconds; anything past year 33658 in seconds is milliseconds.
+            let raw = number.doubleValue
+            resetAt = Date(timeIntervalSince1970: raw > 1e12 ? raw / 1_000 : raw)
         }
         return Reading(usedPercent: min(max(Int(percent.rounded()), 0), 100), resetAt: resetAt)
     }
@@ -467,7 +480,11 @@ public struct OpenRouterUsageParser: Sendable {
     /// `/api/v1/credits` returns `total_usage` (lifetime spend) and `total_credits` (lifetime
     /// purchased ceiling). The spend meter is the percent of purchased credits used.
     public func parseCredits(_ data: Data) -> Reading? {
-        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        // The published response nests both totals under `data` ({"data":{"total_credits":…}}).
+        // Reading the top level only, every real response parsed as nil and OpenRouter always
+        // showed "usage unavailable". The flat shape is still accepted.
+        let root = (object["data"] as? [String: Any]) ?? object
         guard let totalCredits = (root["total_credits"] as? NSNumber)?.doubleValue, totalCredits > 0,
               let totalUsage = (root["total_usage"] as? NSNumber)?.doubleValue else {
             return nil

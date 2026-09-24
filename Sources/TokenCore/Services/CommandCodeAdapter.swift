@@ -289,9 +289,7 @@ public struct CommandCodeLocalSessionAdapter: ProviderAdapter, Sendable {
 /// `~/.commandcode` also holds `auth.json` (the API key) and `config.json`. Transcript reading must
 /// never touch them, so the name guard runs on every candidate file before it is opened.
 private func isForbiddenCommandCodePath(_ url: URL) -> Bool {
-    let lower = url.path.lowercased()
-    return ["auth", "credential", "token.json", "secret", "cookie", "keychain", "oauth", "api_key", ".env"]
-        .contains { lower.contains($0) }
+    isForbiddenCredentialPath(url, fileNameFragments: ["auth", "credential", "token.json", "secret", "cookie", "keychain", "oauth", "api_key", ".env"])
 }
 
 extension CommandCodeLocalSessionAdapter: ProviderRefreshAdapter {}

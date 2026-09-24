@@ -239,3 +239,20 @@ final class ResetInstantTests: XCTestCase {
         XCTAssertNil(OpenCodeSessionAdapter.resetInstant(absent, observedAt: start, durationMinutes: 300))
     }
 }
+
+/// The rolling and monthly windows went through the horizon filter; the weekly one did not, so an
+/// empty weekly window counted down "7d" forever and stored a new reading on every poll.
+final class OpenCodeWeeklyHorizonTests: XCTestCase {
+    func testAnEmptyWeeklyWindowHasNoFakeResetButARealOneSurvives() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        func weekly(_ resetAt: Date) -> LimitWindow? {
+            OpenCodeSessionAdapter.applyingRateLimit(
+                OpenCodeRateLimit(rolling: nil, weekly: OpenCodeRateLimitWindow(usedPercent: 0, resetAt: resetAt), monthly: nil, observedAt: now),
+                to: ProviderSnapshot(provider: .opencode, dataSource: .localLog)
+            ).weekly
+        }
+        XCTAssertNil(weekly(now.addingTimeInterval(7 * 86_400 + 0.4))?.resetAt, "its own length ahead is a horizon")
+        XCTAssertEqual(weekly(now.addingTimeInterval(3 * 86_400))?.resetAt, now.addingTimeInterval(3 * 86_400))
+        XCTAssertEqual(weekly(now.addingTimeInterval(3 * 86_400))?.providerWindowID, "rate-limit", "the series keeps its name")
+    }
+}

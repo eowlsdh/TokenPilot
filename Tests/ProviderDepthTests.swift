@@ -122,7 +122,7 @@ final class ProviderDepthTests: XCTestCase {
 
     // MARK: - JetBrains
 
-    private func jetBrainsQuotaFile(writtenDaysAgo days: Double) throws -> (url: URL, written: Date) {
+    private func jetBrainsQuotaFile(writtenDaysAgo days: Double, usedPercent: Int = 25) throws -> (url: URL, written: Date) {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("JetBrainsDepth-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -130,7 +130,7 @@ final class ProviderDepthTests: XCTestCase {
 
         let xml = """
         <component name="AIAssistantQuotaManager2">
-          <option name="quotaInfo" value="{&quot;maximum&quot;: 1000000.0, &quot;current&quot;: 250000.0, &quot;available&quot;: 750000.0}" />
+          <option name="quotaInfo" value="{&quot;maximum&quot;: 1000000.0, &quot;current&quot;: \(usedPercent * 10_000).0, &quot;available&quot;: \((100 - usedPercent) * 10_000).0}" />
         </component>
         """
         let url = directory.appendingPathComponent("AIAssistantQuotaManager2.xml")
@@ -158,6 +158,22 @@ final class ProviderDepthTests: XCTestCase {
 
         XCTAssertEqual(snapshot.updatedAt.timeIntervalSince1970, written.timeIntervalSince1970, accuracy: 2)
         XCTAssertEqual(snapshot.weekly?.usedPercent, 25, "the reading itself still has to survive")
+    }
+
+    /// Every IDE version writes the same `AIAssistantQuotaManager2.xml`, and the adapter chose
+    /// between installs by comparing file names — which never differ — so the first enumerated won.
+    /// A stale cache from an old IDE hid the fresh one in either order.
+    func testTheNewestJetBrainsQuotaCacheWinsWhateverOrderItIsFoundIn() async throws {
+        let old = try jetBrainsQuotaFile(writtenDaysAgo: 21, usedPercent: 90)
+        let fresh = try jetBrainsQuotaFile(writtenDaysAgo: 0.01, usedPercent: 20)
+        var settings = AppSettings()
+        settings.setProviderEnabled(.jetbrains, isEnabled: true)
+
+        for order in [[old.url, fresh.url], [fresh.url, old.url]] {
+            let result = await JetBrainsAIAssistantAdapter(quotaFileURLs: order).refresh(settings: settings, now: Date())
+            XCTAssertEqual(result.snapshot.weekly?.usedPercent, 20, "the fresh install's reading must win")
+            XCTAssertFalse(result.snapshot.isStale)
+        }
     }
 
     func testAnOldJetBrainsQuotaCacheIsMarkedStale() async throws {
@@ -333,5 +349,37 @@ final class ProviderDepthTests: XCTestCase {
         XCTAssertEqual(cached.confidence, .medium)
         XCTAssertTrue(cached.statusMessage?.contains("stale") == true, cached.statusMessage ?? "no status message")
         XCTAssertEqual(cached.balance?.totalBalance, fresh.balance?.totalBalance, "the value itself still comes through")
+    }
+}
+
+/// The credential guard matched fragments across the whole path. Claude names each project's
+/// folder after the project path, so a project at `…/oauth-proxy` lost every session, and the
+/// Kiro/Command Code "auth" fragment matched "author". The guard has to stay a guard, though.
+final class CredentialPathGuardTests: XCTestCase {
+    private let fragments = ["auth.json", "credential", "oauth", "token.json", "cookie", "keychain", "secret", "api_key", ".env", "auth"]
+
+    func testAProjectWhosePathMentionsACredentialWordIsStillRead() {
+        for path in [
+            "/Users/me/.claude/projects/-Users-me-dev-oauth-proxy/9f1c.jsonl",
+            "/Users/me/.claude/projects/-Users-me-work-api_key_rotator/9f1c.jsonl",
+            "/Users/me/.kiro/sessions/author-tools/session.jsonl",
+            "/Users/me/.commandcode/projects/authentication-service/t.jsonl"
+        ] {
+            XCTAssertFalse(isForbiddenCredentialPath(URL(fileURLWithPath: path), fileNameFragments: fragments), path)
+        }
+    }
+
+    func testCredentialFilesAndFoldersAreStillRefused() {
+        for path in [
+            "/Users/me/.codex/auth.json",
+            "/Users/me/.claude/.credentials.json",
+            "/Users/me/.claude/projects/p/oauth-session.jsonl",
+            "/Users/me/.commandcode/auth.json",
+            "/Users/me/.kiro/credentials/session.jsonl",
+            "/Users/me/tool/secrets/usage.jsonl",
+            "/Users/me/tool/.env"
+        ] {
+            XCTAssertTrue(isForbiddenCredentialPath(URL(fileURLWithPath: path), fileNameFragments: fragments), path)
+        }
     }
 }

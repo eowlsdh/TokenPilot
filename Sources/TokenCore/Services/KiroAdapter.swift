@@ -443,8 +443,7 @@ private func kiroModificationDate(_ url: URL) -> Date? {
 }
 
 private func isForbiddenKiroPath(_ url: URL) -> Bool {
-    let lower = url.path.lowercased()
-    return ["auth", "credential", "token.json", "secret", "cookie", "keychain", "oauth"].contains { lower.contains($0) }
+    isForbiddenCredentialPath(url, fileNameFragments: ["auth", "credential", "token.json", "secret", "cookie", "keychain", "oauth"])
 }
 
 extension KiroLocalSessionAdapter: ProviderRefreshAdapter {}

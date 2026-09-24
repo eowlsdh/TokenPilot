@@ -203,7 +203,11 @@ public struct OpenCodeSessionAdapter: ProviderAdapter, Sendable {
             updated.weekly = LimitWindow(
                 kind: .weekly,
                 usedPercent: weekly.usedPercent,
-                resetAt: weekly.resetAt,
+                // Through the same horizon filter as the other two windows: an empty weekly window
+                // otherwise counted down "7d" forever and stored a new reading on every poll. The
+                // length is passed only here — setting `durationMinutes` on the window would rename
+                // the `rate-limit` series and orphan its history.
+                resetAt: resetInstant(weekly.resetAt, observedAt: limit.observedAt, durationMinutes: 10_080),
                 confidence: .high,
                 providerWindowID: "rate-limit"
             )

@@ -1552,6 +1552,30 @@ final class BuildSigningTests: XCTestCase {
 final class ClaudeStatuslineBridgeTests: XCTestCase {
     /// Claude only reports 5-hour/weekly limits through a statusLine command, so without this bridge
     /// the app can show token activity but never a remaining percentage.
+    /// Claude Code only rewrites the statusline while it runs. Someone who stopped at 92% kept a
+    /// 92% window — red and critical in the menu bar — for hours after it had reset.
+    func testAStatuslineWindowWhoseResetHasPassedIsDropped() async throws {
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("tokenpilot-claude-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let iso = ISO8601DateFormatter()
+        let elapsed = iso.string(from: Date().addingTimeInterval(-3_600))
+        let live = iso.string(from: Date().addingTimeInterval(3 * 86_400))
+        let file = directory.appendingPathComponent("claude-statusline.json")
+        try Data("""
+        {"rate_limits":{"five_hour":{"used_percentage":92,"resets_at":"\(elapsed)"},
+                        "seven_day":{"used_percentage":30,"resets_at":"\(live)"}}}
+        """.utf8).write(to: file)
+
+        var settings = AppSettings()
+        _ = settings.setProviderEnabled(.claude, isEnabled: true)
+        let snapshot = await ClaudeStatuslineAdapter(fileURL: file).snapshot(settings: settings)
+
+        XCTAssertNil(snapshot.fiveHour, "a five-hour window that already reset must not read 92%")
+        XCTAssertEqual(snapshot.weekly?.usedPercent, 30, "the live window survives")
+    }
+
     func testStatuslineFileYieldsComparableQuotaWindows() async throws {
         let directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("tokenpilot-claude-\(UUID().uuidString)", isDirectory: true)
@@ -1559,11 +1583,15 @@ final class ClaudeStatuslineBridgeTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: directory) }
 
         let file = directory.appendingPathComponent("claude-statusline.json")
+        // Resets relative to now: hard-coded dates passed, and an elapsed window is (rightly) dropped.
+        let iso = ISO8601DateFormatter()
+        let fiveHourReset = iso.string(from: Date().addingTimeInterval(2 * 3_600))
+        let weeklyReset = iso.string(from: Date().addingTimeInterval(4 * 86_400))
         let payload = """
         {"model":{"id":"claude-sonnet-4","display_name":"Claude Sonnet 4"},
          "context_window":{"used_percentage":37.5,"current_usage":{"input_tokens":12000,"output_tokens":800,"cache_read_input_tokens":4000,"cache_creation_input_tokens":100}},
-         "rate_limits":{"five_hour":{"used_percentage":42,"resets_at":"2026-07-29T15:00:00Z"},
-                        "seven_day":{"used_percentage":18,"resets_at":"2026-08-03T00:00:00Z"}},
+         "rate_limits":{"five_hour":{"used_percentage":42,"resets_at":"\(fiveHourReset)"},
+                        "seven_day":{"used_percentage":18,"resets_at":"\(weeklyReset)"}},
          "cost":{"total_cost_usd":1.2345}}
         """
         try XCTUnwrap(payload.data(using: .utf8)).write(to: file)

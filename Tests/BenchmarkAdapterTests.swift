@@ -31,6 +31,14 @@ final class JetBrainsQuotaParserTests: XCTestCase {
 }
 
 final class MiniMaxTokenPlanParserTests: XCTestCase {
+    /// The countdown came from the first model in the list, not the one whose percentage is shown.
+    func testTheResetBelongsToTheModelWhosePercentageIsShown() throws {
+        let data = Data(#"{"model_remains":[{"current_interval_remaining_percent":80,"interval_end_time":"2026-10-01T00:00:00Z"},{"current_interval_remaining_percent":10,"interval_end_time":"2026-09-25T05:00:00Z"}]}"#.utf8)
+        let reading = try XCTUnwrap(MiniMaxTokenPlanParser().parse(data))
+        XCTAssertEqual(reading.usedPercent, 90)
+        XCTAssertEqual(reading.resetAt, ISO8601DateFormatter().date(from: "2026-09-25T05:00:00Z"))
+    }
+
     func testParsesLowestRemainingPercentAcrossModels() throws {
         let payload: [String: Any] = [
             "model_remains": [
@@ -71,6 +79,15 @@ final class ZAIQuotaParserTests: XCTestCase {
         XCTAssertNotNil(reading?.resetAt)
     }
 
+    /// The endpoint is undocumented; the enveloped shape with an epoch-milliseconds reset has to
+    /// parse as well as the bare one.
+    func testParsesTheEnvelopedShapeWithAMillisecondReset() throws {
+        let data = Data(#"{"code":200,"success":true,"data":{"limits":[{"type":"TOKENS_LIMIT","percentage":37,"nextResetTime":1790000000000}]}}"#.utf8)
+        let reading = ZAIQuotaParser().parse(data)
+        XCTAssertEqual(reading?.usedPercent, 37)
+        XCTAssertEqual(reading?.resetAt, Date(timeIntervalSince1970: 1_790_000_000))
+    }
+
     func testRejectsMissingTokensLimit() throws {
         let payload: [String: Any] = ["limits": [["type": "WEB_SEARCH_LIMIT", "percentage": 10]]]
         let data = try JSONSerialization.data(withJSONObject: payload)
@@ -86,6 +103,13 @@ final class OpenRouterUsageParserTests: XCTestCase {
         ]
         let data = try JSONSerialization.data(withJSONObject: payload)
         XCTAssertEqual(OpenRouterUsageParser().parseCredits(data)?.usedPercent, 25)
+    }
+
+    /// The published example response, verbatim: both totals sit under `data`. The parser read the
+    /// top level only, so every real response came back nil.
+    func testParsesThePublishedNestedResponse() throws {
+        let data = Data(#"{"data":{"total_credits":100.5,"total_usage":25.75}}"#.utf8)
+        XCTAssertEqual(OpenRouterUsageParser().parseCredits(data)?.usedPercent, 26)
     }
 
     func testRejectsMissingCeiling() throws {

@@ -4494,11 +4494,15 @@ final class TokenPilotServicesTests: XCTestCase {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let logURL = directory.appendingPathComponent("claude-statusline.json")
+        // Resets relative to now: hard-coded dates passed, and an elapsed window is (rightly) dropped.
+        let iso = ISO8601DateFormatter()
+        let fiveHourReset = iso.string(from: Date().addingTimeInterval(2 * 3_600))
+        let weeklyReset = iso.string(from: Date().addingTimeInterval(4 * 86_400))
         let json = """
         {
             "rate_limits": {
-                "five_hour": { "used_percentage": 82, "resets_at": "2026-05-16T10:00:00Z" },
-                "seven_day": { "used_percentage": 47, "resets_at": "2026-05-22T00:00:00Z" }
+                "five_hour": { "used_percentage": 82, "resets_at": "\(fiveHourReset)" },
+                "seven_day": { "used_percentage": 47, "resets_at": "\(weeklyReset)" }
             },
             "context_window": {
                 "current_usage": {
