@@ -8547,6 +8547,40 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(Set(newCycle.attempts.compactMap(\.threshold)), [.reset])
     }
 
+    /// A reset attempt recorded the new cycle as active before it was delivered. If the send failed,
+    /// the next pass saw no new cycle and never retried — the reset alert was simply lost — and the
+    /// previous cycle's high `lastUsed` blocked threshold crossings in the new cycle meanwhile.
+    func testAFailedResetAlertIsRetriedAndThenLetsTheNewCycleArm() throws {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let engine = CapacityAlertTransitionEngine()
+        let rule = try capacityPercentRule(conditionRevision: 1, routing: .init(macOS: true, telegram: false, discord: false))
+        let channels = CapacityAlertChannelSettings(globalEnabled: true, macOSEnabled: true, telegramEnabled: false, discordEnabled: false, telegramCredentialPresent: false, discordCredentialPresent: false)
+        let oldReset = now.addingTimeInterval(3_600)
+        let newReset = now.addingTimeInterval(20_000)
+
+        let seeded = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 97, resetAt: oldReset, now: now)], previousStates: [:], channels: channels, now: now)
+        let reset = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 5, resetAt: newReset, now: now.addingTimeInterval(60))], previousStates: seeded.states, channels: channels, now: now.addingTimeInterval(60))
+        let resetAttempt = try XCTUnwrap(reset.attempts.first)
+        XCTAssertEqual(resetAttempt.threshold, .reset)
+
+        let failed = engine.applyingDeliveryOutcomes(
+            [CapacityAlertDeliveryOutcome(attempt: resetAttempt, succeeded: false, completedAt: now.addingTimeInterval(61))],
+            to: reset.states
+        )
+        let retry = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 6, resetAt: newReset, now: now.addingTimeInterval(400))], previousStates: failed, channels: channels, now: now.addingTimeInterval(400))
+        XCTAssertEqual(retry.attempts.compactMap(\.threshold), [.reset], "a failed reset alert must be retried")
+
+        let delivered = engine.applyingDeliveryOutcomes(
+            [CapacityAlertDeliveryOutcome(attempt: try XCTUnwrap(retry.attempts.first), succeeded: true, completedAt: now.addingTimeInterval(401))],
+            to: retry.states
+        )
+        let settled = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 7, resetAt: newReset, now: now.addingTimeInterval(800))], previousStates: delivered, channels: channels, now: now.addingTimeInterval(800))
+        XCTAssertTrue(settled.attempts.isEmpty, "a delivered reset is not sent again")
+
+        let crossed = engine.evaluate(rules: [rule], assessments: [try percentAssessment(used: 85, resetAt: newReset, now: now.addingTimeInterval(1_200))], previousStates: settled.states, channels: channels, now: now.addingTimeInterval(1_200))
+        XCTAssertEqual(crossed.attempts.compactMap(\.threshold), [.eighty], "the new cycle's thresholds arm normally")
+    }
+
     func testCapacityAlertTransitionEngineBalanceStrictRearmCurrencyPendingAndRetry() throws {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let engine = CapacityAlertTransitionEngine()
@@ -8657,6 +8691,53 @@ final class TokenPilotServicesTests: XCTestCase {
         let loadedAfterRepeat = await CapacityAlertRuleStore(directory: directory).load()
         XCTAssertFalse(repeatMigration.didMigrate)
         XCTAssertEqual(loadedAfterRepeat.rules, loaded.rules)
+    }
+
+    /// One stale DeepSeek refresh used to unbind the low-balance rule and delete its delivery state,
+    /// so the next good refresh sent the same low-balance alert again.
+    func testAMissingDeepSeekReadingDoesNotUnbindTheLowBalanceRule() async throws {
+        let directory = try capacityTempDirectory()
+        var settings = AppSettings()
+        settings.alertRules = []
+        let coordinator = CapacityAlertLegacyMigrationCoordinator(directory: directory)
+        let official = ProviderBalance(currency: "usd", toppedUpBalance: 10)
+
+        _ = await coordinator.migrate(settings: settings, deepSeekBalance: official)
+        let bound = await CapacityAlertRuleStore(directory: directory).load().rules
+
+        let stale = await coordinator.migrate(settings: settings, deepSeekBalance: nil)
+        XCTAssertFalse(stale.didMigrate, "a missing reading is not a change of currency")
+        let afterStale = await CapacityAlertRuleStore(directory: directory).load().rules
+        XCTAssertEqual(afterStale, bound)
+    }
+
+    /// The legacy source never changes after upgrade, so a re-run — which any global channel toggle
+    /// triggers — replaced thresholds the user had edited with the old defaults.
+    func testReMigratingNeverOverwritesARuleTheUserEdited() async throws {
+        let directory = try capacityTempDirectory()
+        var settings = AppSettings()
+        settings.alertRules = [AlertRule(provider: .claude, window: .fiveHour, fiftyEnabled: true, macOSEnabled: true)]
+        let coordinator = CapacityAlertLegacyMigrationCoordinator(directory: directory)
+        _ = await coordinator.migrate(settings: settings, deepSeekBalance: nil)
+
+        let store = CapacityAlertRuleStore(directory: directory)
+        var rules = await store.load().rules
+        let index = try XCTUnwrap(rules.firstIndex { $0.provider == .claude })
+        let original = rules[index]
+        let edited = try CapacityAlertRule(
+            provider: original.provider, seriesID: original.seriesID, authority: original.authority,
+            stability: original.stability, enabled: true, routing: original.routing, conditionRevision: 2,
+            condition: .percentThresholds(reset: false, fifty: false, eighty: true, hundred: true)
+        )
+        rules[index] = edited
+        _ = await store.save(rules)
+
+        settings.discordNotificationsEnabled.toggle()
+        let rerun = await coordinator.migrate(settings: settings, deepSeekBalance: nil)
+        XCTAssertTrue(rerun.didMigrate, "the toggle does change the source digest")
+        let reloaded = await store.load().rules
+        let after = try XCTUnwrap(reloaded.first { $0.id == edited.id })
+        XCTAssertEqual(after, edited, "the user's edit must survive the re-run")
     }
 
     func testCapacityAlertVisibilityMarksCodexAndGeminiUnsupportedAndEngineSkipsCodexRule() throws {

@@ -1798,6 +1798,10 @@ public actor CapacityAlertLegacyMigrationCoordinator {
             byID.removeValue(forKey: removedID)
         }
         for rule in migrated {
+            // A rule the user has edited (revision above the migrated 1) is theirs now. The legacy
+            // source never changes after upgrade, so a re-run — triggered by any global channel
+            // toggle — replaced edited Claude thresholds with the old defaults, silently.
+            if let current = byID[rule.id], current.conditionRevision > 1 { continue }
             byID[rule.id] = rule
         }
         return byID.values.sorted { $0.id < $1.id }
@@ -2360,6 +2364,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
             let delivered = isNewCycle ? Set<CapacityAlertPercentThreshold>() : (parts?.deliveredThresholds ?? [])
             let previousLastUsed = parts?.lastUsed
             var attempted = false
+            var attemptedReset = false
             let attemptAllowed = canAttempt(previous, now: now)
 
             if isNewCycle {
@@ -2369,6 +2374,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
                 if resetEnabled, hadPriorCycle, hasNewCycle, used < 50, !delivered.contains(.reset), attemptAllowed {
                     attempts.append(percentAttempt(rule: rule, key: key, threshold: .reset, used: used, cycleID: cycleID, assessment: assessment, now: now))
                     attempted = true
+                    attemptedReset = true
                 }
             } else {
                 // Ascending, so a jump past several thresholds reports them in the order they were crossed.
@@ -2387,9 +2393,14 @@ public struct CapacityAlertTransitionEngine: Sendable {
                 continue
             }
 
-            let nextLastUsed = attempted ? previousLastUsed : used
+            // A reset attempt keeps the *previous* cycle active until it is delivered; a successful
+            // outcome advances it (see `applyingDeliveryOutcomes`). Recording the new cycle up front
+            // meant a failed send was never retried — the next pass no longer saw a new cycle — and
+            // the old cycle's `lastUsed` (say 97) blocked every threshold in the new one meanwhile.
+            let nextLastUsed = attemptedReset ? used : (attempted ? previousLastUsed : used)
+            let nextCycleID = attemptedReset ? previousCycle : cycleID
             let status: CapacityAlertDeliveryStatus = attempted ? .pending : .idle
-            states[key] = try? CapacityAlertDeliveryState(key: key, status: status, lastAttemptAt: attempted ? now : previous?.lastAttemptAt, lastSuccessAt: previous?.lastSuccessAt, conditionState: .percent(activeCycleID: cycleID, lastUsed: nextLastUsed, deliveredThresholds: delivered))
+            states[key] = try? CapacityAlertDeliveryState(key: key, status: status, lastAttemptAt: attempted ? now : previous?.lastAttemptAt, lastSuccessAt: previous?.lastSuccessAt, conditionState: .percent(activeCycleID: nextCycleID, lastUsed: nextLastUsed, deliveredThresholds: delivered))
         }
     }
 
@@ -2571,6 +2582,14 @@ public enum CapacityAlertLegacyMigrator {
         if let existingMarker, existingMarker.sourceSettingsDigest == digest {
             return Result(rules: [], marker: existingMarker, didMigrate: false)
         }
+        // A missing reading is not a change of currency. One stale or failed DeepSeek refresh used to
+        // flip the digest, swap the bound low-balance rule for the pending one (a different ID) and
+        // delete its delivery state; the next good refresh bound it again with no state, and the
+        // same low-balance alert went out a second time — after every network blip or wake.
+        if deepSeekBalance == nil, let existingMarker,
+           existingMarker.migratedRuleIDs.contains(try boundDeepSeekBalanceRuleID()) {
+            return Result(rules: [], marker: existingMarker, didMigrate: false)
+        }
 
         var rules: [CapacityAlertRule] = []
         for legacy in settings.alertRules where legacy.provider == .claude {
@@ -2624,6 +2643,19 @@ public enum CapacityAlertLegacyMigrator {
             states[key] = try? CapacityAlertDeliveryState(key: key, status: .delivered, lastAttemptAt: legacySentAt, lastSuccessAt: legacySentAt, conditionState: .balance(lastKnownBelow: true, crossingGeneration: 0, deliveredCrossingGeneration: 0))
         }
         return states
+    }
+
+    private static func boundDeepSeekBalanceRuleID() throws -> String {
+        // The ID does not include the currency, so any valid one names the same rule.
+        try CapacityAlertRule(
+            provider: .deepseek,
+            seriesID: CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: CapacityAlertRouting(macOS: true, telegram: false, discord: false),
+            condition: .balanceBelow(threshold: 1, currency: "USD", rearmAtOrAboveThreshold: true)
+        ).id
     }
 
     private static func series(for rule: AlertRule) throws -> CapacitySeriesID {
