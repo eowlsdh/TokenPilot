@@ -222,7 +222,7 @@ public struct KiroUsageLimitsObserver: Sendable {
 
         for candidate in candidates {
             if let percent = percentUsed(in: candidate) {
-                return KiroUsageLimits(usedPercent: percent, resetAt: resetDate(in: candidate) ?? resetDate(in: root), observedAt: now)
+                return KiroUsageLimits(usedPercent: percent, resetAt: resetDate(in: candidate, now: now) ?? resetDate(in: root, now: now), observedAt: now)
             }
         }
         return nil
@@ -248,12 +248,16 @@ public struct KiroUsageLimitsObserver: Sendable {
         return Int(((used / total) * 100).rounded())
     }
 
-    private static func resetDate(in object: [String: Any]) -> Date? {
+    private static func resetDate(in object: [String: Any], now: Date) -> Date? {
         for key in ["next_date_reset", "nextDateReset", "resets_at", "resetAt"] {
             if let date = kiroUsageDate(object[key]) { return date }
         }
+        // Day precision only, so it is anchored to the start of today. `Date() + N days` gave a
+        // different instant on every poll, which reads as a new cycle each time: thresholds never
+        // arm, and a reset alert can fire on every refresh.
         if let days = doubleValue(object["days_until_reset"]) ?? doubleValue(object["daysUntilReset"]), days >= 0 {
-            return Calendar.current.date(byAdding: .day, value: Int(days.rounded()), to: Date())
+            let calendar = Calendar.current
+            return calendar.date(byAdding: .day, value: Int(days.rounded()), to: calendar.startOfDay(for: now))
         }
         return nil
     }

@@ -1456,6 +1456,17 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(remembering, cards, "a Settings card forgets its state on every screen switch")
     }
 
+    /// Budget alerts were marked delivered whether or not the notification went out, so a failed
+    /// send used up the one alert that cycle allows.
+    func testOnlyShownAlertsAreMarkedDelivered() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        let budget = try XCTUnwrap(source.swiftFunctionBody(named: "checkBudgetAlerts"))
+        XCTAssertTrue(budget.contains("budgetAlertService.markDelivered(delivered)"))
+        XCTAssertFalse(budget.contains("markDelivered(candidates)"))
+        let milestones = try XCTUnwrap(source.swiftFunctionBody(named: "checkMilestoneNotifications"))
+        XCTAssertFalse(milestones.contains("markNotified(newly)"), "a failed announcement must stay owed")
+    }
+
     /// `overviewUsage` is the Today aggregate. Weekly and monthly budgets, the streak and lifetime
     /// milestones read it, so they only ever saw today: 200k a day against a 1M week read 20% on
     /// Friday, and the weekly and monthly budget alerts could not fire.

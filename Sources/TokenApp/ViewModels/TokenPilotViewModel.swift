@@ -1221,6 +1221,9 @@ final class TokenPilotViewModel: ObservableObject {
             weekStartDay: settings.weekStartDay
         )
         guard !candidates.isEmpty else { return }
+        // Only what was actually shown is marked done. Marking every candidate after a failed send
+        // meant the one alert for this cycle was consumed without anyone seeing it.
+        var delivered: [BudgetAlertCandidate] = []
         for candidate in candidates {
             let windowLabel: String
             switch candidate.window {
@@ -1237,9 +1240,10 @@ final class TokenPilotViewModel: ObservableObject {
             )
             do {
                 try await localNotificationService.send(title: t("Budget guardrails"), body: body)
+                delivered.append(candidate)
             } catch {}
         }
-        budgetAlertService.markDelivered(candidates)
+        budgetAlertService.markDelivered(delivered)
     }
 
     private func checkMilestoneNotifications() async {
@@ -1254,15 +1258,19 @@ final class TokenPilotViewModel: ObservableObject {
         // time milestones counted the stored history instead of only today.
         let announced = Dictionary(grouping: newly, by: \.dimension)
             .compactMap { $0.value.max { $0.threshold < $1.threshold } }
+        var failed: Set<String> = []
         for milestone in announced {
             do {
                 try await localNotificationService.send(
                     title: t("Milestones"),
                     body: milestoneBody(milestone)
                 )
-            } catch {}
+            } catch {
+                failed.insert(milestone.id)
+            }
         }
-        milestoneNotificationService.markNotified(newly)
+        // An announcement that failed stays owed; the quiet lower steps are done either way.
+        milestoneNotificationService.markNotified(newly.filter { !failed.contains($0.id) })
     }
 
     private func milestoneBody(_ milestone: ActivityMilestone) -> String {

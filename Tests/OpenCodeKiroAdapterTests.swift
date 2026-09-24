@@ -1060,6 +1060,21 @@ final class KiroUsageLimitsTests: XCTestCase {
         XCTAssertEqual(parsed.usedPercent, 25)
     }
 
+    /// `days_until_reset` has day precision. Added to the current instant, it named a different reset
+    /// on every poll, which the capacity pipeline reads as a new cycle each time.
+    func testADaysUntilResetGivesTheSameResetAllDay() throws {
+        var calendar = Calendar.current
+        calendar.timeZone = .current
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 24, hour: 9, minute: 3, second: 17)))
+        let evening = morning.addingTimeInterval(11 * 3_600 + 41)
+        let body = Data(#"{"limits":[{"percent_used":37}],"days_until_reset":7}"#.utf8)
+
+        let first = try XCTUnwrap(KiroUsageLimitsObserver.parse(body, now: morning)?.resetAt)
+        let later = try XCTUnwrap(KiroUsageLimitsObserver.parse(body, now: evening)?.resetAt)
+        XCTAssertEqual(first, later, "two polls on the same day must name the same reset")
+        XCTAssertEqual(first, calendar.date(byAdding: .day, value: 7, to: calendar.startOfDay(for: morning)))
+    }
+
     func testParsesEveryDocumentedUsageLimitsShape() throws {
         let now = Date()
         let cases: [(String, Int?)] = [
