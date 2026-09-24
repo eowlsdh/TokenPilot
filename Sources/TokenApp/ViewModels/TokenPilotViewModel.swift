@@ -457,7 +457,8 @@ final class TokenPilotViewModel: ObservableObject {
 
     var budgetGuardrails: BudgetGuardrailSnapshot {
         let service = BudgetGuardrailService()
-        let events = overviewUsage.events
+        // Each window filters for itself; handing them only today's events emptied the week and month.
+        let events = historyEventsAllTime
         return BudgetGuardrailSnapshot(
             daily: service.dailyProgress(events: events, settings: settings.budget),
             weekly: service.weeklyProgress(events: events, settings: settings.budget, weekStartDay: settings.weekStartDay),
@@ -470,11 +471,12 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var activityMilestones: [ActivityMilestone] {
-        ActivityMilestoneService().achievedMilestones(events: overviewUsage.events)
+        // Lifetime milestones and a multi-day streak cannot be computed from one day of events.
+        ActivityMilestoneService().achievedMilestones(events: historyEventsAllTime)
     }
 
     var usageStreak: UsageStreak {
-        UsageStreakService.streak(events: overviewUsage.events)
+        UsageStreakService.streak(events: historyEventsAllTime)
     }
 
     var cacheEfficiency: CacheEfficiencySummary {
@@ -1185,10 +1187,14 @@ final class TokenPilotViewModel: ObservableObject {
               settings.budget.hasAnyBudget else {
             return
         }
+        // Every stored event, not today's. `overviewUsage` is the Today aggregate, so the weekly and
+        // monthly budgets only ever saw today: 200k a day against a 1M week read 20% on Friday, and
+        // the weekly and monthly alerts could not fire.
         let candidates = budgetAlertService.crossingCandidates(
-            events: overviewUsage.events,
+            events: historyEventsAllTime,
             settings: settings.budget,
-            now: Date()
+            now: Date(),
+            weekStartDay: settings.weekStartDay
         )
         guard !candidates.isEmpty else { return }
         for candidate in candidates {
@@ -1219,7 +1225,12 @@ final class TokenPilotViewModel: ObservableObject {
         }
         let newly = milestoneNotificationService.newlyAchieved(milestones: activityMilestones)
         guard !newly.isEmpty else { return }
-        for milestone in newly {
+        // Only the highest newly reached step of each kind is announced; the rest are marked done
+        // quietly. Several thresholds can be crossed together — and all of them were, the first
+        // time milestones counted the stored history instead of only today.
+        let announced = Dictionary(grouping: newly, by: \.dimension)
+            .compactMap { $0.value.max { $0.threshold < $1.threshold } }
+        for milestone in announced {
             do {
                 try await localNotificationService.send(
                     title: t("Milestones"),

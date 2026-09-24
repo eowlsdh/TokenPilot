@@ -117,7 +117,7 @@ public struct BudgetGuardrailService: Sendable {
         )
     }
 
-    private func weeklyStart(of date: Date, calendar: Calendar, weekStartDay: WeekStartDay) -> Date? {
+    func weeklyStart(of date: Date, calendar: Calendar, weekStartDay: WeekStartDay) -> Date? {
         let weekday = calendar.component(.weekday, from: date)
         let daysBack = weekStartDay.daysBefore(weekday)
         return calendar.date(byAdding: .day, value: -daysBack, to: calendar.startOfDay(for: date))

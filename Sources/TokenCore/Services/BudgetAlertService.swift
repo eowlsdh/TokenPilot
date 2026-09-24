@@ -89,7 +89,8 @@ public struct BudgetAlertService: Sendable {
         events: [UsageEvent],
         settings: BudgetGuardrailSettings,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        weekStartDay: WeekStartDay = .monday
     ) -> [BudgetAlertCandidate] {
         guard settings.hasAnyBudget else { return [] }
         let guardrails = BudgetGuardrailService()
@@ -107,14 +108,20 @@ public struct BudgetAlertService: Sendable {
         )
 
         if settings.weeklyTokens > 0 {
-            let weekly = guardrails.weeklyProgress(events: events, settings: settings, now: now, calendar: calendar)
+            let weekly = guardrails.weeklyProgress(events: events, settings: settings, now: now, calendar: calendar, weekStartDay: weekStartDay)
+            // The cycle is named by the same week start the progress window counts from. It was
+            // `year + weekOfYear` under the locale's calendar, whose weeks start on Sunday in ko_KR
+            // and en_US while the window always started Monday — so at Sunday midnight the ID
+            // changed under an unchanged total and the same weekly alert fired twice. And
+            // Dec 27-31 took "2026-W01", an ID January had already spent, so it never fired at all.
+            let weekStart = guardrails.weeklyStart(of: now, calendar: calendar, weekStartDay: weekStartDay) ?? now
             appendIfCrossed(
                 &candidates,
                 delivered: delivered,
                 window: .weekly,
                 progress: weekly,
                 thresholdPercent: settings.alertThresholdPercent,
-                cycleID: cycleID(prefix: "week", from: now, calendar: calendar)
+                cycleID: "week-" + cycleID(prefix: "day", from: weekStart, calendar: calendar)
             )
         }
 
@@ -167,9 +174,6 @@ public struct BudgetAlertService: Sendable {
         switch prefix {
         case "day":
             return String(format: "%04d-%02d-%02d", year, month, day)
-        case "week":
-            let week = calendar.component(.weekOfYear, from: date)
-            return String(format: "%04d-W%02d", year, week)
         default:
             return String(format: "%04d-%02d", year, month)
         }

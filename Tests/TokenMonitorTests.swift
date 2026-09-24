@@ -1438,6 +1438,21 @@ final class TokenMonitorTests: XCTestCase {
         }
     }
 
+    /// `overviewUsage` is the Today aggregate. Weekly and monthly budgets, the streak and lifetime
+    /// milestones read it, so they only ever saw today: 200k a day against a 1M week read 20% on
+    /// Friday, and the weekly and monthly budget alerts could not fire.
+    func testMultiDayFiguresReadEveryStoredEventNotToday() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        for name in ["var budgetGuardrails:", "var activityMilestones:", "var usageStreak:", "func checkBudgetAlerts()"] {
+            let start = try XCTUnwrap(source.range(of: name), "\(name) is gone; this guard needs rewriting")
+            let body = String(source[start.lowerBound...].prefix(900))
+            let end = body.range(of: "\n    }\n").map { String(body[..<$0.upperBound]) } ?? body
+            XCTAssertTrue(end.contains("historyEventsAllTime"), "\(name) must see every stored event:\n\(end)")
+            XCTAssertFalse(end.contains("overviewUsage.events"), "\(name) still reads only today:\n\(end)")
+        }
+    }
+
     /// A typed-but-unsaved bot token or webhook used to win over the saved one everywhere. Half a
     /// pasted token left in Settings replaced the working credential for every automatic alert, and
     /// the only symptom was a rising failed-delivery count. The field is for the button the user

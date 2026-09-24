@@ -9325,6 +9325,37 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(nextDay.count, 1)
     }
 
+    /// The weekly cycle was named `year + weekOfYear` under a Sunday-first calendar while the window
+    /// it guarded started Monday. At Sunday midnight the name changed under an unchanged total, so
+    /// the same weekly alert fired twice; and Dec 27-31 reused January's "W01", so it never fired.
+    func testAWeeklyBudgetAlertFiresOncePerBudgetWeek() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        calendar.firstWeekday = 1 // Sunday-first, as ko_KR and en_US are
+        let settings = BudgetGuardrailSettings(weeklyTokens: 100_000, alertThresholdPercent: 80)
+        func at(_ y: Int, _ m: Int, _ d: Int, _ h: Int) -> Date {
+            calendar.date(from: DateComponents(year: y, month: m, day: d, hour: h))!
+        }
+        func event(_ date: Date) -> UsageEvent {
+            UsageEvent(provider: .opencode, timestamp: date, inputTokens: 90_000, outputTokens: 0, source: "budget-test", dataSource: .localLog)
+        }
+
+        let service = BudgetAlertService(store: BudgetAlertDedupStore(defaults: makeTestDefaults("budget-week-test")))
+        // Monday 2026-08-17 usage; alert on Saturday, then again after Sunday midnight — same Monday week.
+        let events = [event(at(2026, 8, 17, 10))]
+        let saturday = service.crossingCandidates(events: events, settings: settings, now: at(2026, 8, 22, 12), calendar: calendar, weekStartDay: .monday)
+        XCTAssertEqual(saturday.map(\.window), [.weekly])
+        service.markDelivered(saturday)
+        let sunday = service.crossingCandidates(events: events, settings: settings, now: at(2026, 8, 23, 1), calendar: calendar, weekStartDay: .monday)
+        XCTAssertTrue(sunday.isEmpty, "Sunday is still the same Monday-started week")
+
+        // The last days of December are their own week, not January's.
+        let january = service.crossingCandidates(events: [event(at(2026, 1, 1, 10))], settings: settings, now: at(2026, 1, 2, 10), calendar: calendar, weekStartDay: .monday)
+        service.markDelivered(january)
+        let december = service.crossingCandidates(events: [event(at(2026, 12, 29, 10))], settings: settings, now: at(2026, 12, 30, 10), calendar: calendar, weekStartDay: .monday)
+        XCTAssertEqual(december.map(\.window), [.weekly], "late December must not collide with a January cycle")
+    }
+
     func testBudgetAlertServiceSkipsDisabledAndUnderThreshold() throws {
         let now = Date(timeIntervalSince1970: 1_900_000_000)
         let calendar = Calendar(identifier: .gregorian)
