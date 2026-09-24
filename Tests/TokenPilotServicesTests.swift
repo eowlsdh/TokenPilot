@@ -67,6 +67,10 @@ private final class StubDeepSeekHTTPClient: DeepSeekBalanceHTTPClient, @unchecke
 }
 
 final class TokenPilotServicesTests: XCTestCase {
+    /// A fixed "now" for adapters whose fixtures hard-code reset instants. Those fixtures used the
+    /// wall clock, so they would have started failing on 2027-01-15 when their resets passed.
+    static let fixtureClock = Date(timeIntervalSince1970: 1_780_000_000)
+
     func testCodexStatusParserKeepsManualConfidenceLowOrMedium() {
         let parsed = CodexStatusParser.parse(
             """
@@ -2017,10 +2021,14 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertFalse(json.contains("0.50"))
 
         let csv = UsageExportService().makeCSVString(usage: usage, includesCost: false)
-        XCTAssertFalse(csv.contains("0.5"))
-        XCTAssertFalse(csv.contains("0.50"))
         // CSV keeps the schema columns but blanks the cost value in the total row.
-        XCTAssertTrue(csv.contains("cost_usd"))
+        // Checked by column: event timestamps carry milliseconds, so a whole-text `contains("0.5")`
+        // failed whenever a run landed on e.g. ":10.512Z" — about one run in a hundred.
+        let rows = csv.split(separator: "\n").map { $0.split(separator: ",", omittingEmptySubsequences: false).map(String.init) }
+        let costColumn = try XCTUnwrap(rows.first?.firstIndex(of: "cost_usd"))
+        for row in rows.dropFirst() where row.count > costColumn {
+            XCTAssertTrue(["", "0"].contains(row[costColumn]), "cost leaked into: \(row.joined(separator: ","))")
+        }
     }
 
     func testCLIExportSectionsEnvelopeTotals() throws {
@@ -4067,7 +4075,7 @@ final class TokenPilotServicesTests: XCTestCase {
         {"id":2,"result":{"planType":"plus","rateLimits":{"primary":{"used_percent":42,"window_minutes":300,"resets_at":"2027-01-15T00:00:00Z"},"secondary":{"used_percent":18,"window_minutes":10080,"resets_at":1800000000}}}}
         """.data(using: .utf8)!
         let appServer = StubCodexAppServerRateLimitClient(data: codexResponse)
-        let codex = CodexWebUsageAdapter(appServerClient: appServer)
+        let codex = CodexWebUsageAdapter(appServerClient: appServer, now: { TokenPilotServicesTests.fixtureClock })
 
         let deepSeekPayload = """
         {"is_available":true,"balance_infos":[{"currency":"USD","total_balance":"12.34","granted_balance":"0","topped_up_balance":"12.34"}]}
@@ -5672,7 +5680,8 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await CodexWebUsageAdapter(
             authFileURL: URL(fileURLWithPath: "/missing/auth.json"),
             httpClient: RecordingCodexWebUsageHTTPClient(data: Data(), failIfCalled: true),
-            appServerClient: StubCodexAppServerRateLimitClient(data: response)
+            appServerClient: StubCodexAppServerRateLimitClient(data: response),
+            now: { TokenPilotServicesTests.fixtureClock }
         ).snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.fiveHour?.usedPercent, 1, "an integer 1 is one percent, not a full window")
@@ -5692,7 +5701,8 @@ final class TokenPilotServicesTests: XCTestCase {
         let snapshot = await CodexWebUsageAdapter(
             authFileURL: URL(fileURLWithPath: "/missing/auth.json"),
             httpClient: httpClient,
-            appServerClient: appServer
+            appServerClient: appServer,
+            now: { TokenPilotServicesTests.fixtureClock }
         ).snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.provider, .codex)
@@ -5785,7 +5795,7 @@ final class TokenPilotServicesTests: XCTestCase {
         var settings = AppSettings(showMockDataWhenDisconnected: false)
         settings.codexManual.webConnectorEnabled = true
 
-        let snapshot = await CodexWebUsageAdapter(appServerClient: appServer).snapshot(settings: settings)
+        let snapshot = await CodexWebUsageAdapter(appServerClient: appServer, now: { TokenPilotServicesTests.fixtureClock }).snapshot(settings: settings)
 
         XCTAssertEqual(snapshot.provider, .codex)
         XCTAssertEqual(snapshot.dataSource, .webUsage)
