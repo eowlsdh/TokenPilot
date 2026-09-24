@@ -225,6 +225,10 @@ struct DisclosureCard<Summary: View, Content: View>: View {
     var initiallyExpanded = false
     var accessibilityLabel: String? = nil
     var accessibilityValue: String? = nil
+    /// Where the open/closed state outlives this view. Settings is torn down on every screen
+    /// switch, and with state only in `@State` every card the user had opened — say a provider
+    /// setup fourteen cards down, mid-paste of an API key — was closed again on the way back.
+    private let remembered: Binding<Bool?>?
     private let summary: () -> Summary
     /// Held as a closure, not a built value. `content()` in the initializer looked equivalent and was
     /// not: a collapsed card constructed its whole body on every pass and threw it away. Settings is
@@ -241,6 +245,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
         padding: CGFloat = TokenPilotDesign.cardPadding,
         surface: TokenPilotDesign.Surface = .card,
         initiallyExpanded: Bool = false,
+        remembered: Binding<Bool?>? = nil,
         accessibilityLabel: String? = nil,
         accessibilityValue: String? = nil,
         @ViewBuilder summary: @escaping () -> Summary,
@@ -251,9 +256,10 @@ struct DisclosureCard<Summary: View, Content: View>: View {
         self.initiallyExpanded = initiallyExpanded
         self.accessibilityLabel = accessibilityLabel
         self.accessibilityValue = accessibilityValue
+        self.remembered = remembered
         self.summary = summary
         self.content = content
-        self._isExpanded = State(initialValue: initiallyExpanded)
+        self._isExpanded = State(initialValue: remembered?.wrappedValue ?? initiallyExpanded)
     }
 
     var body: some View {
@@ -315,6 +321,7 @@ struct DisclosureCard<Summary: View, Content: View>: View {
                 isExpanded.toggle()
             }
         }
+        remembered?.wrappedValue = isExpanded
     }
 }
 

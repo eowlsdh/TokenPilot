@@ -246,7 +246,9 @@ struct OverviewScreen: View {
                         assessments: model.capacityAssessments,
                         presentations: model.capacityPresentations,
                         errors: model.capacityRefreshErrors,
-                        runtimeRecoveryRequired: model.capacityRuntimeRecoveryRequired
+                        runtimeRecoveryRequired: model.capacityRuntimeRecoveryRequired,
+                        openDiagnostics: { model.selectedScreen = .settings },
+                        refreshProviders: { Task { await model.refresh() } }
                     )
                 }
 
@@ -1155,6 +1157,8 @@ struct ProviderOverviewList: View {
     let presentations: [CapacityPresentation]
     let errors: [CapacityRefreshError]
     let runtimeRecoveryRequired: Bool
+    var openDiagnostics: () -> Void = {}
+    var refreshProviders: () -> Void = {}
 
     var body: some View {
         GlassCard {
@@ -1225,7 +1229,9 @@ struct ProviderOverviewList: View {
                 provider: provider,
                 snapshot: snapshot,
                 errors: providerErrors,
-                runtimeRecoveryRequired: runtimeRecoveryRequired
+                runtimeRecoveryRequired: runtimeRecoveryRequired,
+                openDiagnostics: openDiagnostics,
+                refreshProviders: refreshProviders
             )
         } else {
             ProviderCapacityRow(
@@ -1399,6 +1405,8 @@ struct ProviderCapacityUnavailableRow: View {
     let snapshot: ProviderSnapshot?
     let errors: [CapacityRefreshError]
     let runtimeRecoveryRequired: Bool
+    var openDiagnostics: () -> Void = {}
+    var refreshProviders: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
@@ -1413,11 +1421,22 @@ struct ProviderCapacityUnavailableRow: View {
                 StatusBadge(label: statusLabel, color: statusColor)
             }
 
-            Text(guidanceText)
-                .font(TokenPilotDesign.Typography.caption)
-                .foregroundStyle(TokenPilotDesign.text(.secondary))
-                .lineLimit(1)
-                .minimumScaleFactor(0.74)
+            // A button, as the same action already is in History. On Overview it was inert text
+            // naming a screen the user then had to find — "Open Provider Diagnostics" lives in
+            // Settings, and nothing said so.
+            Button(action: performsRefresh ? refreshProviders : openDiagnostics) {
+                Label {
+                    Text(actionLabel)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                } icon: {
+                    Image(systemName: performsRefresh ? "arrow.clockwise" : "wrench.and.screwdriver")
+                }
+                .font(TokenPilotDesign.Typography.micro)
+            }
+            .buttonStyle(.glass)
+            .controlSize(.small)
+            .focusable()
 
             if let error = errors.first {
                 CapacityErrorInline(error: error)
@@ -1457,6 +1476,10 @@ struct ProviderCapacityUnavailableRow: View {
         return TokenPilotDesign.text(.secondary)
     }
 
+
+    private var performsRefresh: Bool {
+        !runtimeRecoveryRequired && !errors.isEmpty
+    }
 
     private var actionLabel: String {
         if runtimeRecoveryRequired {

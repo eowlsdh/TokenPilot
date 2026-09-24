@@ -74,6 +74,7 @@ struct SettingsScreen: View {
 
     private var generalSettings: some View {
         DisclosureCard(
+            remembered: remembered("general"),
             accessibilityLabel: model.t("Launch at login"),
             accessibilityValue: model.settings.launchAtLogin ? model.t("ON") : model.t("OFF")
         ) {
@@ -268,6 +269,7 @@ struct SettingsScreen: View {
     private var sourceHealthDisclosure: some View {
         DisclosureCard(
             initiallyExpanded: true,
+            remembered: remembered("source"),
             accessibilityLabel: model.t("Source health"),
             accessibilityValue: sourceHealthSummaryText
         ) {
@@ -484,6 +486,7 @@ struct SettingsScreen: View {
     private var providerDiagnosticsDisclosure: some View {
         DisclosureCard(
             initiallyExpanded: true,
+            remembered: remembered("diagnostics"),
             accessibilityLabel: model.t("Provider Diagnostics"),
             accessibilityValue: providerDiagnosticsSummaryText
         ) {
@@ -1069,6 +1072,7 @@ struct SettingsScreen: View {
     private var notificationSettings: some View {
         DisclosureCard(
             initiallyExpanded: model.settings.notificationPermissionStatus == .denied,
+            remembered: remembered("notifications"),
             accessibilityLabel: model.t("Notifications"),
             accessibilityValue: notificationSummaryText
         ) {
@@ -1177,6 +1181,7 @@ struct SettingsScreen: View {
     private var telegramSettings: some View {
         DisclosureCard(
             initiallyExpanded: telegramDisclosureDefaultExpanded,
+            remembered: remembered("telegram"),
             accessibilityLabel: model.t("Telegram"),
             accessibilityValue: telegramSummaryText
         ) {
@@ -1252,6 +1257,7 @@ struct SettingsScreen: View {
     private var discordSettings: some View {
         DisclosureCard(
             initiallyExpanded: discordDisclosureDefaultExpanded,
+            remembered: remembered("discord"),
             accessibilityLabel: model.t("Discord"),
             accessibilityValue: discordSummaryText
         ) {
@@ -1316,6 +1322,7 @@ struct SettingsScreen: View {
 
     private var languageSettings: some View {
         DisclosureCard(
+            remembered: remembered("language"),
             accessibilityLabel: model.t("Language"),
             accessibilityValue: model.settings.localization.language.displayName
         ) {
@@ -1346,6 +1353,7 @@ struct SettingsScreen: View {
 
     private var setupGuide: some View {
         DisclosureCard(
+            remembered: remembered("guide"),
             accessibilityLabel: model.t("Setup Guide"),
             accessibilityValue: setupGuideSummaryText
         ) {
@@ -1534,6 +1542,7 @@ struct SettingsScreen: View {
     private var privacySettings: some View {
         DisclosureCard(
             initiallyExpanded: privacyDetailsDefaultExpanded,
+            remembered: remembered("privacy"),
             accessibilityLabel: model.t("Privacy"),
             accessibilityValue: privacySummaryText
         ) {
@@ -1888,6 +1897,13 @@ struct SettingsScreen: View {
         .accessibilityValue("\(detail). \(status)")
     }
 
+    private func remembered(_ card: String) -> Binding<Bool?> {
+        Binding(
+            get: { model.settingsCardExpansion[card] },
+            set: { model.settingsCardExpansion[card] = $0 }
+        )
+    }
+
     private func providerSetupDisclosure<Content: View>(
         provider: Provider,
         title: String,
@@ -1899,6 +1915,7 @@ struct SettingsScreen: View {
 
         return DisclosureCard(
             initiallyExpanded: providerDefaultExpanded(provider),
+            remembered: remembered("provider.\(provider.rawValue)"),
             accessibilityLabel: "\(title), \(status)",
             accessibilityValue: "\(detail). \(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic)). \(providerSecretSummary(provider))"
         ) {

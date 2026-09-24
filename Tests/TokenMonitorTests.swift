@@ -1275,8 +1275,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Secrets hidden\")"))
         XCTAssertTrue(settingsSource.contains("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded."))
         XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Manual/experimental labels shown\")"))
-        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Source health\")"))
-        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Provider Diagnostics\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, remembered: remembered(\"source\"), accessibilityLabel: model.t(\"Source health\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, remembered: remembered(\"diagnostics\"), accessibilityLabel: model.t(\"Provider Diagnostics\")"))
         XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: privacyDetailsDefaultExpanded"))
         XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: providerDefaultExpanded(provider)"))
         XCTAssertTrue(historyCollapsed.contains("DisclosureCard( padding: 10, initiallyExpanded: true, accessibilityLabel: model.t(\"Recorded capacity signal history\")"))
@@ -1444,6 +1444,16 @@ final class TokenMonitorTests: XCTestCase {
             )
             XCTAssertFalse(body.contains("historyUsage.events"), "\(property) is still period-filtered:\n\(body)")
         }
+    }
+
+    /// Settings is torn down on every screen switch. A card holding its open state only in `@State`
+    /// closed again on the way back — a provider setup fourteen cards down, mid-paste of a key.
+    func testEverySettingsCardRemembersWhetherItWasOpen() throws {
+        let source = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
+        let cards = source.components(separatedBy: "DisclosureCard(").count - 1
+        let remembering = source.components(separatedBy: "remembered: remembered(").count - 1
+        XCTAssertGreaterThan(cards, 8, "the scan found almost no cards; check it")
+        XCTAssertEqual(remembering, cards, "a Settings card forgets its state on every screen switch")
     }
 
     /// `overviewUsage` is the Today aggregate. Weekly and monthly budgets, the streak and lifetime

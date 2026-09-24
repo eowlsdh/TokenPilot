@@ -47,6 +47,21 @@ final class TokenPilotViewModel: ObservableObject {
     /// cells of which one could ever be non-zero, and the trend drew twelve empty months — which
     /// reads as "I did no work for three months" while the data sits in the store.
     private(set) var historyEventsAllTime: [UsageEvent] = []
+
+    /// Which Settings cards the user opened or closed, so a screen switch does not undo it. Not
+    /// published: the card's own state drives drawing, this only survives the card being rebuilt.
+    var settingsCardExpansion: [String: Bool] = [:]
+
+    /// The first stored event, when it falls after the start of the selected History period.
+    ///
+    /// Stored history is capped at 2 000 events, and for a heavy Claude Code user that is about two
+    /// and a half days — so "Last 7 days" and the 12-week charts silently covered two days and read
+    /// as if nothing happened before them. Nil when the store reaches back past the period start.
+    var historyCoverageStart: Date? {
+        guard let oldest = historyEventsAllTime.lazy.map(\.timestamp).min() else { return nil }
+        let periodStart = selectedHistoryPeriod.start(now: menuBarNow)
+        return oldest > periodStart ? oldest : nil
+    }
     @Published var limitHistorySamples: [ProviderLimitSample] = []
     @Published var overviewUsage = AggregatedUsage(period: .today)
     @Published var historyUsage = AggregatedUsage(period: .today)

@@ -1061,6 +1061,12 @@ struct HistoryHeatmapCard: View {
         @ObservedObject var model: TokenPilotViewModel
 
         @State private var showingAllModels = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
         private var visibleShares: [ModelUsageShare] {
             showingAllModels ? Array(shares.prefix(12)) : Array(shares.prefix(4))
@@ -1093,12 +1099,19 @@ struct HistoryHeatmapCard: View {
                 }
 
                 if hasMore {
-                    Button(showingAllModels ? model.t("Show fewer models") : model.t("Show all models")) {
-                        withAnimation(.easeInOut(duration: 0.18)) { showingAllModels.toggle() }
+                    // A text-only 11pt strip that the keyboard never reached and that animated under
+                    // Reduce Motion: the rows past the fifth were unreachable without a trackpad.
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showingAllModels.toggle() }
+                    } label: {
+                        Text(showingAllModels ? model.t("Show fewer models") : model.t("Show all models"))
+                            .padding(.vertical, TokenPilotDesign.Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.calm)
+                    .focusable()
                 }
             }
         }
@@ -1171,6 +1184,12 @@ struct HistoryProjectBreakdownCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     @State private var showingAllProjects = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
     private var visibleShares: [ProjectUsageShare] {
         showingAllProjects ? Array(shares.prefix(12)) : Array(shares.prefix(4))
@@ -1203,12 +1222,19 @@ struct HistoryProjectBreakdownCard: View {
                 }
 
                 if hasMore {
-                    Button(showingAllProjects ? model.t("Show fewer projects") : model.t("Show all projects")) {
-                        withAnimation(.easeInOut(duration: 0.18)) { showingAllProjects.toggle() }
+                    // A text-only 11pt strip that the keyboard never reached and that animated under
+                    // Reduce Motion: the rows past the fifth were unreachable without a trackpad.
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showingAllProjects.toggle() }
+                    } label: {
+                        Text(showingAllProjects ? model.t("Show fewer projects") : model.t("Show all projects"))
+                            .padding(.vertical, TokenPilotDesign.Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.calm)
+                    .focusable()
                 }
             }
         }
@@ -1337,6 +1363,16 @@ struct HistoryUsageSummaryCard: View {
                         label: model.t("Busiest hour"),
                         value: metrics.busiestHour.map { "\($0):00" } ?? "—"
                     )
+                }
+
+                if let coverageStart = model.historyCoverageStart {
+                    Label(
+                        String(format: model.t("Stored history begins %@. Earlier activity is not in these totals."), coverageStart.formatted(.dateTime.month().day().hour().minute())),
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
