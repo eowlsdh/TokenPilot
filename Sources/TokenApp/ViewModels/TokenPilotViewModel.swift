@@ -56,9 +56,10 @@ final class TokenPilotViewModel: ObservableObject {
 
     /// The first stored event, when it falls after the start of the selected History period.
     ///
-    /// Stored history is capped at 2 000 events, and for a heavy Claude Code user that is about two
-    /// and a half days — so "Last 7 days" and the 12-week charts silently covered two days and read
-    /// as if nothing happened before them. Nil when the store reaches back past the period start.
+    /// History starts when TokenPilot first saw each source — and was capped at 2 000 events before
+    /// the store was partitioned by day, about two and a half days for a heavy user. Either way a
+    /// chart that reaches further back than the store would read as "nothing happened". Nil when
+    /// the store reaches back past the period start.
     var historyCoverageStart: Date? {
         guard let oldest = historyEventsAllTime.lazy.map(\.timestamp).min() else { return nil }
         let periodStart = selectedHistoryPeriod.start(now: menuBarNow)

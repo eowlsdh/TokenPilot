@@ -247,6 +247,10 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     /// Workspace label for local-activity rollups (opencode only today). Holds the
     /// workspace *folder name* — never a full path — and is excluded from exports.
     public var projectLabel: String?
+    /// The source's own identity for this event when it has one — a Claude Code message ID — so a
+    /// reading of the same message taken on a later refresh replaces the earlier one instead of
+    /// being stored beside it. Never exported.
+    public var sourceEventID: String?
 
     public init(
         id: UUID = UUID(),
@@ -313,6 +317,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         case durationMS
         case totalTokensOverride
         case projectLabel
+        case sourceEventID
     }
 
     public init(from decoder: Decoder) throws {
@@ -339,6 +344,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
             totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride),
             projectLabel: try container.decodeIfPresent(String.self, forKey: .projectLabel)
         )
+        self.sourceEventID = try container.decodeIfPresent(String.self, forKey: .sourceEventID)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -363,6 +369,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(durationMS, forKey: .durationMS)
         try container.encodeIfPresent(totalTokensOverride, forKey: .totalTokensOverride)
         try container.encodeIfPresent(projectLabel, forKey: .projectLabel)
+        try container.encodeIfPresent(sourceEventID, forKey: .sourceEventID)
     }
 
     private var componentTokenTotal: Int {

@@ -727,7 +727,13 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
                 }
             }
         }
-        events.append(contentsOf: eventsByCanonicalKey.values)
+        // Each message carries its canonical key, so the history store keeps one reading per message
+        // even when a later refresh sees a richer line for it.
+        events.append(contentsOf: eventsByCanonicalKey.map { key, event in
+            var tagged = event
+            tagged.sourceEventID = key
+            return tagged
+        })
 
         guard !events.isEmpty else { return nil }
         events.sort { $0.timestamp < $1.timestamp }
