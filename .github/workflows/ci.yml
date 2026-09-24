@@ -7,7 +7,34 @@ on:
     branches: [main]
 
 jobs:
+  secret-scan:
+    # 이 앱은 프로바이더 인증 파일을 읽는다. 실제 토큰이 픽스처나 산출물에 섞여
+    # 공개 저장소로 나가는 것이 가장 큰 사고 경로라 빌드보다 앞에 둔다.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # gitleaks는 push/PR 범위를 git log로 훑는다. shallow(기본 depth=1)면
+          # 베이스 커밋의 부모를 해석하지 못해 fatal로 끝난다.
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          set -euo pipefail
+          VERSION=8.30.1
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan history for secrets
+        # .gitleaks.toml이 저장소 루트에 있으면 자동 적용된다.
+        run: gitleaks git --redact --no-banner --exit-code 1
+
+      - name: Verify .gitignore is effective
+        run: Scripts/check-gitignore.sh
+
   build-and-test:
+    needs: secret-scan
     # The app's floor is macOS 26, and a deployment target above the SDK does not build.
     runs-on: macos-26
     steps:
