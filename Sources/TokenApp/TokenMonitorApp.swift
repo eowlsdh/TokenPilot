@@ -1161,7 +1161,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     /// Turning the setting back off makes the toggle tell the truth and stops the retries.
     private func reportHotkeyUnavailable() {
         model.settings.menuBarHotkeyEnabled = false
-        model.bannerMessage = model.t("⌘⇧Space is already used by another app, so the global shortcut was turned off.")
+        model.showProblem(model.t("⌘⇧Space is already used by another app, so the global shortcut was turned off."))
     }
 
     private func unregisterGlobalHotkey() {

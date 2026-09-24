@@ -3,6 +3,7 @@ import TokenCore
 
 struct SettingsScreen: View {
     @ObservedObject var model: TokenPilotViewModel
+    @State private var scrollPosition = ScrollPosition(edge: .top)
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -21,8 +22,20 @@ struct SettingsScreen: View {
             }
             .padding(.bottom, TokenPilotDesign.Spacing.xl)
         }
+        // Settings is rebuilt on every screen switch, so the scroll offset went back to the top
+        // each time — past fourteen cards to get back to the one being edited. The offset lives
+        // on the ViewModel (not published) and is restored on appear.
+        .scrollPosition($scrollPosition)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { _, offset in
+            model.settingsScrollOffset = offset
+        }
         .onAppear {
             model.refreshStoredCredentialPresence()
+            if model.settingsScrollOffset > 0 {
+                scrollPosition.scrollTo(y: model.settingsScrollOffset)
+            }
         }
     }
 

@@ -1456,6 +1456,16 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(remembering, cards, "a Settings card forgets its state on every screen switch")
     }
 
+    /// The banner looked the same for "Saved." and "Could not save.", so a failure read as done.
+    /// Every failure goes through `showProblem`, which the banner draws as a warning.
+    func testFailuresReachTheBannerAsProblems() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        XCTAssertGreaterThan(source.components(separatedBy: "showProblem(localizedErrorMessage(error))").count - 1, 10)
+        for plain in ["bannerMessage = localizedErrorMessage(", "bannerMessage = t(\"Could not", "bannerMessage = t(\"Enter ", "bannerMessage = t(\"At least one"] {
+            XCTAssertFalse(source.contains(plain), "a failure is shown as a plain notice: \(plain)")
+        }
+    }
+
     /// Budget alerts were marked delivered whether or not the notification went out, so a failed
     /// send used up the one alert that cycle allows.
     func testOnlyShownAlertsAreMarkedDelivered() throws {

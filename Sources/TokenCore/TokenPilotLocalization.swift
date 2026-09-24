@@ -228,6 +228,7 @@ public enum TokenPilotLocalizer {
         "Last week": [.en: "Last week", .ko: "지난주", .ja: "先週", .zhHans: "上周", .zhHant: "上週"],
         "Stored history begins %@. Earlier activity is not in these totals.": [.en: "Stored history begins %@. Earlier activity is not in these totals.", .ko: "저장된 기록은 %@부터입니다. 그 이전 활동은 이 합계에 포함되지 않습니다.", .ja: "保存された履歴は %@ からです。それ以前の活動はこの合計に含まれません。", .zhHans: "已存储的记录始于 %@。更早的活动不计入这些总数。", .zhHant: "已儲存的記錄始於 %@。更早的活動不計入這些總數。"],
         "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.": [.en: "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.", .ko: "로그인 시 실행을 마치려면 시스템 설정 → 일반 → 로그인 항목에서 TokenPilot을 허용하세요.", .ja: "ログイン時の起動を有効にするには、システム設定 → 一般 → ログイン項目で TokenPilot を許可してください。", .zhHans: "请在“系统设置 → 通用 → 登录项”中允许 TokenPilot，以完成登录时启动的设置。", .zhHant: "請在「系統設定 → 一般 → 登入項目」中允許 TokenPilot，以完成登入時啟動的設定。"],
+        "Problem": [.en: "Problem", .ko: "문제", .ja: "問題", .zhHans: "问题", .zhHant: "問題"],
         "Delete": [.en: "Delete", .ko: "삭제", .ja: "削除", .zhHans: "删除", .zhHant: "刪除"],
         "Delete the DeepSeek API key?": [.en: "Delete the DeepSeek API key?", .ko: "DeepSeek API 키를 삭제할까요?", .ja: "DeepSeek APIキーを削除しますか？", .zhHans: "要删除 DeepSeek API 密钥吗？", .zhHant: "要刪除 DeepSeek API 密鑰嗎？"],
         "Delete this API key?": [.en: "Delete this API key?", .ko: "이 API 키를 삭제할까요?", .ja: "この APIキーを削除しますか？", .zhHans: "要删除此 API 密钥吗？", .zhHant: "要刪除此 API 密鑰嗎？"],

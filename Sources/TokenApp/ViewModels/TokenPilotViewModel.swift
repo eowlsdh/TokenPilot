@@ -51,6 +51,8 @@ final class TokenPilotViewModel: ObservableObject {
     /// Which Settings cards the user opened or closed, so a screen switch does not undo it. Not
     /// published: the card's own state drives drawing, this only survives the card being rebuilt.
     var settingsCardExpansion: [String: Bool] = [:]
+    /// Where Settings was scrolled to, for the same reason. Not published.
+    var settingsScrollOffset: CGFloat = 0
 
     /// The first stored event, when it falls after the start of the selected History period.
     ///
@@ -83,7 +85,21 @@ final class TokenPilotViewModel: ObservableObject {
     @Published private var capacityAlertDeliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] = [:]
     @Published private var capacityAlertDeliveryRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil)
     @Published private var capacityAlertMigrationRecoveryStatus: CapacityPersistenceStatus?
-    @Published var bannerMessage: String?
+    /// Set through `showProblem(_:)` for anything that went wrong. The banner used to look the same
+    /// for "Saved." and "Could not save." — one info glyph, one grey — so a failure read as done.
+    @Published var bannerMessage: String? {
+        didSet {
+            bannerIsProblem = nextBannerIsProblem
+            nextBannerIsProblem = false
+        }
+    }
+    private(set) var bannerIsProblem = false
+    private var nextBannerIsProblem = false
+
+    func showProblem(_ message: String) {
+        nextBannerIsProblem = true
+        bannerMessage = message
+    }
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
@@ -588,28 +604,28 @@ final class TokenPilotViewModel: ObservableObject {
     func setCapacityAlertThresholds(ruleID: String, reset: Bool, percents: Set<Int>) async {
         let load = await capacityAlertRuleStore.load()
         guard !load.recoveryStatus.recoveryRequired else {
-            bannerMessage = t("Alert settings are recovering; try again in a moment.")
+            showProblem(t("Alert settings are recovering; try again in a moment."))
             return
         }
         guard let existing = load.rules.first(where: { $0.id == ruleID }) else { return }
 
         // Every alert off would leave a rule that watches nothing while still looking configured.
         guard reset || !percents.isEmpty else {
-            bannerMessage = t("Keep at least one alert threshold.")
+            showProblem(t("Keep at least one alert threshold."))
             return
         }
 
         guard let updated = try? existing.replacingCondition(
             .percentThresholds(reset: reset, percents: percents)
         ) else {
-            bannerMessage = t("That alert threshold is not supported for this window.")
+            showProblem(t("That alert threshold is not supported for this window."))
             return
         }
 
         let next = load.rules.filter { $0.id != ruleID } + [updated]
         let save = await capacityAlertRuleStore.save(next.sorted { $0.id < $1.id })
         guard !save.recoveryStatus.writeBlocked else {
-            bannerMessage = t("Could not save alert settings.")
+            showProblem(t("Could not save alert settings."))
             return
         }
         capacityAlertRules = next.sorted { $0.id < $1.id }
@@ -894,7 +910,7 @@ final class TokenPilotViewModel: ObservableObject {
             next.normalizeMenuBarComposition()
             settings = next
         } else {
-            bannerMessage = t("At least one provider must stay enabled.")
+            showProblem(t("At least one provider must stay enabled."))
         }
     }
 
@@ -996,7 +1012,7 @@ final class TokenPilotViewModel: ObservableObject {
                 bannerMessage = nil
             }
         } catch {
-            bannerMessage = enabled ? t("Could not enable launch at login") : t("Could not disable launch at login")
+            showProblem(enabled ? t("Could not enable launch at login") : t("Could not disable launch at login"))
         }
     }
     func setMenuBarProviderGrouping(_ grouping: MenuBarProviderGrouping) {
@@ -1022,7 +1038,7 @@ final class TokenPilotViewModel: ObservableObject {
                 .subtracting([provider])
                 .filter { next.isProviderEnabled($0) }
             guard !remainingVisibleProviders.isEmpty else {
-                bannerMessage = t("At least one provider must stay visible in the menu bar.")
+                showProblem(t("At least one provider must stay visible in the menu bar."))
                 return
             }
             next.menuBarMetricProviders.remove(provider)
@@ -1664,7 +1680,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         settings.notificationPermissionStatus = await localNotificationService.requestPermission()
         if settings.notificationPermissionStatus == .denied {
-            bannerMessage = t("Permission denied. Enable notifications in macOS Settings > Notifications.")
+            showProblem(t("Permission denied. Enable notifications in macOS Settings > Notifications."))
         } else {
             bannerMessage = String(format: t("Notification permission: %@"), settings.notificationPermissionStatus.localizedLabel(language: settings.localization.language))
         }
@@ -1675,7 +1691,7 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         guard settings.globalNotificationsEnabled else {
-            bannerMessage = t("No notification channel is enabled or configured.")
+            showProblem(t("No notification channel is enabled or configured."))
             return
         }
 
@@ -1698,12 +1714,12 @@ final class TokenPilotViewModel: ObservableObject {
                 sentChannelCount += 1
             }
             guard sentChannelCount > 0 else {
-                bannerMessage = t("No notification channel is enabled or configured.")
+                showProblem(t("No notification channel is enabled or configured."))
                 return
             }
             bannerMessage = t("Test notification sent.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1799,7 +1815,7 @@ final class TokenPilotViewModel: ObservableObject {
             let bookmarkData = try? TokenPilotSecurityScopedBookmarks.makeReadOnlyBookmarkData(for: url)
             apply(url, bookmarkData)
             if bookmarkData == nil {
-                bannerMessage = t("Selected source path saved, but sandbox bookmark was not created. Choose it again if the sandbox cannot read it.")
+                showProblem(t("Selected source path saved, but sandbox bookmark was not created. Choose it again if the sandbox cannot read it."))
             }
             Task {
                 await checkConnection(provider)
@@ -2083,7 +2099,7 @@ final class TokenPilotViewModel: ObservableObject {
                 bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
             }
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2107,7 +2123,7 @@ final class TokenPilotViewModel: ObservableObject {
                 bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
             }
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2132,7 +2148,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings = imported
             bannerMessage = t("Settings imported")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2294,7 +2310,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let key = deepSeekAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
-            bannerMessage = t("Enter a DeepSeek API key first.")
+            showProblem(t("Enter a DeepSeek API key first."))
             return
         }
         do {
@@ -2305,7 +2321,7 @@ final class TokenPilotViewModel: ObservableObject {
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key saved in TokenPilot Keychain item.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2322,7 +2338,7 @@ final class TokenPilotViewModel: ObservableObject {
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2359,7 +2375,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let key = apiKeyInput(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
-            bannerMessage = t("Enter an API key first.")
+            showProblem(t("Enter an API key first."))
             return
         }
         do {
@@ -2373,7 +2389,7 @@ final class TokenPilotViewModel: ObservableObject {
             }
             bannerMessage = t("API key saved in TokenPilot Keychain item.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2393,7 +2409,7 @@ final class TokenPilotViewModel: ObservableObject {
             }
             bannerMessage = t("API key deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2403,7 +2419,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let token = telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
-            bannerMessage = t("Enter a bot token first.")
+            showProblem(t("Enter a bot token first."))
             return
         }
         do {
@@ -2413,7 +2429,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.telegram.connectionStatus = "Token saved securely"
             bannerMessage = t("Telegram token saved in TokenPilot Keychain item.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2431,7 +2447,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.telegram.connectionStatus = "Not configured"
             bannerMessage = t("Telegram token deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2446,7 +2462,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Telegram test message sent.")
         } catch {
             settings.telegram.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2462,7 +2478,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Chat ID found.")
         } catch {
             settings.telegram.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2493,7 +2509,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let webhookURL = discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !webhookURL.isEmpty else {
-            bannerMessage = t("Enter a Discord webhook URL first.")
+            showProblem(t("Enter a Discord webhook URL first."))
             return
         }
         do {
@@ -2505,7 +2521,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Discord webhook saved in TokenPilot Keychain item.")
         } catch {
             settings.discord.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2523,7 +2539,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.discord.connectionStatus = "Not configured"
             bannerMessage = t("Discord webhook deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -2538,7 +2554,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Discord test message sent.")
         } catch {
             settings.discord.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 

@@ -175,6 +175,11 @@ struct TokenPilotRootView: View {
         isRefreshHovered ? 50 : 0
     }
 
+    /// VoiceOver hears which kind of message it is, not only its words.
+    private func announcement(_ message: String) -> String {
+        model.bannerIsProblem ? "\(model.t("Problem")): \(message)" : message
+    }
+
     private func banner(_ message: String) -> some View {
         GlassCard(
             padding: TokenPilotDesign.Spacing.lg,
@@ -182,14 +187,16 @@ struct TokenPilotRootView: View {
             cornerRadius: TokenPilotDesign.Radius.md
         ) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
-                Image(systemName: "info.circle")
+                // A problem gets the warning glyph and colour; a confirmation stays quiet. Shape and
+                // colour both change, so neither alone carries the difference.
+                Image(systemName: model.bannerIsProblem ? "exclamationmark.triangle.fill" : "info.circle")
                     .font(TokenPilotDesign.Typography.captionStrong)
-                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .foregroundStyle(model.bannerIsProblem ? TokenPilotDesign.status(.warning) : TokenPilotDesign.text(.secondary))
                     .accessibilityHidden(true)
 
                 Text(message)
                     .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .foregroundStyle(model.bannerIsProblem ? TokenPilotDesign.text(.primary) : TokenPilotDesign.text(.secondary))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -208,9 +215,9 @@ struct TokenPilotRootView: View {
         // on the button and heard nothing at all. Speaking it is the whole fix.
         .accessibilityAddTraits(.updatesFrequently)
         .onChange(of: message) { _, newMessage in
-            AccessibilityNotification.Announcement(newMessage).post()
+            AccessibilityNotification.Announcement(announcement(newMessage)).post()
         }
-        .onAppear { AccessibilityNotification.Announcement(message).post() }
+        .onAppear { AccessibilityNotification.Announcement(announcement(message)).post() }
     }
 }
 

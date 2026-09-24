@@ -1,6 +1,40 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Problem": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Problem"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "문제"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問題"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "问题"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "問題"
+          }
+        }
+      }
+    },
     "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.": {
       "localizations": {
         "en": {
