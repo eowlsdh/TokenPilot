@@ -46,11 +46,16 @@ public enum FiveHourBlocksService {
     }
 
     /// The fixed 5-hour block containing `date`, aligned to local midnight.
+    ///
+    /// By wall-clock hour, not seconds since midnight: on a spring-forward day 05:30 is only 4.5
+    /// elapsed hours in, and the blocks ran 00/06/11/16/21 instead of 00/05/10/15/20.
     public static func blockStart(of date: Date, calendar: Calendar = .current) -> Date {
+        let startHour = calendar.component(.hour, from: date) / 5 * 5
+        if let start = calendar.date(bySettingHour: startHour, minute: 0, second: 0, of: date) {
+            return start
+        }
         let dayStart = calendar.startOfDay(for: date)
-        let secondsSinceMidnight = date.timeIntervalSince(dayStart)
-        let blockIndex = Int(secondsSinceMidnight / blockDuration)
-        return dayStart.addingTimeInterval(Double(blockIndex) * blockDuration)
+        return dayStart.addingTimeInterval(Double(Int(date.timeIntervalSince(dayStart) / blockDuration)) * blockDuration)
     }
 
     /// When that block actually ends.
@@ -62,6 +67,9 @@ public enum FiveHourBlocksService {
     public static func blockEnd(of start: Date, calendar: Calendar = .current) -> Date {
         let nextMidnight = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: start))
             ?? start.addingTimeInterval(blockDuration)
-        return min(start.addingTimeInterval(blockDuration), nextMidnight)
+        let endHour = calendar.component(.hour, from: start) + 5
+        guard endHour < 24,
+              let end = calendar.date(bySettingHour: endHour, minute: 0, second: 0, of: start) else { return nextMidnight }
+        return min(end, nextMidnight)
     }
 }

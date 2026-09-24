@@ -9907,6 +9907,18 @@ final class TokenPilotServicesTests: XCTestCase {
         XCTAssertEqual(totalRequests, 3)
     }
 
+    /// On a spring-forward day 05:30 is only 4.5 elapsed hours after midnight; counted in seconds it
+    /// fell in the 00:00 block and the day's blocks ran 00/06/11/16/21.
+    func testFiveHourBlocksFollowTheClockOnADaylightSavingDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let morning = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 5, minute: 30)))
+        let start = FiveHourBlocksService.blockStart(of: morning, calendar: calendar)
+        XCTAssertEqual(calendar.component(.hour, from: start), 5)
+        let end = FiveHourBlocksService.blockEnd(of: start, calendar: calendar)
+        XCTAssertEqual(calendar.component(.hour, from: end), 10)
+    }
+
     func testFiveHourBlocksReturnsEmptyWithoutEvents() throws {
         let calendar = Calendar(identifier: .gregorian)
         let now = calendar.date(from: DateComponents(year: 2030, month: 3, day: 17, hour: 12))!

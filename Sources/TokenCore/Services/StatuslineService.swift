@@ -202,6 +202,7 @@ public enum StatuslineService {
         components: [StatuslineComponent] = StatuslineComponent.defaultComponents,
         provider: Provider? = nil,
         colorized: Bool = false,
+        percentDisplay: CapacityPercentDisplay = .remaining,
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
@@ -215,7 +216,7 @@ public enum StatuslineService {
                     segments.append(input.exceedsLargeContext ? "\(modelName) ⚠" : modelName)
                 }
             case .capacity:
-                if let text = capacitySegment(windows: windows, provider: provider, colorized: colorized, now: now) {
+                if let text = capacitySegment(windows: windows, provider: provider, colorized: colorized, percentDisplay: percentDisplay, now: now) {
                     segments.append(text)
                 }
             case .today:
@@ -255,9 +256,13 @@ public enum StatuslineService {
         windows: [StatuslineCapacityWindow],
         provider: Provider?,
         colorized: Bool,
+        percentDisplay: CapacityPercentDisplay,
         now: Date
     ) -> String? {
-        let scoped = provider.map { p in windows.filter { $0.provider == p } } ?? windows
+        // A window whose reset has passed says nothing about the new cycle; shown as stale it
+        // read as an exhausted quota that had in fact refilled.
+        let scoped = (provider.map { p in windows.filter { $0.provider == p } } ?? windows)
+            .filter { window in window.resetAt.map { $0 > now } ?? true }
         let fresh = scoped.filter { $0.isFresh(now: now) }
         // TokenPilot only runs the adapters while the app is open, so a status line
         // called from a terminal can outlive the newest evidence. Rather than hiding
@@ -273,7 +278,9 @@ public enum StatuslineService {
 
         guard let tightest else { return nil }
         let remaining = tightest.remainingPercent
-        var text = "\(tightest.provider.shortName) \(windowLabel(for: tightest)) \(remaining)%"
+        // Remaining stays the bare number it always was; Used says so, or "42%" would read as left.
+        let shown = percentDisplay == .used ? "\(tightest.usedPercent)% used" : "\(remaining)%"
+        var text = "\(tightest.provider.shortName) \(windowLabel(for: tightest)) \(shown)"
         if isStale {
             text += "·S"
         }

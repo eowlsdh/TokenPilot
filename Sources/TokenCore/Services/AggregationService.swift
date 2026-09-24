@@ -152,7 +152,13 @@ public final class AggregationService: Sendable {
         }
         return (0..<7).reversed().map { offset in
             let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? now
-            return DailyUsageBar(dayLabel: formatter.withLock { $0.string(from: date) }, tokens: tokensByDay[date] ?? 0)
+            // In the buckets' own zone: formatted in the system zone, `--timezone Asia/Seoul` on a
+            // Los Angeles machine labelled Friday's bucket "Thu".
+            let label = formatter.withLock { formatter in
+                formatter.timeZone = calendar.timeZone
+                return formatter.string(from: date)
+            }
+            return DailyUsageBar(dayLabel: label, tokens: tokensByDay[date] ?? 0)
         }
     }
 

@@ -421,7 +421,9 @@ private enum TokenPilotCLIRunner {
             return 0
         case .success(.statusline(let components, let provider, let colorized, let timeZone)):
             let input = StatuslineService.parseInput(readPipedStandardInput())
-            let events = UsageHistoryStore().loadEvents()
+            // The providers switched on and the Remaining/Used choice, as the menu bar uses them.
+            let settings = TokenPilotSettingsStore().load()
+            let events = UsageHistoryStore().loadEvents().filter { settings.enabledProviders.contains($0.provider) }
             let windows = await loadStatuslineWindows()
             print(
                 StatuslineService.render(
@@ -431,6 +433,7 @@ private enum TokenPilotCLIRunner {
                     components: components,
                     provider: provider,
                     colorized: colorized && colorsAllowed(),
+                    percentDisplay: settings.capacityPercentDisplay,
                     calendar: cliCalendar(for: timeZone)
                 )
             )
@@ -473,8 +476,15 @@ private enum TokenPilotCLIRunner {
     }
 
     /// Calendar for CLI window math: the requested timezone, or the system one when unset.
+    /// Gregorian whatever the system calendar is: dates in CSV/JSON output and `--since` parsing
+    /// are ISO dates, and a Buddhist system calendar wrote `2569-09-25` beside a Gregorian filter.
+    /// The user's week start and zone are kept.
     private static func cliCalendar(for timeZone: TimeZone?) -> Calendar {
-        var calendar = Calendar.current
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = Calendar.current.timeZone
+        calendar.firstWeekday = Calendar.current.firstWeekday
+        calendar.minimumDaysInFirstWeek = Calendar.current.minimumDaysInFirstWeek
+        calendar.locale = Calendar.current.locale
         if let timeZone {
             calendar.timeZone = timeZone
         }
@@ -499,11 +509,14 @@ private enum TokenPilotCLIRunner {
         model: String?,
         sort: SortKind?
     ) async -> Int32 {
-        let allEvents = UsageHistoryStore().loadEvents()
+        // Scoped to the providers switched on, as `summary` is. History recorded while a provider
+        // was on stays for 45 days, so an unscoped export out-totalled the summary for that period.
+        let enabled = TokenPilotSettingsStore().load().enabledProviders
+        let allEvents = UsageHistoryStore().loadEvents().filter { enabled.contains($0.provider) }
         let providerEvents = provider.map { p in allEvents.filter { $0.provider == p } } ?? allEvents
         let modelEvents = model.map { m in providerEvents.filter { $0.model == m } } ?? providerEvents
         let events = project.map { label in modelEvents.filter { $0.projectLabel == label } } ?? modelEvents
-        let snapshots = Provider.allCases.map { provider in
+        let snapshots = Provider.allCases.filter(enabled.contains).map { provider in
             ProviderSnapshot(
                 provider: provider,
                 events: events.filter { $0.provider == provider }
@@ -513,7 +526,7 @@ private enum TokenPilotCLIRunner {
         let exporter = UsageExportService()
         do {
             let assessments = includesCapacity
-                ? await loadLatestCapacityAssessments()
+                ? await loadLatestCapacityAssessments().filter { enabled.contains($0.observation.seriesID.provider) }
                 : []
             let data: Data
             if let sections {

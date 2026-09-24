@@ -111,6 +111,88 @@ final class UsageHistoryPartitionTests: XCTestCase {
         if sameLocalDay { XCTAssertEqual(retained.first?.inputTokens, 150) }
     }
 
+    /// Read mid-write just before UTC midnight and complete just after, one message landed in two
+    /// partitions and counted twice. In Seoul that boundary is 09:00.
+    func testAMessageCrossingUTCMidnightIsKeptOnce() {
+        let store = UsageHistoryStore(defaults: makeTestDefaults("history-midnight"))
+        let utcMidnight = Date(timeIntervalSince1970: (now.timeIntervalSince1970 / 86_400).rounded(.down) * 86_400)
+        var early = event(daysAgo: 0, tokens: 40, id: "message:msg_3")
+        early.timestamp = utcMidnight.addingTimeInterval(-2)
+        var late = event(daysAgo: 0, tokens: 90, id: "message:msg_3")
+        late.timestamp = utcMidnight.addingTimeInterval(3)
+
+        _ = record(store, [early])
+        let retained = record(store, [late])
+        XCTAssertEqual(retained.map(\.inputTokens), [90])
+    }
+
+    /// Storage whose writes fail until told otherwise.
+    private final class FlakyStorage: UsageHistoryStorage, @unchecked Sendable {
+        var failing = true
+        private(set) var files: [String: Data] = [:]
+        private(set) var quarantined: [String] = []
+        func dayKeys() -> [String] { Array(files.keys) }
+        func read(day: String) -> Data? { files[day] }
+        func write(day: String, data: Data) -> Bool {
+            guard !failing else { return false }
+            files[day] = data
+            return true
+        }
+        func remove(day: String) { files.removeValue(forKey: day) }
+        func quarantine(day: String) {
+            quarantined.append(day)
+            files.removeValue(forKey: day)
+        }
+        func seed(day: String, data: Data) { files[day] = data }
+    }
+
+    /// A failed write used to update the cache anyway, so the next refresh saw nothing to do and
+    /// the day was lost at relaunch.
+    func testAFailedWriteIsRetriedOnTheNextRefresh() {
+        let storage = FlakyStorage()
+        let store = UsageHistoryStore(storage: storage)
+        let events = [event(daysAgo: 0.01)]
+        _ = record(store, events)
+        XCTAssertTrue(storage.files.isEmpty)
+
+        storage.failing = false
+        _ = record(store, events)
+        XCTAssertEqual(storage.files.count, 1, "retried once the disk accepts writes")
+    }
+
+    func testTheOldBlobStaysUntilItsDaysAreWritten() throws {
+        let defaults = makeTestDefaults("history-legacy-failing")
+        defaults.set(try JSONEncoder().encode([event(daysAgo: 3)]), forKey: "legacy")
+        let storage = FlakyStorage()
+        _ = UsageHistoryStore(storage: storage, legacyDefaults: defaults, legacyKey: "legacy").loadEvents()
+        XCTAssertNotNil(defaults.data(forKey: "legacy"), "nothing was written, so nothing may be deleted")
+    }
+
+    /// One event this build cannot read — a provider added by a newer version — used to fail the
+    /// whole day, and the next write for that day replaced the rest.
+    func testOneUnreadableEventDoesNotCostItsDay() throws {
+        let storage = FlakyStorage()
+        storage.failing = false
+        let good = try JSONEncoder().encode([event(daysAgo: 0.5)])
+        let goodObject = try XCTUnwrap(try JSONSerialization.jsonObject(with: good) as? [[String: Any]]).first
+        var unknown = try XCTUnwrap(goodObject)
+        unknown["provider"] = "provider-from-the-future"
+        let day = UsageHistoryStore.dayKey(now.addingTimeInterval(-0.5 * 86_400))
+        storage.seed(day: day, data: try JSONSerialization.data(withJSONObject: [try XCTUnwrap(goodObject), unknown]))
+
+        XCTAssertEqual(UsageHistoryStore(storage: storage).loadEvents().count, 1)
+        XCTAssertTrue(storage.quarantined.isEmpty)
+    }
+
+    func testAFileThatIsNotAnArrayIsMovedAsideNotOverwritten() {
+        let storage = FlakyStorage()
+        storage.failing = false
+        let day = UsageHistoryStore.dayKey(now.addingTimeInterval(-86_400))
+        storage.seed(day: day, data: Data("[{\"trunc".utf8))
+        _ = UsageHistoryStore(storage: storage).loadEvents()
+        XCTAssertEqual(storage.quarantined, [day])
+    }
+
     func testFileStorageKeepsOneFilePerDay() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("history-\(UUID().uuidString)")
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }

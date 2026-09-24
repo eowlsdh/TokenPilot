@@ -12,9 +12,13 @@ public protocol UsageHistoryStorage: AnyObject, Sendable {
     /// The day keys (`yyyy-MM-dd`, UTC) that currently hold data.
     func dayKeys() -> [String]
     func read(day: String) -> Data?
-    /// Writes a day's encoded events. Callers only write when the bytes changed.
-    func write(day: String, data: Data)
+    /// Writes a day's encoded events. Callers only write when the bytes changed. False when the
+    /// write failed, so the caller can keep the day marked unsaved and try again.
+    @discardableResult
+    func write(day: String, data: Data) -> Bool
     func remove(day: String)
+    /// Moves an unreadable day aside instead of letting the next write replace it.
+    func quarantine(day: String)
 }
 
 /// Production storage: one file per UTC day under Application Support.
@@ -44,13 +48,24 @@ public final class FileUsageHistoryStorage: UsageHistoryStorage, @unchecked Send
         try? Data(contentsOf: fileURL(day))
     }
 
-    public func write(day: String, data: Data) {
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? data.write(to: fileURL(day), options: .atomic)
+    @discardableResult
+    public func write(day: String, data: Data) -> Bool {
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: fileURL(day), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
     }
 
     public func remove(day: String) {
         try? FileManager.default.removeItem(at: fileURL(day))
+    }
+
+    public func quarantine(day: String) {
+        let aside = directory.appendingPathComponent("\(day).corrupt-\(Int(Date().timeIntervalSince1970))")
+        try? FileManager.default.moveItem(at: fileURL(day), to: aside)
     }
 
     private func fileURL(_ day: String) -> URL {
@@ -81,14 +96,23 @@ public final class DefaultsUsageHistoryStorage: UsageHistoryStorage, @unchecked 
         defaults.data(forKey: prefix + day)
     }
 
-    public func write(day: String, data: Data) {
+    @discardableResult
+    public func write(day: String, data: Data) -> Bool {
         defaults.setIfChanged(data, forKey: prefix + day)
         saveIndex(Set(dayKeys()).union([day]))
+        return true
     }
 
     public func remove(day: String) {
         defaults.removeObject(forKey: prefix + day)
         saveIndex(Set(dayKeys()).subtracting([day]))
+    }
+
+    public func quarantine(day: String) {
+        if let data = defaults.data(forKey: prefix + day) {
+            defaults.setIfChanged(data, forKey: prefix + "corrupt." + day)
+        }
+        remove(day: day)
     }
 
     private func saveIndex(_ days: Set<String>) {
@@ -188,10 +212,12 @@ public final class UsageHistoryStore: @unchecked Sendable {
 
             var loaded = loadDaysUnlocked()
             let incomingByDay = Dictionary(grouping: incoming, by: { Self.dayKey($0.timestamp) })
+            // A day whose write fails keeps its old contents in the cache, so the next refresh sees
+            // the difference again and retries; caching the unsaved merge hid the failure until the
+            // app relaunched and the day was gone.
             for (day, dayIncoming) in incomingByDay {
                 let merged = mergedDay(existing: loaded[day] ?? [], incoming: dayIncoming)
-                if merged != loaded[day] {
-                    saveDayUnlocked(day, merged)
+                if merged != loaded[day], saveDayUnlocked(day, merged) {
                     loaded[day] = merged
                 }
             }
@@ -199,13 +225,22 @@ public final class UsageHistoryStore: @unchecked Sendable {
             // Once-per-day readings are keyed by the *local* day, and a local day spans two UTC
             // partitions anywhere but UTC. The latest reading replaces the earlier one wherever it
             // was stored, or each partition would keep its own copy and the day would count twice.
+            // A message identified by ID can cross a partition the same way: read mid-write at
+            // 23:59:58 UTC and complete at 00:00:03, the two copies land in neighbouring days. Only
+            // the neighbours are searched — an ID cannot move further than that.
             for (day, dayIncoming) in incomingByDay {
                 let dailyKeys = Set(dayIncoming.filter(Self.isDailyKeyed).map(eventKey))
-                guard !dailyKeys.isEmpty else { continue }
+                let identifiedKeys = Set(dayIncoming.filter { $0.sourceEventID != nil }.map(eventKey))
+                guard !dailyKeys.isEmpty || !identifiedKeys.isEmpty else { continue }
+                let neighbours = Self.neighbouringDayKeys(of: day)
                 for (otherDay, events) in loaded where otherDay != day {
-                    let kept = events.filter { !(Self.isDailyKeyed($0) && dailyKeys.contains(eventKey($0))) }
-                    if kept.count != events.count {
-                        saveDayUnlocked(otherDay, kept)
+                    let searchesIDs = !identifiedKeys.isEmpty && neighbours.contains(otherDay)
+                    let kept = events.filter { event in
+                        if Self.isDailyKeyed(event) { return !dailyKeys.contains(eventKey(event)) }
+                        if searchesIDs, event.sourceEventID != nil { return !identifiedKeys.contains(eventKey(event)) }
+                        return true
+                    }
+                    if kept.count != events.count, saveDayUnlocked(otherDay, kept) {
                         loaded[otherDay] = kept
                     }
                 }
@@ -267,8 +302,14 @@ public final class UsageHistoryStore: @unchecked Sendable {
         if let days { return days }
         var loaded: [String: [UsageEvent]] = [:]
         for day in storage.dayKeys() {
-            guard let data = storage.read(day: day),
-                  let events = try? decoder.decode([UsageEvent].self, from: data) else { continue }
+            guard let data = storage.read(day: day) else { continue }
+            // Decoded event by event, so one unreadable event does not cost the day. A file that is
+            // not an array at all (truncated, say) is moved aside: skipped silently, the next write
+            // for that day replaced whatever it still held.
+            guard let events = try? decoder.decode([LossyEvent].self, from: data).compactMap(\.event) else {
+                storage.quarantine(day: day)
+                continue
+            }
             loaded[day] = events
         }
         loaded = importLegacyBlobUnlocked(into: loaded)
@@ -281,20 +322,38 @@ public final class UsageHistoryStore: @unchecked Sendable {
         guard let legacyDefaults, let legacyKey,
               let data = legacyDefaults.data(forKey: legacyKey) else { return loaded }
         var result = loaded
-        if let legacy = try? decoder.decode([UsageEvent].self, from: data) {
-            for (day, events) in Dictionary(grouping: legacy, by: { Self.dayKey($0.timestamp) }) {
-                let merged = mergedDay(existing: result[day] ?? [], incoming: events)
-                saveDayUnlocked(day, merged)
+        // The blob is removed only once every day it held is safely written; otherwise it stays
+        // and the import runs again next launch.
+        guard let legacy = try? decoder.decode([LossyEvent].self, from: data).compactMap(\.event) else { return loaded }
+        var allSaved = true
+        for (day, events) in Dictionary(grouping: legacy, by: { Self.dayKey($0.timestamp) }) {
+            let merged = mergedDay(existing: result[day] ?? [], incoming: events)
+            if saveDayUnlocked(day, merged) {
                 result[day] = merged
+            } else {
+                allSaved = false
             }
         }
-        legacyDefaults.removeObject(forKey: legacyKey)
+        if allSaved {
+            legacyDefaults.removeObject(forKey: legacyKey)
+        }
         return result
     }
 
-    private func saveDayUnlocked(_ day: String, _ events: [UsageEvent]) {
-        guard let data = try? encoder.encode(events) else { return }
-        storage.write(day: day, data: data)
+    @discardableResult
+    private func saveDayUnlocked(_ day: String, _ events: [UsageEvent]) -> Bool {
+        guard let data = try? encoder.encode(events) else { return false }
+        return storage.write(day: day, data: data)
+    }
+
+    /// One stored event that may not decode — written by a newer build with a provider this one
+    /// does not know, say. Such an event is skipped rather than failing its whole day.
+    private struct LossyEvent: Decodable {
+        let event: UsageEvent?
+
+        init(from decoder: Decoder) throws {
+            event = try? UsageEvent(from: decoder)
+        }
     }
 
     /// Existing events first, then incoming, keeping the latest reading per key.
@@ -373,6 +432,11 @@ public final class UsageHistoryStore: @unchecked Sendable {
         utcDayFormatter.withLock { $0.string(from: date) }
     }
 
+    static func neighbouringDayKeys(of day: String) -> Set<String> {
+        guard let date = utcDayFormatter.withLock({ $0.date(from: day) }) else { return [] }
+        return [dayKey(date.addingTimeInterval(-86_400)), dayKey(date.addingTimeInterval(86_400))]
+    }
+
     static func isDayKey(_ value: String) -> Bool {
         value.count == 10 && utcDayFormatter.withLock { $0.date(from: value) } != nil
     }
@@ -413,7 +477,9 @@ public final class UsageHistoryStore: @unchecked Sendable {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        // Autoupdating: `.current` froze the zone at first use, so after travelling, readings from
+        // two different local days could share one key and the new day replaced the old day's total.
+        formatter.timeZone = TimeZone.autoupdatingCurrent
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
     }()

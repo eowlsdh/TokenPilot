@@ -1137,8 +1137,10 @@ final class TokenPilotViewModel: ObservableObject {
     /// Off the main actor and best effort: the status line is a convenience, and
     /// a failed write only means the CLI falls back to the full evidence store.
     private func writeStatuslineSnapshot(assessments: [CapacityAssessment], observedAt: Date) {
+        // Written even when empty: skipping the write left the last non-empty snapshot in place,
+        // and the status line kept printing a provider that had since been turned off — for a
+        // month on one machine, a monthly window at 100% that had long since reset.
         let windows = StatuslineService.windows(from: assessments)
-        guard !windows.isEmpty else { return }
         let snapshot = StatuslineSnapshot(generatedAt: observedAt, windows: windows)
         let store = statuslineSnapshotStore
         Task.detached(priority: .utility) {

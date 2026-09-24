@@ -217,6 +217,19 @@ final class StatuslineRenderTests: XCTestCase {
         XCTAssertEqual(line, "Cl 5h 60%·S")
     }
 
+    func testUsedModeSaysUsed() throws {
+        let now = StatuslineFixtures.now()
+        let line = StatuslineService.render(
+            events: [],
+            windows: StatuslineService.windows(from: [try StatuslineFixtures.assessment(usedPercent: 20)]),
+            components: [.capacity],
+            percentDisplay: .used,
+            now: now,
+            calendar: StatuslineFixtures.calendar
+        )
+        XCTAssertEqual(line, "Cl 5h 20% used")
+    }
+
     func testFreshEvidenceWinsOverStaleEvidence() throws {
         let now = StatuslineFixtures.now()
         let stale = try StatuslineFixtures.assessment(
@@ -461,6 +474,30 @@ final class StatuslineCapacityWindowTests: XCTestCase {
             comparability: .incomparable
         )
         XCTAssertTrue(StatuslineService.windows(from: [manual, incomparable]).isEmpty)
+    }
+
+    /// Seen on a real machine: an opencode monthly window last read at 100% used, whose reset had
+    /// passed a month earlier, printed "OC 30d 0%·S" in red on every prompt.
+    func testAWindowPastItsResetIsNotShown() {
+        let now = StatuslineFixtures.now()
+        let reset = StatuslineCapacityWindow(
+            provider: .opencode,
+            windowID: "opencode-go-monthly",
+            durationMinutes: 43_200,
+            usedPercent: 100,
+            resetAt: now.addingTimeInterval(-86_400),
+            observedAt: now.addingTimeInterval(-30 * 86_400),
+            maximumAgeSeconds: 3_600
+        )
+        let line = StatuslineService.render(
+            events: [],
+            windows: [reset],
+            components: [.capacity],
+            now: now,
+            calendar: StatuslineFixtures.calendar
+        )
+        XCTAssertFalse(line.contains("OC"), line)
+        XCTAssertEqual(line, "TokenPilot: no local usage yet")
     }
 
     func testFutureObservationIsNotTreatedAsFresh() {

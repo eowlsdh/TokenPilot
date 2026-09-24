@@ -650,6 +650,22 @@ final class ModelBreakdownTests: XCTestCase {
 }
 
 final class SevenDayTrendTests: XCTestCase {
+    /// Friday's bucket in Kiritimati (UTC+14) starts at Thursday 10:00 UTC — still Thursday in
+    /// UTC, Seoul or Los Angeles. The label must name the bucket's own day, not the day on the
+    /// machine running it.
+    func testDayLabelsUseTheCallersTimeZone() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Pacific/Kiritimati"))
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-25T03:00:00Z"))
+        let usage = AggregationService().aggregate(
+            snapshots: [ProviderSnapshot(provider: .opencode, dataSource: .localLog)],
+            period: .last7Days,
+            now: now,
+            calendar: calendar
+        )
+        XCTAssertEqual(usage.sevenDayBars.last?.dayLabel, "Fri")
+    }
+
     func testSevenDayBarsAlwaysCoverSevenDaysEndingToday() {
         let now = Date()
         var snapshot = ProviderSnapshot(provider: .opencode, dataSource: .localLog)
