@@ -520,12 +520,20 @@ public struct CodexAppServerRateLimitProcessClient: CodexAppServerRateLimitClien
 
 // MARK: - Claude Statusline Adapter
 
+/// One usage-bearing line of a Claude Code session, as the incremental reader keeps it.
+struct ClaudeJSONLLine: Sendable {
+    let dedupeKeys: [String]
+    let event: UsageEvent
+}
+
 public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
     public let provider: Provider = .claude
     private let overrideFileURL: URL?
     private let fallbackProjectRoots: [URL]?
     private let staleThreshold: TimeInterval
     private let makeUsageProbe: (@Sendable () -> ClaudeOAuthUsageProbe)?
+    /// Session files are read once and then only for what was appended — see `IncrementalJSONLReader`.
+    private let jsonlReader = IncrementalJSONLReader<ClaudeJSONLLine>(requiredFragment: "\"usage\"")
 
     public init(fileURL: URL? = nil, fallbackProjectRoots: [URL]? = nil, staleThreshold: TimeInterval = 300, makeUsageProbe: (@Sendable () -> ClaudeOAuthUsageProbe)? = nil) {
         self.overrideFileURL = fileURL
@@ -682,11 +690,16 @@ public final class ClaudeStatuslineAdapter: ProviderAdapter, Sendable {
         var events: [UsageEvent] = []
         var eventsByCanonicalKey: [String: UsageEvent] = [:]
         var canonicalKeyByAlias: [String: String] = [:]
+        let retentionStart = Calendar.current.date(byAdding: .day, value: -31, to: Calendar.current.startOfDay(for: Date())) ?? Date()
+        jsonlReader.retainOnly(Set(files))
         for file in files where !isForbiddenCredentialPath(file) {
-            guard let content = try? tokenPilotBoundedTextContents(of: file) else { continue }
             let fileDate = fileModificationDate(file) ?? Date()
-            for line in content.components(separatedBy: .newlines) {
-                guard let json = jsonObject(fromLine: line), let parsed = parseClaudeJSONLEvent(json, fallbackTimestamp: fileDate) else { continue }
+            let lines = jsonlReader.parsed(file, keep: { $0.event.timestamp >= retentionStart }) { line in
+                guard let json = jsonObject(fromLine: line),
+                      let parsed = parseClaudeJSONLEvent(json, fallbackTimestamp: fileDate) else { return nil }
+                return ClaudeJSONLLine(dedupeKeys: parsed.dedupeKeys, event: parsed.event)
+            }
+            for parsed in lines {
                 let aliases = parsed.dedupeKeys
                 if aliases.isEmpty {
                     events.append(parsed.event)

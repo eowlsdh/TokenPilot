@@ -3,8 +3,13 @@ import SQLite3
 
 /// Minimal read-only SQLite reader used by local-store adapters.
 ///
-/// Opened with `SQLITE_OPEN_READONLY` plus immutable/URI mode so a live agent writing to its own
-/// database is never blocked and its WAL is never modified by TokenPilot.
+/// Always `SQLITE_OPEN_READONLY`, so TokenPilot never writes a store it does not own. A database in
+/// WAL mode is read with `mode=ro`, which sees the WAL; anything else is read `immutable=1`, which
+/// takes no locks and creates no sidecars. WAL readers never block a writer.
+///
+/// `immutable=1` on a WAL database — opencode's is one — ignores the WAL entirely, so every message
+/// written since the last checkpoint (up to about a thousand pages) was invisible: today's opencode
+/// tokens lagged during active use, and a busy session could read as "no activity in 15 minutes".
 enum TokenPilotSQLite {
     static func query(
         databasePath: String,
@@ -13,20 +18,30 @@ enum TokenPilotSQLite {
         columnCount: Int
     ) -> [[String?]] {
         guard FileManager.default.fileExists(atPath: databasePath) else { return [] }
+        let encoded = databasePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? databasePath
+        let usesWAL = FileManager.default.fileExists(atPath: databasePath + "-wal")
+            && FileManager.default.fileExists(atPath: databasePath + "-shm")
+        if usesWAL, let rows = run(uri: "file:\(encoded)?mode=ro", sql: sql, maxRows: maxRows, columnCount: columnCount) {
+            return rows
+        }
+        return run(uri: "file:\(encoded)?immutable=1", sql: sql, maxRows: maxRows, columnCount: columnCount) ?? []
+    }
 
+    /// Nil when the database could not be opened or the statement not prepared, so the caller can
+    /// fall back to the immutable reading rather than report an empty store.
+    private static func run(uri: String, sql: String, maxRows: Int, columnCount: Int) -> [[String?]]? {
         var handle: OpaquePointer?
-        let uri = "file:\(databasePath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? databasePath)?immutable=1"
         let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI
         guard sqlite3_open_v2(uri, &handle, flags, nil) == SQLITE_OK, let handle else {
             if let handle { sqlite3_close_v2(handle) }
-            return []
+            return nil
         }
         defer { sqlite3_close_v2(handle) }
 
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK, let statement else {
             if let statement { sqlite3_finalize(statement) }
-            return []
+            return nil
         }
         defer { sqlite3_finalize(statement) }
 
