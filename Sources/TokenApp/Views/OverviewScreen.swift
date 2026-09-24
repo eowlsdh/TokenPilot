@@ -35,6 +35,7 @@ struct TokenPilotRootView: View {
         }
         .overlay { screenShortcutButtons }
         .environment(\.tokenPilotLanguage, model.settings.localization.language)
+        .environment(\.tokenPilotPercentDisplay, model.settings.capacityPercentDisplay)
         .environment(\.locale, Locale(identifier: model.settings.localization.language.localeIdentifier ?? Locale.current.identifier))
         .padding(TokenPilotDesign.Spacing.xl)
         .frame(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
@@ -623,6 +624,7 @@ struct BudgetGuardrailCard: View {
 struct CapacityDisplayItem: Identifiable {
     let assessment: CapacityAssessment
     let presentation: CapacityPresentation
+    var percentDisplay: CapacityPercentDisplay = .remaining
 
     var id: String { assessment.transitionKey }
     var provider: Provider { assessment.observation.seriesID.provider }
@@ -634,8 +636,13 @@ struct CapacityDisplayItem: Identifiable {
     var resetAt: Date? { assessment.observation.resetAt }
     var observedAt: Date { assessment.observation.observedAt }
 
+    /// The percentage as the user chose to read it. Risk colour and ordering keep using remaining.
+    var shownPercent: Int? {
+        remainingPercent.map { percentDisplay.shown(remaining: $0, used: usedPercent) }
+    }
+
     var progressPercent: Int? {
-        valueKind == .percent ? remainingPercent : nil
+        valueKind == .percent ? shownPercent : nil
     }
 
     var paceProjection: CapacityPaceProjection? {
@@ -735,8 +742,11 @@ struct CapacityDisplayItem: Identifiable {
     func primaryValue(language: TokenPilotLanguage) -> String {
         switch valueKind {
         case .percent:
-            guard let remainingPercent else { return "—" }
-            return "\(remainingPercent)%"
+            // Said in words: a bare "85%" did not say whether it was what is left or what is used,
+            // and provider usage pages count the other way.
+            guard let shownPercent else { return "—" }
+            let format = percentDisplay == .used ? "%d%% used" : "%d%% left"
+            return String(format: localized(format, language: language), shownPercent)
         case .currency:
             guard let amount = presentation.data["amount"],
                   let currency = presentation.data["currency"] else {
@@ -906,10 +916,11 @@ struct CapacityDisplayItem: Identifiable {
 
 private func capacityDisplayItems(
     assessments: [CapacityAssessment],
-    presentations: [CapacityPresentation]
+    presentations: [CapacityPresentation],
+    percentDisplay: CapacityPercentDisplay
 ) -> [CapacityDisplayItem] {
     Array(zip(assessments, presentations)).map {
-        CapacityDisplayItem(assessment: $0.0, presentation: $0.1)
+        CapacityDisplayItem(assessment: $0.0, presentation: $0.1, percentDisplay: percentDisplay)
     }
 }
 
@@ -936,6 +947,7 @@ private func capacityDisplayRank(_ item: CapacityDisplayItem) -> Int {
 
 struct UsageSummaryCard: View {
     @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotPercentDisplay) private var percentDisplay
     @ObservedObject var model: TokenPilotViewModel
     var body: some View {
         if let primaryItem {
@@ -948,7 +960,8 @@ struct UsageSummaryCard: View {
     private var items: [CapacityDisplayItem] {
         capacityDisplayItems(
             assessments: model.capacityAssessments,
-            presentations: model.capacityPresentations
+            presentations: model.capacityPresentations,
+            percentDisplay: percentDisplay
         )
     }
 
@@ -1159,6 +1172,7 @@ struct UsageSummaryCard: View {
 
 struct ProviderOverviewList: View {
     @Environment(\.tokenPilotLanguage) private var language
+    @Environment(\.tokenPilotPercentDisplay) private var percentDisplay
     let snapshots: [ProviderSnapshot]
     let assessments: [CapacityAssessment]
     let presentations: [CapacityPresentation]
@@ -1200,7 +1214,7 @@ struct ProviderOverviewList: View {
     }
 
     private var items: [CapacityDisplayItem] {
-        capacityDisplayItems(assessments: assessments, presentations: presentations)
+        capacityDisplayItems(assessments: assessments, presentations: presentations, percentDisplay: percentDisplay)
     }
 
     private var providerOrder: [Provider] {

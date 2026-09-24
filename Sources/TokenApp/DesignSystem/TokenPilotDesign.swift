@@ -694,6 +694,9 @@ func localized(_ key: String, language: TokenPilotLanguage) -> String {
 struct TokenPilotLanguageEnvironmentKey: EnvironmentKey {
     static let defaultValue: TokenPilotLanguage = .system
 }
+struct TokenPilotPercentDisplayKey: EnvironmentKey {
+    static let defaultValue: CapacityPercentDisplay = .remaining
+}
 private struct TokenPilotReduceMotionOverrideKey: EnvironmentKey {
     static let defaultValue: Bool? = nil
 }
@@ -715,6 +718,12 @@ private struct TokenPilotSemanticPaletteKey: EnvironmentKey {
 
 
 extension EnvironmentValues {
+    /// Whether limits read as remaining or used — `AppSettings.capacityPercentDisplay`.
+    var tokenPilotPercentDisplay: CapacityPercentDisplay {
+        get { self[TokenPilotPercentDisplayKey.self] }
+        set { self[TokenPilotPercentDisplayKey.self] = newValue }
+    }
+
     var tokenPilotLanguage: TokenPilotLanguage {
         get { self[TokenPilotLanguageEnvironmentKey.self] }
         set { self[TokenPilotLanguageEnvironmentKey.self] = newValue }

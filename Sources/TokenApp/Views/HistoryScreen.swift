@@ -251,7 +251,7 @@ struct CurrentCapacitySignalCard: View {
 
     private var items: [CapacityDisplayItem] {
         Array(zip(assessments, presentations))
-            .map { CapacityDisplayItem(assessment: $0.0, presentation: $0.1) }
+            .map { CapacityDisplayItem(assessment: $0.0, presentation: $0.1, percentDisplay: model.settings.capacityPercentDisplay) }
             .sorted {
                 if $0.observedAt != $1.observedAt {
                     return $0.observedAt > $1.observedAt

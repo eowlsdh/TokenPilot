@@ -344,6 +344,18 @@ struct SettingsScreen: View {
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
 
+                        // Provider usage pages count what is used; this app counted what is left.
+                        // Both are right, and a bare number never said which one it was.
+                        Picker(model.t("Show limits as"), selection: $model.settings.capacityPercentDisplay) {
+                            Text(model.t("Remaining")).tag(CapacityPercentDisplay.remaining)
+                            Text(model.t("Used")).tag(CapacityPercentDisplay.used)
+                        }
+                        .pickerStyle(.segmented)
+                        .accessibilityLabel(model.t("Show limits as"))
+                        Text(model.t("Applies to the menu bar and every limit in the popover. \"Used\" matches provider usage pages; colours still warn as a limit runs out."))
+                            .font(TokenPilotDesign.Typography.explanation)
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+
                         Picker(model.t("Menu bar layout"), selection: menuBarStyleBinding) {
                             Text(model.t("Detailed")).tag(MenuBarDisplayStyle.detailed)
                             Text(model.t("Compact")).tag(MenuBarDisplayStyle.compact)
@@ -356,7 +368,7 @@ struct SettingsScreen: View {
                         if model.settings.menuBarDisplayStyle != .iconOnly &&
                             model.settings.menuBarDisplayStyle != .providerMetrics {
                             Picker(model.t("Menu bar metric"), selection: menuBarPrimaryMetricBinding) {
-                                Text(model.t("Remaining percent")).tag(MenuBarPrimaryMetric.remainingPercent)
+                                Text(model.t("Limit percent")).tag(MenuBarPrimaryMetric.remainingPercent)
                                 Text(model.t("Today tokens")).tag(MenuBarPrimaryMetric.todayTokens)
                                 Text(model.t("Today cost")).tag(MenuBarPrimaryMetric.todayCost)
                             }

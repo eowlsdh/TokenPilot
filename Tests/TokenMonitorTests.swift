@@ -2046,8 +2046,10 @@ final class TokenMonitorTests: XCTestCase {
         let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
 
         XCTAssertTrue(overviewSource.contains("var remainingPercent: Int? { Int(presentation.data[\"remainingPercent\"] ?? \"\") }"))
-        XCTAssertTrue(overviewSource.contains("var progressPercent: Int? {\n        valueKind == .percent ? remainingPercent : nil\n    }"))
-        XCTAssertTrue(overviewSource.contains("return \"\\(remainingPercent)%\""))
+        // Remaining is still the default, and the number now says which it is.
+        XCTAssertTrue(overviewSource.contains("var percentDisplay: CapacityPercentDisplay = .remaining"))
+        XCTAssertTrue(overviewSource.contains("valueKind == .percent ? shownPercent : nil"))
+        XCTAssertTrue(overviewSource.contains("let format = percentDisplay == .used ? \"%d%% used\" : \"%d%% left\""))
         XCTAssertTrue(overviewSource.contains("value: item.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("value: primary.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("percent: progressPercent"))

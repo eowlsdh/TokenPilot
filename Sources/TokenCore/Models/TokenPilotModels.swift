@@ -167,6 +167,23 @@ public enum WeekStartDay: Int, Codable, CaseIterable, Sendable {
 /// Benchmarked against TokenBar's menu-bar title options (remaining quota vs
 /// today's tokens vs cost). `remainingPercent` is the default; the other two
 /// fall back to remaining percent when the matching local value is absent.
+/// Whether a limit is shown as what is left or what has been used.
+///
+/// The app showed remaining and every provider dashboard shows used, so "85%" in one place and
+/// "15%" in the other described the same window — and a bare number never said which it was.
+public enum CapacityPercentDisplay: String, Codable, CaseIterable, Sendable {
+    case remaining = "Remaining"
+    case used = "Used"
+
+    /// The number to show. Risk and ordering keep using the remaining value either way.
+    public func shown(remaining: Int, used: Int?) -> Int {
+        switch self {
+        case .remaining: return remaining
+        case .used: return used ?? min(max(100 - remaining, 0), 100)
+        }
+    }
+}
+
 public enum MenuBarPrimaryMetric: String, Codable, CaseIterable, Sendable {
     case remainingPercent = "Remaining percent"
     case todayTokens = "Today tokens"
@@ -1387,6 +1404,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var menuBarShowsSecondaryProvider: Bool
     public var menuBarTrendStyle: MenuBarTrendStyle
     public var menuBarWidthLimit: MenuBarWidthLimit
+    public var capacityPercentDisplay: CapacityPercentDisplay
     public var claudeStatusFilePath: String
     public var claudeStatusFileBookmarkData: Data?
     public var geminiTelemetryLogPath: String
@@ -1468,6 +1486,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         menuBarShowsSecondaryProvider: Bool = false,
         menuBarTrendStyle: MenuBarTrendStyle = .sparkline,
         menuBarWidthLimit: MenuBarWidthLimit = .standard,
+        capacityPercentDisplay: CapacityPercentDisplay = .remaining,
         launchAtLogin: Bool = false,
         refreshIntervalSeconds: Int = 60,
         menuBarHotkeyEnabled: Bool = false,
@@ -1503,6 +1522,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
         self.menuBarTrendStyle = menuBarTrendStyle
         self.menuBarWidthLimit = menuBarWidthLimit
+        self.capacityPercentDisplay = capacityPercentDisplay
         self.claudeStatusFilePath = claudeStatusFilePath
         self.claudeStatusFileBookmarkData = claudeStatusFileBookmarkData
         self.geminiTelemetryLogPath = geminiTelemetryLogPath
@@ -1606,6 +1626,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case menuBarShowsSecondaryProvider
         case menuBarTrendStyle
         case menuBarWidthLimit
+        case capacityPercentDisplay
         case claudeStatusFilePath
         case claudeStatusFileBookmarkData
         case geminiTelemetryLogPath
@@ -1695,6 +1716,7 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
             menuBarTrendStyle: Self.decodeChoice(from: container, forKey: .menuBarTrendStyle, default: .sparkline),
             menuBarWidthLimit: Self.decodeChoice(from: container, forKey: .menuBarWidthLimit, default: .standard),
+            capacityPercentDisplay: Self.decodeChoice(from: container, forKey: .capacityPercentDisplay, default: .remaining),
             launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
             refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
             menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,

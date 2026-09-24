@@ -1286,7 +1286,7 @@ private final class ProviderMetricsMenuBarNSView: NSView {
                     height: Self.valueRowHeight
                 ),
                 font: Self.valueFont,
-                color: valueColor(segment.displayValue)
+                color: valueColor(segment)
             )
             let trendRect = NSRect(x: x, y: Self.viewHeight - 3, width: width, height: 3)
             switch trendStyle {
@@ -1295,12 +1295,12 @@ private final class ProviderMetricsMenuBarNSView: NSView {
                     drawSparkline(
                         segment.sparklineValues,
                         in: trendRect,
-                        color: valueColor(segment.displayValue)
+                        color: valueColor(segment)
                     )
                 }
             case .bar:
                 if let fraction = MenuBarGaugeService.remainingFraction(displayValue: segment.displayValue) {
-                    drawBar(fraction: fraction, in: trendRect, color: valueColor(segment.displayValue))
+                    drawBar(fraction: fraction, in: trendRect, color: valueColor(segment))
                 }
             case .off:
                 break
@@ -1369,8 +1369,11 @@ private final class ProviderMetricsMenuBarNSView: NSView {
     /// Menu bar value color: the app's shared risk thresholds and the app's own
     /// palette, so the block agrees with the popover both on when to warn and on
     /// which hue means "healthy", and follows Increase Contrast like everything else.
-    private func valueColor(_ value: String) -> NSColor {
-        guard let remaining = MenuBarGaugeService.remainingPercent(displayValue: value) else {
+    /// Colour comes from the true remaining value. Parsing it back out of the text would read a
+    /// window shown as "90%" *used* as 90% *remaining* — green for a nearly exhausted window.
+    private func valueColor(_ segment: MenuBarProviderMetricSegment) -> NSColor {
+        guard let remaining = segment.remainingPercent
+            ?? MenuBarGaugeService.remainingPercent(displayValue: segment.displayValue) else {
             return .secondaryLabelColor
         }
         return TokenPilotDesign.riskNSColor(CapacityRisk.forRemainingPercent(remaining))

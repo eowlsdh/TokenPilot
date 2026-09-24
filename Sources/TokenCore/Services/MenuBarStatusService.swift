@@ -23,6 +23,10 @@ public struct MenuBarProviderMetricSegment: Equatable, Sendable {
     public let provider: Provider?
     public let providerShortLabel: String
     public let displayValue: String
+    /// The true remaining percentage behind a percent `displayValue`. Colour is decided from this,
+    /// not parsed back out of the text: with limits shown as *used*, "90%" parsed as remaining
+    /// would have painted a nearly exhausted window green.
+    public let remainingPercent: Int?
     public let sparklineValues: [Double]
     public let accessibilityLabel: String
 
@@ -30,12 +34,14 @@ public struct MenuBarProviderMetricSegment: Equatable, Sendable {
         provider: Provider?,
         providerShortLabel: String,
         displayValue: String,
+        remainingPercent: Int? = nil,
         sparklineValues: [Double] = [],
         accessibilityLabel: String
     ) {
         self.provider = provider
         self.providerShortLabel = providerShortLabel
         self.displayValue = displayValue
+        self.remainingPercent = remainingPercent
         self.sparklineValues = sparklineValues
         self.accessibilityLabel = accessibilityLabel
     }
@@ -378,7 +384,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             }
             let segments = percentRenderCandidates(for: candidate, in: candidates)
                 .prefix(max(maximumWindows, 1))
-                .map { percentSegment(for: $0) + (showsResetCountdown ? resetSuffix(for: $0, now: now) : "") }
+                .map { percentSegment(for: $0, display: settings.capacityPercentDisplay) + (showsResetCountdown ? resetSuffix(for: $0, now: now) : "") }
             guard !segments.isEmpty else { return "\(candidate.snapshot.provider.shortName) · \(modeLabel)" }
             return segments.joined(separator: " · ")
         case .money:
@@ -548,7 +554,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: "GROK",
-                    displayValue: isStale ? "\(remaining)%·ES" : "\(remaining)%·E",
+                    displayValue: isStale ? "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·ES" : "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·E",
+                    remainingPercent: remaining,
                     accessibilityLabel: accessibilityParts.joined(separator: ", ")
                 )
             }
@@ -571,7 +578,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: "GROK",
-                    displayValue: isStale ? "\(remaining)%·MS" : "\(remaining)%·M",
+                    displayValue: isStale ? "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·MS" : "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·M",
+                    remainingPercent: remaining,
                     accessibilityLabel: accessibilityParts.joined(separator: ", ")
                 )
             }
@@ -593,7 +601,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: "GROK CTX",
-                    displayValue: isStale ? "\(remaining)%·S" : "\(remaining)%",
+                    displayValue: isStale ? "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·S" : "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%",
+                    remainingPercent: remaining,
                     accessibilityLabel: accessibilityParts.joined(separator: ", ")
                 )
             }
@@ -603,10 +612,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 return MenuBarProviderMetricSegment(
                     provider: provider,
                     providerShortLabel: providerMetricLabel(provider),
-                    displayValue: "\(remaining)%·\(candidate.freshness == "stale" ? "ES" : "E")",
+                    displayValue: "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%·\(candidate.freshness == "stale" ? "ES" : "E")",
+                    remainingPercent: remaining,
                     accessibilityLabel: [
                         localized(provider.displayName, language: settings.localization.language),
-                        localizedRemaining(remaining, language: settings.localization.language),
+                        localizedRemaining(remaining, used: candidate.usedPercent, display: settings.capacityPercentDisplay, language: settings.localization.language),
                         localizedStability(candidate.stability, language: settings.localization.language),
                         localized("Unofficial", language: settings.localization.language),
                         localized("Monthly", language: settings.localization.language),
@@ -663,7 +673,8 @@ public final class MenuBarStatusService: @unchecked Sendable {
             return MenuBarProviderMetricSegment(
                 provider: provider,
                 providerShortLabel: providerMetricLabel(provider),
-                displayValue: "\(remaining)%",
+                displayValue: "\(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%",
+                remainingPercent: remaining,
                 sparklineValues: MenuBarSparklineService.normalizedValues(
                     samples: limitSamples,
                     provider: provider,
@@ -671,7 +682,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
                 ),
                 accessibilityLabel: [
                     localized(provider.displayName, language: settings.localization.language),
-                    localizedRemaining(remaining, language: settings.localization.language),
+                    localizedRemaining(remaining, used: candidate.usedPercent, display: settings.capacityPercentDisplay, language: settings.localization.language),
                     localizedAuthority(candidate.authority, language: settings.localization.language),
                     localizedStability(candidate.stability, language: settings.localization.language),
                     localizedFreshness(candidate.freshness, language: settings.localization.language)
@@ -785,18 +796,18 @@ public final class MenuBarStatusService: @unchecked Sendable {
                candidate.authority == "experimental-oauth-weekly",
                let remaining = candidate.remainingPercent {
                 let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
-                return "\(provider.shortName) \(remaining)%\(suffix)"
+                return "\(provider.shortName) \(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%\(suffix)"
             }
             if let candidate,
                candidate.authority == "user-entered",
                let remaining = candidate.remainingPercent {
                 let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
-                return "\(provider.shortName) \(remaining)%\(suffix)"
+                return "\(provider.shortName) \(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%\(suffix)"
             }
             if let candidate,
                candidate.authority == "local-context",
                let remaining = candidate.remainingPercent {
-                return "\(provider.shortName) \(remaining)%"
+                return "\(provider.shortName) \(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%"
             }
             return xAIManagementSetupConfigured(settings) ? "xAI Setup" : "xAI Unavailable"
         }
@@ -817,7 +828,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
             let suffix = candidate.suffix.isEmpty || !showsWindowSuffix ? "" : " \(candidate.suffix)"
-            return "\(provider.shortName) \(remaining)%\(suffix)"
+            return "\(provider.shortName) \(settings.capacityPercentDisplay.shown(remaining: remaining, used: candidate.usedPercent))%\(suffix)"
         }
         if candidate.kind == .money, let balance = candidate.snapshot.balance {
             return "\(provider.shortName) \(DeepSeekBalanceFormatter.display(balance))"
@@ -942,7 +953,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
             visualTitle
         ]
         if let remaining = candidate.remainingPercent {
-            parts.append(localizedRemaining(remaining, language: language))
+            parts.append(localizedRemaining(remaining, used: candidate.usedPercent, display: settings.capacityPercentDisplay, language: language))
         }
         if let resetAt = candidate.resetAt, resetAt > now {
             parts.append(localizedReset(until: resetAt, now: now, language: language))
@@ -1002,7 +1013,7 @@ public final class MenuBarStatusService: @unchecked Sendable {
         guard let candidate else { return "\(name), \(localized("Unavailable", language: language))" }
         if candidate.kind == .percent, candidate.authority == "provider-reported",
            let remaining = candidate.remainingPercent {
-            return "\(name), \(localizedRemaining(remaining, language: language)), \(localizedAuthority(candidate.authority, language: language))"
+            return "\(name), \(localizedRemaining(remaining, used: candidate.usedPercent, display: settings.capacityPercentDisplay, language: language)), \(localizedAuthority(candidate.authority, language: language))"
         }
         if candidate.kind == .money, let balance = candidate.snapshot.balance {
             return "\(name), \(localized("Balance", language: language)) \(DeepSeekBalanceFormatter.display(balance)), \(localizedAuthority(candidate.authority, language: language))"
@@ -1061,9 +1072,14 @@ public final class MenuBarStatusService: @unchecked Sendable {
             !settings.xAI.teamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func localizedRemaining(_ remaining: Int, language: TokenPilotLanguage) -> String {
-        let format = localized("Capacity remaining %d%%", language: language)
-        return String(format: format, remaining)
+    /// What VoiceOver reads for the number the menu bar shows — remaining or used, as displayed.
+    private func localizedRemaining(_ remaining: Int, used: Int?, display: CapacityPercentDisplay, language: TokenPilotLanguage) -> String {
+        switch display {
+        case .remaining:
+            return String(format: localized("Capacity remaining %d%%", language: language), remaining)
+        case .used:
+            return String(format: localized("Capacity used %d%%", language: language), display.shown(remaining: remaining, used: used))
+        }
     }
 
     private func localizedReset(until resetAt: Date, now: Date, language: TokenPilotLanguage) -> String {
@@ -1677,11 +1693,11 @@ public final class MenuBarStatusService: @unchecked Sendable {
             }
     }
 
-    private func percentSegment(for candidate: Candidate) -> String {
+    private func percentSegment(for candidate: Candidate, display: CapacityPercentDisplay) -> String {
         let label = candidate.stability == "bridge" ? "BRIDGE" : durationLabel(minutes: candidate.durationMinutes)
         let remaining = candidate.remainingPercent ?? 0
         let suffix = candidate.suffix.isEmpty || candidate.suffix == label ? "" : " \(candidate.suffix)"
-        return "\(label) \(remaining)%\(suffix)"
+        return "\(label) \(display.shown(remaining: remaining, used: candidate.usedPercent))%\(suffix)"
     }
 
     /// Compact reset countdown appended to a percent segment, e.g. "·2h" or "·45m".
