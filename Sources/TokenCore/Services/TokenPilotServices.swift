@@ -2101,7 +2101,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw TelegramError.requestFailed
+            throw TelegramError.rejected(statusCode: (response as? HTTPURLResponse)?.statusCode)
         }
     }
 
@@ -2112,7 +2112,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         request.httpMethod = "POST"
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw TelegramError.requestFailed
+            throw TelegramError.rejected(statusCode: (response as? HTTPURLResponse)?.statusCode)
         }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let result = object["result"] as? [[String: Any]] else {
@@ -2135,6 +2135,9 @@ public enum TelegramError: LocalizedError, Equatable {
     case invalidURL
     case requestFailed
     case noChatFound
+    /// Telegram answered, and said no. Kept apart from `requestFailed` so a revoked token or a wrong
+    /// chat is not reported as the same "request failed" as being offline.
+    case rejected(statusCode: Int?)
 
     public var errorDescription: String? {
         switch self {
@@ -2142,6 +2145,12 @@ public enum TelegramError: LocalizedError, Equatable {
         case .invalidURL: return "Telegram URL is invalid."
         case .requestFailed: return "Telegram request failed."
         case .noChatFound: return "No chat ID found. Send a message to the bot first."
+        case .rejected(let status) where status == 401 || status == 404:
+            return "Telegram rejected the bot token. It was revoked or mistyped — get a new one from @BotFather and save it again."
+        case .rejected(let status) where status == 400 || status == 403:
+            return "Telegram rejected the chat ID. The bot was removed from the chat, or has never received a message there."
+        case .rejected:
+            return "Telegram request failed."
         }
     }
 }
@@ -2174,7 +2183,8 @@ public final class DiscordNotificationService: @unchecked Sendable {
         let request = try Self.makeRequest(webhookURL: webhookURL, content: content)
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw DiscordError.requestFailed
+            let status = (response as? HTTPURLResponse)?.statusCode
+            throw status == 401 || status == 404 ? DiscordError.webhookGone : DiscordError.requestFailed
         }
     }
 
@@ -2192,12 +2202,18 @@ public enum DiscordError: LocalizedError, Equatable {
     case notConfigured
     case invalidURL
     case requestFailed
+    /// Discord answered 401/404: the webhook was deleted or regenerated server-side. Reported as
+    /// "request failed" it was indistinguishable from being offline.
+    case webhookGone
 
     public var errorDescription: String? {
         switch self {
         case .notConfigured: return "Discord webhook is not configured."
-        case .invalidURL: return "Discord webhook URL is invalid."
+        // Pasting the channel link (discord.com/channels/…) instead of the webhook is the common
+        // mistake, and "invalid" alone named no rule the user could check.
+        case .invalidURL: return "That is not a Discord webhook URL. It must start with https://discord.com/api/webhooks/ — copy it from Server Settings → Integrations → Webhooks."
         case .requestFailed: return "Discord request failed."
+        case .webhookGone: return "Discord no longer recognises this webhook — it was deleted or regenerated. Create a new one and save it again."
         }
     }
 }

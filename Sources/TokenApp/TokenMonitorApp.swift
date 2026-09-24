@@ -787,6 +787,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        model.flushPendingSettings()
         model.shutdownExperimentalOAuthWeekly()
         unregisterGlobalHotkey()
         if let wakeObservation {
@@ -1126,6 +1127,7 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
         )
         guard handlerStatus == noErr else {
             hotKeyEventHandlerRef = nil
+            reportHotkeyUnavailable()
             return
         }
 
@@ -1144,7 +1146,16 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
             }
             hotKeyEventHandlerRef = nil
             hotKeyRef = nil
+            reportHotkeyUnavailable()
         }
+    }
+
+    /// Another app (Raycast, Alfred, a text expander) already owns ⌘⇧Space. The failure used to be
+    /// silent: the toggle read as on forever, and every model change retried the registration.
+    /// Turning the setting back off makes the toggle tell the truth and stops the retries.
+    private func reportHotkeyUnavailable() {
+        model.settings.menuBarHotkeyEnabled = false
+        model.bannerMessage = model.t("⌘⇧Space is already used by another app, so the global shortcut was turned off.")
     }
 
     private func unregisterGlobalHotkey() {

@@ -184,7 +184,7 @@ final class TokenPilotViewModel: ObservableObject {
 
     /// The login item is the system truth; fold its state into settings once at startup.
     private func syncLaunchAtLoginFromSystem() {
-        let registered = LaunchAtLoginService.isEnabled
+        let registered = LaunchAtLoginService.isEnabled || LaunchAtLoginService.needsApproval
         guard settings.launchAtLogin != registered else { return }
         var next = settings
         next.launchAtLogin = registered
@@ -931,17 +931,20 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func shutdownExperimentalOAuthWeekly() {
+        // The nested run loop below services timers too. Left running, the 30s tick could land
+        // inside it and start a full provider refresh on a process that is exiting.
+        stopAutoRefresh()
         experimentalShutdownTask?.cancel()
+        var finished = false
         experimentalShutdownTask = Task { [usageStore] in
             await usageStore.shutdownXAIExperimentalWeekly()
+            finished = true
         }
-        // Keep the termination path lifecycle-safe: cancel/start the shutdown task and
-        // give it a short bounded window before process exit continues.
+        // A short bounded window before process exit continues. The loop used to exit only on
+        // cancellation, which completion never sets, so every quit waited the full 250 ms.
         let deadline = Date().addingTimeInterval(0.25)
-        while Date() < deadline, experimentalShutdownTask?.isCancelled == false {
-            if experimentalShutdownTask == nil { break }
+        while Date() < deadline, !finished {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-            if experimentalShutdownTask?.isCancelled == true { break }
         }
         xaiOAuthResult = nil
     }
@@ -971,7 +974,12 @@ final class TokenPilotViewModel: ObservableObject {
             var next = settings
             next.launchAtLogin = enabled
             settings = next
-            bannerMessage = nil
+            if enabled, LaunchAtLoginService.needsApproval {
+                bannerMessage = t("Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.")
+                LaunchAtLoginService.openApprovalSettings()
+            } else {
+                bannerMessage = nil
+            }
         } catch {
             bannerMessage = enabled ? t("Could not enable launch at login") : t("Could not disable launch at login")
         }
@@ -1262,6 +1270,17 @@ final class TokenPilotViewModel: ObservableObject {
         // duration is enough — so a strict `>=` pushed every interval to the *next* tick: the
         // default "1 min" actually refreshed every 90 seconds, and "30 sec" every 60.
         return now.timeIntervalSince(lastRefreshFinishedAt) >= dataRefreshInterval - menuBarTickInterval / 2
+    }
+
+    /// Writes the current settings now. The save is debounced by 350 ms, so a change made just
+    /// before Quit — a toggle, then ⌘Q — was still waiting when the process exited, and was lost.
+    func flushPendingSettings() {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
+        settingsSaveTask?.cancel()
+        settingsSaveTask = nil
+        settingsStore.save(settings)
     }
 
     private func persistSettingsDebounced(_ settingsToSave: AppSettings) {

@@ -313,3 +313,34 @@ final class LocalizationSurfaceTests: XCTestCase {
             .replacingOccurrences(of: "\\\\", with: "\\")
     }
 }
+
+/// Error descriptions reach the user through `t(error.errorDescription)`, a runtime key the source
+/// scan cannot see. Every case of the delivery errors has to resolve in every shipped language.
+final class DeliveryErrorLocalizationTests: XCTestCase {
+    func testEveryDeliveryErrorDescriptionIsTranslated() {
+        let errors: [LocalizedError] = [
+            TelegramError.notConfigured, TelegramError.invalidURL, TelegramError.requestFailed,
+            TelegramError.noChatFound, TelegramError.rejected(statusCode: 401),
+            TelegramError.rejected(statusCode: 400), TelegramError.rejected(statusCode: 500),
+            TelegramError.rejected(statusCode: nil),
+            DiscordError.notConfigured, DiscordError.invalidURL, DiscordError.requestFailed,
+            DiscordError.webhookGone
+        ]
+        for error in errors {
+            let key = error.errorDescription ?? ""
+            XCTAssertFalse(key.isEmpty)
+            for language in [TokenPilotLanguage.ko, .ja, .zhHans, .zhHant] {
+                XCTAssertNotEqual(
+                    TokenPilotLocalizer.localized(key, language: language), key,
+                    "\(error) reaches a \(language) reader in English"
+                )
+            }
+        }
+    }
+
+    func testARejectedCredentialIsNotReportedAsANetworkFailure() {
+        XCTAssertNotEqual(TelegramError.rejected(statusCode: 401).errorDescription, TelegramError.requestFailed.errorDescription)
+        XCTAssertNotEqual(TelegramError.rejected(statusCode: 403).errorDescription, TelegramError.requestFailed.errorDescription)
+        XCTAssertNotEqual(DiscordError.webhookGone.errorDescription, DiscordError.requestFailed.errorDescription)
+    }
+}

@@ -12,6 +12,17 @@ public enum LaunchAtLoginService: Sendable {
         SMAppService.mainApp.status == .enabled
     }
 
+    /// Registered, but macOS is waiting for the user to allow it in System Settings → Login Items.
+    /// Registration succeeds into this state, so treating it as "off" flipped the toggle back on the
+    /// next launch with no word about the approval that was needed.
+    public static var needsApproval: Bool {
+        SMAppService.mainApp.status == .requiresApproval
+    }
+
+    public static func openApprovalSettings() {
+        SMAppService.openSystemSettingsLoginItems()
+    }
+
     public enum ApplyError: Error, Equatable, Sendable {
         case registerFailed(String)
         case unregisterFailed(String)
@@ -29,7 +40,9 @@ public enum LaunchAtLoginService: Sendable {
             }
             return true
         } else {
-            guard isEnabled else { return false }
+            // A pending registration is still a registration; leaving it would let it take effect
+            // after the user asked for it off.
+            guard isEnabled || needsApproval else { return false }
             do {
                 try SMAppService.mainApp.unregister()
             } catch {
