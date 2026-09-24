@@ -53,6 +53,16 @@ final class TokenPilotViewModel: ObservableObject {
     var settingsCardExpansion: [String: Bool] = [:]
     /// Where Settings was scrolled to, for the same reason. Not published.
     var settingsScrollOffset: CGFloat = 0
+    /// A Settings card to bring into view on the next appear, instead of the remembered offset.
+    var pendingSettingsCard: String?
+
+    /// "Open Provider Diagnostics" used to switch to Settings and stop there — wherever Settings was
+    /// last scrolled, with the diagnostics card possibly closed.
+    func openProviderDiagnostics() {
+        settingsCardExpansion["diagnostics"] = true
+        pendingSettingsCard = "diagnostics"
+        selectedScreen = .settings
+    }
 
     /// The first stored event, when it falls after the start of the selected History period.
     ///
@@ -1928,26 +1938,30 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusText(_ source: ProviderDataSource) -> String {
-        let base: String
         if source.provider == .xai {
             return xAIStatusText(source)
         }
+        let key: String
         switch source.status {
-        case .connected: base = t("Connected")
-        case .notFound: base = t("Not found")
-        case .permissionDenied: base = t("Permission denied")
-        case .noUsableData: base = t("No usable data")
-        case .stale: base = t("STALE")
-        case .invalidFormat: base = t("Invalid format")
-        case .disabled: base = t("Disabled")
-        case .manual: base = t("Manual mode")
-        case .estimated: base = "\(t("Estimated")) (\(t("est.")))"
+        case .connected: key = "Connected"
+        case .notFound: key = "Not found"
+        case .permissionDenied: key = "Permission denied"
+        case .noUsableData: key = "No usable data"
+        case .stale: key = "STALE"
+        case .invalidFormat: key = "Invalid format"
+        case .disabled: key = "Disabled"
+        case .manual: key = "Manual mode"
+        case .estimated: key = "Estimated"
         }
+        let base = source.status == .estimated ? "\(t(key)) (\(t("est.")))" : t(key)
 
-        if let message = source.statusMessage, !message.isEmpty, message != base {
-            return "\(base) · \(localizedStatus(message))"
-        }
-        return base
+        // Compared as keys: comparing the English message with the translated status read
+        // "비활성화됨 · 비활성화됨". Adapters also lead a stale message with the status itself
+        // ("STALE · no activity…"), which read "오래됨 · STALE · …".
+        guard let message = source.statusMessage, !message.isEmpty, message != key else { return base }
+        guard message.hasPrefix("\(key) · ") else { return "\(base) · \(localizedStatus(message))" }
+        let rest = localizedStatus(message).components(separatedBy: " · ").dropFirst().joined(separator: " · ")
+        return rest.isEmpty ? base : "\(base) · \(rest)"
     }
 
     func sourceDetailText(_ provider: Provider) -> String {

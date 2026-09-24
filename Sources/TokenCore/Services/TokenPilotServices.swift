@@ -2392,13 +2392,19 @@ public enum TokenPilotFormatters {
         return "\(minutes)m"
     }
 
-    /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s".
+    /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s", or "2h 15m" / "15m"
+    /// without seconds for a timer that only ticks once a minute.
     /// Used for live ticking reset timers; the label is localized, the separators are not.
-    public static func countdown(until date: Date, now: Date = Date()) -> String {
+    public static func countdown(until date: Date, now: Date = Date(), showsSeconds: Bool = true) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
         let hours = seconds / 3_600
         let minutes = (seconds % 3_600) / 60
         let remainingSeconds = seconds % 60
+        if !showsSeconds {
+            // Rounded up, so a reset 30 s away reads "1m", not "0m".
+            let totalMinutes = (seconds + 59) / 60
+            return totalMinutes >= 60 ? "\(totalMinutes / 60)h \(totalMinutes % 60)m" : "\(totalMinutes)m"
+        }
         if hours > 0 { return "\(hours)h \(minutes)m \(remainingSeconds)s" }
         if minutes > 0 { return "\(minutes)m \(remainingSeconds)s" }
         return "\(remainingSeconds)s"

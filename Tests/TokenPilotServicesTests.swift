@@ -7970,7 +7970,7 @@ final class TokenPilotServicesTests: XCTestCase {
                 modeLabel: "LIVE",
                 expectedFragments: [
                     (.en, ["Capacity remaining 18%", "Reset 1h 0m", "Provider reported", "Supported", "Fresh", "Wait for reset", "Live only"]),
-                    (.ko, ["수용량 18% 남음", "리셋 1시간 0분", "제공자 보고", "지원됨", "최신", "리셋 대기", "실시간만"]),
+                    (.ko, ["한도 18% 남음", "리셋 1시간 0분", "제공자 보고", "지원됨", "최신", "리셋 대기", "실시간만"]),
                     (.ja, ["容量残り 18%", "リセット 1時間 0分", "プロバイダ報告", "対応済み", "新鮮", "リセット待ち", "ライブのみ"]),
                     (.zhHans, ["容量剩余 18%", "重置 1小时 0分钟", "提供方报告", "受支持", "新鲜", "等待重置", "仅实时"])
                 ]
@@ -7987,7 +7987,7 @@ final class TokenPilotServicesTests: XCTestCase {
                 modeLabel: "STALE",
                 expectedFragments: [
                     (.en, ["Capacity remaining 18%", "Provider reported", "Supported", "Stale", "Refresh provider"]),
-                    (.ko, ["수용량 18% 남음", "제공자 보고", "지원됨", "오래됨", "제공자 새로고침"]),
+                    (.ko, ["한도 18% 남음", "제공자 보고", "지원됨", "오래됨", "제공자 새로고침"]),
                     (.ja, ["容量残り 18%", "プロバイダ報告", "対応済み", "古い", "プロバイダを更新"]),
                     (.zhHans, ["容量剩余 18%", "提供方报告", "受支持", "过期", "刷新提供方"])
                 ]
@@ -8003,7 +8003,7 @@ final class TokenPilotServicesTests: XCTestCase {
                 modeLabel: "MANUAL",
                 expectedFragments: [
                     (.en, ["Capacity remaining 26%", "User entered", "Manual entry", "Fresh", "Enter manual value"]),
-                    (.ko, ["수용량 26% 남음", "사용자 입력", "수동 입력", "최신", "수동 값 입력"]),
+                    (.ko, ["한도 26% 남음", "사용자 입력", "수동 입력", "최신", "수동 값 입력"]),
                     (.ja, ["容量残り 26%", "ユーザー入力", "手動入力", "新鮮", "手動値を入力"]),
                     (.zhHans, ["容量剩余 26%", "用户输入", "手动输入", "新鲜", "输入手动值"])
                 ]
@@ -8020,7 +8020,7 @@ final class TokenPilotServicesTests: XCTestCase {
                 modeLabel: "EXPERIMENTAL",
                 expectedFragments: [
                     (.en, ["Capacity remaining 58%", "Provider reported", "Experimental connector", "Fresh", "Review experimental connector"]),
-                    (.ko, ["수용량 58% 남음", "제공자 보고", "실험적 커넥터", "최신", "실험적 커넥터 검토"]),
+                    (.ko, ["한도 58% 남음", "제공자 보고", "실험적 커넥터", "최신", "실험적 커넥터 검토"]),
                     (.ja, ["容量残り 58%", "プロバイダ報告", "実験的コネクタ", "新鮮", "実験的コネクタを確認"]),
                     (.zhHans, ["容量剩余 58%", "提供方报告", "实验性连接器", "新鲜", "检查实验性连接器"])
                 ]
@@ -8052,7 +8052,7 @@ final class TokenPilotServicesTests: XCTestCase {
                 modeLabel: "BRIDGE",
                 expectedFragments: [
                     (.en, ["Capacity remaining 68%", "Provider reported", "Compatibility bridge", "Fresh", "Review source"]),
-                    (.ko, ["수용량 68% 남음", "제공자 보고", "호환성 브리지", "최신", "소스 검토"]),
+                    (.ko, ["한도 68% 남음", "제공자 보고", "호환성 브리지", "최신", "소스 검토"]),
                     (.ja, ["容量残り 68%", "プロバイダ報告", "互換ブリッジ", "新鮮", "ソースを確認"]),
                     (.zhHans, ["容量剩余 68%", "提供方报告", "兼容桥接", "新鲜", "检查来源"])
                 ]

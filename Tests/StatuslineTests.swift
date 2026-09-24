@@ -717,13 +717,13 @@ final class StatuslineLocalizationTests: XCTestCase {
             ]
         ),
         (
-            "Remaining bar",
+            "Limit bar",
             [
-                (.en, "en", "Remaining bar"),
-                (.ko, "ko", "잔여 막대"),
-                (.ja, "ja", "残量バー"),
-                (.zhHans, "zh-Hans", "剩余量条"),
-                (.zhHant, "zh-Hant", "剩餘量條")
+                (.en, "en", "Limit bar"),
+                (.ko, "ko", "한도 막대"),
+                (.ja, "ja", "上限バー"),
+                (.zhHans, "zh-Hans", "限额条"),
+                (.zhHant, "zh-Hant", "限額條")
             ]
         ),
         (

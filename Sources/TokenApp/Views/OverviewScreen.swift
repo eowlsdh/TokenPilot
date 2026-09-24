@@ -67,7 +67,6 @@ struct TokenPilotRootView: View {
     private var header: some View {
         HStack(spacing: TokenPilotDesign.Spacing.md) {
             TokenPilotBrandMark()
-                .scaleEffect(1.0)
                 .frame(width: 26, height: 26)
 
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
@@ -93,7 +92,6 @@ struct TokenPilotRootView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.70)
                         .help(model.t("Last updated"))
-                        .accessibilityLabel("\(model.t("Last updated")): \(lastUpdated)")
                 }
             }
             .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -102,7 +100,9 @@ struct TokenPilotRootView: View {
 
             refreshButton
         }
-        .frame(height: 40)
+        // A minimum, not a fixed height: title plus two micro lines is about 47 pt, and a fixed
+        // 40 pushed the last-updated line into the screen tabs below.
+        .frame(minHeight: 40)
     }
 
     private var headerModeIndicator: some View {
@@ -255,7 +255,7 @@ struct OverviewScreen: View {
                         presentations: model.capacityPresentations,
                         errors: model.capacityRefreshErrors,
                         runtimeRecoveryRequired: model.capacityRuntimeRecoveryRequired,
-                        openDiagnostics: { model.selectedScreen = .settings },
+                        openDiagnostics: { model.openProviderDiagnostics() },
                         refreshProviders: { Task { await model.refresh() } }
                     )
                 }
@@ -984,7 +984,7 @@ struct UsageSummaryCard: View {
                     ProgressLine(
                         percent: progressPercent,
                         color: item.progressColor,
-                        accessibilityLabel: localized("Remaining capacity", language: language),
+                        accessibilityLabel: localized("Limit percent", language: language),
                         accessibilityValue: item.progressAccessibilityValue(language: language)
                     )
                 }
@@ -1291,7 +1291,7 @@ struct ProviderCapacityRow: View {
                 ProgressLine(
                     percent: progressPercent,
                     color: primary.progressColor,
-                    accessibilityLabel: "\(localized(provider.displayName, language: language)) \(localized("Remaining capacity", language: language))",
+                    accessibilityLabel: "\(localized(provider.displayName, language: language)) \(localized("Limit percent", language: language))",
                     accessibilityValue: primary.progressAccessibilityValue(language: language)
                 )
             }
@@ -1540,7 +1540,7 @@ struct CapacityErrorInline: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 10, weight: .semibold))
+                .font(TokenPilotDesign.Typography.caption)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
             Text(localized(error.redactedMessage, language: language))
                 .font(TokenPilotDesign.Typography.caption)

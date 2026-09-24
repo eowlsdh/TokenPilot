@@ -939,7 +939,7 @@ final class TokenMonitorTests: XCTestCase {
         ]
 
         let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
-        let liveTargetKeys = Set(targetKeys.map { $0.key }.filter { viewModelSource.contains("t(\"\($0)\")") })
+        let liveTargetKeys = Set(targetKeys.map { $0.key }.filter { viewModelSource.contains("t(\"\($0)\")") || viewModelSource.contains("key = \"\($0)\"") })
         XCTAssertEqual(liveTargetKeys, Set(targetKeys.map { $0.key }))
 
         let rootURL = try Self.projectRootURL()
@@ -1199,9 +1199,9 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(overviewSource.contains("Button(model.t(\"Open Settings\"))"))
         XCTAssertTrue(overviewSource.contains("model.selectedScreen = .settings"))
         XCTAssertFalse(overviewSource.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."))
-        XCTAssertTrue(historySource.contains("Text(model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\"))"))
-        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
-        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("message: model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\")"))
+        XCTAssertTrue(historySource.contains("actionLabel: model.t(\"Open Provider Diagnostics\")"))
+        XCTAssertTrue(historySource.contains("action: { model.openProviderDiagnostics() }"))
         XCTAssertTrue(historySource.contains("HistoryCapacityEmptyState(model: model)"))
         XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
     }
@@ -1223,8 +1223,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
         XCTAssertTrue(historySource.contains("No usage events recorded"))
         XCTAssertTrue(historySource.contains("Capacity signals are available above, but no token usage events are stored for this period."))
-        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
-        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("actionLabel: model.t(\"Open Provider Diagnostics\")"))
+        XCTAssertTrue(historySource.contains("action: { model.openProviderDiagnostics() }"))
         XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: sample.provider, size: 24)"))
         XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: event.provider, size: 22)"))
         XCTAssertTrue(historySource.contains("SemanticChip("))
@@ -1968,7 +1968,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(recoverySummary.rows.first?.recoveryCode, "runtimeRecoveryRequired")
 
         let nonEnglishCopies: [(TokenPilotLanguage, String)] = [
-            (.ko, "수용량 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."),
+            (.ko, "한도 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."),
             (.ja, "容量ランタイムの復旧が必要です。安全な既定値が有効です。"),
             (.zhHans, "需要恢复容量运行时；安全默认值已启用。"),
             (.zhHant, "需要恢復容量運行時；安全默認值已啓用。")
@@ -1991,7 +1991,7 @@ final class TokenMonitorTests: XCTestCase {
         let messageKey = "Codex legacy capacity alerts are unsupported for delivery."
         let expectedCopies: [(language: TokenPilotLanguage, locale: String, value: String)] = [
             (.en, "en", messageKey),
-            (.ko, "ko", "Codex 레거시 수용량 알림은 전달을 지원하지 않습니다."),
+            (.ko, "ko", "Codex 레거시 한도 알림은 전달을 지원하지 않습니다."),
             (.ja, "ja", "Codex レガシー容量アラートは配信に対応していません。"),
             (.zhHans, "zh-Hans", "Codex 旧版容量提醒不支持投递。"),
             (.zhHant, "zh-Hant", "Codex 舊版容量提醒不支持投遞。")
@@ -2053,10 +2053,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(overviewSource.contains("value: item.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("value: primary.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("percent: progressPercent"))
-        XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
+        XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Limit percent\", language: language)"))
         XCTAssertTrue(overviewSource.contains("primary.progressAccessibilityValue(language: language)"))
-        XCTAssertTrue(historySource.contains("Text(String(format: model.t(\"Remaining %d%%\"), sample.remainingPercent))"))
-        XCTAssertTrue(historySource.contains("percent: sample.remainingPercent"))
+        XCTAssertTrue(historySource.contains("Text(shownValue)"))
+        XCTAssertTrue(historySource.contains("percent: shownPercent"))
         XCTAssertTrue(historySource.contains("\"\\(model.t(\"Remaining\")) \\(sample.remainingPercent)%, \\(model.t(\"Used\")) \\(sample.usedPercent)%\""))
     }
 
@@ -3025,8 +3025,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("let stateValue = localized(isExpanded ? \"Expanded\" : \"Collapsed\", language: language)"))
         XCTAssertTrue(source.contains(".accessibilityValue(\"\\(accessibilityValue), \\(stateValue)\")"))
         XCTAssertTrue(source.contains(".accessibilityValue(stateValue)"))
-        XCTAssertTrue(source.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(provider.displayName, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
+        XCTAssertTrue(source.contains("accessibilityLabel: localized(\"Limit percent\", language: language)"))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(provider.displayName, language: language)) \\(localized(\"Limit percent\", language: language))\""))
     }
 
     func testG004LocalizationKeysHaveRuntimeAndCatalogParity() throws {

@@ -33,7 +33,10 @@ struct SettingsScreen: View {
         }
         .onAppear {
             model.refreshStoredCredentialPresence()
-            if model.settingsScrollOffset > 0 {
+            if let card = model.pendingSettingsCard {
+                model.pendingSettingsCard = nil
+                scrollPosition.scrollTo(id: card, anchor: .top)
+            } else if model.settingsScrollOffset > 0 {
                 scrollPosition.scrollTo(y: model.settingsScrollOffset)
             }
         }
@@ -203,9 +206,9 @@ struct SettingsScreen: View {
                     .foregroundStyle(TokenPilotDesign.textSecondary)
 
                 HStack(spacing: TokenPilotDesign.Spacing.md) {
-                    Button(model.t("Export Settings")) { model.exportSettings() }
+                    Button(model.t("Export Settings…")) { model.exportSettings() }
                         .buttonStyle(.glass)
-                    Button(model.t("Import Settings")) { model.importSettings() }
+                    Button(model.t("Import Settings…")) { model.importSettings() }
                         .buttonStyle(.glass)
                     Spacer()
                     Button(model.t("Reset Settings")) { model.resetSettings() }
@@ -264,6 +267,7 @@ struct SettingsScreen: View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
             sourceHealthDisclosure
             providerDiagnosticsDisclosure
+                .id("diagnostics")
             claudeProviderSetup
             geminiProviderSetup
             deepSeekProviderSetup
@@ -374,7 +378,7 @@ struct SettingsScreen: View {
                             }
                             .pickerStyle(.menu)
                             .accessibilityLabel(model.t("Menu bar metric"))
-                            Text(model.t("What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists."))
+                            Text(model.t("What the primary provider's menu bar value shows. Today tokens/cost fall back to the limit percent when no local value exists."))
                                 .font(TokenPilotDesign.Typography.explanation)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                         }
@@ -405,7 +409,7 @@ struct SettingsScreen: View {
                         if model.settings.menuBarDisplayStyle == .providerMetrics {
                             Picker(model.t("Menu bar trend"), selection: menuBarTrendStyleBinding) {
                                 Text(model.t("Trend line")).tag(MenuBarTrendStyle.sparkline)
-                                Text(model.t("Remaining bar")).tag(MenuBarTrendStyle.bar)
+                                Text(model.t("Limit bar")).tag(MenuBarTrendStyle.bar)
                                 Text(model.t("No trend")).tag(MenuBarTrendStyle.off)
                             }
                             .pickerStyle(.menu)
@@ -498,7 +502,7 @@ struct SettingsScreen: View {
                         }
 
                         Text("\(model.t("Current menu bar")): \(model.menuBarPreviewText)")
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(TokenPilotDesign.Typography.metricSmall)
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .lineLimit(1)
                             .accessibilityLabel(model.menuBarAccessibilityLabel)
@@ -533,8 +537,18 @@ struct SettingsScreen: View {
                     capacityRefreshNotes
                 }
 
-                ForEach(model.providerDiagnostics) { diagnostic in
+                // A turned-off provider has nothing to diagnose; nine of them at five lines each
+                // ("Confidence: Low", "Detected paths: 0/0") buried the one that needed attention.
+                ForEach(model.providerDiagnostics.filter { $0.status != .disabled }) { diagnostic in
                     providerDiagnosticRow(diagnostic)
+                }
+
+                let turnedOff = model.providerDiagnostics.filter { $0.status == .disabled }
+                if !turnedOff.isEmpty {
+                    Text("\(model.t("Turned off, skipped on refresh")): \(turnedOff.map { model.providerDisplayName($0.provider) }.joined(separator: ", "))")
+                        .font(TokenPilotDesign.Typography.explanation)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 TokenPilotSeparator()
@@ -806,7 +820,7 @@ struct SettingsScreen: View {
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(model.t("Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. opencode publishes no subscription window, so this is local activity and never provider quota."))
+            Text(model.t("Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. They are local activity, not plan limits; opencode Go plan limits come only from the usage API below."))
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -884,9 +898,9 @@ struct SettingsScreen: View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.sm) {
             TokenPilotSeparator()
             HStack(spacing: TokenPilotDesign.Spacing.sm) {
-                Button(model.t("Choose Folder")) { model.chooseProviderSourceFolder(provider) }
+                Button(model.t("Choose Folder…")) { model.chooseProviderSourceFolder(provider) }
                     .buttonStyle(.glass)
-                    .accessibilityLabel("\(model.providerDisplayName(provider)), \(model.t("Choose Folder"))")
+                    .accessibilityLabel("\(model.providerDisplayName(provider)), \(model.t("Choose Folder…"))")
                 if let folder = model.grantedSourceFolderName(provider) {
                     Text(folder)
                         .font(TokenPilotDesign.Typography.caption)
@@ -1927,7 +1941,16 @@ struct SettingsScreen: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(title)
-        .accessibilityValue("\(detail). \(status)")
+        .accessibilityValue(spokenSentences(detail, status))
+    }
+
+    /// Joins sentences for VoiceOver. Most parts already end in a full stop, and joining them with
+    /// ". " read "켜세요.. 비밀값 필요 없음".
+    private func spokenSentences(_ parts: String...) -> String {
+        parts
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: ".。 ")) }
+            .filter { !$0.isEmpty }
+            .joined(separator: ". ")
     }
 
     private func remembered(_ card: String) -> Binding<Bool?> {
@@ -1950,7 +1973,7 @@ struct SettingsScreen: View {
             initiallyExpanded: providerDefaultExpanded(provider),
             remembered: remembered("provider.\(provider.rawValue)"),
             accessibilityLabel: "\(title), \(status)",
-            accessibilityValue: "\(detail). \(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic)). \(providerSecretSummary(provider))"
+            accessibilityValue: spokenSentences(detail, "\(model.t("Next action")): \(model.diagnosticNextActionText(diagnostic))", providerSecretSummary(provider))
         ) {
             providerSetupSummary(provider: provider, title: title, diagnostic: diagnostic)
         } content: {
@@ -2232,12 +2255,16 @@ struct SettingsScreen: View {
                 }
             }
 
-            Text(model.diagnosticNextActionText(diagnostic))
+            let nextAction = model.diagnosticNextActionText(diagnostic)
+            let detail = model.diagnosticDetailText(diagnostic)
+            Text(nextAction)
                 .font(TokenPilotDesign.Typography.caption.weight(.semibold))
                 .foregroundStyle(TokenPilotDesign.textPrimary)
-            Text(model.diagnosticDetailText(diagnostic))
-                .font(TokenPilotDesign.Typography.explanation)
-                .foregroundStyle(TokenPilotDesign.textSecondary)
+            if detail != nextAction {
+                Text(detail)
+                    .font(TokenPilotDesign.Typography.explanation)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+            }
         }
         .padding(TokenPilotDesign.Spacing.md)
         .glassSurface(cornerRadius: TokenPilotDesign.Radius.card, surface: .cardMuted)
@@ -2746,7 +2773,15 @@ struct CapacityAlertThresholdChip: View {
         Button {
             Task { await action() }
         } label: {
-            Text(label)
+            // A checkmark as well as the tint, so on and off differ in shape, not colour alone; the
+            // 24 pt frame gives the ~21 pt capsule a usable hit area without making it look bigger.
+            HStack(spacing: 3) {
+                if isOn {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .heavy))
+                }
+                Text(label)
+            }
                 .font(TokenPilotDesign.Typography.badge)
                 .padding(.horizontal, TokenPilotDesign.Spacing.sm)
                 .padding(.vertical, TokenPilotDesign.Spacing.xs)
@@ -2756,6 +2791,8 @@ struct CapacityAlertThresholdChip: View {
                 )
                 .foregroundStyle(isOn ? TokenPilotDesign.trust : TokenPilotDesign.text(.secondary))
                 .clipShape(Capsule())
+                .frame(minHeight: 24)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -2774,14 +2811,14 @@ struct CapacityAlertInfoPill: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .font(TokenPilotDesign.Typography.micro.weight(.bold))
             .padding(.horizontal, TokenPilotDesign.Spacing.sm)
             .padding(.vertical, TokenPilotDesign.Spacing.xs)
             .background(isMuted ? TokenPilotDesign.surface(.badge) : color.opacity(0.16))
             .overlay(
                 Capsule().stroke(isMuted ? TokenPilotDesign.border : color.opacity(0.22), lineWidth: 1)
             )
-            .foregroundStyle(isMuted ? TokenPilotDesign.textSecondary.opacity(0.55) : color)
+            .foregroundStyle(isMuted ? TokenPilotDesign.text(.tertiary) : color)
             .clipShape(Capsule())
     }
 }

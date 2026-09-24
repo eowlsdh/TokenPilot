@@ -1,6 +1,278 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Choose Folder…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose Folder…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "폴더 선택…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フォルダを選択…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择文件夹…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇資料夾…"
+          }
+        }
+      }
+    },
+    "Export Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Settings…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 내보내기…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を書き出す…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出设置…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出設定…"
+          }
+        }
+      }
+    },
+    "Import Settings…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Settings…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 가져오기…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定を読み込む…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入设置…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入設定…"
+          }
+        }
+      }
+    },
+    "Export…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내보내기…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書き出す…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出…"
+          }
+        }
+      }
+    },
+    "Turned off, skipped on refresh": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turned off, skipped on refresh"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "꺼짐, 새로고침에서 건너뜀"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "オフ、更新時にスキップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已关闭，刷新时跳过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已關閉，重新整理時略過"
+          }
+        }
+      }
+    },
+    "Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. They are local activity, not plan limits; opencode Go plan limits come only from the usage API below.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Token counts and cost come from opencode's own per-message records, so they are measured rather than estimated. They are local activity, not plan limits; opencode Go plan limits come only from the usage API below."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "토큰 수와 비용은 opencode 자체의 메시지별 기록에서 가져오므로 추정이 아닌 실측값입니다. 이는 로컬 활동이며 플랜 한도가 아닙니다. opencode Go 플랜 한도는 아래 사용량 API에서만 가져옵니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークン数とコストは opencode 自身のメッセージ単位の記録に基づくため、推定ではなく実測値です。これはローカル活動でありプランの上限ではありません。opencode Go のプラン上限は下の使用量 API からのみ取得します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌数与费用来自 opencode 自身的逐条消息记录，因此为实测值而非估算。这属于本地活动，并非套餐限额；opencode Go 套餐限额仅来自下方的用量 API。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "令牌數與費用來自 opencode 自身的逐條消息記錄，因此為實測值而非估算。這屬於本地活動，並非方案限額；opencode Go 方案限額僅來自下方的用量 API。"
+          }
+        }
+      }
+    },
+    "What the primary provider's menu bar value shows. Today tokens/cost fall back to the limit percent when no local value exists.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "What the primary provider's menu bar value shows. Today tokens/cost fall back to the limit percent when no local value exists."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 제공자의 메뉴 막대 값 표시 방식을 정합니다. 로컬 값이 없으면 오늘 토큰/비용 대신 한도 퍼센트로 표시됩니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プライマリプロバイダのメニューバー値の表示方法を指定します。ローカル値がない場合、今日のトークン/コストは上限パーセントで表示されます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择主要提供方菜单栏数值的显示方式。没有本地值时，今日令牌/成本会改为显示限额百分比。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇主要提供方選單列數值的顯示方式。沒有本地值時，今日令牌/成本會改為顯示限額百分比。"
+          }
+        }
+      }
+    },
+    "Limit bar": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Limit bar"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "한도 막대"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限バー"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限额条"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "限額條"
+          }
+        }
+      }
+    },
     "Show limits as": {
       "localizations": {
         "en": {
@@ -148,7 +420,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 %d%% 사용"
+            "value": "한도 %d%% 사용"
           }
         },
         "ja": {
@@ -1508,7 +1780,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메뉴 바에는 제공자가 최소 하나는 남아 있어야 합니다."
+            "value": "메뉴 막대에는 제공자가 최소 하나는 남아 있어야 합니다."
           }
         },
         "ja": {
@@ -3882,7 +4154,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Codex 레거시 수용량 알림은 전달을 지원하지 않습니다."
+            "value": "Codex 레거시 한도 알림은 전달을 지원하지 않습니다."
           }
         },
         "en": {
@@ -4874,7 +5146,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 신호"
+            "value": "한도 신호"
           }
         },
         "en": {
@@ -4908,7 +5180,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "제공자 보고/수동 한도 증거이며 토큰 사용 분석이 아닙니다."
+            "value": "제공자 보고/수동 한도 근거이며 토큰 사용 분석이 아닙니다."
           }
         },
         "en": {
@@ -5078,7 +5350,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 수용량 증거"
+            "value": "현재 한도 정보"
           }
         },
         "en": {
@@ -5112,7 +5384,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "신선도와 복구 동작은 TokenCore 수용량 정책이 평가합니다."
+            "value": "최신 여부와 복구 동작은 한도 정책에 따라 판단합니다."
           }
         },
         "en": {
@@ -5248,7 +5520,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 %d%% 남음"
+            "value": "한도 %d%% 남음"
           }
         },
         "en": {
@@ -5384,7 +5656,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 신호"
+            "value": "한도 신호"
           }
         },
         "en": {
@@ -6030,7 +6302,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기록된 수용량 신호 내역"
+            "value": "기록된 한도 신호 내역"
           }
         },
         "en": {
@@ -6064,7 +6336,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기록된 수용량 신호 내역 숨기기"
+            "value": "기록된 한도 신호 내역 숨기기"
           }
         },
         "en": {
@@ -6098,7 +6370,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기록된 수용량 신호 내역 표시"
+            "value": "기록된 한도 신호 내역 표시"
           }
         },
         "en": {
@@ -6132,7 +6404,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "과거 수용량 신호는 사용 이벤트 분석과 분리해 보관합니다."
+            "value": "과거 한도 신호는 사용 이벤트 분석과 분리해 보관합니다."
           }
         },
         "en": {
@@ -6472,7 +6744,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아직 수용량 신호가 없습니다"
+            "value": "아직 한도 신호가 없습니다"
           }
         },
         "en": {
@@ -6574,7 +6846,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "위에는 수용량 신호가 있지만 이 기간에는 저장된 토큰 사용 이벤트가 없습니다."
+            "value": "위에는 한도 신호가 있지만 이 기간에는 저장된 토큰 사용 이벤트가 없습니다."
           }
         },
         "en": {
@@ -6948,7 +7220,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메뉴바는 코어 수용량 평가를 사용합니다. 꺼진 제공자는 건너뜁니다."
+            "value": "메뉴 막대는 한도 평가 결과를 사용합니다. 꺼진 제공자는 건너뜁니다."
           }
         },
         "en": {
@@ -7934,7 +8206,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 런타임 복구 필요"
+            "value": "한도 런타임 복구 필요"
           }
         },
         "en": {
@@ -7968,7 +8240,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."
+            "value": "한도 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."
           }
         },
         "en": {
@@ -8002,7 +8274,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "로컬 런타임 상태를 다시 읽을 수 있을 때까지 수용량 알림은 안전한 기본값을 사용합니다."
+            "value": "로컬 런타임 상태를 다시 읽을 수 있을 때까지 한도 알림은 안전한 기본값을 사용합니다."
           }
         },
         "en": {
@@ -8036,7 +8308,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 새로고침 참고"
+            "value": "한도 새로고침 참고"
           }
         },
         "en": {
@@ -8688,7 +8960,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "수용량 사용 불가"
+            "value": "한도 사용 불가"
           }
         },
         "ja": {
@@ -9334,7 +9606,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기본 꺼짐. 켜면 새로 고침마다 인증 요청 한 번으로 opencode.ai에서 5시간·주간·월간 사용량 퍼센트를 읽습니다. 프로브는 API가 반환하는 값만 표시합니다."
+            "value": "기본 꺼짐. 켜면 새로고침마다 인증 요청 한 번으로 opencode.ai에서 5시간·주간·월간 사용량 퍼센트를 읽습니다. 프로브는 API가 반환하는 값만 표시합니다."
           }
         },
         "ja": {
@@ -9402,7 +9674,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "opencode Go가 공식 사용량 API를 제공합니다. 켜면 새로 고침마다 인증 요청 한 번으로 남은 플랜 사용량(5시간, 주간, 월간)을 읽어옵니다."
+            "value": "opencode Go가 공식 사용량 API를 제공합니다. 켜면 새로고침마다 인증 요청 한 번으로 남은 플랜 사용량(5시간, 주간, 월간)을 읽어옵니다."
           }
         },
         "ja": {
@@ -11000,7 +11272,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "신뢰할 수 있는 수용량 없음"
+            "value": "신뢰할 수 있는 한도 없음"
           }
         },
         "ja": {
@@ -11034,7 +11306,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "아직 신뢰할 수 있는 수용량 신호가 없습니다"
+            "value": "아직 신뢰할 수 있는 한도 신호가 없습니다"
           }
         },
         "ja": {
@@ -11306,7 +11578,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "남은 수용량"
+            "value": "남은 한도"
           }
         },
         "ja": {
@@ -11408,7 +11680,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "샘플 데이터는 실시간 수용량이 아닙니다"
+            "value": "샘플 데이터는 실시간 한도이 아닙니다"
           }
         },
         "ja": {
@@ -11578,7 +11850,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "오래된 증거"
+            "value": "오래된 근거"
           }
         },
         "ja": {
@@ -11884,7 +12156,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@의 %@ 수용량이 리셋되었습니다."
+            "value": "%@의 %@ 한도가 리셋되었습니다."
           }
         },
         "ja": {
@@ -11918,7 +12190,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 수용량 리셋"
+            "value": "%@ 한도 리셋"
           }
         },
         "ja": {
@@ -11952,7 +12224,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ 수용량"
+            "value": "%@ 한도"
           }
         },
         "ja": {
@@ -12462,13 +12734,13 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d %@ %@"
+            "value": "%2$@ %1$d개 %3$@"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "%d %@ %@"
+            "value": "%2$@ %1$d件 %3$@"
           }
         },
         "zh-Hans": {
@@ -15131,40 +15403,6 @@
         }
       }
     },
-    "What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists.": {
-      "localizations": {
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "選擇主要提供方選單欄數值的顯示方式。沒有本地值時，今日令牌/成本會回退為剩餘百分比。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "기본 제공자의 메뉴 막대 값 표시 방식을 정합니다. 로컬 값이 없으면 오늘 토큰/비용 대신 남은 백분율로 표시됩니다."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "What the primary provider's menu bar value shows. Today tokens/cost fall back to remaining percent when no local value exists."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "选择主要提供方菜单栏数值的显示方式。没有本地值时，今日令牌/成本会回退为剩余百分比。"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "プライマリプロバイダのメニューバー値の表示方法を指定します。ローカル値がない場合、今日のトークン/コストは残りパーセントにフォールバックします。"
-          }
-        }
-      }
-    },
     "At this pace, daily budget exhausts in ~%@ (est.)": {
       "localizations": {
         "zh-Hant": {
@@ -16876,7 +17114,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "남음 %d%%"
+            "value": "%d%% 남음"
           }
         },
         "en": {
@@ -17522,7 +17760,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "메뉴바 상태"
+            "value": "메뉴 막대 상태"
           }
         },
         "en": {
@@ -18168,7 +18406,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "현재 메뉴바"
+            "value": "현재 메뉴 막대"
           }
         },
         "en": {
@@ -22764,7 +23002,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Grok에는 공개 주간 한도 API가 없고, TokenPilot은 Orca가 Claude/Codex에 하는 것처럼 Grok 로그인 세션을 재사용하지 않습니다. Grok에 보이는 Weekly limit 값(예: 64%)을 입력하세요. 메뉴바는 MANUAL 표시와 함께 입력한 잔여 퍼센트를 그대로 보여 줍니다."
+            "value": "Grok에는 공개 주간 한도 API가 없고, TokenPilot은 Orca가 Claude/Codex에 하는 것처럼 Grok 로그인 세션을 재사용하지 않습니다. Grok에 보이는 Weekly limit 값(예: 64%)을 입력하세요. 메뉴 막대는 MANUAL 표시와 함께 입력한 잔여 퍼센트를 그대로 보여 줍니다."
           }
         },
         "ja": {
@@ -22832,7 +23070,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "켜면 메뉴바가 로컬 컨텍스트 사용률(GROK CTX)보다 이 주간 잔여 값을 우선합니다."
+            "value": "켜면 메뉴 막대가 로컬 컨텍스트 사용률(GROK CTX)보다 이 주간 잔여 값을 우선합니다."
           }
         },
         "ja": {
@@ -23002,7 +23240,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "OAuth 주간 사용량 새로 고침"
+            "value": "OAuth 주간 사용량 새로고침"
           }
         },
         "ja": {
@@ -23682,7 +23920,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "OAuth 주간 사용량 새로 고침"
+            "value": "OAuth 주간 사용량 새로고침"
           }
         },
         "ja": {
@@ -23750,7 +23988,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "Grok CLI 로그인 후 새로 고침"
+            "value": "Grok CLI 로그인 후 새로고침"
           }
         },
         "ja": {
@@ -23784,7 +24022,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "기다린 후 새로 고침"
+            "value": "기다린 후 새로고침"
           }
         },
         "ja": {
@@ -23818,7 +24056,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "나중에 다시 새로 고침"
+            "value": "나중에 다시 새로고침"
           }
         },
         "ja": {
@@ -23852,7 +24090,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "네트워크 확인 후 새로 고침"
+            "value": "네트워크 확인 후 새로고침"
           }
         },
         "ja": {
@@ -23886,7 +24124,7 @@
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "실험적 OAuth 주간 사용량 끄기 또는 새로 고침"
+            "value": "실험적 OAuth 주간 사용량 끄기 또는 새로고침"
           }
         },
         "ja": {
@@ -24375,40 +24613,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "趨勢線"
-          }
-        }
-      }
-    },
-    "Remaining bar": {
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "잔여 막대"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remaining bar"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剩余量条"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "残量バー"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "剩餘量條"
           }
         }
       }

@@ -807,11 +807,15 @@ struct EmptyStateCard: View {
     let icon: String
     let title: String
     let message: String
+    /// An optional next step. History drew its own two empty cards — a larger icon tile, another
+    /// radius, other spacing — only to add this button.
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
     @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
         GlassCard {
-            HStack(spacing: TokenPilotDesign.Spacing.lg) {
+            HStack(alignment: action == nil ? .center : .top, spacing: TokenPilotDesign.Spacing.lg) {
                 Image(systemName: icon)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(palette.status(.goal))
@@ -834,11 +838,20 @@ struct EmptyStateCard: View {
                     Text(message)
                         .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(palette.text(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let actionLabel, let action {
+                        Button(actionLabel, action: action)
+                            .buttonStyle(.glass)
+                            .foregroundStyle(palette.status(.calm))
+                            .focusable()
+                            .padding(.top, TokenPilotDesign.Spacing.xs)
+                    }
                 }
 
                 Spacer(minLength: 0)
             }
         }
+        .accessibilityElement(children: .contain)
     }
 }
 
@@ -1016,9 +1029,10 @@ struct GlassCard<Content: View>: View {
     }
 }
 
-/// Live ticking countdown to a reset moment. Re-renders every second unless Reduce Motion is
-/// enabled; the view is hidden from VoiceOver because the parent card already announces the
-/// reset via its accessibility label, so ticks never spam the reader.
+/// Live ticking countdown to a reset moment. Ticks every second, or once a minute with Reduce
+/// Motion — which is about movement, not about the time being right; the static text it used to
+/// show stayed wrong until something else redrew. Hidden from VoiceOver because the parent card
+/// already announces the reset via its accessibility label, so ticks never spam the reader.
 struct LiveResetCountdown: View {
     let resetAt: Date
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -1029,16 +1043,10 @@ struct LiveResetCountdown: View {
     }
 
     var body: some View {
-        if reduceMotion {
-            Text(TokenPilotFormatters.countdown(until: resetAt))
+        TimelineView(.periodic(from: .now, by: reduceMotion ? 60 : 1)) { context in
+            Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date, showsSeconds: !reduceMotion))
                 .monospacedDigit()
                 .accessibilityHidden(true)
-        } else {
-            TimelineView(.periodic(from: .now, by: 1)) { context in
-                Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date))
-                    .monospacedDigit()
-                    .accessibilityHidden(true)
-            }
         }
     }
 }

@@ -279,7 +279,7 @@ struct CurrentCapacitySignalCard: View {
                         .minimumScaleFactor(0.78)
 
                     Text(item.primaryValue(language: model.settings.localization.language))
-                        .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                        .font(TokenPilotDesign.Typography.metric.weight(.heavy))
                         .monospacedDigit()
                         .foregroundStyle(item.progressColor)
                         .lineLimit(1)
@@ -560,8 +560,8 @@ struct HistoryLimitSignalRow: View {
                 Spacer(minLength: 0)
 
                 VStack(alignment: .trailing, spacing: TokenPilotDesign.Spacing.xs) {
-                    Text(String(format: model.t("Remaining %d%%"), sample.remainingPercent))
-                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    Text(shownValue)
+                        .font(TokenPilotDesign.Typography.metric.weight(.heavy))
                         .monospacedDigit()
                         .foregroundStyle(TokenPilotDesign.riskColor(sample.usedPercent))
                         .lineLimit(1)
@@ -572,7 +572,7 @@ struct HistoryLimitSignalRow: View {
             }
 
             ProgressLine(
-                percent: sample.remainingPercent,
+                percent: shownPercent,
                 color: TokenPilotDesign.riskColor(sample.usedPercent),
                 accessibilityLabel: limitTitle,
                 accessibilityValue: progressAccessibilityValue
@@ -590,8 +590,19 @@ struct HistoryLimitSignalRow: View {
         [
             "\(model.t("Provenance")): \(sourceLabel)",
             "\(model.t("Confidence")): \(sample.confidence.localizedLabel(language: model.settings.localization.language))",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
         ].joined(separator: " · ")
+    }
+
+    /// Follows Settings › Show limits as, like the capacity card above it; this row alone said
+    /// "Remaining 23%" while the card said "77% used".
+    private var shownPercent: Int {
+        model.settings.capacityPercentDisplay.shown(remaining: sample.remainingPercent, used: sample.usedPercent)
+    }
+
+    private var shownValue: String {
+        let format = model.settings.capacityPercentDisplay == .used ? "%d%% used" : "%d%% left"
+        return String(format: model.t(format), shownPercent)
     }
 
     private var progressAccessibilityValue: String {
@@ -602,7 +613,7 @@ struct HistoryLimitSignalRow: View {
     private var limitStatusCue: some View {
         if sample.usedPercent >= 70 {
             StatusBadge(
-                label: "\(model.t("Risk")) \(sample.usedPercent)%",
+                label: model.t("Risk"),
                 color: TokenPilotDesign.riskColor(sample.usedPercent),
                 systemImage: "exclamationmark.triangle"
             )
@@ -613,12 +624,12 @@ struct HistoryLimitSignalRow: View {
         [
             model.t(sample.provider.displayName),
             sample.window.localizedLabel(language: model.settings.localization.language),
-            String(format: model.t("Remaining %d%%"), sample.remainingPercent),
-            "\(model.t("Risk")) \(sample.usedPercent)%",
+            shownValue,
+            sample.usedPercent >= 70 ? model.t("Risk") : nil,
             "\(model.t("Provenance")): \(sourceLabel)",
             sample.confidence.localizedLabel(language: model.settings.localization.language),
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
-        ].joined(separator: ", ")
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
+        ].compactMap { $0 }.joined(separator: ", ")
     }
 
     private var sourceLabel: String {
@@ -1499,7 +1510,7 @@ struct HistoryFiveHourBlocksCard: View {
                 ForEach(Array(blocks.suffix(12).enumerated()), id: \.element.id) { index, block in
                     HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
                         Text(blockTimeText(block.start))
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(TokenPilotDesign.Typography.metricSmall)
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .frame(width: 108, alignment: .leading)
@@ -1807,6 +1818,7 @@ struct HistoryCacheEfficiencyCard: View {
                     Text("\(model.t("Write")) \(TokenPilotFormatters.compactNumber(efficiency.cacheCreationTokens))")
                 }
                 .font(TokenPilotDesign.Typography.caption)
+                .monospacedDigit()
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(1)
 
@@ -2010,7 +2022,7 @@ struct HistoryUsageEventRow: View {
         [
             eventDetail,
             "\(model.t("Provenance")): \(sourceLabel)",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
             qualifierText
         ].joined(separator: " · ")
     }
@@ -2031,7 +2043,7 @@ struct HistoryUsageEventRow: View {
             "\(model.t("Total")) \(TokenPilotFormatters.compactNumber(event.totalTokens))",
             eventDetail,
             "\(model.t("Provenance")): \(sourceLabel)",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
             qualifierText
         ].joined(separator: ", ")
     }
@@ -2066,7 +2078,7 @@ struct HistoryExportCard: View {
                     .frame(width: 112)
                     .focusable()
 
-                    Button(model.t("Save")) { model.exportHistory() }
+                    Button(model.t("Export…")) { model.exportHistory() }
                         .buttonStyle(.glassProminent)
                         .controlSize(.small)
                         .tint(TokenPilotDesign.trust)
@@ -2091,34 +2103,13 @@ struct HistoryCapacityEmptyState: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard {
-            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.lg) {
-                Image(systemName: "checkmark.seal")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
-                    Text(model.t("No capacity signals yet"))
-                        .font(TokenPilotDesign.Typography.cardTitle)
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Text(model.t("Run Auto-detect or Provider Diagnostics to recover source health."))
-                        .font(TokenPilotDesign.Typography.caption)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(model.t("Open Provider Diagnostics")) {
-                        model.selectedScreen = .settings
-                    }
-                    .buttonStyle(.glass)
-                    .foregroundStyle(TokenPilotDesign.calm)
-                    .focusable()
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
+        EmptyStateCard(
+            icon: "checkmark.seal",
+            title: model.t("No capacity signals yet"),
+            message: model.t("Run Auto-detect or Provider Diagnostics to recover source health."),
+            actionLabel: model.t("Open Provider Diagnostics"),
+            action: { model.openProviderDiagnostics() }
+        )
     }
 }
 
@@ -2127,33 +2118,12 @@ struct HistoryEmptyState: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard {
-            HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.lg) {
-                Image(systemName: hasLimitSignals ? "doc.text.magnifyingglass" : "tray")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(hasLimitSignals ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.card, style: .continuous))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
-                    Text(model.t("No usage events recorded"))
-                        .font(TokenPilotDesign.Typography.cardTitle)
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Text(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."))
-                        .font(TokenPilotDesign.Typography.caption)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(model.t("Open Provider Diagnostics")) {
-                        model.selectedScreen = .settings
-                    }
-                    .buttonStyle(.glass)
-                    .foregroundStyle(TokenPilotDesign.calm)
-                    .focusable()
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
+        EmptyStateCard(
+            icon: hasLimitSignals ? "doc.text.magnifyingglass" : "tray",
+            title: model.t("No usage events recorded"),
+            message: model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."),
+            actionLabel: model.t("Open Provider Diagnostics"),
+            action: { model.openProviderDiagnostics() }
+        )
     }
 }
