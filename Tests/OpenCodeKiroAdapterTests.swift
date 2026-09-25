@@ -1572,6 +1572,10 @@ final class BuildSigningTests: XCTestCase {
             specFloor.prefix(while: { $0 != "." }),
             "SwiftPM says \(manifestFloor), Xcode says \(specFloor)"
         )
+        // When the floor was raised to 26, a `MACOSX_DEPLOYMENT_TARGET: "14.0"` under settings.base
+        // stayed behind and overrode it: the Xcode project kept building for macOS 14, and failed
+        // on the first macOS 15 API while every SwiftPM build passed.
+        XCTAssertFalse(spec.contains("MACOSX_DEPLOYMENT_TARGET"), "a build setting overrides deploymentTarget and becomes the real floor")
     }
 
     private static func buildScript() throws -> String {
