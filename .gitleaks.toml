@@ -1,10 +1,51 @@
-title = "TokenPilot gitleaks configuration"
+# TokenPilot — 시크릿 스캔 정의 (pre-commit + CI 동일 실행)
+#
+# 이 앱은 ~/.claude/.credentials.json, ~/.codex/auth.json, ~/.grok/auth.json 같은
+# 프로바이더 인증 파일을 읽는다. 가장 큰 사고 경로는 "실제 auth.json 내용이
+# 테스트 픽스처나 디버그 산출물에 섞여 공개 저장소로 나가는 것"이다.
+#
+# 주의: [allowlist]를 정의하면 gitleaks 기본 설정의 전역 allowlist(내장 stopword
+# 목록)를 대체하지 않고 *추가*되지만, 규칙별 allowlist와 우선순위가 다르다.
+# 기본 stopword가 걸러주던 abc123/xyz 류 자리표시자는 아래 regexes로 직접 덮는다.
+
+title = "TokenPilot gitleaks config"
 
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "Historical completion checklist prose; gitleaks treats the credential-status wording as a generic API key."
-commits = ["e431acb604693d83c9bebd5471c8b87a9c6a5a91"]
-paths = ['''COMPLETION_REPORT\.md$''']
-regexes = ['''(?i)credentials:\s+[a-z]+''']
+[[rules]]
+id = "tokenpilot-provider-oauth"
+description = "프로바이더 OAuth/세션 토큰 — auth.json·credentials.json 구조가 커밋된 경우"
+# RE2에는 lookbehind가 없으므로 키 이름을 그룹 밖에서 소비하고 값만 secret-group으로 잡는다.
+regex = '''["'](?:access_?[Tt]oken|refresh_?[Tt]oken|id_?[Tt]oken|session_?[Kk]ey|client_?[Ss]ecret)["']\s*:\s*["']([A-Za-z0-9._~+/-]{24,})["']'''
+entropy = 3.5
+secret-group = 1
+
+[rules.allowlist]
+description = "규칙 단위 더미 허용"
+regexes = [
+  '''(?i)(test|dummy|fake|example|sample|mock|placeholder|redacted|your[-_]?)''',
+  '''(?i)abc123|abcdef|xyz123|1234567890|0123456789''',
+]
+
+[allowlist]
+description = "확인된 비밀 아님 — 클라이언트 식별자, 명시적 더미, 순차 자리표시자"
+# 중요: 부분 문자열 허용은 위험하다. `qwerty`/`abcdef`를 무제한 부분 일치로 두면
+# 68자짜리 진짜 Google 토큰 안에 우연히 든 `QwErTy` 때문에 통과해버린다(실측 확인).
+# 그래서 자리표시자 앞뒤를 20자로 제한해 "자리표시자가 값의 대부분"일 때만 허용한다.
+regexes = [
+  # xAI 요청 헤더에 넣는 클라이언트 식별자. 비밀값이 아니다.
+  '''^xai-grok-cli$''',
+  # 명시적 더미. Tests/ 를 통째로 제외하지 않는 이유: 진짜 토큰이 테스트에 섞여도 잡아야 한다.
+  '''(?i)^[A-Za-z0-9._/+-]{0,20}(?:test|dummy|fake|example|sample|mock|placeholder|redacted)[A-Za-z0-9._/+-]{0,20}$''',
+  # 손으로 채운 순차 자리표시자. sk-live-abc123def456ghi789, xyz123456789 등.
+  '''(?i)^[A-Za-z0-9._/+-]{0,20}(?:abc123|abcdef|xyz123|qwerty|0123456789)[A-Za-z0-9._/+-]{0,20}$''',
+  # 산문 안의 단어 나열. "credentials: Telegram/Discord" 같은 문서 표현.
+  '''(?i)^(?:Telegram|Discord|Slack|GitHub|Google|Apple)(?:[/,]\s*\w+)*$''',
+]
+paths = [
+  # 로컬 에이전트 툴링 워크스페이스 — 배포물 밖 비제품 상태.
+  '''(?i)^\.omo/''',
+  '''(?i)^\.gjc/''',
+  '''(?i)^\.build/''',
+]

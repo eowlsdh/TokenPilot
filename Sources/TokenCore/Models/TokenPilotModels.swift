@@ -8,6 +8,11 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
     case xai
     case opencode
     case kiro
+    case jetbrains
+    case minimax
+    case zai
+    case openrouter
+    case commandcode
 
     public var id: String { rawValue }
 
@@ -20,6 +25,11 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "Grok / xAI API"
         case .opencode: return "opencode"
         case .kiro: return "Kiro"
+        case .jetbrains: return "JetBrains AI Assistant"
+        case .minimax: return "MiniMax"
+        case .zai: return "Z.ai"
+        case .openrouter: return "OpenRouter"
+        case .commandcode: return "Command Code"
         }
     }
 
@@ -32,6 +42,11 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "xAI"
         case .opencode: return "OC"
         case .kiro: return "Ki"
+        case .jetbrains: return "JB"
+        case .minimax: return "MM"
+        case .zai: return "ZA"
+        case .openrouter: return "OR"
+        case .commandcode: return "CC"
         }
     }
 
@@ -44,6 +59,11 @@ public enum Provider: String, Codable, CaseIterable, Identifiable, Sendable {
         case .xai: return "server.rack"
         case .opencode: return "chevron.left.forwardslash.chevron.right"
         case .kiro: return "cube.transparent"
+        case .jetbrains: return "cursorarrow.click"
+        case .minimax: return "waveform.path.ecg"
+        case .zai: return "globe"
+        case .openrouter: return "arrow.triangle.branch"
+        case .commandcode: return "terminal.fill"
         }
     }
 }
@@ -57,6 +77,126 @@ public enum MenuBarDisplayStyle: String, Codable, CaseIterable, Sendable {
 public enum MenuBarProviderGrouping: String, Codable, CaseIterable, Sendable {
     case combined = "Combined"
     case separate = "Separate"
+}
+
+/// What the provider-metrics menu bar block draws under its percentage.
+///
+/// Benchmarked against the icon styles in Claude Usage Tracker (battery,
+/// progress bar, percentage only) and ClaudeBar's color-coded quota bars: a
+/// trend line answers "which way is it going", a bar answers "how much is left"
+/// at a glance, and some users want neither.
+public enum MenuBarTrendStyle: String, Codable, CaseIterable, Sendable {
+    /// Remaining-percent trend line from stored limit samples (the original behavior).
+    case sparkline = "Sparkline"
+    /// Filled bar showing the remaining percent currently displayed.
+    case bar = "Bar"
+    /// Percentage text only.
+    case off = "Off"
+}
+
+/// How much horizontal menu bar room TokenPilot may take for its text layouts.
+///
+/// Menu bar width is scarce — more so on a notched display, where every point
+/// TokenPilot takes is a point another app's item loses. The detailed title can
+/// reach 27 monospaced cells once two windows each carry a reset countdown
+/// (`5h 100%·4h58m · 7d 85%·4d7h`), which is roughly an eighth of a laptop menu
+/// bar for one utility.
+///
+/// The budget trims whole components — never mid-word, never an ellipsis — so
+/// whatever survives is still readable and still true.
+public enum MenuBarWidthLimit: String, Codable, CaseIterable, Sendable {
+    /// No cap: whatever the layout produces.
+    case full = "Full"
+    /// Room for both readings once the decoration around them is dropped.
+    case standard = "Standard"
+    /// Room for one reading.
+    case narrow = "Narrow"
+
+    /// Budget in monospaced character cells; `nil` means uncapped.
+    ///
+    /// 26 is what two undecorated readings cost in the widest real case
+    /// (`15m 40% EXP · 4h 75% EXP`), so the standard budget trims decoration
+    /// without ever hiding a reading. 13 is what one costs, which is the point
+    /// of the narrow one.
+    public var characterBudget: Int? {
+        switch self {
+        case .full: return nil
+        case .standard: return 26
+        case .narrow: return 13
+        }
+    }
+}
+
+/// The weekday that starts a local weekly window (budget progress, weekly digest).
+///
+/// Benchmarked against TokenBar's "Week Start Day" setting and ccusage's week
+/// alignment. Local windows are Monday-based by default to match the calendar
+/// week; Sunday is offered to align with some provider dashboards.
+public enum WeekStartDay: Int, Codable, CaseIterable, Sendable {
+    case sunday = 1
+    case monday = 2
+    case tuesday = 3
+    case wednesday = 4
+    case thursday = 5
+    case friday = 6
+    case saturday = 7
+
+    /// Maps to `Calendar`'s weekday component (1 = Sunday ... 7 = Saturday).
+    public var calendarWeekday: Int { rawValue }
+
+    public var label: String {
+        switch self {
+        case .sunday: return "Sunday"
+        case .monday: return "Monday"
+        case .tuesday: return "Tuesday"
+        case .wednesday: return "Wednesday"
+        case .thursday: return "Thursday"
+        case .friday: return "Friday"
+        case .saturday: return "Saturday"
+        }
+    }
+
+    /// Days before the given weekday to roll back to this week's start.
+    public func daysBefore(_ weekday: Int) -> Int {
+        (weekday - rawValue + 7) % 7
+    }
+}
+
+/// What the primary provider's detailed/compact menu bar segment shows.
+///
+/// Benchmarked against TokenBar's menu-bar title options (remaining quota vs
+/// today's tokens vs cost). `remainingPercent` is the default; the other two
+/// fall back to remaining percent when the matching local value is absent.
+/// Whether a limit is shown as what is left or what has been used.
+///
+/// The app showed remaining and every provider dashboard shows used, so "85%" in one place and
+/// "15%" in the other described the same window — and a bare number never said which it was.
+public enum CapacityPercentDisplay: String, Codable, CaseIterable, Sendable {
+    case remaining = "Remaining"
+    case used = "Used"
+
+    /// The number to show. Risk and ordering keep using the remaining value either way.
+    public func shown(remaining: Int, used: Int?) -> Int {
+        switch self {
+        case .remaining: return remaining
+        case .used: return used ?? min(max(100 - remaining, 0), 100)
+        }
+    }
+
+    /// A stored remaining-fraction trend (0...1) turned the same way as the number beside it, so
+    /// in Used mode the line rises as the limit is consumed instead of falling while the number rises.
+    public func shownTrend(remainingFractions: [Double]) -> [Double] {
+        switch self {
+        case .remaining: return remainingFractions
+        case .used: return remainingFractions.map { 1 - $0 }
+        }
+    }
+}
+
+public enum MenuBarPrimaryMetric: String, Codable, CaseIterable, Sendable {
+    case remainingPercent = "Remaining percent"
+    case todayTokens = "Today tokens"
+    case todayCost = "Today cost"
 }
 
 
@@ -82,6 +222,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
     case officialStatusline
     case officialTelemetry
     case officialManagementAPI
+    case officialUsageAPI
     case webUsage
     case localLog
     case experimentalCLI
@@ -97,6 +238,7 @@ public enum UsageDataSource: String, Codable, CaseIterable, Identifiable, Sendab
         case .officialStatusline: return "official statusline"
         case .officialTelemetry: return "official telemetry"
         case .officialManagementAPI: return "official management API (future)"
+        case .officialUsageAPI: return "official usage API"
         case .webUsage: return "limit hints"
         case .localLog: return "local log"
         case .experimentalCLI: return "experimental CLI (unofficial)"
@@ -128,6 +270,13 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     public var authType: String?
     public var durationMS: Int?
     public var totalTokensOverride: Int?
+    /// Workspace label for local-activity rollups (opencode only today). Holds the
+    /// workspace *folder name* — never a full path — and is excluded from exports.
+    public var projectLabel: String?
+    /// The source's own identity for this event when it has one — a Claude Code message ID — so a
+    /// reading of the same message taken on a later refresh replaces the earlier one instead of
+    /// being stored beside it. Never exported.
+    public var sourceEventID: String?
 
     public init(
         id: UUID = UUID(),
@@ -148,7 +297,8 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         isExperimental: Bool = false,
         authType: String? = nil,
         durationMS: Int? = nil,
-        totalTokensOverride: Int? = nil
+        totalTokensOverride: Int? = nil,
+        projectLabel: String? = nil
     ) {
         self.id = id
         self.provider = provider
@@ -169,6 +319,7 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         self.authType = authType
         self.durationMS = durationMS
         self.totalTokensOverride = totalTokensOverride.map { max($0, 0) }
+        self.projectLabel = projectLabel
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -191,6 +342,8 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         case authType
         case durationMS
         case totalTokensOverride
+        case projectLabel
+        case sourceEventID
     }
 
     public init(from decoder: Decoder) throws {
@@ -214,8 +367,10 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
             isExperimental: try container.decodeIfPresent(Bool.self, forKey: .isExperimental) ?? false,
             authType: try container.decodeIfPresent(String.self, forKey: .authType),
             durationMS: try container.decodeIfPresent(Int.self, forKey: .durationMS),
-            totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride)
+            totalTokensOverride: try container.decodeIfPresent(Int.self, forKey: .totalTokensOverride),
+            projectLabel: try container.decodeIfPresent(String.self, forKey: .projectLabel)
         )
+        self.sourceEventID = try container.decodeIfPresent(String.self, forKey: .sourceEventID)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -239,6 +394,8 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(authType, forKey: .authType)
         try container.encodeIfPresent(durationMS, forKey: .durationMS)
         try container.encodeIfPresent(totalTokensOverride, forKey: .totalTokensOverride)
+        try container.encodeIfPresent(projectLabel, forKey: .projectLabel)
+        try container.encodeIfPresent(sourceEventID, forKey: .sourceEventID)
     }
 
     private var componentTokenTotal: Int {
@@ -251,6 +408,27 @@ public struct UsageEvent: Codable, Equatable, Identifiable, Sendable {
     }
 
     public var cacheTokens: Int { cacheReadTokens + cacheCreationTokens }
+
+    /// Tokens that represent new work: everything except cache reads.
+    ///
+    /// A cache read is context being re-sent, billed at a fraction of a fresh token and utterly
+    /// dominant by volume — measured on real local logs it was 98% of a Claude Code day and 99% of
+    /// an opencode one, turning "today" into 599M when 12M was new. As a headline that reads as a
+    /// broken counter, and as a budget it is worse than useless: any token budget is blown on the
+    /// first conversation.
+    ///
+    /// So anything that answers *how much did I do* — goals, budgets, milestones, the menu bar's
+    /// today figure — uses this. History's totals, the model breakdown, and the export keep every
+    /// token, because full accounting is exactly what those surfaces are for.
+    public var workingTokens: Int {
+        // An override replaces the *total*, not the breakdown. Codex reports both — `usage.total`
+        // alongside `usage.cached` — so treating the override as opaque counted its cache reads as
+        // new work, and a single Codex conversation could blow a daily budget with ~90% re-sent
+        // context. Where a source really has no breakdown its cache read is zero and this is a
+        // no-op, which is the case the opaque reading was written for.
+        if totalTokensOverride != nil { return max(totalTokens - cacheReadTokens, 0) }
+        return max(componentTokenTotal - cacheReadTokens, 0)
+    }
 
     public var isWebQuotaComparable: Bool {
         !(provider == .codex && dataSource == .localLog && isExperimental)
@@ -385,6 +563,9 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var dailyRequestsUsed: Int?
     public var dailyRequestsLimit: Int?
     public var todayTokens: Int
+    /// How much of `todayTokens` was re-sent cached context. Zero when the source does not say,
+    /// in which case `todayWorkingTokens` falls back to the full total rather than guessing.
+    public var todayCacheReadTokens: Int
     public var todayCostUSD: Decimal?
     public var confidence: DataConfidence
     public var dataSource: UsageDataSource
@@ -408,6 +589,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         dailyRequestsUsed: Int? = nil,
         dailyRequestsLimit: Int? = nil,
         todayTokens: Int = 0,
+        todayCacheReadTokens: Int = 0,
         todayCostUSD: Decimal? = nil,
         confidence: DataConfidence = .low,
         dataSource: UsageDataSource = .unknown,
@@ -428,6 +610,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         self.dailyRequestsUsed = dailyRequestsUsed.map { max($0, 0) }
         self.dailyRequestsLimit = dailyRequestsLimit.map { max($0, 0) }
         self.todayTokens = max(todayTokens, 0)
+        self.todayCacheReadTokens = min(max(todayCacheReadTokens, 0), max(todayTokens, 0))
         self.todayCostUSD = todayCostUSD
         self.confidence = confidence
         self.dataSource = dataSource
@@ -450,6 +633,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         case dailyRequestsUsed
         case dailyRequestsLimit
         case todayTokens
+        case todayCacheReadTokens
         case todayCostUSD
         case confidence
         case dataSource
@@ -474,6 +658,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
             dailyRequestsUsed: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsUsed),
             dailyRequestsLimit: try container.decodeIfPresent(Int.self, forKey: .dailyRequestsLimit),
             todayTokens: try container.decodeIfPresent(Int.self, forKey: .todayTokens) ?? 0,
+            todayCacheReadTokens: try container.decodeIfPresent(Int.self, forKey: .todayCacheReadTokens) ?? 0,
             todayCostUSD: try container.decodeIfPresent(Decimal.self, forKey: .todayCostUSD),
             confidence: try container.decodeIfPresent(DataConfidence.self, forKey: .confidence) ?? .low,
             dataSource: try container.decodeIfPresent(UsageDataSource.self, forKey: .dataSource) ?? .unknown,
@@ -498,6 +683,7 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
         try container.encodeIfPresent(dailyRequestsUsed, forKey: .dailyRequestsUsed)
         try container.encodeIfPresent(dailyRequestsLimit, forKey: .dailyRequestsLimit)
         try container.encode(todayTokens, forKey: .todayTokens)
+        try container.encode(todayCacheReadTokens, forKey: .todayCacheReadTokens)
         try container.encodeIfPresent(todayCostUSD, forKey: .todayCostUSD)
         try container.encode(confidence, forKey: .confidence)
         try container.encode(dataSource, forKey: .dataSource)
@@ -514,6 +700,13 @@ public struct ProviderSnapshot: Codable, Equatable, Identifiable, Sendable {
     public var dailyRequestsPercent: Int? {
         guard let used = dailyRequestsUsed, let limit = dailyRequestsLimit, limit > 0 else { return nil }
         return min(max(Int((Double(used) / Double(limit) * 100).rounded()), 0), 100)
+    }
+
+    /// Today's tokens with re-sent cached context taken out — see ``UsageEvent/workingTokens``.
+    /// Equals `todayTokens` when the source reports no cache split, so a provider that cannot
+    /// break its total down is never made to look smaller than it is.
+    public var todayWorkingTokens: Int {
+        max(todayTokens - todayCacheReadTokens, 0)
     }
 
     public var primaryUsedPercent: Int? {
@@ -633,9 +826,66 @@ public struct OpenCodeSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Opt-in consent for the experimental server usage probes (Claude OAuth usage, Codex wham
+/// usage, Grok plan label). Default-off. Each probe reads only an access token from the
+/// provider's own CLI credential file, keeps it in memory for a single request, and never
+/// touches refresh tokens, cookies, or API keys. Results are labeled EXPERIMENTAL/UNOFFICIAL.
+public struct ExperimentalUsageSettings: Codable, Equatable, Sendable {
+    public static let claudeConsentVersionCurrent = 1
+    public static let codexConsentVersionCurrent = 1
+    public static let grokTierConsentVersionCurrent = 1
+
+    public var claudeConsentVersion: Int?
+    public var codexConsentVersion: Int?
+    public var grokTierConsentVersion: Int?
+
+    public var claudeProbeEnabled: Bool {
+        claudeConsentVersion == Self.claudeConsentVersionCurrent
+    }
+
+    public var codexProbeEnabled: Bool {
+        codexConsentVersion == Self.codexConsentVersionCurrent
+    }
+
+    public var grokTierProbeEnabled: Bool {
+        grokTierConsentVersion == Self.grokTierConsentVersionCurrent
+    }
+
+    public init(
+        claudeConsentVersion: Int? = nil,
+        codexConsentVersion: Int? = nil,
+        grokTierConsentVersion: Int? = nil
+    ) {
+        self.claudeConsentVersion = claudeConsentVersion == Self.claudeConsentVersionCurrent ? Self.claudeConsentVersionCurrent : nil
+        self.codexConsentVersion = codexConsentVersion == Self.codexConsentVersionCurrent ? Self.codexConsentVersionCurrent : nil
+        self.grokTierConsentVersion = grokTierConsentVersion == Self.grokTierConsentVersionCurrent ? Self.grokTierConsentVersionCurrent : nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case claudeConsentVersion
+        case codexConsentVersion
+        case grokTierConsentVersion
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            claudeConsentVersion: try container.decodeIfPresent(Int.self, forKey: .claudeConsentVersion),
+            codexConsentVersion: try container.decodeIfPresent(Int.self, forKey: .codexConsentVersion),
+            grokTierConsentVersion: try container.decodeIfPresent(Int.self, forKey: .grokTierConsentVersion)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeIfPresent(claudeConsentVersion, forKey: .claudeConsentVersion)
+        try container.encodeIfPresent(codexConsentVersion, forKey: .codexConsentVersion)
+        try container.encodeIfPresent(grokTierConsentVersion, forKey: .grokTierConsentVersion)
+    }
+}
+
 public struct XAISettings: Codable, Equatable, Sendable {
     public static let experimentalOAuthWeeklyConsentVersionCurrent = 1
-
     public var teamID: String
     public var managementAPIKeyConfigured: Bool
     public var managementAPILookbackDays: Int
@@ -778,49 +1028,7 @@ public struct ProviderLimitSample: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-public struct ChallengeGoal: Codable, Equatable, Identifiable, Sendable {
-    public var id: UUID
-    public var title: String
-    public var provider: Provider?
-    public var targetTokens: Int?
-    public var targetCostUSD: Decimal?
-    public var startsAt: Date
-    public var endsAt: Date?
 
-    public init(
-        id: UUID = UUID(),
-        title: String,
-        provider: Provider? = nil,
-        targetTokens: Int? = nil,
-        targetCostUSD: Decimal? = nil,
-        startsAt: Date = Date(),
-        endsAt: Date? = nil
-    ) {
-        self.id = id
-        self.title = title
-        self.provider = provider
-        self.targetTokens = targetTokens
-        self.targetCostUSD = targetCostUSD
-        self.startsAt = startsAt
-        self.endsAt = endsAt
-    }
-}
-
-public struct ChallengeProgress: Codable, Equatable, Identifiable, Sendable {
-    public var id: UUID
-    public var goalID: UUID
-    public var tokensUsed: Int
-    public var costUSD: Decimal
-    public var updatedAt: Date
-
-    public init(id: UUID = UUID(), goalID: UUID, tokensUsed: Int = 0, costUSD: Decimal = 0, updatedAt: Date = Date()) {
-        self.id = id
-        self.goalID = goalID
-        self.tokensUsed = tokensUsed
-        self.costUSD = costUSD
-        self.updatedAt = updatedAt
-    }
-}
 
 public enum AlertThreshold: String, Codable, CaseIterable, Identifiable, Sendable {
     case reset
@@ -847,14 +1055,6 @@ public enum AlertThreshold: String, Codable, CaseIterable, Identifiable, Sendabl
         case .hundred: return "100"
         }
     }
-}
-
-public enum NotificationChannel: String, Codable, CaseIterable, Identifiable, Sendable {
-    case macOS
-    case telegram
-    case discord
-
-    public var id: String { rawValue }
 }
 
 public struct AlertRule: Codable, Equatable, Identifiable, Sendable {
@@ -1052,6 +1252,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
     case ko
     case en
     case zhHans = "zh-Hans"
+    case zhHant = "zh-Hant"
     case ja
 
     public var id: String { rawValue }
@@ -1062,6 +1263,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
         case .ko: return "한국어"
         case .en: return "English"
         case .zhHans: return "简体中文"
+        case .zhHant: return "繁體中文"
         case .ja: return "日本語"
         }
     }
@@ -1072,6 +1274,7 @@ public enum TokenPilotLanguage: String, Codable, CaseIterable, Identifiable, Sen
         case .ko: return "ko"
         case .en: return "en"
         case .zhHans: return "zh-Hans"
+        case .zhHant: return "zh-Hant"
         case .ja: return "ja"
         }
     }
@@ -1194,14 +1397,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var xaiEnabled: Bool
     public var opencodeEnabled: Bool
     public var kiroEnabled: Bool
+    public var jetbrainsEnabled: Bool
+    public var minimaxEnabled: Bool
+    public var zaiEnabled: Bool
+    public var openrouterEnabled: Bool
+    public var commandcodeEnabled: Bool
     public var deepseekAPIKeyConfigured: Bool
     public var monitoredProviders: MonitoredProviderSettings
     public var menuBarDisplayTarget: Provider?
     public var menuBarProviderGrouping: MenuBarProviderGrouping
     public var menuBarMetricProviders: Set<Provider>
     public var menuBarDisplayStyle: MenuBarDisplayStyle
+    public var menuBarPrimaryMetric: MenuBarPrimaryMetric
     public var menuBarSecondaryDisplayTarget: Provider?
     public var menuBarShowsSecondaryProvider: Bool
+    public var menuBarTrendStyle: MenuBarTrendStyle
+    public var menuBarWidthLimit: MenuBarWidthLimit
+    public var capacityPercentDisplay: CapacityPercentDisplay
     public var claudeStatusFilePath: String
     public var claudeStatusFileBookmarkData: Data?
     public var geminiTelemetryLogPath: String
@@ -1221,8 +1433,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
     public var xAI: XAISettings
     public var kiro: KiroSettings
     public var openCode: OpenCodeSettings
+    public var experimentalUsage: ExperimentalUsageSettings
     public var showMockDataWhenDisconnected: Bool
-    public var challengeTargetTokens: Int
+    public var launchAtLogin: Bool
+    public var refreshIntervalSeconds: Int
+    public var menuBarHotkeyEnabled: Bool
+    public var weeklyDigestEnabled: Bool
+    public var dailyDigestEnabled: Bool
+    public var weeklyDigestHour: Int
+    public var weeklyDigestMinute: Int
+    public var dailyDigestHour: Int
+    public var dailyDigestMinute: Int
+    public var weekStartDay: WeekStartDay
+    public var budget: BudgetGuardrailSettings
 
     public static let defaultAntigravityStatuslinePath = "~/Library/Application Support/TokenPilot/antigravity-statusline.json"
     public static let legacyGeminiTelemetryPath = "~/.gemini/telemetry.log"
@@ -1235,6 +1458,11 @@ public struct AppSettings: Codable, Equatable, Sendable {
         xaiEnabled: Bool = false,
         opencodeEnabled: Bool = true,
         kiroEnabled: Bool = true,
+        jetbrainsEnabled: Bool = false,
+        minimaxEnabled: Bool = false,
+        zaiEnabled: Bool = false,
+        openrouterEnabled: Bool = false,
+        commandcodeEnabled: Bool = false,
         deepseekAPIKeyConfigured: Bool = false,
         claudeStatusFilePath: String = "~/Library/Application Support/TokenPilot/claude-statusline.json",
         claudeStatusFileBookmarkData: Data? = nil,
@@ -1255,15 +1483,30 @@ public struct AppSettings: Codable, Equatable, Sendable {
         xAI: XAISettings = XAISettings(),
         kiro: KiroSettings = KiroSettings(),
         openCode: OpenCodeSettings = OpenCodeSettings(),
+        experimentalUsage: ExperimentalUsageSettings = ExperimentalUsageSettings(),
         showMockDataWhenDisconnected: Bool = false,
         monitoredProviders: MonitoredProviderSettings = MonitoredProviderSettings(),
         menuBarDisplayTarget: Provider? = nil,
         menuBarProviderGrouping: MenuBarProviderGrouping = .separate,
         menuBarMetricProviders: Set<Provider> = Set(Provider.allCases),
         menuBarDisplayStyle: MenuBarDisplayStyle = .detailed,
+        menuBarPrimaryMetric: MenuBarPrimaryMetric = .remainingPercent,
         menuBarSecondaryDisplayTarget: Provider? = nil,
         menuBarShowsSecondaryProvider: Bool = false,
-        challengeTargetTokens: Int = 10_000
+        menuBarTrendStyle: MenuBarTrendStyle = .sparkline,
+        menuBarWidthLimit: MenuBarWidthLimit = .standard,
+        capacityPercentDisplay: CapacityPercentDisplay = .remaining,
+        launchAtLogin: Bool = false,
+        refreshIntervalSeconds: Int = 60,
+        menuBarHotkeyEnabled: Bool = false,
+        weeklyDigestEnabled: Bool = false,
+        dailyDigestEnabled: Bool = false,
+        weeklyDigestHour: Int = 9,
+        weeklyDigestMinute: Int = 0,
+        dailyDigestHour: Int = 18,
+        dailyDigestMinute: Int = 0,
+        weekStartDay: WeekStartDay = .monday,
+        budget: BudgetGuardrailSettings = BudgetGuardrailSettings()
     ) {
         self.claudeEnabled = claudeEnabled
         self.codexEnabled = codexEnabled
@@ -1272,14 +1515,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.xaiEnabled = xaiEnabled
         self.opencodeEnabled = opencodeEnabled
         self.kiroEnabled = kiroEnabled
+        self.jetbrainsEnabled = jetbrainsEnabled
+        self.minimaxEnabled = minimaxEnabled
+        self.zaiEnabled = zaiEnabled
+        self.openrouterEnabled = openrouterEnabled
+        self.commandcodeEnabled = commandcodeEnabled
         self.deepseekAPIKeyConfigured = deepseekAPIKeyConfigured
         self.monitoredProviders = monitoredProviders
         self.menuBarDisplayTarget = menuBarDisplayTarget
         self.menuBarProviderGrouping = menuBarProviderGrouping
         self.menuBarMetricProviders = menuBarMetricProviders
         self.menuBarDisplayStyle = menuBarDisplayStyle
+        self.menuBarPrimaryMetric = menuBarPrimaryMetric
         self.menuBarSecondaryDisplayTarget = menuBarSecondaryDisplayTarget
         self.menuBarShowsSecondaryProvider = menuBarShowsSecondaryProvider
+        self.menuBarTrendStyle = menuBarTrendStyle
+        self.menuBarWidthLimit = menuBarWidthLimit
+        self.capacityPercentDisplay = capacityPercentDisplay
         self.claudeStatusFilePath = claudeStatusFilePath
         self.claudeStatusFileBookmarkData = claudeStatusFileBookmarkData
         self.geminiTelemetryLogPath = geminiTelemetryLogPath
@@ -1299,8 +1551,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
         self.xAI = xAI
         self.kiro = kiro
         self.openCode = openCode
+        self.experimentalUsage = experimentalUsage
         self.showMockDataWhenDisconnected = showMockDataWhenDisconnected
-        self.challengeTargetTokens = challengeTargetTokens
+        self.launchAtLogin = launchAtLogin
+        self.refreshIntervalSeconds = refreshIntervalSeconds
+        self.menuBarHotkeyEnabled = menuBarHotkeyEnabled
+        self.weeklyDigestEnabled = weeklyDigestEnabled
+        self.dailyDigestEnabled = dailyDigestEnabled
+        self.weeklyDigestHour = min(max(weeklyDigestHour, 0), 23)
+        self.weeklyDigestMinute = min(max(weeklyDigestMinute, 0), 59)
+        self.dailyDigestHour = min(max(dailyDigestHour, 0), 23)
+        self.dailyDigestMinute = min(max(dailyDigestMinute, 0), 59)
+        self.weekStartDay = weekStartDay
+        self.budget = budget
     }
     public mutating func normalizeMenuBarComposition() {
         if let primary = menuBarDisplayTarget, !isProviderEnabled(primary) {
@@ -1315,9 +1578,13 @@ public struct AppSettings: Codable, Equatable, Sendable {
             menuBarShowsSecondaryProvider = false
         }
 
+        // The menu bar selection is intent, not state: keep a switched-off provider in the set so
+        // switching it back on restores it. `effectiveMenuBarMetricProviders` intersects with the
+        // enabled set at read time, so nothing disabled is ever drawn. Pruning here made the loss
+        // permanent — a provider toggled off and on again was simply gone from the menu bar, with
+        // nothing on screen to explain why.
         let enabledProviders = Set(self.enabledProviders)
-        menuBarMetricProviders = menuBarMetricProviders.intersection(enabledProviders)
-        if menuBarMetricProviders.isEmpty,
+        if menuBarMetricProviders.intersection(enabledProviders).isEmpty,
            let fallback = Provider.allCases.first(where: { enabledProviders.contains($0) }) {
             menuBarMetricProviders.insert(fallback)
         }
@@ -1352,14 +1619,23 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case xaiEnabled
         case opencodeEnabled
         case kiroEnabled
+        case jetbrainsEnabled
+        case minimaxEnabled
+        case zaiEnabled
+        case openrouterEnabled
+        case commandcodeEnabled
         case deepseekAPIKeyConfigured
         case monitoredProviders
         case menuBarDisplayTarget
         case menuBarProviderGrouping
         case menuBarMetricProviders
         case menuBarDisplayStyle
+        case menuBarPrimaryMetric
         case menuBarSecondaryDisplayTarget
         case menuBarShowsSecondaryProvider
+        case menuBarTrendStyle
+        case menuBarWidthLimit
+        case capacityPercentDisplay
         case claudeStatusFilePath
         case claudeStatusFileBookmarkData
         case geminiTelemetryLogPath
@@ -1379,8 +1655,19 @@ public struct AppSettings: Codable, Equatable, Sendable {
         case xAI
         case kiro
         case openCode
+        case experimentalUsage
         case showMockDataWhenDisconnected
-        case challengeTargetTokens
+        case launchAtLogin
+        case refreshIntervalSeconds
+        case menuBarHotkeyEnabled
+        case weeklyDigestEnabled
+        case dailyDigestEnabled
+        case weeklyDigestHour
+        case weeklyDigestMinute
+        case dailyDigestHour
+        case dailyDigestMinute
+        case weekStartDay
+        case budget
     }
 
     public init(from decoder: Decoder) throws {
@@ -1393,6 +1680,15 @@ public struct AppSettings: Codable, Equatable, Sendable {
             xaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .xaiEnabled) ?? false,
             opencodeEnabled: try container.decodeIfPresent(Bool.self, forKey: .opencodeEnabled) ?? true,
             kiroEnabled: try container.decodeIfPresent(Bool.self, forKey: .kiroEnabled) ?? true,
+            // These flags were added after the original decode list and were never read back, so
+            // enabling one of these providers survived until the next launch and then silently
+            // turned itself off: `enabledProviders` intersects the legacy flags with the monitored
+            // set, and a flag that always decoded to false removed the provider again.
+            jetbrainsEnabled: try container.decodeIfPresent(Bool.self, forKey: .jetbrainsEnabled) ?? false,
+            minimaxEnabled: try container.decodeIfPresent(Bool.self, forKey: .minimaxEnabled) ?? false,
+            zaiEnabled: try container.decodeIfPresent(Bool.self, forKey: .zaiEnabled) ?? false,
+            openrouterEnabled: try container.decodeIfPresent(Bool.self, forKey: .openrouterEnabled) ?? false,
+            commandcodeEnabled: try container.decodeIfPresent(Bool.self, forKey: .commandcodeEnabled) ?? false,
             deepseekAPIKeyConfigured: try container.decodeIfPresent(Bool.self, forKey: .deepseekAPIKeyConfigured) ?? false,
             claudeStatusFilePath: try container.decodeIfPresent(String.self, forKey: .claudeStatusFilePath) ?? "~/Library/Application Support/TokenPilot/claude-statusline.json",
             claudeStatusFileBookmarkData: try container.decodeIfPresent(Data.self, forKey: .claudeStatusFileBookmarkData),
@@ -1413,17 +1709,48 @@ public struct AppSettings: Codable, Equatable, Sendable {
             xAI: try container.decodeIfPresent(XAISettings.self, forKey: .xAI) ?? XAISettings(),
             kiro: try container.decodeIfPresent(KiroSettings.self, forKey: .kiro) ?? KiroSettings(),
             openCode: try container.decodeIfPresent(OpenCodeSettings.self, forKey: .openCode) ?? OpenCodeSettings(),
+            // Encoded but never decoded, so every relaunch silently withdrew a consent the user had
+            // given: the experimental probes went quiet with no message and no way to tell why.
+            // Reading it back means an explicit opt-in survives a restart; it is still opt-in only,
+            // and `ExperimentalUsageSettings.init` still drops any version that is not the current one.
+            experimentalUsage: try container.decodeIfPresent(ExperimentalUsageSettings.self, forKey: .experimentalUsage) ?? ExperimentalUsageSettings(),
             showMockDataWhenDisconnected: try container.decodeIfPresent(Bool.self, forKey: .showMockDataWhenDisconnected) ?? false,
             monitoredProviders: try container.decodeIfPresent(MonitoredProviderSettings.self, forKey: .monitoredProviders) ?? MonitoredProviderSettings(),
             menuBarDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarDisplayTarget),
             menuBarProviderGrouping: Self.decodeMenuBarProviderGrouping(from: container),
             menuBarMetricProviders: Self.decodeMenuBarMetricProviders(from: container),
             menuBarDisplayStyle: Self.decodeMenuBarDisplayStyle(from: container),
+            menuBarPrimaryMetric: Self.decodeMenuBarPrimaryMetric(from: container),
             menuBarSecondaryDisplayTarget: Self.decodeProviderIfPresent(from: container, forKey: .menuBarSecondaryDisplayTarget),
             menuBarShowsSecondaryProvider: try container.decodeIfPresent(Bool.self, forKey: .menuBarShowsSecondaryProvider) ?? false,
-            challengeTargetTokens: try container.decodeIfPresent(Int.self, forKey: .challengeTargetTokens) ?? 10_000
+            menuBarTrendStyle: Self.decodeChoice(from: container, forKey: .menuBarTrendStyle, default: .sparkline),
+            menuBarWidthLimit: Self.decodeChoice(from: container, forKey: .menuBarWidthLimit, default: .standard),
+            capacityPercentDisplay: Self.decodeChoice(from: container, forKey: .capacityPercentDisplay, default: .remaining),
+            launchAtLogin: try container.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false,
+            refreshIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .refreshIntervalSeconds) ?? 60,
+            menuBarHotkeyEnabled: try container.decodeIfPresent(Bool.self, forKey: .menuBarHotkeyEnabled) ?? false,
+            weeklyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .weeklyDigestEnabled) ?? false,
+            dailyDigestEnabled: try container.decodeIfPresent(Bool.self, forKey: .dailyDigestEnabled) ?? false,
+            weeklyDigestHour: try container.decodeIfPresent(Int.self, forKey: .weeklyDigestHour) ?? 9,
+            weeklyDigestMinute: try container.decodeIfPresent(Int.self, forKey: .weeklyDigestMinute) ?? 0,
+            dailyDigestHour: try container.decodeIfPresent(Int.self, forKey: .dailyDigestHour) ?? 18,
+            dailyDigestMinute: try container.decodeIfPresent(Int.self, forKey: .dailyDigestMinute) ?? 0,
+            weekStartDay: Self.decodeWeekStartDay(from: container),
+            budget: try container.decodeIfPresent(BudgetGuardrailSettings.self, forKey: .budget) ?? BudgetGuardrailSettings()
         )
         self.normalizeMenuBarComposition()
+    }
+
+    /// Reads a string-backed choice without letting an unrecognised value fail the whole
+    /// decode. A settings file written by a newer build would otherwise take every other
+    /// preference down with it — providers, alert rules, digest schedule — over one word.
+    private static func decodeChoice<Choice: RawRepresentable>(
+        from container: KeyedDecodingContainer<CodingKeys>,
+        forKey key: CodingKeys,
+        default fallback: Choice
+    ) -> Choice where Choice.RawValue == String {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: key) else { return fallback }
+        return Choice(rawValue: rawValue) ?? fallback
     }
 
     private static func decodeProviderIfPresent(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Provider? {
@@ -1450,6 +1777,21 @@ public struct AppSettings: Codable, Equatable, Sendable {
         return Set(rawValues.compactMap(Provider.init(rawValue:)))
     }
 
+    private static func decodeMenuBarPrimaryMetric(from container: KeyedDecodingContainer<CodingKeys>) -> MenuBarPrimaryMetric {
+        guard let rawValue = try? container.decodeIfPresent(String.self, forKey: .menuBarPrimaryMetric) else {
+            return .remainingPercent
+        }
+        return MenuBarPrimaryMetric(rawValue: rawValue) ?? .remainingPercent
+    }
+
+    private static func decodeWeekStartDay(from container: KeyedDecodingContainer<CodingKeys>) -> WeekStartDay {
+        guard let rawValue = try? container.decodeIfPresent(Int.self, forKey: .weekStartDay),
+              let day = WeekStartDay(rawValue: rawValue) else {
+            return .monday
+        }
+        return day
+    }
+
     public static var defaultAlertRules: [AlertRule] {
         [
             AlertRule(provider: .claude, window: .fiveHour),
@@ -1458,6 +1800,34 @@ public struct AppSettings: Codable, Equatable, Sendable {
             AlertRule(provider: .codex, window: .weekly),
             AlertRule(provider: .gemini, window: .dailyRequests)
         ]
+    }
+}
+
+/// Optional local token budgets for the day, week, and month windows.
+///
+/// These are local-activity budgets, never provider quota: a budget of 0 is
+/// disabled, and reaching a budget does not change what the provider reports.
+public struct BudgetGuardrailSettings: Codable, Equatable, Sendable {
+    public var dailyTokens: Int
+    public var weeklyTokens: Int
+    public var monthlyTokens: Int
+    /// Threshold percent (1...100) at which a budget-crossing macOS notification fires.
+    public var alertThresholdPercent: Int
+
+    public init(
+        dailyTokens: Int = 0,
+        weeklyTokens: Int = 0,
+        monthlyTokens: Int = 0,
+        alertThresholdPercent: Int = 80
+    ) {
+        self.dailyTokens = max(dailyTokens, 0)
+        self.weeklyTokens = max(weeklyTokens, 0)
+        self.monthlyTokens = max(monthlyTokens, 0)
+        self.alertThresholdPercent = min(max(alertThresholdPercent, 1), 100)
+    }
+
+    public var hasAnyBudget: Bool {
+        dailyTokens > 0 || weeklyTokens > 0 || monthlyTokens > 0
     }
 }
 
@@ -1508,6 +1878,16 @@ public enum HistoryPeriod: String, Codable, CaseIterable, Identifiable, Sendable
         case .thisMonth: return "This month"
         }
     }
+
+    /// Where the period begins, the same bounds `AggregationService` filters by.
+    public func start(now: Date, calendar: Calendar = .current) -> Date {
+        let today = calendar.startOfDay(for: now)
+        switch self {
+        case .today: return today
+        case .last7Days: return calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        case .thisMonth: return calendar.dateInterval(of: .month, for: now)?.start ?? today
+        }
+    }
 }
 
 public struct ProviderShare: Codable, Equatable, Identifiable, Sendable {
@@ -1515,11 +1895,15 @@ public struct ProviderShare: Codable, Equatable, Identifiable, Sendable {
     public var provider: Provider
     public var tokens: Int
     public var percent: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
 
-    public init(provider: Provider, tokens: Int, percent: Int) {
+    public init(provider: Provider, tokens: Int, percent: Int, requestCount: Int = 0, estimatedCostUSD: Decimal? = nil) {
         self.provider = provider
-        self.tokens = tokens
+        self.tokens = max(tokens, 0)
         self.percent = min(max(percent, 0), 100)
+        self.requestCount = max(requestCount, 0)
+        self.estimatedCostUSD = estimatedCostUSD
     }
 }
 
@@ -1534,6 +1918,21 @@ public struct DailyUsageBar: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+/// One day cell in the History contribution heatmap. `level` is a 0...4 bucket derived from the
+/// day's token share so the UI can map it to a neutral intensity scale (GitHub-style heatmap).
+public struct UsageHeatCell: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { dateKey }
+    public var dateKey: String
+    public var tokens: Int
+    public var level: Int
+
+    public init(dateKey: String, tokens: Int, level: Int) {
+        self.dateKey = dateKey
+        self.tokens = max(tokens, 0)
+        self.level = min(max(level, 0), 4)
+    }
+}
+
 public struct AggregatedUsage: Codable, Equatable, Sendable {
     public var period: HistoryPeriod
     public var metrics: UsageMetrics
@@ -1541,6 +1940,7 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
     public var providerShare: [ProviderShare]
     public var events: [UsageEvent]
     public var modelBreakdown: [ModelUsageShare]
+    public var projectBreakdown: [ProjectUsageShare]
 
     public init(
         period: HistoryPeriod,
@@ -1548,7 +1948,8 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
         sevenDayBars: [DailyUsageBar] = [],
         providerShare: [ProviderShare] = [],
         events: [UsageEvent] = [],
-        modelBreakdown: [ModelUsageShare] = []
+        modelBreakdown: [ModelUsageShare] = [],
+        projectBreakdown: [ProjectUsageShare] = []
     ) {
         self.period = period
         self.metrics = metrics
@@ -1556,6 +1957,7 @@ public struct AggregatedUsage: Codable, Equatable, Sendable {
         self.providerShare = providerShare
         self.events = events
         self.modelBreakdown = modelBreakdown
+        self.projectBreakdown = projectBreakdown
     }
 }
 
@@ -1579,6 +1981,35 @@ public struct ModelUsageShare: Codable, Equatable, Identifiable, Sendable {
     ) {
         self.provider = provider
         self.model = model
+        self.tokens = max(tokens, 0)
+        self.requestCount = max(requestCount, 0)
+        self.estimatedCostUSD = estimatedCostUSD
+        self.tokenPercent = min(max(tokenPercent, 0), 100)
+    }
+}
+
+/// Per-project rollup for the selected history period, ranked so the heaviest consumer is first.
+/// Today only opencode events carry a `projectLabel` (workspace folder name), so this surface is
+/// opencode-local activity and is never part of export payloads.
+public struct ProjectUsageShare: Codable, Equatable, Identifiable, Sendable {
+    public var id: String { "\(provider.rawValue)|\(label)" }
+    public var provider: Provider
+    public var label: String
+    public var tokens: Int
+    public var requestCount: Int
+    public var estimatedCostUSD: Decimal?
+    public var tokenPercent: Int
+
+    public init(
+        provider: Provider,
+        label: String,
+        tokens: Int,
+        requestCount: Int,
+        estimatedCostUSD: Decimal?,
+        tokenPercent: Int
+    ) {
+        self.provider = provider
+        self.label = label
         self.tokens = max(tokens, 0)
         self.requestCount = max(requestCount, 0)
         self.estimatedCostUSD = estimatedCostUSD
@@ -1685,11 +2116,17 @@ public struct CapacitySeriesID: Codable, Equatable, Hashable, Sendable, CustomSt
         SeriesSemantics(providers: [.codex], providerWindowID: "rolling", kind: .rolling, unit: .percent, duration: .requiredPositive, resetCapable: true),
         SeriesSemantics(providers: [.gemini], providerWindowID: "daily-requests", kind: .calendarCap, unit: .requestCount, duration: .optionalExact(1_440), resetCapable: true),
         SeriesSemantics(providers: [.deepseek], providerWindowID: "balance", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
-        SeriesSemantics(providers: [.opencode], providerWindowID: "session-cost", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.opencode, .commandcode], providerWindowID: "session-cost", kind: .balance, unit: .currency, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.opencode], providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, duration: .optionalExact(300), resetCapable: true),
         SeriesSemantics(providers: [.opencode], providerWindowID: "rate-limit", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.opencode], providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, duration: .optionalExact(43_200), resetCapable: true),
         SeriesSemantics(providers: [.kiro], providerWindowID: "credits-used", kind: .balance, unit: .credits, duration: .none, resetCapable: false),
         SeriesSemantics(providers: [.kiro], providerWindowID: "usage-limits", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
         SeriesSemantics(providers: [.kiro], providerWindowID: "context-percent", kind: .context, unit: .percent, duration: .none, resetCapable: false),
+        SeriesSemantics(providers: [.jetbrains], providerWindowID: "jetbrains-quota", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.minimax], providerWindowID: "minimax-token-plan", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.zai], providerWindowID: "zai-tokens-limit", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
+        SeriesSemantics(providers: [.openrouter], providerWindowID: "openrouter-credits", kind: .fixedReset, unit: .percent, duration: .none, resetCapable: true),
         SeriesSemantics(providers: Set(Provider.allCases), providerWindowID: "context", kind: .context, unit: .tokens, duration: .none, resetCapable: false)
     ]
 
@@ -2005,7 +2442,14 @@ public struct CapacityObservation: Codable, Equatable, Sendable {
         guard value.kind == seriesID.unit else { throw CapacityContractError.invalidValue }
         guard resetAt == nil || seriesID.supportsReset else { throw CapacityContractError.invalidReset }
 
-        let derivedCycleID = Self.cycleID(seriesID: seriesID, resetAt: resetAt)
+        // A quota window resets on a second, not a fraction of one, and the cycle id derived just
+        // below already says so — it truncates. The instant itself did not, so a boundary a provider
+        // recomputes per request (`2026-08-24T00:00:00.865Z`, then `…00.705Z` ninety seconds later)
+        // read as two different resets of one cycle, and every poll stored a new record for a window
+        // that had not moved.
+        let normalizedReset = resetAt.map { Date(timeIntervalSince1970: $0.timeIntervalSince1970.rounded(.down)) }
+
+        let derivedCycleID = Self.cycleID(seriesID: seriesID, resetAt: normalizedReset)
         if let decodedCycleID {
             guard !decodedCycleID.isEmpty, decodedCycleID == derivedCycleID else { throw CapacityContractError.invalidReset }
         }
@@ -2015,7 +2459,7 @@ public struct CapacityObservation: Codable, Equatable, Sendable {
 
         self.seriesID = seriesID
         self.observedAt = observedAt
-        self.resetAt = resetAt
+        self.resetAt = normalizedReset
         self.cycleID = derivedCycleID
         self.value = value
         self.authority = authority
@@ -2162,11 +2606,80 @@ public struct CapacityRuntimeControl: Codable, Equatable, Sendable {
     }
 }
 
-public enum CapacityAlertPercentThreshold: String, Codable, CaseIterable, Sendable {
-    case reset
-    case fifty
-    case eighty
-    case hundred
+/// A point at which an alert fires: either a used-percentage, or the window resetting.
+///
+/// This was four fixed cases — reset, 50, 80, 100 — so a user who wanted warning at 90% could not
+/// have one, which is a strange limitation in a tool whose entire job is warning you before you run
+/// out. Any percentage now works.
+///
+/// The three original percentages keep their original spellings (`fifty`, `eighty`, `hundred`)
+/// rather than becoming `p50`/`p80`/`p100`. Delivered-alert state is persisted by this raw value, so
+/// renaming them would make every already-delivered alert look undelivered and fire a second time on
+/// the first launch after updating.
+public struct CapacityAlertPercentThreshold: Codable, Hashable, Sendable, Comparable {
+    public let rawValue: String
+
+    private init(unchecked rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    /// The window rolled over. Not a percentage, so it sorts before all of them.
+    public static let reset = CapacityAlertPercentThreshold(unchecked: "reset")
+    public static let fifty = CapacityAlertPercentThreshold(unchecked: "fifty")
+    public static let eighty = CapacityAlertPercentThreshold(unchecked: "eighty")
+    public static let hundred = CapacityAlertPercentThreshold(unchecked: "hundred")
+
+    /// The percentages that existed before thresholds were configurable, by their stored spelling.
+    private static let legacySpellings: [Int: String] = [50: "fifty", 80: "eighty", 100: "hundred"]
+
+    /// Alerting at 0% would fire on an untouched window; above 100 can never be reached.
+    public static let validPercents = 1...100
+
+    /// Returns nil rather than clamping: a threshold the user cannot reach is a promise the app
+    /// cannot keep, and silently moving it to 100 would hide that.
+    public static func percent(_ value: Int) -> CapacityAlertPercentThreshold? {
+        guard validPercents.contains(value) else { return nil }
+        return CapacityAlertPercentThreshold(unchecked: legacySpellings[value] ?? "p\(value)")
+    }
+
+    /// nil for ``reset``, which is an event rather than a level.
+    public var percent: Int? {
+        switch rawValue {
+        case "reset": return nil
+        case "fifty": return 50
+        case "eighty": return 80
+        case "hundred": return 100
+        default:
+            guard rawValue.hasPrefix("p"), let value = Int(rawValue.dropFirst()) else { return nil }
+            return Self.validPercents.contains(value) ? value : nil
+        }
+    }
+
+    public var isReset: Bool { rawValue == "reset" }
+
+    /// Reset first, then ascending percentage — the order alerts should be evaluated in.
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        switch (lhs.percent, rhs.percent) {
+        case let (left?, right?): return left < right
+        case (nil, _?): return true
+        case (_?, nil): return false
+        default: return lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        let candidate = CapacityAlertPercentThreshold(unchecked: raw)
+        guard candidate.isReset || candidate.percent != nil else {
+            throw CapacityContractError.invalidCondition
+        }
+        self = candidate
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 public enum CapacityAlertConditionKind: String, Codable, CaseIterable, Sendable {
@@ -2177,7 +2690,7 @@ public enum CapacityAlertConditionKind: String, Codable, CaseIterable, Sendable 
 
 public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     private enum Storage: Equatable, Sendable {
-        case percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool)
+        case percentThresholds(Set<CapacityAlertPercentThreshold>)
         case balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool)
         case pendingBalanceCurrencyBinding
     }
@@ -2193,12 +2706,7 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     }
 
     public var enabledPercentThresholds: Set<CapacityAlertPercentThreshold> {
-        guard case let .percentThresholds(reset, fifty, eighty, hundred) = storage else { return [] }
-        var thresholds: Set<CapacityAlertPercentThreshold> = []
-        if reset { thresholds.insert(.reset) }
-        if fifty { thresholds.insert(.fifty) }
-        if eighty { thresholds.insert(.eighty) }
-        if hundred { thresholds.insert(.hundred) }
+        guard case let .percentThresholds(thresholds) = storage else { return [] }
         return thresholds
     }
 
@@ -2221,8 +2729,26 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         self.storage = storage
     }
 
+    /// The three original percentages, kept because most callers and every stored rule speak in them.
     public static func percentThresholds(reset: Bool, fifty: Bool, eighty: Bool, hundred: Bool) -> CapacityAlertCondition {
-        CapacityAlertCondition(storage: .percentThresholds(reset: reset, fifty: fifty, eighty: eighty, hundred: hundred))
+        var thresholds: Set<CapacityAlertPercentThreshold> = []
+        if reset { thresholds.insert(.reset) }
+        if fifty { thresholds.insert(.fifty) }
+        if eighty { thresholds.insert(.eighty) }
+        if hundred { thresholds.insert(.hundred) }
+        return CapacityAlertCondition(storage: .percentThresholds(thresholds))
+    }
+
+    /// Any set of percentages the user chose. Values outside 1...100 are dropped rather than
+    /// clamped — a threshold that cannot be reached is a promise the app cannot keep.
+    public static func percentThresholds(reset: Bool, percents: some Sequence<Int>) -> CapacityAlertCondition {
+        var thresholds = Set(percents.compactMap(CapacityAlertPercentThreshold.percent))
+        if reset { thresholds.insert(.reset) }
+        return CapacityAlertCondition(storage: .percentThresholds(thresholds))
+    }
+
+    public static func percentThresholds(_ thresholds: Set<CapacityAlertPercentThreshold>) -> CapacityAlertCondition {
+        CapacityAlertCondition(storage: .percentThresholds(thresholds))
     }
 
     public static func balanceBelow(threshold: Decimal, currency: String, rearmAtOrAboveThreshold: Bool) throws -> CapacityAlertCondition {
@@ -2255,6 +2781,7 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         case fifty
         case eighty
         case hundred
+        case percents
         case threshold
         case currency
         case rearmAtOrAboveThreshold
@@ -2269,12 +2796,20 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
         switch key {
         case .percentThresholds:
             let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
-            self = .percentThresholds(
-                reset: try nested.decodeIfPresent(Bool.self, forKey: .reset) ?? false,
-                fifty: try nested.decodeIfPresent(Bool.self, forKey: .fifty) ?? false,
-                eighty: try nested.decodeIfPresent(Bool.self, forKey: .eighty) ?? false,
-                hundred: try nested.decodeIfPresent(Bool.self, forKey: .hundred) ?? false
-            )
+            var thresholds: Set<CapacityAlertPercentThreshold> = []
+            if try nested.decodeIfPresent(Bool.self, forKey: .reset) ?? false { thresholds.insert(.reset) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .fifty) ?? false { thresholds.insert(.fifty) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .eighty) ?? false { thresholds.insert(.eighty) }
+            if try nested.decodeIfPresent(Bool.self, forKey: .hundred) ?? false { thresholds.insert(.hundred) }
+            // A file written before thresholds were configurable has no `percents`, and the
+            // booleans above already carry everything it could express.
+            for percent in try nested.decodeIfPresent([Int].self, forKey: .percents) ?? [] {
+                guard let threshold = CapacityAlertPercentThreshold.percent(percent) else {
+                    throw CapacityContractError.invalidCondition
+                }
+                thresholds.insert(threshold)
+            }
+            self = .percentThresholds(thresholds)
         case .balanceBelow:
             let nested = try container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .balanceBelow)
             self = try .balanceBelow(
@@ -2292,12 +2827,19 @@ public struct CapacityAlertCondition: Codable, Equatable, Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch storage {
-        case let .percentThresholds(reset, fifty, eighty, hundred):
+        case let .percentThresholds(thresholds):
             var nested = container.nestedContainer(keyedBy: AssociatedValueKeys.self, forKey: .percentThresholds)
-            try nested.encode(reset, forKey: .reset)
-            try nested.encode(fifty, forKey: .fifty)
-            try nested.encode(eighty, forKey: .eighty)
-            try nested.encode(hundred, forKey: .hundred)
+            // The three original percentages keep their boolean keys so a build from before
+            // thresholds were configurable still reads a file this one wrote, and `percents`
+            // carries the full set for builds that understand it.
+            try nested.encode(thresholds.contains(.reset), forKey: .reset)
+            try nested.encode(thresholds.contains(.fifty), forKey: .fifty)
+            try nested.encode(thresholds.contains(.eighty), forKey: .eighty)
+            try nested.encode(thresholds.contains(.hundred), forKey: .hundred)
+            let percents = thresholds.compactMap(\.percent).sorted()
+            if !percents.isEmpty {
+                try nested.encode(percents, forKey: .percents)
+            }
         case let .balanceBelow(threshold, currency, rearmAtOrAboveThreshold):
             guard threshold >= 0, CapacityValidation.isValidCurrencyCode(currency) else {
                 throw CapacityContractError.invalidCondition
@@ -2639,25 +3181,6 @@ public struct XAIProvenancedObservation: @unchecked Sendable {
     }
 }
 
-public struct XAIProvenancedAssessment: @unchecked Sendable {
-    internal let storage: CapacityAssessment
-    public let provenance: XAIProvenance
-
-    public init(standard assessment: CapacityAssessment) {
-        self.storage = assessment
-        self.provenance = .standard
-    }
-
-    internal init(
-        experimentalOAuthWeekly assessment: CapacityAssessment,
-        capability: XAIExperimentalProvenanceCapability
-    ) {
-        _ = capability
-        self.storage = assessment
-        self.provenance = .experimentalOAuthWeekly
-    }
-}
-
 /// Capability token that only Core experimental construction owns.
 internal struct XAIExperimentalProvenanceCapability: Sendable {
     fileprivate init() {}
@@ -2764,11 +3287,6 @@ public struct XAIRefreshResult: Sendable {
     }
 }
 
-public enum XAIWaiterResolution: Sendable {
-    case result(XAIRefreshResult)
-    case cancelledOrdinarily
-}
-
 public struct XAIExperimentalWeeklyInput: Sendable {
     public let settings: AppSettings
     public let intent: UsageRefreshIntent
@@ -2780,31 +3298,6 @@ public struct XAIExperimentalWeeklyInput: Sendable {
         self.intent = intent
         self.ticket = ticket
         self.now = now
-    }
-}
-
-public struct XAIExperimentalWeeklyPresentation: Sendable, Equatable {
-    public let sourceKey: String
-    public let statusKey: String
-    public let actionKey: String
-    public let isExperimental: Bool
-    public let isAvailable: Bool
-    public let resetText: String?
-
-    public init(
-        sourceKey: String,
-        statusKey: String,
-        actionKey: String,
-        isExperimental: Bool,
-        isAvailable: Bool,
-        resetText: String?
-    ) {
-        self.sourceKey = sourceKey
-        self.statusKey = statusKey
-        self.actionKey = actionKey
-        self.isExperimental = isExperimental
-        self.isAvailable = isAvailable
-        self.resetText = resetText
     }
 }
 
@@ -2836,11 +3329,6 @@ public struct XAIAdmission<T: Sendable>: Sendable {
         self.accepted = accepted
         self.exclusions = exclusions
     }
-}
-
-public enum XAIAdmissionOne<T: Sendable>: Sendable {
-    case accepted(T)
-    case excluded(XAISinkExclusion)
 }
 
 public enum XAISinkAdmission {
@@ -2936,77 +3424,8 @@ public struct XAIExecutionCapability: Sendable, Equatable {
     }
 }
 
-public protocol XAIClock: Sendable {
-    func wallNow() -> Date
-    func monotonicNow() -> ContinuousClock.Instant
-}
-
-public struct XAISystemClock: XAIClock {
-    public init() {}
-
-    public func wallNow() -> Date { Date() }
-
-    public func monotonicNow() -> ContinuousClock.Instant { ContinuousClock.now }
-}
-
-public protocol XAIRefreshValidity: Sendable {
-    func isCurrent(_ ticket: XAIRefreshTicket) -> Bool
-}
-
 public protocol XAIExperimentalWeeklyService: Sendable {
     func refresh(_ input: XAIExperimentalWeeklyInput) async -> XAIRefreshResult
     func revoke(ticket: XAIRefreshTicket?) async
     func shutdown() async
-}
-
-public protocol XAIExperimentalWeeklySource: Sendable {
-    func makeService() -> any XAIExperimentalWeeklyService
-}
-
-public protocol TokenPilotLocalizing: Sendable {
-    func string(_ key: String, language: TokenPilotLanguage) -> String
-}
-
-public protocol XAIWeeklyResetFormatting: Sendable {
-    func string(for end: Date, now: Date, language: TokenPilotLanguage) -> String
-}
-
-public protocol XAIExperimentalWeeklyPresenting: Sendable {
-    func present(
-        _ result: XAIRefreshResult?,
-        settings: AppSettings,
-        now: Date
-    ) -> XAIExperimentalWeeklyPresentation
-}
-
-public enum TokenPilotSettingsPersistenceResult: Sendable, Equatable {
-    case persisted
-    case rejected(XAIUnavailableReason)
-}
-
-public protocol TokenPilotSettingsPersisting: Sendable {
-    func persist(_ settings: AppSettings) -> TokenPilotSettingsPersistenceResult
-}
-
-public protocol TokenPilotSettingsPersistenceBackend: Sendable {
-    func loadData() -> Data?
-    func storeTransaction(_ data: Data) -> Bool
-}
-
-/// Atomic consent metadata stored beside AppSettings (V19 wire format).
-public struct XAIOAuthConsentRecord: Equatable, Sendable {
-    public var grantedVersion: Int
-    public var grantEpoch: Int
-    public var revocationEpoch: Int
-
-    public init(grantedVersion: Int, grantEpoch: Int, revocationEpoch: Int) {
-        self.grantedVersion = grantedVersion
-        self.grantEpoch = grantEpoch
-        self.revocationEpoch = revocationEpoch
-    }
-
-    public var isEligible: Bool {
-        grantedVersion == XAISettings.experimentalOAuthWeeklyConsentVersionCurrent
-            && grantEpoch > revocationEpoch
-    }
 }

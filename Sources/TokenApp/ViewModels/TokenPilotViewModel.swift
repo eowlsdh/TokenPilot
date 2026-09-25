@@ -22,6 +22,8 @@ final class TokenPilotViewModel: ObservableObject {
         case manual
         case automaticTimer
         case settings
+        /// The Mac woke from sleep, where timers were suspended and stored values went stale.
+        case systemWake
     }
 
     enum Screen: String, CaseIterable, Identifiable {
@@ -34,7 +36,45 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var selectedScreen: Screen = .overview
     @Published var selectedHistoryPeriod: HistoryPeriod = .last7Days
     @Published var snapshots: [ProviderSnapshot] = []
-    @Published var historySnapshots: [ProviderSnapshot] = []
+    @Published var historySnapshots: [ProviderSnapshot] = [] {
+        didSet { historyEventsAllTime = historySnapshots.flatMap(\.events) }
+    }
+
+    /// Every stored event, independent of the History period picker.
+    ///
+    /// The heatmap (4/8/12 weeks) and the monthly trend (12 months) carry their own window and were
+    /// being handed the period-filtered set as well. With the period on "Today" the grid drew 84
+    /// cells of which one could ever be non-zero, and the trend drew twelve empty months — which
+    /// reads as "I did no work for three months" while the data sits in the store.
+    private(set) var historyEventsAllTime: [UsageEvent] = []
+
+    /// Which Settings cards the user opened or closed, so a screen switch does not undo it. Not
+    /// published: the card's own state drives drawing, this only survives the card being rebuilt.
+    var settingsCardExpansion: [String: Bool] = [:]
+    /// Where Settings was scrolled to, for the same reason. Not published.
+    var settingsScrollOffset: CGFloat = 0
+    /// A Settings card to bring into view on the next appear, instead of the remembered offset.
+    var pendingSettingsCard: String?
+
+    /// "Open Provider Diagnostics" used to switch to Settings and stop there — wherever Settings was
+    /// last scrolled, with the diagnostics card possibly closed.
+    func openProviderDiagnostics() {
+        settingsCardExpansion["diagnostics"] = true
+        pendingSettingsCard = "diagnostics"
+        selectedScreen = .settings
+    }
+
+    /// The first stored event, when it falls after the start of the selected History period.
+    ///
+    /// History starts when TokenPilot first saw each source — and was capped at 2 000 events before
+    /// the store was partitioned by day, about two and a half days for a heavy user. Either way a
+    /// chart that reaches further back than the store would read as "nothing happened". Nil when
+    /// the store reaches back past the period start.
+    var historyCoverageStart: Date? {
+        guard let oldest = historyEventsAllTime.lazy.map(\.timestamp).min() else { return nil }
+        let periodStart = selectedHistoryPeriod.start(now: menuBarNow)
+        return oldest > periodStart ? oldest : nil
+    }
     @Published var limitHistorySamples: [ProviderLimitSample] = []
     @Published var overviewUsage = AggregatedUsage(period: .today)
     @Published var historyUsage = AggregatedUsage(period: .today)
@@ -42,9 +82,11 @@ final class TokenPilotViewModel: ObservableObject {
     @Published var dataSourceMode: DataSourceMode = .disconnected
     @Published var connectionStatus: [Provider: String] = [:]
     @Published var dataSources: [Provider: ProviderDataSource] = [:]
+    @Published var providerStatusReports: [Provider: ProviderStatusReport] = [:]
     @Published var exportFormat: UsageExportFormat = .json
     @Published var capacityAssessments: [CapacityAssessment] = []
     @Published var capacityPresentations: [CapacityPresentation] = []
+    @Published var capacityEvidenceRecords: [CapacityEvidenceRecord] = []
     @Published var capacityRefreshErrors: [CapacityRefreshError] = []
     @Published var capacityRuntimeRecoveryRequired = false
     @Published private var capacityAlertRuntimeControl = CapacityRuntimeControl()
@@ -54,13 +96,33 @@ final class TokenPilotViewModel: ObservableObject {
     @Published private var capacityAlertDeliveryStates: [CapacityAlertDeliveryKey: CapacityAlertDeliveryState] = [:]
     @Published private var capacityAlertDeliveryRecoveryStatus: CapacityPersistenceStatus = .ready(source: .absentDefault, generation: nil)
     @Published private var capacityAlertMigrationRecoveryStatus: CapacityPersistenceStatus?
-    @Published var bannerMessage: String?
+    /// Set through `showProblem(_:)` for anything that went wrong. The banner used to look the same
+    /// for "Saved." and "Could not save." — one info glyph, one grey — so a failure read as done.
+    @Published var bannerMessage: String? {
+        didSet {
+            bannerIsProblem = nextBannerIsProblem
+            nextBannerIsProblem = false
+        }
+    }
+    private(set) var bannerIsProblem = false
+    private var nextBannerIsProblem = false
+
+    func showProblem(_ message: String) {
+        nextBannerIsProblem = true
+        bannerMessage = message
+    }
     @Published var telegramTokenInput = ""
     @Published var discordWebhookInput = ""
     @Published var deepSeekAPIKeyInput = ""
+    @Published var minimaxAPIKeyInput = ""
+    @Published var zaiAPIKeyInput = ""
+    @Published var openrouterAPIKeyInput = ""
     @Published var hasSavedTelegramToken = false
     @Published var hasSavedDiscordWebhook = false
     @Published var hasSavedDeepSeekAPIKey = false
+    @Published var hasSavedMinimaxAPIKey = false
+    @Published var hasSavedZAIAPIKey = false
+    @Published var hasSavedOpenRouterAPIKey = false
     /// Transient presentation-only experimental OAuth weekly result. Never persisted or sunk.
     @Published private(set) var xaiOAuthResult: XAIRefreshResult?
     @Published private var menuBarNow = Date()
@@ -82,12 +144,18 @@ final class TokenPilotViewModel: ObservableObject {
     private let aggregationService = AggregationService()
     private let menuBarStatusService = MenuBarStatusService()
     private let connectionService = DataSourceConnectionService()
+    private let providerStatusService = ProviderStatusService()
     private let exportService = UsageExportService()
     private let localNotificationService = LocalNotificationService()
+    private let weeklyDigestStore = WeeklyDigestStore()
+    private let dailyDigestStore = DailyDigestStore()
+    private let budgetAlertService = BudgetAlertService()
+    private let milestoneNotificationService = MilestoneNotificationService()
     private let telegramService = TelegramNotificationService()
     private let discordService = DiscordNotificationService()
     private let keychain = KeychainService()
     private let capacityEvidenceStore = CapacityEvidenceStore()
+    private let statuslineSnapshotStore = StatuslineSnapshotStore()
     private let capacityRuntimeStore = CapacityRuntimeStore()
     private let capacityAlertRuleStore = CapacityAlertRuleStore()
     private let capacityAlertDeliveryStore = CapacityAlertDeliveryStore()
@@ -96,8 +164,10 @@ final class TokenPilotViewModel: ObservableObject {
     private let capacityPresentationMapper = CapacityPresentationMapper()
     private let capacityAlertTransitionEngine = CapacityAlertTransitionEngine()
     private let capacityAlertVisibilityBuilder = CapacityAlertVisibilityBuilder()
-    private let menuBarTickInterval: TimeInterval = 1
-    private let dataRefreshInterval: TimeInterval = 5
+    private let menuBarTickInterval: TimeInterval = 30
+    private var dataRefreshInterval: TimeInterval {
+        TimeInterval(max(settings.refreshIntervalSeconds, 5))
+    }
     private let settingsSaveDebounceNanoseconds: UInt64 = 350_000_000
     private let settingsRefreshDebounceNanoseconds: UInt64 = 450_000_000
     private var timer: Timer?
@@ -138,11 +208,29 @@ final class TokenPilotViewModel: ObservableObject {
 
     private func startProductionRuntime() {
         startAutoRefresh()
+        syncLaunchAtLoginFromSystem()
         Task {
             await updatePermissionStatus()
             await refresh(reason: .automaticTimer)
             refreshStoredCredentialPresence()
+            await refreshConnectionDiagnostics()
         }
+    }
+
+    /// Populates provider diagnostics (statuses only — no path adoption, no banner) once at
+    /// startup so Settings reflects connected/stale states without a manual Check Connection.
+    private func refreshConnectionDiagnostics() async {
+        let sources = await connectionService.checkAll(settings: settings)
+        applyDataSources(sources)
+    }
+
+    /// The login item is the system truth; fold its state into settings once at startup.
+    private func syncLaunchAtLoginFromSystem() {
+        let registered = LaunchAtLoginService.isEnabled || LaunchAtLoginService.needsApproval
+        guard settings.launchAtLogin != registered else { return }
+        var next = settings
+        next.launchAtLogin = registered
+        settings = next
     }
 
 #if DEBUG
@@ -189,24 +277,69 @@ final class TokenPilotViewModel: ObservableObject {
     }
 #endif
 
+    /// Whether each stored secret exists — never the secret itself.
+    ///
+    /// Settings calls this on every appear. It used to run six `SecItemCopyMatching` queries on the
+    /// main actor and then publish six times whether or not anything had changed, and every publish
+    /// rebuilds the popover — on the screen that is already the most expensive to lay out. The
+    /// queries now run off the main actor together, and an unchanged answer publishes nothing.
     func refreshStoredCredentialPresence() {
 #if DEBUG
         guard !debugFixtureMode else { return }
 #endif
+        let keychain = self.keychain
+        let accounts = [
+            Self.telegramTokenAccount,
+            Self.discordWebhookAccount,
+            Self.deepSeekAPIKeyAccount,
+            Self.minimaxAPIKeyAccount,
+            Self.zaiAPIKeyAccount,
+            Self.openRouterAPIKeyAccount
+        ]
+
         Task {
-            hasSavedTelegramToken = ((try? keychain.readSecret(account: Self.telegramTokenAccount)) ?? nil) != nil
-            hasSavedDiscordWebhook = ((try? keychain.readSecret(account: Self.discordWebhookAccount)) ?? nil) != nil
-            let hasDeepSeekKey = ((try? keychain.readSecret(account: Self.deepSeekAPIKeyAccount)) ?? nil) != nil
-            hasSavedDeepSeekAPIKey = hasDeepSeekKey
-            if settings.deepseekAPIKeyConfigured != hasDeepSeekKey {
-                settings.deepseekAPIKeyConfigured = hasDeepSeekKey
+            let present = await Task.detached(priority: .utility) {
+                accounts.map { ((try? keychain.readSecret(account: $0)) ?? nil) != nil }
+            }.value
+
+            publishIfChanged(present[0], to: \.hasSavedTelegramToken)
+            publishIfChanged(present[1], to: \.hasSavedDiscordWebhook)
+            publishIfChanged(present[2], to: \.hasSavedDeepSeekAPIKey)
+            publishIfChanged(present[3], to: \.hasSavedMinimaxAPIKey)
+            publishIfChanged(present[4], to: \.hasSavedZAIAPIKey)
+            publishIfChanged(present[5], to: \.hasSavedOpenRouterAPIKey)
+
+            if settings.deepseekAPIKeyConfigured != present[2] {
+                settings.deepseekAPIKeyConfigured = present[2]
             }
         }
+    }
+
+    /// `@Published` fires on every write, not on every change. Assigning the same value again costs
+    /// a full popover rebuild for nothing.
+    private func publishIfChanged<Value: Equatable>(
+        _ value: Value,
+        to keyPath: ReferenceWritableKeyPath<TokenPilotViewModel, Value>
+    ) {
+        guard self[keyPath: keyPath] != value else { return }
+        self[keyPath: keyPath] = value
     }
 
     static let telegramTokenAccount = "telegram.botToken"
     static let discordWebhookAccount = "discord.webhookURL"
     static let deepSeekAPIKeyAccount = "deepseek.apiKey"
+    static let minimaxAPIKeyAccount = "minimax.apiKey"
+    static let zaiAPIKeyAccount = "zai.apiKey"
+    static let openRouterAPIKeyAccount = "openrouter.apiKey"
+
+    static func apiKeyAccount(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyAccount
+        case .zai: return zaiAPIKeyAccount
+        case .openrouter: return openRouterAPIKeyAccount
+        default: return deepSeekAPIKeyAccount
+        }
+    }
     private var menuBarOAuthResult: XAIRefreshResult? {
         guard let result = xaiOAuthResult,
               result.selectedOutcome == .oauthWeekly,
@@ -227,12 +360,36 @@ final class TokenPilotViewModel: ObservableObject {
             xaiOAuthResult: menuBarOAuthResult
         )
     }
+    /// The text layouts split per provider, for `Separate items` grouping.
+    var menuBarTitleSegments: [MenuBarTitleSegment] {
+        menuBarStatusService.titleSegments(
+            snapshots: snapshots,
+            settings: settings,
+            modeLabel: dataSourceMode.displayLabel,
+            now: menuBarNow,
+            xaiOAuthResult: menuBarOAuthResult
+        )
+    }
+
+    /// What Settings shows under "Current menu bar". With separate items the bar draws each
+    /// segment as its own status item, so the preview spaces them out instead of joining them
+    /// with the separator only the combined item uses.
+    var menuBarPreviewText: String {
+        guard settings.menuBarProviderGrouping == .separate,
+              settings.menuBarDisplayStyle == .detailed || settings.menuBarDisplayStyle == .compact
+        else { return menuBarTitle }
+        let segments = menuBarTitleSegments
+        guard segments.count > 1 else { return menuBarTitle }
+        return segments.map(\.text).joined(separator: "   ")
+    }
+
     var menuBarMetricSegments: [MenuBarProviderMetricSegment] {
         menuBarStatusService.providerMetricsSegments(
             snapshots: snapshots,
             settings: settings,
             now: menuBarNow,
-            xaiOAuthResult: menuBarOAuthResult
+            xaiOAuthResult: menuBarOAuthResult,
+            limitSamples: limitHistorySamples
         )
     }
 
@@ -250,6 +407,20 @@ final class TokenPilotViewModel: ObservableObject {
         case .warning: return TokenPilotDesign.warning
         case .critical: return TokenPilotDesign.danger
         }
+    }
+
+    func copyUsageSummaryToPasteboard() {
+        let events = historySnapshots.flatMap(\.events)
+        let text = TokenPilotCLIService.summaryText(
+            events: events,
+            snapshots: snapshots,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            period: .today,
+            now: menuBarNow
+        )
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     var menuBarAccessibilityLabel: String {
@@ -317,6 +488,87 @@ final class TokenPilotViewModel: ObservableObject {
         historySnapshots.isEmpty ? enabledSnapshots : historySnapshots
     }
 
+    /// GitHub-style contribution grid derived from stored usage events.
+    /// The trailing window is selectable (4 / 8 / 12 weeks) and defaults to 12 weeks.
+    @Published var heatmapWeeks: Int = 12
+
+    var historyHeatmapCells: [UsageHeatCell] {
+        aggregationService.heatmapCells(from: historyEventsAllTime, days: max(heatmapWeeks, 1) * 7)
+    }
+
+
+    var budgetGuardrails: BudgetGuardrailSnapshot {
+        let service = BudgetGuardrailService()
+        // Each window filters for itself; handing them only today's events emptied the week and month.
+        let events = historyEventsAllTime
+        return BudgetGuardrailSnapshot(
+            daily: service.dailyProgress(events: events, settings: settings.budget),
+            weekly: service.weeklyProgress(events: events, settings: settings.budget, weekStartDay: settings.weekStartDay),
+            monthly: service.monthlyProgress(events: events, settings: settings.budget)
+        )
+    }
+
+    var budgetPaceProjection: BudgetPaceProjection? {
+        BudgetPaceService().projection(progress: budgetGuardrails.daily)
+    }
+
+    var activityMilestones: [ActivityMilestone] {
+        // Lifetime milestones and a multi-day streak cannot be computed from one day of events.
+        ActivityMilestoneService().achievedMilestones(events: historyEventsAllTime)
+    }
+
+    var usageStreak: UsageStreak {
+        UsageStreakService.streak(events: historyEventsAllTime)
+    }
+
+    var cacheEfficiency: CacheEfficiencySummary {
+        CacheEfficiencyService.summary(events: overviewUsage.events)
+    }
+
+    var cacheTrend: CacheTrend {
+        CacheTrendService.trend(events: historyUsage.events)
+    }
+
+    var providerCacheEfficiency: ProviderCacheEfficiencySummary {
+        ProviderCacheEfficiencyService().summary(events: historyUsage.events)
+    }
+
+    var requestHistoryTrend: RequestHistoryTrend {
+        RequestHistoryService().trend(events: historyUsage.events)
+    }
+
+    var throughputReading: ThroughputReading {
+        ThroughputService().reading(events: overviewUsage.events)
+    }
+
+    var budgetHistoryTrend: BudgetHistoryTrend {
+        BudgetHistoryService().trend(
+            events: historyUsage.events,
+            dailyBudgetTokens: settings.budget.dailyTokens
+        )
+    }
+
+    var contextHealthAssessments: [ContextHealthAssessment] {
+        ContextHealthService().assess(records: capacityEvidenceRecords)
+    }
+
+    var fiveHourBlocks: [FiveHourUsageBlock] {
+        FiveHourBlocksService.blocks(events: historyUsage.events)
+    }
+
+    var hourlyActivity: HourlyActivitySummary {
+        let buckets = HourlyActivityService.hourlyBuckets(events: historyUsage.events)
+        return HourlyActivitySummary(buckets: buckets)
+    }
+
+    var monthlyTrend: [MonthlyUsageBar] {
+        MonthlyTrendService.monthlyBars(events: historyEventsAllTime)
+    }
+
+    var costEfficiency: CostEfficiencySummary {
+        CostEfficiencyService.summary(events: historyUsage.events)
+    }
+
     var overviewSnapshots: [ProviderSnapshot] {
         enabledSnapshots
             .filter { !Self.isNeutralXAISetupSnapshot($0) }
@@ -342,6 +594,74 @@ final class TokenPilotViewModel: ObservableObject {
 
     var capacityAlertRows: [CapacityAlertVisibilityRow] {
         capacityAlertSummary.rows
+    }
+
+    /// The percentages Settings offers as one-tap choices. Any value in 1...100 is valid; these are
+    /// the ones worth a chip, and they cover what the benchmarked trackers default to (75/90/95).
+    static let offeredAlertThresholds = [50, 75, 80, 90, 95, 100]
+
+    /// Chips to show for a rule: the offered set, plus any percentage the rule already carries, so
+    /// a threshold set elsewhere is never silently dropped by editing something next to it.
+    func alertThresholdChoices(for row: CapacityAlertVisibilityRow) -> [Int] {
+        Set(Self.offeredAlertThresholds + row.percentThresholds.compactMap(\.percent)).sorted()
+    }
+
+    /// Replaces a rule's thresholds.
+    ///
+    /// `replacingCondition` bumps the condition revision, which is part of the delivery key, so the
+    /// edited rule starts with no delivery history. That is what should happen: the transition
+    /// engine records a first sighting without firing, so a newly added threshold arrives at the
+    /// next crossing rather than immediately for a window the user is already inside.
+    func setCapacityAlertThresholds(ruleID: String, reset: Bool, percents: Set<Int>) async {
+        let load = await capacityAlertRuleStore.load()
+        guard !load.recoveryStatus.recoveryRequired else {
+            showProblem(t("Alert settings are recovering; try again in a moment."))
+            return
+        }
+        guard let existing = load.rules.first(where: { $0.id == ruleID }) else { return }
+
+        // Every alert off would leave a rule that watches nothing while still looking configured.
+        guard reset || !percents.isEmpty else {
+            showProblem(t("Keep at least one alert threshold."))
+            return
+        }
+
+        guard let updated = try? existing.replacingCondition(
+            .percentThresholds(reset: reset, percents: percents)
+        ) else {
+            showProblem(t("That alert threshold is not supported for this window."))
+            return
+        }
+
+        let next = load.rules.filter { $0.id != ruleID } + [updated]
+        let save = await capacityAlertRuleStore.save(next.sorted { $0.id < $1.id })
+        guard !save.recoveryStatus.writeBlocked else {
+            showProblem(t("Could not save alert settings."))
+            return
+        }
+        capacityAlertRules = next.sorted { $0.id < $1.id }
+    }
+
+    func toggleCapacityAlertThreshold(row: CapacityAlertVisibilityRow, percent: Int) async {
+        var percents = Set(row.percentThresholds.compactMap(\.percent))
+        if percents.contains(percent) {
+            percents.remove(percent)
+        } else {
+            percents.insert(percent)
+        }
+        await setCapacityAlertThresholds(
+            ruleID: row.id,
+            reset: row.percentThresholds.contains(where: \.isReset),
+            percents: percents
+        )
+    }
+
+    func toggleCapacityAlertReset(row: CapacityAlertVisibilityRow) async {
+        await setCapacityAlertThresholds(
+            ruleID: row.id,
+            reset: !row.percentThresholds.contains(where: \.isReset),
+            percents: Set(row.percentThresholds.compactMap(\.percent))
+        )
     }
 
     var alertStatusText: String {
@@ -381,8 +701,10 @@ final class TokenPilotViewModel: ObservableObject {
     private var currentCapacityAlertChannels: CapacityAlertChannelSettings {
         CapacityAlertChannelSettings(
             settings: settings,
-            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Saved only: automatic delivery reads the Keychain, so an unsaved field must not
+            // make a channel look available that would then fail every send.
+            telegramCredentialPresent: hasSavedTelegramToken,
+            discordCredentialPresent: hasSavedDiscordWebhook
         )
     }
 
@@ -523,12 +845,8 @@ final class TokenPilotViewModel: ObservableObject {
         switch row.conditionKind {
         case .percentThresholds:
             return row.percentThresholds.map { threshold in
-                switch threshold {
-                case .reset: return t("Reset")
-                case .fifty: return "50%"
-                case .eighty: return "80%"
-                case .hundred: return "100%"
-                }
+                guard let percent = threshold.percent else { return t("Reset") }
+                return "\(percent)%"
             }.joined(separator: "/")
         case .balanceBelow:
             guard let threshold = row.balanceThresholdCanonical, let currency = row.balanceCurrency else { return "" }
@@ -542,6 +860,22 @@ final class TokenPilotViewModel: ObservableObject {
 
     func t(_ key: String) -> String {
         TokenPilotLocalizer.localized(key, language: settings.localization.language)
+    }
+
+    var appVersionText: String {
+        TokenPilotVersion.current()
+    }
+
+    /// Localized relative freshness label (e.g. "Updated 3 min ago"), or nil when the
+    /// app has never completed a refresh yet.
+    var lastUpdatedText: String? {
+        guard let format = TokenPilotRelativeTimestamp.format(from: lastRefreshFinishedAt, now: menuBarNow) else {
+            return nil
+        }
+        if let arg = format.arg {
+            return String(format: t(format.key), arg)
+        }
+        return t(format.key)
     }
 
     func localizedStatus(_ status: String) -> String {
@@ -578,10 +912,16 @@ final class TokenPilotViewModel: ObservableObject {
         }
         var next = settings
         if next.setProviderEnabled(provider, isEnabled: isEnabled) {
+            if isEnabled {
+                // Switching a provider on is the user asking to watch it, so it belongs in the
+                // menu bar too. Without this the provider stayed invisible there until the user
+                // found the separate menu bar provider list and switched it on a second time.
+                next.menuBarMetricProviders.insert(provider)
+            }
             next.normalizeMenuBarComposition()
             settings = next
         } else {
-            bannerMessage = t("At least one provider must stay enabled.")
+            showProblem(t("At least one provider must stay enabled."))
         }
     }
 
@@ -633,17 +973,20 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func shutdownExperimentalOAuthWeekly() {
+        // The nested run loop below services timers too. Left running, the 30s tick could land
+        // inside it and start a full provider refresh on a process that is exiting.
+        stopAutoRefresh()
         experimentalShutdownTask?.cancel()
+        var finished = false
         experimentalShutdownTask = Task { [usageStore] in
             await usageStore.shutdownXAIExperimentalWeekly()
+            finished = true
         }
-        // Keep the termination path lifecycle-safe: cancel/start the shutdown task and
-        // give it a short bounded window before process exit continues.
+        // A short bounded window before process exit continues. The loop used to exit only on
+        // cancellation, which completion never sets, so every quit waited the full 250 ms.
         let deadline = Date().addingTimeInterval(0.25)
-        while Date() < deadline, experimentalShutdownTask?.isCancelled == false {
-            if experimentalShutdownTask == nil { break }
+        while Date() < deadline, !finished {
             RunLoop.current.run(until: Date().addingTimeInterval(0.01))
-            if experimentalShutdownTask?.isCancelled == true { break }
         }
         xaiOAuthResult = nil
     }
@@ -658,8 +1001,41 @@ final class TokenPilotViewModel: ObservableObject {
     func setMenuBarDisplayStyle(_ style: MenuBarDisplayStyle) {
         settings.menuBarDisplayStyle = style
     }
+
+    func setMenuBarPrimaryMetric(_ metric: MenuBarPrimaryMetric) {
+        settings.menuBarPrimaryMetric = metric
+    }
+
+    func setLaunchAtLogin(_ enabled: Bool) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        guard settings.launchAtLogin != enabled else { return }
+        do {
+            try LaunchAtLoginService.apply(enabled)
+            var next = settings
+            next.launchAtLogin = enabled
+            settings = next
+            if enabled, LaunchAtLoginService.needsApproval {
+                bannerMessage = t("Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.")
+                LaunchAtLoginService.openApprovalSettings()
+            } else {
+                bannerMessage = nil
+            }
+        } catch {
+            showProblem(enabled ? t("Could not enable launch at login") : t("Could not disable launch at login"))
+        }
+    }
     func setMenuBarProviderGrouping(_ grouping: MenuBarProviderGrouping) {
         settings.menuBarProviderGrouping = grouping
+    }
+
+    func setMenuBarTrendStyle(_ style: MenuBarTrendStyle) {
+        settings.menuBarTrendStyle = style
+    }
+
+    func setMenuBarWidthLimit(_ limit: MenuBarWidthLimit) {
+        settings.menuBarWidthLimit = limit
     }
 
     func setMenuBarMetricProvider(_ provider: Provider, isVisible: Bool) {
@@ -673,7 +1049,7 @@ final class TokenPilotViewModel: ObservableObject {
                 .subtracting([provider])
                 .filter { next.isProviderEnabled($0) }
             guard !remainingVisibleProviders.isEmpty else {
-                bannerMessage = t("At least one provider must stay visible in the menu bar.")
+                showProblem(t("At least one provider must stay visible in the menu bar."))
                 return
             }
             next.menuBarMetricProviders.remove(provider)
@@ -766,16 +1142,197 @@ final class TokenPilotViewModel: ObservableObject {
         menuBarNow = Date()
     }
 
+    /// Publishes the capacity windows the `statusline` CLI reads on every editor prompt.
+    ///
+    /// Off the main actor and best effort: the status line is a convenience, and
+    /// a failed write only means the CLI falls back to the full evidence store.
+    private func writeStatuslineSnapshot(assessments: [CapacityAssessment], observedAt: Date) {
+        // Written even when empty: skipping the write left the last non-empty snapshot in place,
+        // and the status line kept printing a provider that had since been turned off — for a
+        // month on one machine, a monthly window at 100% that had long since reset.
+        let windows = StatuslineService.windows(from: assessments)
+        let snapshot = StatuslineSnapshot(generatedAt: observedAt, windows: windows)
+        let store = statuslineSnapshotStore
+        Task.detached(priority: .utility) {
+            store.save(snapshot)
+        }
+    }
+
+    /// Refreshes right after the Mac wakes, unless a refresh just finished.
+    ///
+    /// Timers do not fire during sleep, so without this the menu bar keeps a
+    /// pre-sleep percentage and a stale reset countdown until the next tick.
+    func refreshAfterSystemWake(now: Date = Date()) async {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
+        menuBarNow = now
+        guard WakeRefreshGate.shouldRefresh(lastRefreshFinishedAt: lastRefreshFinishedAt, now: now) else { return }
+        await refresh(reason: .systemWake)
+    }
+
     private func handleAutoRefreshTick() async {
         menuBarNow = Date()
+        await checkWeeklyDigest(now: menuBarNow)
+        await checkDailyDigest(now: menuBarNow)
         guard shouldRunDataRefresh(at: menuBarNow) else { return }
         await refresh(reason: .automaticTimer)
+    }
+
+    /// A once-per-day attempt tracker used to sit in front of the fire window, and it burned the
+    /// day's only attempt on the first tick after midnight — outside every schedule anyone would
+    /// pick, so the digest never sent. `DailyDigestGate` already dedupes on `lastSentAt`, which is
+    /// the check that belongs here.
+    private func checkDailyDigest(now: Date) async {
+        guard settings.dailyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled else {
+            return
+        }
+        let lastSent = dailyDigestStore.loadLastSent()
+        let schedule = DailyDigestSchedule(hour: settings.dailyDigestHour, minute: settings.dailyDigestMinute)
+        guard DailyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = DailyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now,
+            budget: settings.budget
+        )
+        do {
+            try await localNotificationService.send(title: t("Daily digest"), body: text)
+            dailyDigestStore.saveLastSent(now)
+        } catch {}
+    }
+
+    /// Same defect as the daily digest, worse: the tracker was per-day while the schedule is
+    /// per-week, so the one attempt on digest day happened just after midnight and the weekly
+    /// digest never sent at all.
+    private func checkWeeklyDigest(now: Date) async {
+        guard settings.weeklyDigestEnabled,
+              settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled else {
+            return
+        }
+        let lastSent = weeklyDigestStore.loadLastSent()
+        let schedule = WeeklyDigestSchedule(hour: settings.weeklyDigestHour, minute: settings.weeklyDigestMinute)
+        guard WeeklyDigestGate.isInFireWindow(now: now, lastSentAt: lastSent, schedule: schedule, weekStartDay: settings.weekStartDay) else { return }
+        let events = usageHistoryStore.loadEvents()
+        let text = WeeklyDigestService.digestText(
+            events: events,
+            enabledProviders: settings.enabledProviders,
+            language: settings.localization.language,
+            now: now,
+            weekStartDay: settings.weekStartDay,
+            budget: settings.budget,
+            span: .previousWeek
+        )
+        do {
+            try await localNotificationService.send(title: t("Weekly digest"), body: text)
+            weeklyDigestStore.saveLastSent(now)
+        } catch {}
+    }
+
+    private func checkBudgetAlerts() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled,
+              settings.budget.hasAnyBudget else {
+            return
+        }
+        // Every stored event, not today's. `overviewUsage` is the Today aggregate, so the weekly and
+        // monthly budgets only ever saw today: 200k a day against a 1M week read 20% on Friday, and
+        // the weekly and monthly alerts could not fire.
+        let candidates = budgetAlertService.crossingCandidates(
+            events: historyEventsAllTime,
+            settings: settings.budget,
+            now: Date(),
+            weekStartDay: settings.weekStartDay
+        )
+        guard !candidates.isEmpty else { return }
+        // Only what was actually shown is marked done. Marking every candidate after a failed send
+        // meant the one alert for this cycle was consumed without anyone seeing it.
+        var delivered: [BudgetAlertCandidate] = []
+        for candidate in candidates {
+            let windowLabel: String
+            switch candidate.window {
+            case .daily: windowLabel = t("Today")
+            case .weekly: windowLabel = t("This week")
+            case .monthly: windowLabel = t("This month")
+            }
+            let body = String(
+                format: t("Budget %@: %@ / %@ tok reached %d%% (est.)"),
+                windowLabel,
+                TokenPilotFormatters.compactNumber(candidate.tokens),
+                TokenPilotFormatters.compactNumber(candidate.budgetTokens),
+                candidate.percent
+            )
+            do {
+                try await localNotificationService.send(title: t("Budget guardrails"), body: body)
+                delivered.append(candidate)
+            } catch {}
+        }
+        budgetAlertService.markDelivered(delivered)
+    }
+
+    private func checkMilestoneNotifications() async {
+        guard settings.globalNotificationsEnabled,
+              settings.macOSNotificationsEnabled else {
+            return
+        }
+        let newly = milestoneNotificationService.newlyAchieved(milestones: activityMilestones)
+        guard !newly.isEmpty else { return }
+        // Only the highest newly reached step of each kind is announced; the rest are marked done
+        // quietly. Several thresholds can be crossed together — and all of them were, the first
+        // time milestones counted the stored history instead of only today.
+        let announced = Dictionary(grouping: newly, by: \.dimension)
+            .compactMap { $0.value.max { $0.threshold < $1.threshold } }
+        var failed: Set<String> = []
+        for milestone in announced {
+            do {
+                try await localNotificationService.send(
+                    title: t("Milestones"),
+                    body: milestoneBody(milestone)
+                )
+            } catch {
+                failed.insert(milestone.id)
+            }
+        }
+        // An announcement that failed stays owed; the quiet lower steps are done either way.
+        milestoneNotificationService.markNotified(newly.filter { !failed.contains($0.id) })
+    }
+
+    private func milestoneBody(_ milestone: ActivityMilestone) -> String {
+        switch milestone.dimension {
+        case .lifetimeTokens:
+            return String(format: t("Reached %@ lifetime local tokens (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .activeDays:
+            return String(format: t("Reached %d active local days (est.)"), milestone.threshold)
+        case .totalRequests:
+            return String(format: t("Reached %@ total local requests (est.)"), TokenPilotFormatters.compactNumber(milestone.threshold))
+        case .longestStreak:
+            return String(format: t("Reached a %d-day longest local streak (est.)"), milestone.threshold)
+        }
     }
 
     private func shouldRunDataRefresh(at now: Date) -> Bool {
         guard !refreshInProgress else { return false }
         guard let lastRefreshFinishedAt else { return true }
-        return now.timeIntervalSince(lastRefreshFinishedAt) >= dataRefreshInterval
+        // Half a tick of slack. A tick lands a fraction under the deadline — the refresh's own
+        // duration is enough — so a strict `>=` pushed every interval to the *next* tick: the
+        // default "1 min" actually refreshed every 90 seconds, and "30 sec" every 60.
+        return now.timeIntervalSince(lastRefreshFinishedAt) >= dataRefreshInterval - menuBarTickInterval / 2
+    }
+
+    /// Writes the current settings now. The save is debounced by 350 ms, so a change made just
+    /// before Quit — a toggle, then ⌘Q — was still waiting when the process exited, and was lost.
+    func flushPendingSettings() {
+#if DEBUG
+        guard !debugFixtureMode else { return }
+#endif
+        settingsSaveTask?.cancel()
+        settingsSaveTask = nil
+        settingsStore.save(settings)
     }
 
     private func persistSettingsDebounced(_ settingsToSave: AppSettings) {
@@ -849,6 +1406,8 @@ final class TokenPilotViewModel: ObservableObject {
         )
         dataSourceMode = determineDataMode(hasConnectedData: result.hasConnectedData, snapshots: result.snapshots, capacityObservations: result.capacityObservations, observedAt: result.observedAt)
         rebuildUsageFromHistory(using: result.snapshots)
+        await checkBudgetAlerts()
+        await checkMilestoneNotifications()
         await processCapacity(result: result, settingsAtStart: settingsAtStart)
         let usageSettingsChanged = TokenPilotRefreshPolicy.usageRefreshNeeded(from: settingsAtStart, to: settings)
         if usageSettingsChanged {
@@ -881,6 +1440,8 @@ final class TokenPilotViewModel: ObservableObject {
             return .automaticTimer
         case .settings:
             return .settingsChanged
+        case .systemWake:
+            return .automaticTimer
         }
     }
     private func processCapacity(result: UsageStore.Result, settingsAtStart: AppSettings) async {
@@ -889,6 +1450,7 @@ final class TokenPilotViewModel: ObservableObject {
         if !result.capacityObservations.isEmpty {
             _ = await capacityEvidenceStore.record(result.capacityObservations)
         }
+        capacityEvidenceRecords = (await capacityEvidenceStore.loadSnapshot()).records
 
         let runtimeLoad = await capacityRuntimeStore.load()
         capacityRuntimeRecoveryRequired = runtimeLoad.recoveryStatus.recoveryRequired
@@ -901,6 +1463,7 @@ final class TokenPilotViewModel: ObservableObject {
             : []
         capacityAssessments = assessments
         capacityPresentations = presentationEnabled ? assessments.map(capacityPresentationMapper.map) : []
+        writeStatuslineSnapshot(assessments: assessments, observedAt: result.observedAt)
 
         let officialDeepSeekBalance = result.snapshots.first {
             $0.provider == .deepseek && $0.dataSource == .officialTelemetry && !$0.isStale
@@ -910,17 +1473,44 @@ final class TokenPilotViewModel: ObservableObject {
 
         let rulesLoad = await capacityAlertRuleStore.load()
         let deliveryLoad = await capacityAlertDeliveryStore.load()
-        capacityAlertRules = rulesLoad.rules
+
+        // Give every watched provider the alerts it should have had. This only ever adds a rule
+        // whose identity is absent, so a rule the user edited is never touched, and it is skipped
+        // entirely while the store is in recovery rather than writing into a file we could not
+        // fully read.
+        var activeRules = rulesLoad.rules
+        if !rulesLoad.recoveryStatus.recoveryRequired {
+            let reconciliation = CapacityAlertReconciler.reconcile(
+                existing: rulesLoad.rules,
+                enabledProviders: Set(settingsAtStart.enabledProviders),
+                routing: CapacityAlertRouting(
+                    macOS: settingsAtStart.macOSNotificationsEnabled,
+                    telegram: settingsAtStart.telegramNotificationsEnabled,
+                    discord: settingsAtStart.discordNotificationsEnabled
+                ),
+                observed: assessments
+            )
+            if reconciliation.didChange {
+                let save = await capacityAlertRuleStore.save(reconciliation.rules)
+                if !save.recoveryStatus.writeBlocked {
+                    activeRules = reconciliation.rules
+                }
+            }
+        }
+
+        capacityAlertRules = activeRules
         capacityAlertRulesRecoveryStatus = rulesLoad.recoveryStatus
         capacityAlertDeliveryStates = deliveryLoad.states
         capacityAlertDeliveryRecoveryStatus = deliveryLoad.recoveryStatus
         let channels = CapacityAlertChannelSettings(
             settings: settingsAtStart,
-            telegramCredentialPresent: hasSavedTelegramToken || !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            discordCredentialPresent: hasSavedDiscordWebhook || !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            // Saved only: automatic delivery reads the Keychain, so an unsaved field must not
+            // make a channel look available that would then fail every send.
+            telegramCredentialPresent: hasSavedTelegramToken,
+            discordCredentialPresent: hasSavedDiscordWebhook
         )
         let transition = capacityAlertTransitionEngine.evaluate(
-            rules: rulesLoad.rules,
+            rules: activeRules,
             assessments: assessments,
             previousStates: deliveryLoad.states,
             channels: channels,
@@ -1103,7 +1693,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         settings.notificationPermissionStatus = await localNotificationService.requestPermission()
         if settings.notificationPermissionStatus == .denied {
-            bannerMessage = t("Permission denied. Enable notifications in macOS Settings > Notifications.")
+            showProblem(t("Permission denied. Enable notifications in macOS Settings > Notifications."))
         } else {
             bannerMessage = String(format: t("Notification permission: %@"), settings.notificationPermissionStatus.localizedLabel(language: settings.localization.language))
         }
@@ -1114,7 +1704,7 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         guard settings.globalNotificationsEnabled else {
-            bannerMessage = t("No notification channel is enabled or configured.")
+            showProblem(t("No notification channel is enabled or configured."))
             return
         }
 
@@ -1137,12 +1727,12 @@ final class TokenPilotViewModel: ObservableObject {
                 sentChannelCount += 1
             }
             guard sentChannelCount > 0 else {
-                bannerMessage = t("No notification channel is enabled or configured.")
+                showProblem(t("No notification channel is enabled or configured."))
                 return
             }
             bannerMessage = t("Test notification sent.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1177,6 +1767,46 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
 
+    /// Grants one provider's source folder.
+    ///
+    /// The Developer ID build reads the default home paths directly, so this is for a non-standard
+    /// install location. A sandboxed build cannot read those paths at all, and this is the only way
+    /// the provider ever gets data — the grant is stored as a read-only security-scoped bookmark.
+    func chooseProviderSourceFolder(_ provider: Provider) {
+        chooseLocalSource(
+            provider: provider,
+            prompt: t("Grant access"),
+            message: t("Choose this provider's local data folder. TokenPilot keeps read-only access to it."),
+            canChooseDirectories: true
+        ) { [weak self] url, bookmarkData in
+            guard let self else { return }
+            var next = self.settings
+            next.monitoredProviders.customPaths[provider] = url.path
+            next.monitoredProviders.customBookmarks[provider] = bookmarkData
+            self.settings = next
+        }
+    }
+
+    /// Drops a previously granted folder so the provider falls back to its default paths.
+    func clearProviderSourceFolder(_ provider: Provider) {
+        var next = settings
+        next.monitoredProviders.customPaths.removeValue(forKey: provider)
+        next.monitoredProviders.customBookmarks.removeValue(forKey: provider)
+        settings = next
+        Task { await checkConnection(provider) }
+    }
+
+    /// Folder name of the granted source, for display. Never the full path.
+    func grantedSourceFolderName(_ provider: Provider) -> String? {
+        guard let path = settings.monitoredProviders.customPaths[provider], !path.isEmpty else { return nil }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    /// True when this build runs sandboxed, where providers only read folders the user granted.
+    var requiresSourceGrants: Bool {
+        ProviderSourceAccess.isSandboxed
+    }
+
     private func chooseLocalSource(
         provider: Provider,
         prompt: String,
@@ -1198,7 +1828,7 @@ final class TokenPilotViewModel: ObservableObject {
             let bookmarkData = try? TokenPilotSecurityScopedBookmarks.makeReadOnlyBookmarkData(for: url)
             apply(url, bookmarkData)
             if bookmarkData == nil {
-                bannerMessage = t("Selected source path saved, but sandbox bookmark was not created. Choose it again if the sandbox cannot read it.")
+                showProblem(t("Selected source path saved, but sandbox bookmark was not created. Choose it again if the sandbox cannot read it."))
             }
             Task {
                 await checkConnection(provider)
@@ -1242,6 +1872,44 @@ final class TokenPilotViewModel: ObservableObject {
             applyDataSources(initialSources)
             bannerMessage = t("Connection check complete.")
         }
+        await refreshProviderStatuses()
+    }
+
+    /// Fetches official status-page readings for enabled providers that publish one.
+    /// Reads use a TTL cache and never block a refresh pass; failures keep the
+    /// previous cached reading or report unknown.
+    func refreshProviderStatuses() async {
+        let enabled = Set(settings.enabledProviders)
+        let providers = ProviderStatusService.statuspageEndpoints.keys.filter { enabled.contains($0) }
+        var reports: [Provider: ProviderStatusReport] = providerStatusReports
+        for provider in providers {
+            let report = await providerStatusService.refreshStatus(for: provider)
+            reports[provider] = report
+        }
+        providerStatusReports = reports
+    }
+
+    func providerStatusText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Not checked") }
+        switch report.health {
+        case .operational: return t("Operational")
+        case .degraded: return t("Degraded")
+        case .outage: return t("Outage")
+        case .unknown: return t("Unknown")
+        }
+    }
+
+    func providerStatusDetailText(_ provider: Provider) -> String {
+        guard let report = providerStatusReports[provider] else { return t("Run a check to read the official status page") }
+        var parts: [String] = []
+        if !report.description.isEmpty {
+            parts.append(report.description)
+        }
+        if let format = TokenPilotRelativeTimestamp.format(from: report.checkedAt, now: Date()) {
+            let updated = format.arg.map { String(format: t(format.key), $0) } ?? t(format.key)
+            parts.append(updated)
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func applyDataSources(_ sources: [ProviderDataSource]) {
@@ -1270,26 +1938,30 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     func sourceStatusText(_ source: ProviderDataSource) -> String {
-        let base: String
         if source.provider == .xai {
             return xAIStatusText(source)
         }
+        let key: String
         switch source.status {
-        case .connected: base = t("Connected")
-        case .notFound: base = t("Not found")
-        case .permissionDenied: base = t("Permission denied")
-        case .noUsableData: base = t("No usable data")
-        case .stale: base = t("STALE")
-        case .invalidFormat: base = t("Invalid format")
-        case .disabled: base = t("Disabled")
-        case .manual: base = t("Manual mode")
-        case .estimated: base = "\(t("Estimated")) (\(t("est.")))"
+        case .connected: key = "Connected"
+        case .notFound: key = "Not found"
+        case .permissionDenied: key = "Permission denied"
+        case .noUsableData: key = "No usable data"
+        case .stale: key = "STALE"
+        case .invalidFormat: key = "Invalid format"
+        case .disabled: key = "Disabled"
+        case .manual: key = "Manual mode"
+        case .estimated: key = "Estimated"
         }
+        let base = source.status == .estimated ? "\(t(key)) (\(t("est.")))" : t(key)
 
-        if let message = source.statusMessage, !message.isEmpty, message != base {
-            return "\(base) · \(localizedStatus(message))"
-        }
-        return base
+        // Compared as keys: comparing the English message with the translated status read
+        // "비활성화됨 · 비활성화됨". Adapters also lead a stale message with the status itself
+        // ("STALE · no activity…"), which read "오래됨 · STALE · …".
+        guard let message = source.statusMessage, !message.isEmpty, message != key else { return base }
+        guard message.hasPrefix("\(key) · ") else { return "\(base) · \(localizedStatus(message))" }
+        let rest = localizedStatus(message).components(separatedBy: " · ").dropFirst().joined(separator: " · ")
+        return rest.isEmpty ? base : "\(base) · \(rest)"
     }
 
     func sourceDetailText(_ provider: Provider) -> String {
@@ -1320,26 +1992,31 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     var providerDiagnostics: [ProviderConnectionDiagnostic] {
-        Provider.allCases.map { provider in
-            if let source = dataSources[provider] {
-                return source.connectionDiagnostic()
-            }
-            if provider == .deepseek {
-                return ProviderDataSource(
-                    provider: provider,
-                    isEnabled: settings.isProviderEnabled(provider),
-                    status: settings.isProviderEnabled(provider) ? (settings.deepseekAPIKeyConfigured ? .connected : .manual) : .disabled,
-                    confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
-                    statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
-                ).connectionDiagnostic()
-            }
+        Provider.allCases.map(providerDiagnostic(for:))
+    }
+
+    /// One provider's diagnostic without building all twelve. Settings asks "which card should start
+    /// expanded" once per provider card, and answering through the full array rebuilt it roughly
+    /// 150 times per body pass.
+    func providerDiagnostic(for provider: Provider) -> ProviderConnectionDiagnostic {
+        if let source = dataSources[provider] {
+            return source.connectionDiagnostic()
+        }
+        if provider == .deepseek {
             return ProviderDataSource(
                 provider: provider,
                 isEnabled: settings.isProviderEnabled(provider),
-                status: settings.isProviderEnabled(provider) ? .notFound : .disabled,
-                confidence: .low
+                status: settings.isProviderEnabled(provider) ? (settings.deepseekAPIKeyConfigured ? .connected : .manual) : .disabled,
+                confidence: settings.deepseekAPIKeyConfigured ? .medium : .manual,
+                statusMessage: settings.deepseekAPIKeyConfigured ? "API key saved in Keychain" : "API key required"
             ).connectionDiagnostic()
         }
+        return ProviderDataSource(
+            provider: provider,
+            isEnabled: settings.isProviderEnabled(provider),
+            status: settings.isProviderEnabled(provider) ? .notFound : .disabled,
+            confidence: .low
+        ).connectionDiagnostic()
     }
 
     func diagnosticStatusText(_ diagnostic: ProviderConnectionDiagnostic) -> String {
@@ -1439,8 +2116,90 @@ final class TokenPilotViewModel: ObservableObject {
                 bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
             }
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
+    }
+
+    /// Exports app settings as a JSON backup. Credentials (bot tokens, webhooks,
+    /// DeepSeek/xAI API keys) live in the Keychain and are never part of the
+    /// payload; the Telegram chat ID is scrubbed on export.
+    func exportSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        do {
+            let data = try SettingsBackupService().exportData(settings: settings)
+            let panel = NSSavePanel()
+            panel.allowedContentTypes = [.json]
+            panel.nameFieldStringValue = "TokenPilot-settings.json"
+            panel.canCreateDirectories = true
+            panel.title = t("Export Settings")
+            panel.message = t("Exports settings without credentials, chat IDs, webhooks, or API keys. Saved secrets stay in the Keychain.")
+            if panel.runModal() == .OK, let url = panel.url {
+                try data.write(to: url, options: .atomic)
+                bannerMessage = "\(t("Exported")): \(url.lastPathComponent)"
+            }
+        } catch {
+            showProblem(localizedErrorMessage(error))
+        }
+    }
+
+    /// Imports app settings from a JSON backup created by `exportSettings`.
+    /// Keychain-stored credentials are never part of the backup, so any
+    /// configured integrations must be re-entered after importing.
+    func importSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.title = t("Import Settings")
+        panel.message = t("Imports settings from a TokenPilot backup. Keychain-stored credentials must be re-entered.")
+        guard panel.runModal() == .OK, let url = panel.url, let data = try? Data(contentsOf: url) else {
+            return
+        }
+        do {
+            let imported = try SettingsBackupService().importSettings(from: data)
+            settings = imported
+            bannerMessage = t("Settings imported")
+        } catch {
+            showProblem(localizedErrorMessage(error))
+        }
+    }
+
+    /// A modal yes/no for something the app cannot undo.
+    ///
+    /// Reset Settings — which keeps the credentials — asked, and the five deletions that destroy a
+    /// Keychain item did not. Delete sits beside Replace in the same row with the same metrics, and
+    /// a Discord webhook cannot be shown again after saving: a mis-click meant a trip back to
+    /// Discord to mint a new one.
+    private func confirmDestructive(title: String, body: String, confirmTitle: String) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = body
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: confirmTitle)
+        alert.addButton(withTitle: t("Cancel"))
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    /// Resets all preferences to factory defaults. Keychain-stored credentials
+    /// are left untouched; only in-app settings reset.
+    func resetSettings() {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let alert = NSAlert()
+        alert.messageText = t("Reset settings?")
+        alert.informativeText = t("All preferences return to factory defaults. Keychain-stored credentials are kept.")
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: t("Reset"))
+        alert.addButton(withTitle: t("Cancel"))
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        settings = settingsStore.resetToDefaults()
+        bannerMessage = t("Settings reset")
     }
 
     func parseCodexStatus() {
@@ -1568,7 +2327,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let key = deepSeekAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else {
-            bannerMessage = t("Enter a DeepSeek API key first.")
+            showProblem(t("Enter a DeepSeek API key first."))
             return
         }
         do {
@@ -1579,7 +2338,7 @@ final class TokenPilotViewModel: ObservableObject {
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key saved in TokenPilot Keychain item.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1587,6 +2346,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the DeepSeek API key?"), body: t("TokenPilot forgets the key and stops reading your official balance. The key itself stays valid — you would paste it again to reconnect."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.deepSeekAPIKeyAccount)
             deepSeekAPIKeyInput = ""
@@ -1595,7 +2355,78 @@ final class TokenPilotViewModel: ObservableObject {
             updateDeepSeekDataSourceForCredentialState()
             bannerMessage = t("DeepSeek API key deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
+        }
+    }
+
+    func apiKeyInput(for provider: Provider) -> String {
+        switch provider {
+        case .minimax: return minimaxAPIKeyInput
+        case .zai: return zaiAPIKeyInput
+        case .openrouter: return openrouterAPIKeyInput
+        default: return deepSeekAPIKeyInput
+        }
+    }
+
+    func setAPIKeyInput(_ value: String, for provider: Provider) {
+        switch provider {
+        case .minimax: minimaxAPIKeyInput = value
+        case .zai: zaiAPIKeyInput = value
+        case .openrouter: openrouterAPIKeyInput = value
+        default: deepSeekAPIKeyInput = value
+        }
+    }
+
+    func hasSavedAPIKey(for provider: Provider) -> Bool {
+        switch provider {
+        case .minimax: return hasSavedMinimaxAPIKey
+        case .zai: return hasSavedZAIAPIKey
+        case .openrouter: return hasSavedOpenRouterAPIKey
+        default: return hasSavedDeepSeekAPIKey
+        }
+    }
+
+    func saveAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        let key = apiKeyInput(for: provider).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else {
+            showProblem(t("Enter an API key first."))
+            return
+        }
+        do {
+            try keychain.saveSecret(key, account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = true
+            case .zai: hasSavedZAIAPIKey = true
+            case .openrouter: hasSavedOpenRouterAPIKey = true
+            default: break
+            }
+            bannerMessage = t("API key saved in TokenPilot Keychain item.")
+        } catch {
+            showProblem(localizedErrorMessage(error))
+        }
+    }
+
+    func deleteAPIKey(for provider: Provider) {
+#if DEBUG
+        guard !blockDebugFixtureExternalAction() else { return }
+#endif
+        guard confirmDestructive(title: t("Delete this API key?"), body: t("TokenPilot forgets the key and stops reading this provider's official usage. The key itself stays valid — you would paste it again to reconnect."), confirmTitle: t("Delete")) else { return }
+        do {
+            try keychain.deleteSecret(account: Self.apiKeyAccount(for: provider))
+            setAPIKeyInput("", for: provider)
+            switch provider {
+            case .minimax: hasSavedMinimaxAPIKey = false
+            case .zai: hasSavedZAIAPIKey = false
+            case .openrouter: hasSavedOpenRouterAPIKey = false
+            default: break
+            }
+            bannerMessage = t("API key deleted.")
+        } catch {
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1605,7 +2436,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let token = telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else {
-            bannerMessage = t("Enter a bot token first.")
+            showProblem(t("Enter a bot token first."))
             return
         }
         do {
@@ -1615,7 +2446,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.telegram.connectionStatus = "Token saved securely"
             bannerMessage = t("Telegram token saved in TokenPilot Keychain item.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1623,6 +2454,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the Telegram bot token?"), body: t("TokenPilot forgets the token and turns Telegram alerts off. The bot itself is untouched — you would paste its token again to reconnect."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.telegramTokenAccount)
             telegramTokenInput = ""
@@ -1632,7 +2464,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.telegram.connectionStatus = "Not configured"
             bannerMessage = t("Telegram token deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1647,7 +2479,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Telegram test message sent.")
         } catch {
             settings.telegram.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1656,19 +2488,24 @@ final class TokenPilotViewModel: ObservableObject {
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
         do {
-            let token = try telegramTokenForUse()
+            let token = try telegramTokenForUse(preferringInput: true)
             let chatID = try await telegramService.findChatID(token: token)
             settings.telegram.chatID = chatID
             settings.telegram.connectionStatus = "Connected"
             bannerMessage = t("Chat ID found.")
         } catch {
             settings.telegram.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
-    private func telegramTokenForUse() throws -> String {
-        if !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    /// The typed-but-unsaved field wins only for something the user just pressed.
+    ///
+    /// It used to win everywhere. Half a pasted token sitting in Settings silently replaced the
+    /// working saved one for automatic alerts, so alerts stopped arriving and only a rising
+    /// failed-delivery count said so.
+    private func telegramTokenForUse(preferringInput: Bool = false) throws -> String {
+        if preferringInput, !telegramTokenInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return telegramTokenInput
         }
         if let saved = try keychain.readSecret(account: Self.telegramTokenAccount) {
@@ -1677,8 +2514,9 @@ final class TokenPilotViewModel: ObservableObject {
         throw TelegramError.notConfigured
     }
 
+    /// Only the Send Test action reaches this, so it tests what the user is looking at.
     private func sendTelegram(text: String) async throws {
-        let token = try telegramTokenForUse()
+        let token = try telegramTokenForUse(preferringInput: true)
         try await telegramService.sendMessage(token: token, chatID: settings.telegram.chatID, text: text)
     }
 
@@ -1688,7 +2526,7 @@ final class TokenPilotViewModel: ObservableObject {
 #endif
         let webhookURL = discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !webhookURL.isEmpty else {
-            bannerMessage = t("Enter a Discord webhook URL first.")
+            showProblem(t("Enter a Discord webhook URL first."))
             return
         }
         do {
@@ -1700,7 +2538,7 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Discord webhook saved in TokenPilot Keychain item.")
         } catch {
             settings.discord.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1708,6 +2546,7 @@ final class TokenPilotViewModel: ObservableObject {
 #if DEBUG
         guard !blockDebugFixtureExternalAction() else { return }
 #endif
+        guard confirmDestructive(title: t("Delete the Discord webhook?"), body: t("TokenPilot forgets the webhook and turns Discord alerts off. Discord cannot show a webhook URL again, so reconnecting means creating a new one."), confirmTitle: t("Delete")) else { return }
         do {
             try keychain.deleteSecret(account: Self.discordWebhookAccount)
             discordWebhookInput = ""
@@ -1717,7 +2556,7 @@ final class TokenPilotViewModel: ObservableObject {
             settings.discord.connectionStatus = "Not configured"
             bannerMessage = t("Discord webhook deleted.")
         } catch {
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
@@ -1732,12 +2571,14 @@ final class TokenPilotViewModel: ObservableObject {
             bannerMessage = t("Discord test message sent.")
         } catch {
             settings.discord.connectionStatus = "Failed"
-            bannerMessage = localizedErrorMessage(error)
+            showProblem(localizedErrorMessage(error))
         }
     }
 
-    private func discordWebhookForUse() throws -> String {
-        if !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    /// See `telegramTokenForUse`: an unsaved field is for the button the user just pressed, not
+    /// for the alerts that fire while nobody is looking.
+    private func discordWebhookForUse(preferringInput: Bool = false) throws -> String {
+        if preferringInput, !discordWebhookInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return discordWebhookInput
         }
         if let saved = try keychain.readSecret(account: Self.discordWebhookAccount) {
@@ -1747,7 +2588,7 @@ final class TokenPilotViewModel: ObservableObject {
     }
 
     private func sendDiscord(text: String) async throws {
-        let webhookURL = try discordWebhookForUse()
+        let webhookURL = try discordWebhookForUse(preferringInput: true)
         try await discordService.sendMessage(webhookURL: webhookURL, content: text)
     }
 

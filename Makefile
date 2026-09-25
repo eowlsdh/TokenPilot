@@ -1,19 +1,24 @@
 .PHONY: build test run clean xcode all help security-scan
 
+# Pinned to the native build system: the default since Swift 6.4 (swiftbuild) compiles the string
+# catalog into .lproj folders, and the app reads Localizable.xcstrings itself. build.sh and CI use
+# the same value.
+SWIFT_BUILD_FLAGS := --build-system native
+
 # Default target
 all: build test
 
 # Build Swift Package
 build:
-	swift build
+	swift build $(SWIFT_BUILD_FLAGS)
 
 # Build with warnings as errors
 build-strict:
-	swift build -Xswiftc -warnings-as-errors
+	swift build $(SWIFT_BUILD_FLAGS) -Xswiftc -warnings-as-errors
 
 # Run tests
 test:
-	swift test
+	swift test $(SWIFT_BUILD_FLAGS)
 
 # Run secret scans for the git history and current worktree
 security-scan:

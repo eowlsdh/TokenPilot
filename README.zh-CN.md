@@ -6,6 +6,8 @@
 >
 > TokenPilot 不隶属于 OpenAI、Anthropic、Google、DeepSeek 或 xAI，也不是官方认证产品。
 
+**系统要求：macOS 26 或更高版本。** 更早的版本无法启动。
+
 ![将 Codex 和 Grok 菜单栏指标设为独立项目的 TokenPilot 设置界面](docs/assets/readme-screenshot.png)
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)

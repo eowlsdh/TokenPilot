@@ -41,7 +41,9 @@ public final class DefaultPathResolver: Sendable {
             return resolveOpenCodePaths()
         case .kiro:
             return resolveKiroPaths()
-        case .deepseek, .xai:
+        case .commandcode:
+            return resolveCommandCodePaths()
+        case .deepseek, .xai, .jetbrains, .minimax, .zai, .openrouter:
             return []
         }
     }
@@ -98,6 +100,40 @@ public final class DefaultPathResolver: Sendable {
     }
 
     // MARK: - Kiro
+
+    /// Command Code keeps one folder per project under `~/.commandcode/projects`; the transcripts
+    /// live inside them. `auth.json` sits in the same tree and is deliberately not a candidate.
+    private func resolveCommandCodePaths() -> [ProviderPathCandidate] {
+        var candidates: [ProviderPathCandidate] = []
+        for entry in claudeHomeCandidates() {
+            let root = entry.home.appendingPathComponent(".commandcode", isDirectory: true)
+            let rootExists = FileManager.default.fileExists(atPath: root.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .commandcode,
+                kind: "root",
+                path: root.path,
+                source: "default",
+                exists: rootExists,
+                readable: rootExists && isReadable(root),
+                confidence: .high,
+                notes: rootExists ? nil : "Command Code folder not found"
+            ))
+
+            let projects = root.appendingPathComponent("projects", isDirectory: true)
+            let projectsExist = FileManager.default.fileExists(atPath: projects.path)
+            candidates.append(ProviderPathCandidate(
+                provider: .commandcode,
+                kind: "projects",
+                path: projects.path,
+                source: "default",
+                exists: projectsExist,
+                readable: projectsExist && isReadable(projects),
+                confidence: .high,
+                notes: projectsExist ? nil : "No Command Code sessions yet"
+            ))
+        }
+        return candidates
+    }
 
     private func resolveKiroPaths() -> [ProviderPathCandidate] {
         var candidates: [ProviderPathCandidate] = []

@@ -1,13 +1,35 @@
 import XCTest
 
 final class SecurityPostureTests: XCTestCase {
-    func testGitleaksConfigKeepsDefaultRulesAndNarrowsHistoricalFalsePositive() throws {
+    /// The config keeps gitleaks' default rules, adds one for provider OAuth structures, and only
+    /// allows placeholders when the placeholder is most of the value. An unbounded fragment
+    /// allowance let a real 68-character token through because it happened to contain "QwErTy".
+    func testGitleaksConfigKeepsDefaultRulesAndOnlyAllowsBoundedPlaceholders() throws {
         let config = try String(contentsOf: Self.projectRootURL().appendingPathComponent(".gitleaks.toml"))
 
         XCTAssertTrue(config.contains("useDefault = true"))
-        XCTAssertTrue(config.contains("e431acb604693d83c9bebd5471c8b87a9c6a5a91"))
-        XCTAssertTrue(config.contains("COMPLETION_REPORT"))
-        XCTAssertFalse(config.contains(".*"))
+        XCTAssertTrue(config.contains("id = \"tokenpilot-provider-oauth\""), "the provider OAuth rule is gone")
+        XCTAssertTrue(config.contains("secret-group = 1"))
+        XCTAssertFalse(config.contains(".*"), "an unbounded wildcard would allow anything around a placeholder")
+        XCTAssertTrue(config.contains("{0,20}"), "placeholder allowances must stay length-bounded")
+        XCTAssertFalse(config.contains("'''(?i)^Tests/"), "tests are scanned too: a real token pasted into a fixture must be caught")
+    }
+
+    /// Secrets are scanned before anything is built, and the ignore check runs the script that
+    /// exists — the path is case-sensitive on the Linux runner, and `scripts/` would not be found.
+    func testCISecretScanGatesTheBuildAndRunsTheRealIgnoreCheck() throws {
+        let root = Self.projectRootURL()
+        let ci = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"))
+        let preCommit = try String(contentsOf: root.appendingPathComponent(".pre-commit-config.yaml"))
+
+        XCTAssertTrue(ci.contains("secret-scan:"))
+        XCTAssertTrue(ci.contains("needs: secret-scan"), "the build must wait for the secret scan")
+        XCTAssertTrue(ci.contains("fetch-depth: 0"), "a shallow clone cannot scan history")
+        for text in [ci, preCommit] {
+            XCTAssertTrue(text.contains("Scripts/check-gitignore.sh"))
+            XCTAssertFalse(text.contains(" scripts/check-gitignore.sh"), "lower-case path does not exist on a case-sensitive runner")
+        }
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: root.appendingPathComponent("Scripts/check-gitignore.sh").path))
     }
 
     func testAppStoreEntitlementsEnableSandboxWithoutChangingDefaultProfile() throws {

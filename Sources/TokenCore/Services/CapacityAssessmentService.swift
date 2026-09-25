@@ -37,7 +37,7 @@ public struct CapacityAssessmentService: Sendable {
             return CapacityAssessment(observation: observation, freshness: .fresh, eligibilityReason: .activityOnly, risk: .informational, alertEligibility: .ineligible, forecast: .unavailableSource, actionKey: .openProviderDiagnostics, transitionKey: transitionKey)
         }
 
-        let risk: CapacityRisk = used >= 85 ? .critical : (used >= 70 ? .warning : .normal)
+        let risk = CapacityRisk.forUsedPercent(used)
         switch observation.stability {
         case .supported:
             return CapacityAssessment(observation: observation, freshness: .fresh, eligibilityReason: .eligible, risk: risk, alertEligibility: .percent, forecast: .unavailableEvidence, actionKey: .waitForReset, transitionKey: transitionKey)

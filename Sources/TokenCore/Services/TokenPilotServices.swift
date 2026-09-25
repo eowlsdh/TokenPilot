@@ -191,17 +191,39 @@ public struct GrokLocalSignalsAdapter: ProviderRefreshAdapter {
     /// Local context metadata is treated as stale when the newest valid signals file is older than this.
     private static let staleThreshold: TimeInterval = 15 * 60
     private let sessionRoots: [URL]
+    private let makeTierProbe: (@Sendable () -> GrokTierProbe)?
 
-    public init(sessionRoots: [URL]? = nil) {
+    public init(sessionRoots: [URL]? = nil, makeTierProbe: (@Sendable () -> GrokTierProbe)? = nil) {
         self.sessionRoots = sessionRoots ?? [
             FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".grok", isDirectory: true)
                 .appendingPathComponent("sessions", isDirectory: true)
         ]
+        self.makeTierProbe = makeTierProbe
     }
 
     public func refresh(settings: AppSettings, now: Date) async -> ProviderRefreshResult {
-        let snapshot = Self.newestSnapshot(in: sessionRoots, now: now) ?? Self.unavailableSnapshot(now: now)
+        let resolution = ProviderSourceAccess.resolve(provider: .xai, settings: settings, defaults: sessionRoots)
+        defer { resolution.release() }
+        var snapshot: ProviderSnapshot
+        if resolution.needsUserGrant {
+            snapshot = Self.unavailableSnapshot(now: now)
+            snapshot.statusMessage = "Choose the Grok folder to grant access"
+        } else {
+            snapshot = Self.newestSnapshot(in: resolution.roots, now: now) ?? Self.unavailableSnapshot(now: now)
+        }
+
+        if settings.grokTierProbeEnabled, let makeProbe = makeTierProbe {
+            switch await makeProbe().probe(settings: settings) {
+            case .success(let tier):
+                snapshot.statusMessage = "EXPERIMENTAL · UNOFFICIAL · \(tier)"
+                snapshot.isExperimental = true
+                snapshot.updatedAt = now
+            case .failure:
+                break
+            }
+        }
+
         return ProviderRefreshResult(
             snapshot: snapshot,
             capacityObservations: [],
@@ -964,7 +986,29 @@ public enum CapacityObservationFactory {
             break
         case .opencode:
             // Consent-gated probe result: provider-reported quota, so comparable unlike the
-            // token/cost activity signals below.
+            // token/cost activity signals below. The official usage API reports three windows
+            // (rolling 5h, weekly, monthly); each is surfaced as its own observation so the
+            // overview can show them all. Weekly keeps the established `rate-limit` series id.
+            if let rolling = snapshot.fiveHour,
+               rolling.providerWindowID == "opencode-go-rolling",
+               let used = rolling.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-rolling", kind: .fixedReset, unit: .percent, durationMinutes: 300),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: rolling.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
             if let weekly = snapshot.weekly,
                weekly.providerWindowID == "rate-limit",
                let used = weekly.usedPercent,
@@ -974,6 +1018,26 @@ public enum CapacityObservationFactory {
                 seriesID: series,
                 observedAt: observedAt,
                 resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "opencodeRateLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if let monthly = snapshot.monthly,
+               monthly.providerWindowID == "opencode-go-monthly",
+               let used = monthly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .opencode, providerWindowID: "opencode-go-monthly", kind: .fixedReset, unit: .percent, durationMinutes: 43_200),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: monthly.resetAt,
                 value: value,
                 authority: .providerReported,
                 stability: .supported,
@@ -1067,6 +1131,70 @@ public enum CapacityObservationFactory {
             if let contextPercent = snapshot.contextWindowUsedPercent,
                let series = try? CapacitySeriesID(provider: .kiro, providerWindowID: "context-percent", kind: .context, unit: .percent),
                let value = try? CapacityValue(usedPercent: contextPercent),
+                let observation = try? CapacityObservation(
+                 seriesID: series,
+                 observedAt: observedAt,
+                 value: value,
+                 authority: .localDerived,
+                 stability: .supported,
+                 consent: .notRequired,
+                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                 comparability: .incomparable,
+                 parserRevision: "kiroContextV1",
+                 now: observedAt
+                ) {
+                 observations.append(observation)
+             }
+        case .jetbrains:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "jetbrains-quota",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .jetbrains, providerWindowID: "jetbrains-quota", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .comparable,
+                parserRevision: "jetbrainsQuotaV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .minimax:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "minimax-token-plan",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .minimax, providerWindowID: "minimax-token-plan", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "minimaxTokenPlanV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .commandcode:
+            // Command Code meters its plans in dollars over rolling 5-hour and 7-day windows, but
+            // publishes those meters only through `/usage` and Studio, behind the API key. Local
+            // transcripts therefore yield activity evidence only: spend and tokens, both
+            // incomparable to provider quota and alert-ineligible.
+            if let balance = snapshot.balance,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "session-cost", kind: .balance, unit: .currency),
+               let value = try? CapacityValue(money: balance.toppedUpBalance, currency: balance.currency),
                let observation = try? CapacityObservation(
                 seriesID: series,
                 observedAt: observedAt,
@@ -1076,7 +1204,66 @@ public enum CapacityObservationFactory {
                 consent: .notRequired,
                 freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
                 comparability: .incomparable,
-                parserRevision: "kiroContextV1",
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+            if snapshot.todayTokens > 0,
+               let series = try? CapacitySeriesID(provider: .commandcode, providerWindowID: "context", kind: .context, unit: .tokens),
+               let value = try? CapacityValue(tokens: snapshot.todayTokens),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                value: value,
+                authority: .localDerived,
+                stability: .supported,
+                consent: .notRequired,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 24 * 60 * 60),
+                comparability: .incomparable,
+                parserRevision: "commandCodeSessionV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .zai:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "zai-tokens-limit",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .zai, providerWindowID: "zai-tokens-limit", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "zaiTokensLimitV1",
+                now: observedAt
+               ) {
+                observations.append(observation)
+            }
+        case .openrouter:
+            if let weekly = snapshot.weekly,
+               weekly.providerWindowID == "openrouter-credits",
+               let used = weekly.usedPercent,
+               let series = try? CapacitySeriesID(provider: .openrouter, providerWindowID: "openrouter-credits", kind: .fixedReset, unit: .percent),
+               let value = try? CapacityValue(usedPercent: used),
+               let observation = try? CapacityObservation(
+                seriesID: series,
+                observedAt: observedAt,
+                resetAt: weekly.resetAt,
+                value: value,
+                authority: .providerReported,
+                stability: .supported,
+                consent: .granted,
+                freshnessPolicy: CapacityFreshnessPolicy(maximumAge: 60 * 60),
+                comparability: .comparable,
+                parserRevision: "openrouterCreditsV1",
                 now: observedAt
                ) {
                 observations.append(observation)
@@ -1176,8 +1363,19 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
     public func save(_ settings: AppSettings) {
         lock.withLock {
             guard let data = try? encoder.encode(normalize(settings)) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
+    }
+
+    /// Persists a fresh `AppSettings()` (factory defaults) and returns it.
+    /// Keychain-stored credentials are left untouched; only preferences reset.
+    public func resetToDefaults() -> AppSettings {
+        let defaults = AppSettings()
+        lock.withLock {
+            guard let data = try? encoder.encode(normalize(defaults)) else { return }
+            self.defaults.setIfChanged(data, forKey: key)
+        }
+        return defaults
     }
 
     private func normalize(_ settings: AppSettings) -> AppSettings {
@@ -1187,6 +1385,9 @@ public final class TokenPilotSettingsStore: @unchecked Sendable {
             copy.alertRules.append(rule)
         }
         copy.geminiDailyRequestCap = max(copy.geminiDailyRequestCap, 1)
+        // 30, not 15: the tick that drives refreshes fires every 30 seconds, so a 15-second
+        // setting was a promise the app could not keep. A stored 15 migrates up on load.
+        copy.refreshIntervalSeconds = min(max(copy.refreshIntervalSeconds, 30), 900)
         copy.codexManual.fiveHourUsagePercentage = min(max(copy.codexManual.fiveHourUsagePercentage, 0), 100)
         copy.codexManual.weeklyUsagePercentage = min(max(copy.codexManual.weeklyUsagePercentage, 0), 100)
         copy.codexManual.webTodayTokens = max(copy.codexManual.webTodayTokens, 0)
@@ -1391,18 +1592,26 @@ public final class UsageStore: @unchecked Sendable {
         let kiroSessionRoots = pathResolver.resolveDefaultPaths(for: .kiro)
             .filter { ["ide_sessions", "cli_sessions"].contains($0.kind) && $0.exists && $0.readable }
             .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
+        let commandCodeProjectRoots = pathResolver.resolveDefaultPaths(for: .commandcode)
+            .filter { $0.kind == "projects" && $0.exists && $0.readable }
+            .map { URL(fileURLWithPath: $0.path, isDirectory: true) }
 
         return [
-            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots),
+            ClaudeStatuslineAdapter(fallbackProjectRoots: claudeProjectRoots.isEmpty ? nil : claudeProjectRoots, makeUsageProbe: { ClaudeOAuthUsageProbe() }),
             GeminiTelemetryAdapter(logURLs: geminiSourceURLs),
-            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots),
+            CodexLocalSessionAdapter(sessionRoots: codexSessionRoots.isEmpty ? nil : codexSessionRoots, makeUsageProbe: { CodexOAuthUsageProbe() }),
             DeepSeekBalanceAdapter(),
-            GrokLocalSignalsAdapter(),
+            GrokLocalSignalsAdapter(makeTierProbe: { GrokTierProbe() }),
             OpenCodeSessionAdapter(
                 databaseURLs: openCodeDatabases.isEmpty ? nil : openCodeDatabases,
                 legacyMessageRoots: openCodeLegacyRoots.isEmpty ? nil : openCodeLegacyRoots
             ),
-            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots)
+            KiroLocalSessionAdapter(sessionRoots: kiroSessionRoots.isEmpty ? nil : kiroSessionRoots),
+            CommandCodeLocalSessionAdapter(projectRoots: commandCodeProjectRoots.isEmpty ? nil : commandCodeProjectRoots),
+            JetBrainsAIAssistantAdapter(),
+            MiniMaxTokenPlanAdapter(),
+            ZAIUsageAdapter(),
+            OpenRouterAdapter()
         ]
     }
 
@@ -1592,7 +1801,7 @@ public final class AlertDeduplicationStore: @unchecked Sendable {
     public func save(_ states: [String: AlertDeliveryState]) {
         lock.withLock {
             guard let data = try? encoder.encode(states) else { return }
-            defaults.set(data, forKey: key)
+            defaults.setIfChanged(data, forKey: key)
         }
     }
 
@@ -1892,7 +2101,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw TelegramError.requestFailed
+            throw TelegramError.rejected(statusCode: (response as? HTTPURLResponse)?.statusCode)
         }
     }
 
@@ -1903,7 +2112,7 @@ public final class TelegramNotificationService: @unchecked Sendable {
         request.httpMethod = "POST"
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw TelegramError.requestFailed
+            throw TelegramError.rejected(statusCode: (response as? HTTPURLResponse)?.statusCode)
         }
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let result = object["result"] as? [[String: Any]] else {
@@ -1926,6 +2135,9 @@ public enum TelegramError: LocalizedError, Equatable {
     case invalidURL
     case requestFailed
     case noChatFound
+    /// Telegram answered, and said no. Kept apart from `requestFailed` so a revoked token or a wrong
+    /// chat is not reported as the same "request failed" as being offline.
+    case rejected(statusCode: Int?)
 
     public var errorDescription: String? {
         switch self {
@@ -1933,6 +2145,12 @@ public enum TelegramError: LocalizedError, Equatable {
         case .invalidURL: return "Telegram URL is invalid."
         case .requestFailed: return "Telegram request failed."
         case .noChatFound: return "No chat ID found. Send a message to the bot first."
+        case .rejected(let status) where status == 401 || status == 404:
+            return "Telegram rejected the bot token. It was revoked or mistyped — get a new one from @BotFather and save it again."
+        case .rejected(let status) where status == 400 || status == 403:
+            return "Telegram rejected the chat ID. The bot was removed from the chat, or has never received a message there."
+        case .rejected:
+            return "Telegram request failed."
         }
     }
 }
@@ -1965,7 +2183,8 @@ public final class DiscordNotificationService: @unchecked Sendable {
         let request = try Self.makeRequest(webhookURL: webhookURL, content: content)
         let (_, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw DiscordError.requestFailed
+            let status = (response as? HTTPURLResponse)?.statusCode
+            throw status == 401 || status == 404 ? DiscordError.webhookGone : DiscordError.requestFailed
         }
     }
 
@@ -1983,12 +2202,18 @@ public enum DiscordError: LocalizedError, Equatable {
     case notConfigured
     case invalidURL
     case requestFailed
+    /// Discord answered 401/404: the webhook was deleted or regenerated server-side. Reported as
+    /// "request failed" it was indistinguishable from being offline.
+    case webhookGone
 
     public var errorDescription: String? {
         switch self {
         case .notConfigured: return "Discord webhook is not configured."
-        case .invalidURL: return "Discord webhook URL is invalid."
+        // Pasting the channel link (discord.com/channels/…) instead of the webhook is the common
+        // mistake, and "invalid" alone named no rule the user could check.
+        case .invalidURL: return "That is not a Discord webhook URL. It must start with https://discord.com/api/webhooks/ — copy it from Server Settings → Integrations → Webhooks."
         case .requestFailed: return "Discord request failed."
+        case .webhookGone: return "Discord no longer recognises this webhook — it was deleted or regenerated. Create a new one and save it again."
         }
     }
 }
@@ -2095,10 +2320,23 @@ public enum KeychainError: Error, Equatable, LocalizedError {
 }
 
 public enum TokenPilotFormatters {
+    /// The unit is chosen *after* rounding to one decimal, so 999 950 reads "1M", not "1000K", and a
+    /// lifetime total past a billion reads "1.2B" rather than "1234.5M".
     public static func compactNumber(_ value: Int) -> String {
-        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000).replacingOccurrences(of: ".0M", with: "M") }
-        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000).replacingOccurrences(of: ".0K", with: "K") }
-        return "\(value)"
+        if value < 0 { return "-" + compactNumber(-value) }
+        let units: [(divisor: Double, suffix: String)] = [(1_000, "K"), (1_000_000, "M"), (1_000_000_000, "B")]
+        guard var index = units.lastIndex(where: { Double(value) >= $0.divisor }) else { return "\(value)" }
+        var scaled = (Double(value) / units[index].divisor * 10).rounded() / 10
+        if scaled >= 1_000, index + 1 < units.count {
+            // Rounded up into the next unit.
+            index += 1
+            scaled = (Double(value) / units[index].divisor * 10).rounded() / 10
+        }
+        return format(scaled, units[index].suffix)
+    }
+
+    private static func format(_ scaled: Double, _ suffix: String) -> String {
+        String(format: "%.1f\(suffix)", scaled).replacingOccurrences(of: ".0\(suffix)", with: suffix)
     }
 
     public static func cost(_ value: Decimal) -> String {
@@ -2127,29 +2365,53 @@ public enum TokenPilotFormatters {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
-        let units: (hour: String, minute: String)
-        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
-        case .system, .en:
-            units = ("h", "m")
-        case .ko:
-            units = ("시간", "분")
-        case .ja:
-            units = ("時間", "分")
-        case .zhHans:
-            units = ("小时", "分钟")
-        }
+        let units = durationUnits(language)
         if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute)" }
         return "\(minutes)\(units.minute)"
     }
 
-    public static func compactRemainingTime(until date: Date, now: Date = Date()) -> String {
+    /// Day/hour/minute/second suffixes. English keeps the compact "2h 15m"; the other languages
+    /// spell units out, which "리셋까지 51m 57s" beside "리셋 56분" on the same card did not.
+    static func durationUnits(_ language: TokenPilotLanguage) -> (day: String, hour: String, minute: String, second: String) {
+        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
+        case .system, .en: return ("d", "h", "m", "s")
+        case .ko: return ("일", "시간", "분", "초")
+        case .ja: return ("日", "時間", "分", "秒")
+        case .zhHans: return ("天", "小时", "分钟", "秒")
+        case .zhHant: return ("天", "小時", "分鐘", "秒")
+        }
+    }
+
+    public static func compactRemainingTime(until date: Date, now: Date = Date(), language: TokenPilotLanguage = .en) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
+        let units = durationUnits(language)
         let days = seconds / 86_400
-        if days > 0 { return "\(days)d" }
+        if days > 0 { return "\(days)\(units.day)" }
         let hours = seconds / 3_600
-        if hours > 0 { return "\(hours)h" }
+        if hours > 0 { return "\(hours)\(units.hour)" }
         let minutes = (seconds % 3_600) / 60
-        return "\(minutes)m"
+        return "\(minutes)\(units.minute)"
+    }
+
+    /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s", or "2h 15m" / "15m"
+    /// without seconds for a timer that only ticks once a minute.
+    /// Used for live ticking reset timers; the label is localized, the separators are not.
+    public static func countdown(until date: Date, now: Date = Date(), showsSeconds: Bool = true, language: TokenPilotLanguage = .en) -> String {
+        let seconds = max(0, Int(date.timeIntervalSince(now)))
+        let hours = seconds / 3_600
+        let minutes = (seconds % 3_600) / 60
+        let remainingSeconds = seconds % 60
+        let units = durationUnits(language)
+        if !showsSeconds {
+            // Rounded up, so a reset 30 s away reads "1m", not "0m".
+            let totalMinutes = (seconds + 59) / 60
+            return totalMinutes >= 60
+                ? "\(totalMinutes / 60)\(units.hour) \(totalMinutes % 60)\(units.minute)"
+                : "\(totalMinutes)\(units.minute)"
+        }
+        if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute) \(remainingSeconds)\(units.second)" }
+        if minutes > 0 { return "\(minutes)\(units.minute) \(remainingSeconds)\(units.second)" }
+        return "\(remainingSeconds)\(units.second)"
     }
 
     private static let clockFormatters = OSAllocatedUnfairLock(initialState: [String: DateFormatter]())
@@ -2186,6 +2448,8 @@ public enum TokenPilotFormatters {
             return "ja_JP"
         case .zhHans:
             return "zh_Hans_CN"
+        case .zhHant:
+            return "zh_Hant_TW"
         }
     }
 }

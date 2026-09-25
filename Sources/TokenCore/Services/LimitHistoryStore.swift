@@ -248,7 +248,7 @@ public final class LimitHistoryStore: @unchecked Sendable {
         guard let data = try? encoder.encode(samples) else {
             return .recoveryRequired(writeBlocked: true, code: "legacyLimitHistoryCommitFailed")
         }
-        defaults.set(data, forKey: key)
+        defaults.setIfChanged(data, forKey: key)
         return .ready(source: .primary, generation: nil)
     }
 
@@ -330,9 +330,28 @@ public final class LimitHistoryStore: @unchecked Sendable {
     private func deduplicated(_ samples: [ProviderLimitSample]) -> [ProviderLimitSample] {
         var latestByKey: [String: ProviderLimitSample] = [:]
         for sample in samples {
-            latestByKey[sampleKey(sample)] = sample
+            let key = sampleKey(sample)
+            if let existing = latestByKey[key], repeatsTheSameReading(existing, sample) { continue }
+            latestByKey[key] = sample
         }
         return Array(latestByKey.values)
+    }
+
+    /// A bucket keeps the reading it has until the reading itself changes.
+    ///
+    /// Taking the newest sample in a five-minute bucket meant a refresh that read the same quota
+    /// again replaced the bucket's sample with one carrying a later timestamp. Nothing about the
+    /// quota had changed, but the stored blob had, so 108 KB of preferences was rewritten every
+    /// ninety seconds — and because the preferences file is written whole, it dragged the 694 KB of
+    /// usage history along with it.
+    ///
+    /// `==` covers every stored property, so a field added later is compared without anyone
+    /// remembering to list it. The identifier is derived from the timestamp, so it is set aside too.
+    private func repeatsTheSameReading(_ existing: ProviderLimitSample, _ incoming: ProviderLimitSample) -> Bool {
+        var restamped = incoming
+        restamped.timestamp = existing.timestamp
+        restamped.id = existing.id
+        return restamped == existing
     }
 
     private func capped(_ samples: [ProviderLimitSample]) -> [ProviderLimitSample] {

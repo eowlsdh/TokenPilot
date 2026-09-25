@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "TokenMonitor",
     platforms: [
-        .macOS(.v13)
+        .macOS("26.0")
     ],
     products: [
         .executable(name: "TokenMonitor", targets: ["TokenApp"]),

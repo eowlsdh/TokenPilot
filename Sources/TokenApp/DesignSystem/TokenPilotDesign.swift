@@ -115,31 +115,67 @@ enum TokenPilotDesign {
                 contrast: contrast
             )
         }
+
+        func nsColor(contrast: ColorSchemeContrast? = nil) -> NSColor {
+            TokenPilotDesign.semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        }
     }
 
     enum Typography {
-        static let appTitle = Font.system(size: 15, weight: .semibold, design: .rounded)
-        static let sectionTitle = Font.system(size: 12, weight: .bold, design: .rounded)
-        static let cardTitle = Font.system(size: 13, weight: .semibold, design: .rounded)
-        static let label = Font.system(size: 11, weight: .medium)
-        static let caption = Font.system(size: 10, weight: .medium)
-        static let micro = Font.system(size: 9, weight: .semibold, design: .monospaced)
-        static let metric = Font.system(size: 12, weight: .semibold, design: .monospaced)
-        static let metricLarge = Font.system(size: 34, weight: .semibold, design: .monospaced)
-        static let badge = Font.system(size: 10, weight: .bold, design: .monospaced)
+        static let appTitle = Font.system(size: 16, weight: .semibold, design: .rounded)
+        static let sectionTitle = Font.system(size: 13, weight: .bold, design: .rounded)
+        static let cardTitle = Font.system(size: 14, weight: .semibold, design: .rounded)
+        static let label = Font.system(size: 12, weight: .medium)
+        static let caption = Font.system(size: 11, weight: .medium)
+        /// Multi-line explanatory copy. Regular weight so a paragraph does not read as a label,
+        /// and 11pt rather than the 10pt `.caption2` this replaced across Settings.
+        static let explanation = Font.system(size: 11, weight: .regular)
+        /// Metadata lines, chips and small labels. Proportional: these carry words ("방금 업데이트됨",
+        /// "5 주의 필요"), and a monospaced face spread Hangul out like a typewriter. Call sites that
+        /// line numbers up add `monospacedDigit()`.
+        static let micro = Font.system(size: 10, weight: .semibold)
+        static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
+        /// Metrics in a row that already carries a larger figure — provider rows, chart values.
+        /// Eleven sites spelled these two out inline because the ramp stopped at `metric`, so the
+        /// numbers in this app came in three sizes and only one of them was a token.
+        static let metricCompact = Font.system(size: 12, weight: .semibold, design: .monospaced)
+        static let metricSmall = Font.system(size: 11, weight: .semibold, design: .monospaced)
+        /// `caption` weight for a label that has to win against the value beside it.
+        static let captionStrong = Font.system(size: 11, weight: .semibold)
+        /// Proportional with `monospacedDigit()` at the call site: at 38 pt a monospaced "." or "%"
+        /// takes a full digit cell, and a balance read "$3 . 34". One figure has nothing to align.
+        static let metricLarge = Font.system(size: 38, weight: .semibold)
+        /// The word beside a `metricLarge` figure ("남음", "left", "残り"). Set at 38 pt with the number,
+        /// "42% 남음" read as one shouted slab; the figure is the point, the word only qualifies it.
+        static let metricLargeUnit = Font.system(size: 17, weight: .semibold, design: .rounded)
+        static let badge = Font.system(size: 11, weight: .semibold)
+        /// Chart axis ticks and heatmap month labels. Was 7-8pt inline, which is below the floor
+        /// for anything a reader is expected to actually read.
+        static let axis = Font.system(size: 9, weight: .medium, design: .monospaced)
+        /// Leading glyph inside a chip, sized to sit with `micro` text.
+        static let chipGlyph = Font.system(size: 9, weight: .semibold)
+        static let glyph = Font.system(size: 12, weight: .semibold)
     }
 
     enum Spacing {
-        static let xxs: CGFloat = 2
-        static let xs: CGFloat = 3
-        static let sm: CGFloat = 5
-        static let md: CGFloat = 7
-        static let lg: CGFloat = 9
-        static let xl: CGFloat = 12
-        static let section: CGFloat = 9
+        static let xxs: CGFloat = 3
+        static let xs: CGFloat = 4
+        static let sm: CGFloat = 6
+        static let md: CGFloat = 9
+        static let lg: CGFloat = 11
+        static let xl: CGFloat = 14
+        static let section: CGFloat = 12
     }
 
     enum Radius {
+        /// Progress bars and other 2-4pt fills.
+        static let xxs: CGFloat = 2
         static let xs: CGFloat = 4
         static let sm: CGFloat = 6
         static let md: CGFloat = 8
@@ -269,9 +305,13 @@ enum TokenPilotDesign {
     )
     static let textSecondary = textSecondaryDefinition.color()
 
+    // Tertiary carries 10-11pt labels, so it is held to the 4.5:1 small-text bar on
+    // every surface it lands on. The previous values measured 3.47:1 (light, card),
+    // 3.01:1 (light, muted card) and 4.44:1 (dark, card); these clear 4.5:1 against
+    // card, background, and muted card in both appearances.
     private static let textTertiaryDefinition = SemanticColorDefinition(
-        light: rgb(0.520, 0.540, 0.590),
-        dark: rgb(0.478, 0.478, 0.518),
+        light: rgb(0.408, 0.424, 0.464),
+        dark: rgb(0.526, 0.526, 0.570),
         lightHighContrast: rgb(0.305, 0.330, 0.390),
         darkHighContrast: rgb(0.690, 0.700, 0.750)
     )
@@ -285,8 +325,9 @@ enum TokenPilotDesign {
     )
     static let danger = dangerDefinition.color()
 
+    // Light-mode warning sits on muted cards too, where the old value measured 4.16:1.
     private static let warningDefinition = SemanticColorDefinition(
-        light: rgb(0.700, 0.355, 0.000),
+        light: rgb(0.660, 0.330, 0.000),
         dark: rgb(0.961, 0.647, 0.141),
         lightHighContrast: rgb(0.500, 0.245, 0.000),
         darkHighContrast: rgb(1.000, 0.780, 0.250)
@@ -319,8 +360,19 @@ enum TokenPilotDesign {
 
     static let cardRadius = Radius.card
     static let cardPadding = Spacing.xl
+    /// Denser cards (charts, list cards) still share one rhythm instead of the 10/12/14 mix that
+    /// made neighbouring cards look mismatched.
+    static let cardPaddingCompact = Spacing.section
     static let rowSpacing = Spacing.md
     static let sectionSpacing = Spacing.section
+
+    /// The popover's fixed size, in one place.
+    ///
+    /// It was written out at four call sites — the `NSPopover` content size, both hosting-controller
+    /// frames, and the root view's own frame. Four copies of a window size is three chances for the
+    /// popover and the view inside it to disagree about how big they are.
+    static let popoverWidth: CGFloat = 420
+    static let popoverHeight: CGFloat = 620
 
     static func surface(_ role: Surface) -> Color {
         surfaceColor(role, contrast: nil)
@@ -392,7 +444,7 @@ enum TokenPilotDesign {
         switch provider {
         case .claude:
             return SemanticColorDefinition(
-                light: rgb(0.780, 0.360, 0.040),
+                light: rgb(0.700, 0.300, 0.010),
                 dark: rgb(1.000, 0.640, 0.230),
                 lightHighContrast: rgb(0.590, 0.235, 0.000),
                 darkHighContrast: rgb(1.000, 0.720, 0.330)
@@ -400,7 +452,7 @@ enum TokenPilotDesign {
             .color(contrast: contrast)
         case .codex:
             return SemanticColorDefinition(
-                light: rgb(0.000, 0.520, 0.230),
+                light: rgb(0.000, 0.480, 0.210),
                 dark: rgb(0.160, 0.740, 0.370),
                 lightHighContrast: rgb(0.000, 0.380, 0.155),
                 darkHighContrast: rgb(0.310, 0.880, 0.480)
@@ -446,6 +498,48 @@ enum TokenPilotDesign {
                 darkHighContrast: rgb(0.830, 0.630, 1.000)
             )
             .color(contrast: contrast)
+        case .commandcode:
+            // Rose-plum: the one hue band no other provider uses, and it clears 4.5:1 on
+            // card and muted card in light appearance as well as on the dark card.
+            return SemanticColorDefinition(
+                light: rgb(0.700, 0.100, 0.450),
+                dark: rgb(1.000, 0.420, 0.720),
+                lightHighContrast: rgb(0.520, 0.040, 0.360),
+                darkHighContrast: rgb(1.000, 0.560, 0.800)
+            )
+            .color(contrast: contrast)
+        case .jetbrains:
+            return SemanticColorDefinition(
+                light: rgb(0.740, 0.260, 0.080),
+                dark: rgb(1.000, 0.520, 0.260),
+                lightHighContrast: rgb(0.670, 0.200, 0.050),
+                darkHighContrast: rgb(1.000, 0.620, 0.360)
+            )
+            .color(contrast: contrast)
+        case .minimax:
+            return SemanticColorDefinition(
+                light: rgb(0.000, 0.470, 0.510),
+                dark: rgb(0.160, 0.760, 0.800),
+                lightHighContrast: rgb(0.000, 0.420, 0.460),
+                darkHighContrast: rgb(0.330, 0.850, 0.880)
+            )
+            .color(contrast: contrast)
+        case .zai:
+            return SemanticColorDefinition(
+                light: rgb(0.230, 0.400, 0.780),
+                dark: rgb(0.420, 0.620, 1.000),
+                lightHighContrast: rgb(0.120, 0.270, 0.620),
+                darkHighContrast: rgb(0.570, 0.730, 1.000)
+            )
+            .color(contrast: contrast)
+        case .openrouter:
+            return SemanticColorDefinition(
+                light: rgb(0.620, 0.220, 0.220),
+                dark: rgb(0.900, 0.380, 0.360),
+                lightHighContrast: rgb(0.480, 0.110, 0.110),
+                darkHighContrast: rgb(0.960, 0.520, 0.470)
+            )
+            .color(contrast: contrast)
         }
     }
 
@@ -453,11 +547,40 @@ enum TokenPilotDesign {
         riskColor(percent, contrast: nil)
     }
 
+    /// How much, on a 0...1 scale — deliberately not the risk palette.
+    ///
+    /// The activity charts used `danger`/`warning` for their top two bands, so the busiest hour of
+    /// a perfectly normal day rendered in the same red as a critical quota sitting two cards above
+    /// it. Volume gets its own quiet ramp; red stays reserved for something being wrong. Matches
+    /// the heatmap, which was already doing this.
+    static func activityIntensity(_ ratio: Double) -> Color {
+        switch ratio {
+        case ..<0.001: return surface(.separator).opacity(0.5)
+        case ..<0.25: return trust.opacity(0.30)
+        case ..<0.50: return trust.opacity(0.50)
+        case ..<0.75: return trust.opacity(0.72)
+        default: return calm.opacity(0.85)
+        }
+    }
+
     private static func riskColor(_ percent: Int?, contrast: ColorSchemeContrast?) -> Color {
         guard let percent else { return textSecondaryDefinition.color(contrast: contrast) }
-        if percent >= 85 { return dangerDefinition.color(contrast: contrast) }
-        if percent >= 70 { return warningDefinition.color(contrast: contrast) }
-        return calmDefinition.color(contrast: contrast)
+        switch CapacityRisk.forUsedPercent(percent) {
+        case .critical: return dangerDefinition.color(contrast: contrast)
+        case .warning: return warningDefinition.color(contrast: contrast)
+        default: return calmDefinition.color(contrast: contrast)
+        }
+    }
+
+    /// Risk color for AppKit drawing, from the same definitions and thresholds the
+    /// popover uses, so one window never reads amber in the menu bar and calm inside.
+    static func riskNSColor(_ risk: CapacityRisk) -> NSColor {
+        switch risk {
+        case .critical: return dangerDefinition.nsColor()
+        case .warning: return warningDefinition.nsColor()
+        case .normal: return calmDefinition.nsColor()
+        case .informational, .stale, .unavailable: return textSecondaryDefinition.nsColor()
+        }
     }
 
     static func quotaRiskColor(_ risk: CapacityRisk, eligibility: CapacityAlertEligibility) -> Color {
@@ -521,7 +644,28 @@ enum TokenPilotDesign {
         darkHighContrast: NSColor? = nil,
         contrast: ColorSchemeContrast? = nil
     ) -> Color {
-        Color(NSColor(name: nil) { appearance in
+        Color(
+            semanticNSColor(
+                light: light,
+                dark: dark,
+                lightHighContrast: lightHighContrast,
+                darkHighContrast: darkHighContrast,
+                contrast: contrast
+            )
+        )
+    }
+
+    /// The same dynamic color as `semanticColor`, for AppKit surfaces (the menu bar
+    /// draws with `NSColor`, and drawing it with `.systemRed`/`.systemOrange` was how
+    /// the menu bar ended up ignoring the high-contrast variants).
+    private static func semanticNSColor(
+        light: NSColor,
+        dark: NSColor,
+        lightHighContrast: NSColor? = nil,
+        darkHighContrast: NSColor? = nil,
+        contrast: ColorSchemeContrast? = nil
+    ) -> NSColor {
+        NSColor(name: nil) { appearance in
             let match = appearance.bestMatch(from: [
                 .accessibilityHighContrastDarkAqua,
                 .darkAqua,
@@ -543,7 +687,7 @@ enum TokenPilotDesign {
             default:
                 return useHighContrast ? (lightHighContrast ?? light) : light
             }
-        })
+        }
     }
 
     private static func rgb(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, alpha: CGFloat = 1.0) -> NSColor {
@@ -558,6 +702,9 @@ func localized(_ key: String, language: TokenPilotLanguage) -> String {
 struct TokenPilotLanguageEnvironmentKey: EnvironmentKey {
     static let defaultValue: TokenPilotLanguage = .system
 }
+struct TokenPilotPercentDisplayKey: EnvironmentKey {
+    static let defaultValue: CapacityPercentDisplay = .remaining
+}
 private struct TokenPilotReduceMotionOverrideKey: EnvironmentKey {
     static let defaultValue: Bool? = nil
 }
@@ -569,6 +716,9 @@ private struct TokenPilotReduceTransparencyOverrideKey: EnvironmentKey {
 private struct TokenPilotContrastOverrideKey: EnvironmentKey {
     static let defaultValue: ColorSchemeContrast? = nil
 }
+private struct TokenPilotDifferentiateWithoutColorKey: EnvironmentKey {
+    static let defaultValue: Bool = false
+}
 private struct TokenPilotSemanticPaletteKey: EnvironmentKey {
     static let defaultValue = TokenPilotDesign.SemanticPalette(colorSchemeContrast: .standard)
 }
@@ -576,6 +726,12 @@ private struct TokenPilotSemanticPaletteKey: EnvironmentKey {
 
 
 extension EnvironmentValues {
+    /// Whether limits read as remaining or used — `AppSettings.capacityPercentDisplay`.
+    var tokenPilotPercentDisplay: CapacityPercentDisplay {
+        get { self[TokenPilotPercentDisplayKey.self] }
+        set { self[TokenPilotPercentDisplayKey.self] = newValue }
+    }
+
     var tokenPilotLanguage: TokenPilotLanguage {
         get { self[TokenPilotLanguageEnvironmentKey.self] }
         set { self[TokenPilotLanguageEnvironmentKey.self] = newValue }
@@ -596,6 +752,11 @@ extension EnvironmentValues {
         set { self[TokenPilotContrastOverrideKey.self] = newValue }
     }
 
+    var tokenPilotDifferentiateWithoutColor: Bool {
+        get { self[TokenPilotDifferentiateWithoutColorKey.self] }
+        set { self[TokenPilotDifferentiateWithoutColorKey.self] = newValue }
+    }
+
     var tokenPilotSemanticPalette: TokenPilotDesign.SemanticPalette {
         get { self[TokenPilotSemanticPaletteKey.self] }
         set { self[TokenPilotSemanticPaletteKey.self] = newValue }
@@ -604,13 +765,16 @@ extension EnvironmentValues {
 
 private struct TokenPilotSemanticPaletteModifier: ViewModifier {
     @Environment(\.colorSchemeContrast) private var systemColorSchemeContrast
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
     @Environment(\.tokenPilotContrastOverride) private var contrastOverride
 
     func body(content: Content) -> some View {
-        content.environment(
-            \.tokenPilotSemanticPalette,
-            TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
-        )
+        content
+            .environment(
+                \.tokenPilotSemanticPalette,
+                TokenPilotDesign.SemanticPalette(colorSchemeContrast: contrastOverride ?? systemColorSchemeContrast)
+            )
+            .environment(\.tokenPilotDifferentiateWithoutColor, systemDifferentiateWithoutColor)
     }
 }
 
@@ -644,42 +808,47 @@ struct VisualEffectBackground: NSViewRepresentable {
 }
 
 /// Native utility surface with an opaque semantic fallback when Reduce Transparency is enabled.
-struct LiquidGlassBackground: View {
+/// The single surface every card in the app sits on.
+///
+/// This used to hand-roll Liquid Glass out of four stacked fills — `.regularMaterial`, a tint, a
+/// surface colour at 46–76% opacity, and a highlight — because macOS did not offer it. macOS 26
+/// does, and `glassEffect` samples what is actually behind the view, reacts to motion and lighting,
+/// and carries the system's own edge treatment. Four hand-tuned opacity ramps cannot do any of that.
+///
+/// It is a modifier rather than a background view on purpose. Glazing a `Color.clear` behind the
+/// content looks identical on its own and is not the same thing: inside a `GlassEffectContainer`
+/// that form composites the card's own text into its sampling and the text comes out smeared and
+/// unreadable. Applied to the content, it stays crisp — checked by rendering both.
+///
+/// Two things are kept rather than handed over. `reduceTransparency` still swaps in a flat opaque
+/// surface, because that setting means "no translucency" and the accessibility contrast guarantees
+/// in `DesignConsistencyTests` are computed against those opaque tokens. And the border stroke
+/// stays: glass supplies its own rim, but in light appearance a card on a near-white background
+/// loses its edge without it.
+struct GlassSurface: ViewModifier {
     var cornerRadius: CGFloat = TokenPilotDesign.Radius.md
-    var intensity: CGFloat = 1.0
     var surface: TokenPilotDesign.Surface = .card
 
     @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
     @Environment(\.tokenPilotReduceTransparencyOverride) private var reduceTransparencyOverride
     @Environment(\.tokenPilotSemanticPalette) private var palette
 
-    var body: some View {
-        ZStack {
+    func body(content: Content) -> some View {
+        Group {
             if reduceTransparency {
-                shape
-                    .fill(palette.surface(surface))
+                content.background { shape.fill(palette.surface(surface)) }
             } else {
-                shape
-                    .fill(.regularMaterial)
-                shape
-                    .fill(palette.glassTint.opacity(Double(0.75 * clampedIntensity)))
-                shape
-                    .fill(palette.surface(surface).opacity(Double(surfaceOverlayOpacity)))
-                shape
-                    .fill(palette.glassHighlight.opacity(Double(highlightOpacity)))
+                content.glassEffect(.regular, in: shape)
             }
-
+        }
+        .overlay(
             shape
                 .stroke(
                     palette.borderColor(emphasized: surface == .cardElevated),
                     lineWidth: palette.borderWidth(emphasized: surface == .cardElevated)
                 )
                 .padding(0.5)
-        }
-    }
-
-    private var colorSchemeContrast: ColorSchemeContrast {
-        palette.colorSchemeContrast
+        )
     }
 
     private var reduceTransparency: Bool {
@@ -689,27 +858,13 @@ struct LiquidGlassBackground: View {
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
     }
+}
 
-    private var clampedIntensity: CGFloat {
-        min(max(intensity, 0), 1)
-    }
-
-    private var surfaceOverlayOpacity: CGFloat {
-        switch surface {
-        case .background:
-            return 0.18 + (0.16 * clampedIntensity)
-        case .card:
-            return 0.46 + (0.12 * clampedIntensity)
-        case .cardElevated:
-            return 0.50 + (0.14 * clampedIntensity)
-        case .cardMuted:
-            return 0.60 + (0.16 * clampedIntensity)
-        case .chip, .badge, .progressTrack, .separator:
-            return 0.68 + (0.12 * clampedIntensity)
-        }
-    }
-
-    private var highlightOpacity: CGFloat {
-        colorSchemeContrast == .increased ? 0.22 : 0.14
+extension View {
+    func glassSurface(
+        cornerRadius: CGFloat = TokenPilotDesign.Radius.md,
+        surface: TokenPilotDesign.Surface = .card
+    ) -> some View {
+        modifier(GlassSurface(cornerRadius: cornerRadius, surface: surface))
     }
 }
