@@ -45,9 +45,10 @@ struct SettingsScreen: View {
     private var consoleSummary: some View {
         GlassCard(surface: .cardElevated) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                // No subtitle: it described the card's own layout ("summaries stay visible before
+                // setup details") rather than anything the user could act on.
                 TokenPilotSectionHeader(
                     title: model.t("Settings overview"),
-                    subtitle: model.t("Health, delivery, and privacy summaries stay visible before setup details."),
                     systemImage: "slider.horizontal.3"
                 )
 
@@ -298,9 +299,9 @@ struct SettingsScreen: View {
                 systemImage: "externaldrive.badge.checkmark"
             )
         } content: {
+            // The three chips that opened this card repeated the header's subtitle word for word,
+            // which the overview card above already says a third time.
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.section) {
-                sourceHealthSummary
-
                 HStack(spacing: TokenPilotDesign.Spacing.md) {
                     Button(model.t("Auto-detect sources")) { Task { await model.checkAllConnections() } }
                         .buttonStyle(.glassProminent)
@@ -1605,26 +1606,6 @@ struct SettingsScreen: View {
                 privacyLine(model.t("Telegram and Discord send only alert messages when enabled."))
             }
         }
-    }
-
-    private var sourceHealthSummary: some View {
-        HStack(spacing: TokenPilotDesign.Spacing.sm) {
-            StatusBadge(
-                label: "\(readyProviderCount)/\(sourceHealthProviderCount) \(model.t("sources ready"))",
-                color: readyProviderCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.warning
-            )
-            StatusBadge(
-                label: model.capacityRuntimeRecoveryRequired ? model.t("Recovery needed") : model.t("Runtime ready"),
-                color: model.capacityRuntimeRecoveryRequired ? TokenPilotDesign.warning : TokenPilotDesign.calm
-            )
-            StatusBadge(
-                label: "\(attentionProviderCount) \(model.t("needs attention"))",
-                color: attentionProviderCount == 0 ? TokenPilotDesign.textSecondary : TokenPilotDesign.warning
-            )
-            Spacer(minLength: 0)
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(model.t("Source health"))
     }
 
     private var runtimeRecoveryBanner: some View {

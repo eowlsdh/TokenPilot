@@ -136,7 +136,10 @@ enum TokenPilotDesign {
         /// Multi-line explanatory copy. Regular weight so a paragraph does not read as a label,
         /// and 11pt rather than the 10pt `.caption2` this replaced across Settings.
         static let explanation = Font.system(size: 11, weight: .regular)
-        static let micro = Font.system(size: 10, weight: .semibold, design: .monospaced)
+        /// Metadata lines, chips and small labels. Proportional: these carry words ("방금 업데이트됨",
+        /// "5 주의 필요"), and a monospaced face spread Hangul out like a typewriter. Call sites that
+        /// line numbers up add `monospacedDigit()`.
+        static let micro = Font.system(size: 10, weight: .semibold)
         static let metric = Font.system(size: 13, weight: .semibold, design: .monospaced)
         /// Metrics in a row that already carries a larger figure — provider rows, chart values.
         /// Eleven sites spelled these two out inline because the ramp stopped at `metric`, so the
@@ -145,8 +148,13 @@ enum TokenPilotDesign {
         static let metricSmall = Font.system(size: 11, weight: .semibold, design: .monospaced)
         /// `caption` weight for a label that has to win against the value beside it.
         static let captionStrong = Font.system(size: 11, weight: .semibold)
-        static let metricLarge = Font.system(size: 38, weight: .semibold, design: .monospaced)
-        static let badge = Font.system(size: 11, weight: .bold, design: .monospaced)
+        /// Proportional with `monospacedDigit()` at the call site: at 38 pt a monospaced "." or "%"
+        /// takes a full digit cell, and a balance read "$3 . 34". One figure has nothing to align.
+        static let metricLarge = Font.system(size: 38, weight: .semibold)
+        /// The word beside a `metricLarge` figure ("남음", "left", "残り"). Set at 38 pt with the number,
+        /// "42% 남음" read as one shouted slab; the figure is the point, the word only qualifies it.
+        static let metricLargeUnit = Font.system(size: 17, weight: .semibold, design: .rounded)
+        static let badge = Font.system(size: 11, weight: .semibold)
         /// Chart axis ticks and heatmap month labels. Was 7-8pt inline, which is below the floor
         /// for anything a reader is expected to actually read.
         static let axis = Font.system(size: 9, weight: .medium, design: .monospaced)

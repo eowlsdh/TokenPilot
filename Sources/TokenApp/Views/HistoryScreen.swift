@@ -278,8 +278,7 @@ struct CurrentCapacitySignalCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
 
-                    Text(item.primaryValue(language: model.settings.localization.language))
-                        .font(TokenPilotDesign.Typography.metric.weight(.heavy))
+                    MetricValueText(value: item.primaryValue(language: model.settings.localization.language), figureFont: TokenPilotDesign.Typography.metric.weight(.heavy), wordFont: TokenPilotDesign.Typography.captionStrong)
                         .monospacedDigit()
                         .foregroundStyle(item.progressColor)
                         .lineLimit(1)
@@ -560,8 +559,7 @@ struct HistoryLimitSignalRow: View {
                 Spacer(minLength: 0)
 
                 VStack(alignment: .trailing, spacing: TokenPilotDesign.Spacing.xs) {
-                    Text(shownValue)
-                        .font(TokenPilotDesign.Typography.metric.weight(.heavy))
+                    MetricValueText(value: shownValue, figureFont: TokenPilotDesign.Typography.metric.weight(.heavy), wordFont: TokenPilotDesign.Typography.captionStrong)
                         .monospacedDigit()
                         .foregroundStyle(TokenPilotDesign.riskColor(sample.usedPercent))
                         .lineLimit(1)

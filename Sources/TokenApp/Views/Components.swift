@@ -117,8 +117,7 @@ struct CompactProviderStatusRow<Trailing: View>: View {
             Spacer(minLength: 0)
 
             if let value, !value.isEmpty {
-                Text(value)
-                    .font(TokenPilotDesign.Typography.metric)
+                MetricValueText(value: value, figureFont: TokenPilotDesign.Typography.metric, wordFont: TokenPilotDesign.Typography.captionStrong)
                     .monospacedDigit()
                     .foregroundStyle(valueColor ?? palette.text(.primary))
                     .lineLimit(1)
@@ -682,9 +681,9 @@ struct ProgressLine: View {
                     )
                 }
             }
-            .frame(maxWidth: 112, minHeight: progressHeight, maxHeight: progressHeight)
-
-            Spacer(minLength: 0)
+            // Full width: capped at 112 pt, the bar stopped a third of the way across every card
+            // and read as unfinished.
+            .frame(maxWidth: .infinity, minHeight: progressHeight, maxHeight: progressHeight)
         }
         .frame(height: progressHeight)
         .accessibilityElement(children: .ignore)
@@ -800,6 +799,44 @@ struct EmptyInlineState: View {
             .foregroundStyle(palette.text(.secondary))
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, TokenPilotDesign.Spacing.xxs)
+    }
+}
+
+/// A value such as "42% 남음", "残り 42%" or "$8.04": the figure in a monospaced metric face and
+/// the words around it in the proportional one. One monospaced face for both spread Hangul like a
+/// typewriter ("42%  남음"). The space between figure and word is the word's, kerned a little,
+/// so a 38 pt figure is neither jammed against a 17 pt word nor a monospaced space away from it.
+struct MetricValueText: View {
+    let value: String
+    let figureFont: Font
+    let wordFont: Font
+
+    var body: some View {
+        Text(Self.attributed(value, figureFont: figureFont, wordFont: wordFont))
+    }
+
+    static func attributed(_ value: String, figureFont: Font, wordFont: Font) -> AttributedString {
+        guard let match = value.firstMatch(of: /[$€£¥₩]?[0-9][0-9.,]*[%A-Za-z]*/) else {
+            var whole = AttributedString(value)
+            whole.font = figureFont
+            return whole
+        }
+        var figure = AttributedString(match.output)
+        figure.font = figureFont
+        return words(value[..<match.range.lowerBound], font: wordFont) + figure + words(value[match.range.upperBound...], font: wordFont)
+    }
+
+    private static func words(_ text: Substring, font: Font) -> AttributedString {
+        var result = AttributedString()
+        for character in text {
+            var piece = AttributedString(String(character))
+            piece.font = font
+            if character.isWhitespace {
+                piece.kern = 3
+            }
+            result += piece
+        }
+        return result
     }
 }
 
@@ -1035,6 +1072,7 @@ struct GlassCard<Content: View>: View {
 /// already announces the reset via its accessibility label, so ticks never spam the reader.
 struct LiveResetCountdown: View {
     let resetAt: Date
+    @Environment(\.tokenPilotLanguage) private var language
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
 
@@ -1044,7 +1082,7 @@ struct LiveResetCountdown: View {
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: reduceMotion ? 60 : 1)) { context in
-            Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date, showsSeconds: !reduceMotion))
+            Text(TokenPilotFormatters.countdown(until: resetAt, now: context.date, showsSeconds: !reduceMotion, language: language))
                 .monospacedDigit()
                 .accessibilityHidden(true)
         }

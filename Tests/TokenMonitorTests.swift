@@ -2055,7 +2055,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(overviewSource.contains("percent: progressPercent"))
         XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Limit percent\", language: language)"))
         XCTAssertTrue(overviewSource.contains("primary.progressAccessibilityValue(language: language)"))
-        XCTAssertTrue(historySource.contains("Text(shownValue)"))
+        XCTAssertTrue(historySource.contains("MetricValueText(value: shownValue"))
         XCTAssertTrue(historySource.contains("percent: shownPercent"))
         XCTAssertTrue(historySource.contains("\"\\(model.t(\"Remaining\")) \\(sample.remainingPercent)%, \\(model.t(\"Used\")) \\(sample.usedPercent)%\""))
     }

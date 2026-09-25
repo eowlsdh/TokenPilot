@@ -543,7 +543,7 @@ struct BudgetGuardrailCard: View {
                     Text(
                         String(
                             format: model.t("At this pace, daily budget exhausts in ~%@ (est.)"),
-                            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt)
+                            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt, language: model.settings.localization.language)
                         )
                     )
                     .font(TokenPilotDesign.Typography.caption)
@@ -663,7 +663,7 @@ struct CapacityDisplayItem: Identifiable {
         }
         return zonePrefix + String(
             format: localized("At this pace, exhausts in ~%@ (est.)", language: language),
-            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt)
+            TokenPilotFormatters.compactRemainingTime(until: projection.estimatedExhaustionAt, language: language)
         )
     }
 
@@ -1077,8 +1077,7 @@ struct UsageSummaryCard: View {
     private func capacityHeader(value: String, detail: String, valueColor: Color, statusLabel: String?, statusColor: Color) -> some View {
         HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.md) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
-                Text(value)
-                    .font(TokenPilotDesign.Typography.metricLarge)
+                MetricValueText(value: value, figureFont: TokenPilotDesign.Typography.metricLarge, wordFont: TokenPilotDesign.Typography.metricLargeUnit)
                     .monospacedDigit()
                     .foregroundStyle(valueColor)
                     .lineLimit(1)
@@ -1217,6 +1216,11 @@ struct ProviderOverviewList: View {
         capacityDisplayItems(assessments: assessments, presentations: presentations, percentDisplay: percentDisplay)
     }
 
+    /// The item the summary card above is showing — the same ranking picks it.
+    private var featuredItemID: CapacityDisplayItem.ID? {
+        items.sorted { capacityDisplayRank($0) > capacityDisplayRank($1) }.first?.id
+    }
+
     private var providerOrder: [Provider] {
         var ordered: [Provider] = []
         func append(_ provider: Provider) {
@@ -1258,7 +1262,8 @@ struct ProviderOverviewList: View {
             ProviderCapacityRow(
                 provider: provider,
                 items: providerItems,
-                errors: providerErrors
+                errors: providerErrors,
+                isFeatured: providerItems.first?.id == featuredItemID
             )
         }
     }
@@ -1269,6 +1274,8 @@ struct ProviderCapacityRow: View {
     let provider: Provider
     let items: [CapacityDisplayItem]
     let errors: [CapacityRefreshError]
+    /// True when the summary card above already shows this row's reading in full.
+    var isFeatured = false
 
     var body: some View {
         let primary = items[0]
@@ -1312,11 +1319,15 @@ struct ProviderCapacityRow: View {
 
     private func providerEvidenceSummary(for item: CapacityDisplayItem) -> some View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
-            compactProviderLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
-            compactProviderLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
-            let paceText = item.paceText(language: language)
-            if !paceText.isEmpty {
-                compactProviderLine(paceText, color: item.paceZoneColor)
+            // Source, next action and pace are already on the summary card for the featured
+            // reading; with one provider the two cards repeated the same three lines.
+            if !isFeatured {
+                compactProviderLine(item.truthSummary(language: language), color: TokenPilotDesign.text(.secondary))
+                compactProviderLine(item.guidanceLabel(language: language), color: TokenPilotDesign.text(.secondary))
+                let paceText = item.paceText(language: language)
+                if !paceText.isEmpty {
+                    compactProviderLine(paceText, color: item.paceZoneColor)
+                }
             }
             providerMetadataLine(item.metadataSummary(language: language))
         }
@@ -1370,15 +1381,15 @@ struct CapacitySignalLine: View {
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textSecondary)
                     .lineLimit(1)
-                    .frame(width: 58, alignment: .leading)
 
-                Text(item.primaryValue(language: language))
-                    .font(TokenPilotDesign.Typography.metricCompact)
+                // Right-aligned like the provider's own value above; after a fixed 58 pt label it
+                // floated in the middle of the card.
+                Spacer(minLength: 6)
+
+                MetricValueText(value: item.primaryValue(language: language), figureFont: TokenPilotDesign.Typography.metricCompact, wordFont: TokenPilotDesign.Typography.captionStrong)
                     .monospacedDigit()
                     .foregroundStyle(item.valueColor)
                     .lineLimit(1)
-
-                Spacer(minLength: 6)
             }
 
             Text(item.metadataSummary(language: language))

@@ -2365,49 +2365,53 @@ public enum TokenPilotFormatters {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
         let hours = seconds / 3600
         let minutes = (seconds % 3600) / 60
-        let units: (hour: String, minute: String)
-        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
-        case .system, .en:
-            units = ("h", "m")
-        case .ko:
-            units = ("시간", "분")
-        case .ja:
-            units = ("時間", "分")
-        case .zhHans:
-            units = ("小时", "分钟")
-        case .zhHant:
-            units = ("小時", "分鐘")
-        }
+        let units = durationUnits(language)
         if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute)" }
         return "\(minutes)\(units.minute)"
     }
 
-    public static func compactRemainingTime(until date: Date, now: Date = Date()) -> String {
+    /// Day/hour/minute/second suffixes. English keeps the compact "2h 15m"; the other languages
+    /// spell units out, which "리셋까지 51m 57s" beside "리셋 56분" on the same card did not.
+    static func durationUnits(_ language: TokenPilotLanguage) -> (day: String, hour: String, minute: String, second: String) {
+        switch TokenPilotLocalizer.effectiveLanguage(for: language) {
+        case .system, .en: return ("d", "h", "m", "s")
+        case .ko: return ("일", "시간", "분", "초")
+        case .ja: return ("日", "時間", "分", "秒")
+        case .zhHans: return ("天", "小时", "分钟", "秒")
+        case .zhHant: return ("天", "小時", "分鐘", "秒")
+        }
+    }
+
+    public static func compactRemainingTime(until date: Date, now: Date = Date(), language: TokenPilotLanguage = .en) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
+        let units = durationUnits(language)
         let days = seconds / 86_400
-        if days > 0 { return "\(days)d" }
+        if days > 0 { return "\(days)\(units.day)" }
         let hours = seconds / 3_600
-        if hours > 0 { return "\(hours)h" }
+        if hours > 0 { return "\(hours)\(units.hour)" }
         let minutes = (seconds % 3_600) / 60
-        return "\(minutes)m"
+        return "\(minutes)\(units.minute)"
     }
 
     /// Second-granularity countdown, e.g. "2h 15m 32s" / "15m 32s" / "32s", or "2h 15m" / "15m"
     /// without seconds for a timer that only ticks once a minute.
     /// Used for live ticking reset timers; the label is localized, the separators are not.
-    public static func countdown(until date: Date, now: Date = Date(), showsSeconds: Bool = true) -> String {
+    public static func countdown(until date: Date, now: Date = Date(), showsSeconds: Bool = true, language: TokenPilotLanguage = .en) -> String {
         let seconds = max(0, Int(date.timeIntervalSince(now)))
         let hours = seconds / 3_600
         let minutes = (seconds % 3_600) / 60
         let remainingSeconds = seconds % 60
+        let units = durationUnits(language)
         if !showsSeconds {
             // Rounded up, so a reset 30 s away reads "1m", not "0m".
             let totalMinutes = (seconds + 59) / 60
-            return totalMinutes >= 60 ? "\(totalMinutes / 60)h \(totalMinutes % 60)m" : "\(totalMinutes)m"
+            return totalMinutes >= 60
+                ? "\(totalMinutes / 60)\(units.hour) \(totalMinutes % 60)\(units.minute)"
+                : "\(totalMinutes)\(units.minute)"
         }
-        if hours > 0 { return "\(hours)h \(minutes)m \(remainingSeconds)s" }
-        if minutes > 0 { return "\(minutes)m \(remainingSeconds)s" }
-        return "\(remainingSeconds)s"
+        if hours > 0 { return "\(hours)\(units.hour) \(minutes)\(units.minute) \(remainingSeconds)\(units.second)" }
+        if minutes > 0 { return "\(minutes)\(units.minute) \(remainingSeconds)\(units.second)" }
+        return "\(remainingSeconds)\(units.second)"
     }
 
     private static let clockFormatters = OSAllocatedUnfairLock(initialState: [String: DateFormatter]())

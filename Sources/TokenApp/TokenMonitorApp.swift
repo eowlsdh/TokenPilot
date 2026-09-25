@@ -1284,11 +1284,13 @@ private final class ProviderMetricsMenuBarNSView: NSView {
         var x: CGFloat = 0
         for segment in segments {
             let width = segmentWidth(segment)
+            // Label colour, not secondary: at 8 pt the size already sets it below the value, and
+            // secondary grey on top of that left "DS" or "CL" barely readable in the menu bar.
             draw(
                 segment.providerShortLabel,
                 in: NSRect(x: x, y: 0, width: width, height: Self.titleRowHeight),
                 font: Self.titleFont,
-                color: .secondaryLabelColor
+                color: .labelColor
             )
             draw(
                 segment.displayValue,
