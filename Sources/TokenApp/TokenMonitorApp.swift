@@ -1384,10 +1384,12 @@ private final class ProviderMetricsMenuBarNSView: NSView {
     /// which hue means "healthy", and follows Increase Contrast like everything else.
     /// Colour comes from the true remaining value. Parsing it back out of the text would read a
     /// window shown as "90%" *used* as 90% *remaining* — green for a nearly exhausted window.
+    /// A value that is not a percentage — a balance, tokens, cost — has no risk to colour, and is
+    /// drawn in the primary label colour; only a stand-in for a missing value is dimmed.
     private func valueColor(_ segment: MenuBarProviderMetricSegment) -> NSColor {
         guard let remaining = segment.remainingPercent
             ?? MenuBarGaugeService.remainingPercent(displayValue: segment.displayValue) else {
-            return .secondaryLabelColor
+            return MenuBarGaugeService.isPlaceholder(displayValue: segment.displayValue) ? .secondaryLabelColor : .labelColor
         }
         return TokenPilotDesign.riskNSColor(CapacityRisk.forRemainingPercent(remaining))
     }

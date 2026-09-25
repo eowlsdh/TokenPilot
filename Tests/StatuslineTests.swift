@@ -646,6 +646,16 @@ final class MenuBarGaugeServiceTests: XCTestCase {
         XCTAssertEqual(MenuBarGaugeService.remainingPercent(displayValue: " 100%"), 100)
     }
 
+    /// "$8.04" was drawn in the same grey as "—" and read as no value at menu bar size.
+    func testOnlyMissingValuesCountAsPlaceholders() {
+        for missing in ["—", "— STALE", "—·E", "Setup", " "] {
+            XCTAssertTrue(MenuBarGaugeService.isPlaceholder(displayValue: missing), missing)
+        }
+        for real in ["$8.04", "$8.04 S", "1.2Mtok", "12cr", "63%"] {
+            XCTAssertFalse(MenuBarGaugeService.isPlaceholder(displayValue: real), real)
+        }
+    }
+
     func testNonPercentValuesHaveNoBar() {
         XCTAssertNil(MenuBarGaugeService.remainingFraction(displayValue: "Setup"))
         XCTAssertNil(MenuBarGaugeService.remainingFraction(displayValue: "—"))

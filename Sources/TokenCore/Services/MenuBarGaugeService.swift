@@ -25,4 +25,12 @@ public enum MenuBarGaugeService {
         guard !head.isEmpty, head.allSatisfy({ $0.isNumber }), let percent = Int(head) else { return nil }
         return min(max(percent, 0), 100)
     }
+
+    /// True for a segment that stands in for a missing value ("—", "— STALE", "—·E", "Setup").
+    /// Only these are drawn dimmed; a real balance, token count or cost was drawn in the same grey
+    /// and read as "nothing here" at menu bar size.
+    public static func isPlaceholder(displayValue: String) -> Bool {
+        let trimmed = displayValue.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty || trimmed.hasPrefix("—") || trimmed == "Setup"
+    }
 }
