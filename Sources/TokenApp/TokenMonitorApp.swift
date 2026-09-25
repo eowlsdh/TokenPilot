@@ -776,6 +776,14 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
+#if DEBUG
+        // Design review without screen recording: draws the popover from a DEBUG fixture into an
+        // off-screen window and writes a PNG, then quits. Nothing here ships in release builds.
+        if let path = ProcessInfo.processInfo.environment["TOKENPILOT_DEBUG_RENDER_PNG"] {
+            renderDebugSnapshot(to: URL(fileURLWithPath: path))
+            return
+        }
+#endif
         configurePopover()
         configureStatusItem()
         observeSystemWake()
@@ -790,6 +798,46 @@ private final class TokenPilotAppDelegate: NSObject, NSApplicationDelegate {
             }
         }
     }
+
+#if DEBUG
+    private var debugSnapshotWindow: NSWindow?
+
+    private func renderDebugSnapshot(to url: URL) {
+        let environment = ProcessInfo.processInfo.environment
+        // Settings restores its remembered offset on appear, which is how a lower part is reached.
+        if let offset = environment["TOKENPILOT_DEBUG_SETTINGS_OFFSET"].flatMap(Double.init) {
+            model.settingsScrollOffset = offset
+        }
+        let size = NSSize(width: TokenPilotDesign.popoverWidth, height: TokenPilotDesign.popoverHeight)
+        let root = TokenPilotRootView(model: model)
+            .frame(width: size.width, height: size.height)
+            .tokenPilotSemanticPalette()
+            .tokenPilotDebugAccessibilityProfile(debugAccessibilityProfile)
+        let host = NSHostingView(rootView: root)
+        host.sizingOptions = []
+        host.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -20_000, y: -20_000), size: size), styleMask: [.borderless], backing: .buffered, defer: false)
+        if environment["TOKENPILOT_DEBUG_APPEARANCE"] == "light" {
+            window.appearance = NSAppearance(named: .aqua)
+        } else if environment["TOKENPILOT_DEBUG_APPEARANCE"] == "dark" {
+            window.appearance = NSAppearance(named: .darkAqua)
+        }
+        window.backgroundColor = .windowBackgroundColor
+        window.contentView = host
+        window.orderFrontRegardless()
+        debugSnapshotWindow = window
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            host.layoutSubtreeIfNeeded()
+            if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: rep)
+                if let png = rep.representation(using: .png, properties: [:]) {
+                    try? png.write(to: url)
+                }
+            }
+            NSApplication.shared.terminate(nil)
+        }
+    }
+#endif
 
     /// Refreshes on wake so the menu bar never shows pre-sleep percentages or a reset countdown that already elapsed.
     private func observeSystemWake() {
