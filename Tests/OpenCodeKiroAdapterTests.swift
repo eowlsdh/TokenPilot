@@ -1578,6 +1578,26 @@ final class BuildSigningTests: XCTestCase {
         XCTAssertFalse(spec.contains("MACOSX_DEPLOYMENT_TARGET"), "a build setting overrides deploymentTarget and becomes the real floor")
     }
 
+    /// After Swift 6.4 made swiftbuild the default, `.build/release` pointed at the new output while
+    /// `.build/*/release` still held the previous build's resource bundle, and build.sh took the
+    /// first one it found — an app bundle assembled from two different builds. The script now asks
+    /// the build for its own output folder, and every entry point pins the same build system.
+    func testEveryEntryPointBuildsTheSameWayAndBuildShDoesNotGuessPaths() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let script = try Self.buildScript()
+        let makefile = try String(contentsOf: root.appendingPathComponent("Makefile"), encoding: .utf8)
+        let ci = try String(contentsOf: root.appendingPathComponent(".github/workflows/ci.yml"), encoding: .utf8)
+
+        XCTAssertTrue(script.contains("SWIFT_BUILD_SYSTEM=\"native\""))
+        XCTAssertTrue(script.contains("--show-bin-path"))
+        XCTAssertFalse(script.contains(".build/*/release"), "a guessed path can pick up a previous build")
+        XCTAssertFalse(script.contains(".build/release/"), "a guessed path can pick up a previous build")
+        XCTAssertTrue(makefile.contains("SWIFT_BUILD_FLAGS := --build-system native"))
+        for command in ["swift build --build-system native", "swift test --build-system native"] {
+            XCTAssertTrue(ci.contains(command), "CI must build the way the Makefile does: \(command)")
+        }
+    }
+
     private static func buildScript() throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent("build.sh"))

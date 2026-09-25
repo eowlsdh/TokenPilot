@@ -10,13 +10,20 @@ PROJECT_SPEC="$PROJECT_DIR/project.yml"
 PRIVACY_MANIFEST="$PROJECT_DIR/Resources/PrivacyInfo.xcprivacy"
 APP_ICON_FILE="$PROJECT_DIR/Resources/TokenPilot.icns"
 RESOURCE_BUNDLE_NAME="TokenMonitor_TokenApp.bundle"
+# SwiftPM의 기본 빌드 시스템(swiftbuild, Swift 6.4+)은 문자열 카탈로그를 .lproj로 컴파일해
+# 앱이 런타임에 읽는 Localizable.xcstrings 원본을 남기지 않는다. 앱이 새 방식을 읽게 될 때까지
+# native로 고정한다. Makefile과 CI도 같은 값을 쓴다.
+SWIFT_BUILD_SYSTEM="native"
 
 printf '🔨 TokenPilot 앱 빌드 중...\n\n'
 
 # 1. Swift 릴리스 빌드
 echo "📦 Step 1: Swift 릴리스 빌드..."
 cd "$PROJECT_DIR"
-swift build -c release
+swift build -c release --build-system "$SWIFT_BUILD_SYSTEM"
+# 방금 빌드한 출력 폴더. release 출력 위치를 추측하면 빌드 시스템이 바뀐 뒤
+# 남아 있는 예전 빌드의 실행 파일이나 리소스를 조용히 담을 수 있었다.
+BIN_DIR="$(swift build -c release --build-system "$SWIFT_BUILD_SYSTEM" --show-bin-path)"
 
 # 2. 앱 번들 디렉토리 구조 생성
 echo "📂 Step 2: 앱 번들 구조 생성..."
@@ -26,7 +33,7 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 # 3. 실행 파일 복사
 echo "📋 Step 3: 실행 파일 복사..."
-BUILT_EXECUTABLE="$PROJECT_DIR/.build/release/TokenMonitor"
+BUILT_EXECUTABLE="$BIN_DIR/TokenMonitor"
 if [[ ! -x "$BUILT_EXECUTABLE" ]]; then
     echo "❌ 릴리스 실행 파일을 찾지 못했습니다: $BUILT_EXECUTABLE" >&2
     exit 1
@@ -36,18 +43,8 @@ chmod +x "$APP_DIR/Contents/MacOS/TokenMonitor"
 
 # 4. SwiftPM 리소스 번들 복사(Localizable.xcstrings 포함)
 echo "🧩 Step 4: SwiftPM 리소스 번들 복사..."
-RESOURCE_BUNDLE=""
-for candidate in \
-    "$PROJECT_DIR"/.build/*/release/$RESOURCE_BUNDLE_NAME \
-    "$PROJECT_DIR"/.build/release/$RESOURCE_BUNDLE_NAME
- do
-    if [[ -d "$candidate" ]]; then
-        RESOURCE_BUNDLE="$candidate"
-        break
-    fi
- done
-
-if [[ -z "$RESOURCE_BUNDLE" ]]; then
+RESOURCE_BUNDLE="$BIN_DIR/$RESOURCE_BUNDLE_NAME"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
     echo "❌ SwiftPM 리소스 번들을 찾지 못했습니다: $RESOURCE_BUNDLE_NAME" >&2
     exit 1
 fi

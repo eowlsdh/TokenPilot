@@ -80,14 +80,16 @@ jobs:
           sudo install /tmp/xcodegen/xcodegen/bin/xcodegen /usr/local/bin/xcodegen
           xcodegen --version
 
+      # Pinned to native, like the Makefile and build.sh: swiftbuild (the default from Swift 6.4)
+      # compiles the string catalog into .lproj folders and drops the file the app reads.
       - name: Build
-        run: swift build
+        run: swift build --build-system native
 
       - name: Build (warnings as errors)
-        run: swift build -Xswiftc -warnings-as-errors
+        run: swift build --build-system native -Xswiftc -warnings-as-errors
 
       - name: Test
-        run: swift test
+        run: swift test --build-system native
 
       - name: Generate Xcode project
         run: xcodegen generate

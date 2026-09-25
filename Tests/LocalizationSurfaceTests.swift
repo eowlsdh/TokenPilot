@@ -97,9 +97,13 @@ final class LocalizationSurfaceTests: XCTestCase {
 
     /// Proves the catalog is actually consulted at runtime rather than merely present: these keys
     /// exist only in the catalog, so an answer other than the key itself can only have come from it.
+    ///
+    /// Under SwiftPM's swiftbuild (the default from Swift 6.4) the catalog is compiled into `.lproj`
+    /// folders and this fails; run `make test`, which pins the native build system.
     func testAStringOnlyTheCatalogCarriesIsServed() {
-        XCTAssertEqual(TokenPilotLocalizer.localized("TokenPilot limit reached", language: .ko), "TokenPilot 한도 도달")
-        XCTAssertEqual(TokenPilotLocalizer.localized("TokenPilot limit reached", language: .zhHant), "TokenPilot 已達到限制")
+        let hint = "catalog not found beside the test bundle — run `make test` (native build system), not bare `swift test`"
+        XCTAssertEqual(TokenPilotLocalizer.localized("TokenPilot limit reached", language: .ko), "TokenPilot 한도 도달", hint)
+        XCTAssertEqual(TokenPilotLocalizer.localized("TokenPilot limit reached", language: .zhHant), "TokenPilot 已達到限制", hint)
     }
 
     // MARK: - Coverage

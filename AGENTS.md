@@ -62,6 +62,7 @@ TokenPilot/
 - SwiftPM product name is `TokenMonitor`; user-facing app/bundle name is `TokenPilot`. Do not “normalize” this split casually.
 - The macOS floor is **26.0**, declared once in `project.yml` (`deploymentTarget.macOS`). `Package.swift` states it as `.macOS("26.0")` — the string form, because the `.v26` enum case is not in this toolchain's PackageDescription — and `build.sh` reads it for `LSMinimumSystemVersion`. A test asserts the two agree; do not add a third place.
 - Use `Makefile` targets as the local command surface. `build.sh` is part of the product path, not a disposable helper.
+- SwiftPM is pinned to the native build system (`--build-system native`) in the `Makefile`, `build.sh` and CI. swiftbuild, the default from Swift 6.4, compiles `Localizable.xcstrings` into `.lproj` folders and drops the file the app reads at runtime. A test keeps the three in agreement.
 - Keep `build/`, `.build/`, `DerivedData/`, and generated app bundles out of source edits.
 - For user-visible copy, update both localization surfaces when needed: Swift fallback table and `.xcstrings`.
 - New provider/source behavior belongs in `TokenCore` first, then the ViewModel/UI wires it in.
