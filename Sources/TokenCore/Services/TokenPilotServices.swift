@@ -443,7 +443,9 @@ public struct XAIOpenCodeBarAdapter: ProviderRefreshAdapter {
     private let runner: @Sendable (ProcessLifecycle) throws -> Data
 
     public init() {
-        runner = Self.runOpenCodeBar
+        // A closure rather than the method reference: Xcode's Swift 5 mode does not infer a static
+        // method reference as @Sendable and warned about a data race that cannot happen here.
+        runner = { lifecycle in try Self.runOpenCodeBar(lifecycle: lifecycle) }
     }
 
     init(runner: @escaping @Sendable () throws -> Data) {
