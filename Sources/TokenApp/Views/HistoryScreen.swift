@@ -140,8 +140,10 @@ struct HistoryScreen: View {
                     HistoryUsageSummaryCard(model: model)
 
                     if trendCardCount(derived) > 0 {
+                        // Said once for the whole group; each of the six cards used to repeat it.
                         CollapsibleSection(
                             title: model.t("Trends"),
+                            subtitle: model.t("Local activity, not provider quota"),
                             systemImage: "chart.xyaxis.line",
                             badge: "\(trendCardCount(derived))",
                             initiallyExpanded: true
@@ -687,7 +689,7 @@ struct HistorySevenDayTrendCard: View {
     }
 
     private var summaryText: String {
-        "\(activeDays)/\(bars.count) \(model.t("active days")) · \(model.t("Local activity, not provider quota"))"
+        "\(activeDays)/\(bars.count) \(model.t("active days"))"
     }
 
     private var accessibilitySummary: String {
@@ -699,6 +701,7 @@ struct HistorySevenDayTrendCard: View {
 }
 
 private struct HistoryTrendBar: View {
+    @Environment(\.tokenPilotLanguage) private var language
     let bar: DailyUsageBar
     let peakTokens: Int
     let isPeak: Bool
@@ -721,7 +724,7 @@ private struct HistoryTrendBar: View {
                 .frame(maxWidth: .infinity)
             }
 
-            Text(bar.dayLabel)
+            Text(LocalizedDateLabels.weekday(englishAbbreviation: bar.dayLabel, language: language))
                 .font(TokenPilotDesign.Typography.micro)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(1)
@@ -769,7 +772,7 @@ struct HistoryRequestTrendCard: View {
                                 .frame(maxWidth: .infinity)
                             }
 
-                            Text(bar.dayLabel)
+                            Text(LocalizedDateLabels.weekday(englishAbbreviation: bar.dayLabel, language: model.settings.localization.language))
                                 .font(TokenPilotDesign.Typography.micro)
                                 .foregroundStyle(TokenPilotDesign.textSecondary)
                                 .lineLimit(1)
@@ -779,10 +782,12 @@ struct HistoryRequestTrendCard: View {
                 }
                 .frame(height: 38)
 
-                Text(summaryText)
-                    .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
+                if !summaryText.isEmpty {
+                    Text(summaryText)
+                        .font(TokenPilotDesign.Typography.caption)
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
             }
         }
         .accessibilityElement(children: .combine)
@@ -795,8 +800,8 @@ struct HistoryRequestTrendCard: View {
     }
 
     private var summaryText: String {
-        guard let peak = trend.peakDayLabel else { return model.t("Local activity, not provider quota") }
-        return "\(model.t("Peak")): \(peak) · \(model.t("Local activity, not provider quota"))"
+        guard let peak = trend.peakDayLabel else { return "" }
+        return "\(model.t("Peak")): \(LocalizedDateLabels.weekday(englishAbbreviation: peak, language: model.settings.localization.language))"
     }
 }
 
@@ -834,11 +839,12 @@ struct HistoryMonthlyTrendCard: View {
                     )
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
-                        ForEach(bars) { bar in
-                            HistoryMonthlyBar(bar: bar, peakTokens: peakTokens, isPeak: bar.tokens == peakTokens && bar.tokens > 0, model: model)
-                        }
+                // Twelve bars share the card's width. In a horizontal scroll view each sized itself to
+                // its label ("10월 '25"), nine fitted, and the rest ran off the card with no visible
+                // way to scroll to them.
+                HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xs) {
+                    ForEach(bars) { bar in
+                        HistoryMonthlyBar(bar: bar, peakTokens: peakTokens, isPeak: bar.tokens == peakTokens && bar.tokens > 0, model: model)
                     }
                 }
                 .frame(height: 38)
@@ -854,7 +860,7 @@ struct HistoryMonthlyTrendCard: View {
     }
 
     private var summaryText: String {
-        "\(activeMonths)/\(bars.count) \(model.t("active months")) · \(model.t("Local activity, not provider quota"))"
+        "\(activeMonths)/\(bars.count) \(model.t("active months"))"
     }
 
     private var accessibilitySummary: String {
@@ -869,6 +875,8 @@ private struct HistoryMonthlyBar: View {
     let bar: MonthlyUsageBar
     let peakTokens: Int
     let isPeak: Bool
+    /// The year is spelled only at January, where it changes; on the first bar it did not fit.
+    var showsYear = false
     @ObservedObject var model: TokenPilotViewModel
 
     private var fillRatio: Double {
@@ -892,6 +900,8 @@ private struct HistoryMonthlyBar: View {
                 .font(TokenPilotDesign.Typography.micro)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
                 .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
@@ -902,7 +912,7 @@ private struct HistoryMonthlyBar: View {
         let parts = bar.monthLabel.split(separator: "-")
         guard parts.count == 2, let year = parts.first, let month = parts.last else { return bar.monthLabel }
         let shortMonth = monthName(Int(month))
-        return "\(shortMonth) '\(year.suffix(2))"
+        return showsYear || Int(month) == 1 ? "\(shortMonth) '\(year.suffix(2))" : shortMonth
     }
 
     private func monthName(_ month: Int?) -> String {
@@ -958,9 +968,9 @@ struct HistoryHeatmapCard: View {
                     Spacer(minLength: 0)
 
                     Picker(model.t("Heatmap range"), selection: $model.heatmapWeeks) {
-                        Text("4w").tag(4)
-                        Text("8w").tag(8)
-                        Text("12w").tag(12)
+                        Text(String(format: model.t("%dw"), 4)).tag(4)
+                        Text(String(format: model.t("%dw"), 8)).tag(8)
+                        Text(String(format: model.t("%dw"), 12)).tag(12)
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
@@ -970,30 +980,25 @@ struct HistoryHeatmapCard: View {
                 if weeks.isEmpty {
                     EmptyInlineState(text: model.t("Local activity, not provider quota"))
                 } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
-                            HStack(spacing: TokenPilotDesign.Spacing.xxs) {
-                                ForEach(weeks.indices, id: \.self) { column in
-                                    monthLabel(column: column, weeks: weeks)
-                                        .frame(width: 9, alignment: .leading)
+                    // Columns share the card's width, cells square up to 20 pt. Fixed 9 pt cells in a
+                    // scroll view left 60% of the card empty, and each month label, squeezed into
+                    // its 9 pt column, showed only "…". A label now runs on over the columns after
+                    // it, which are blank until the next month starts.
+                    HStack(alignment: .top, spacing: TokenPilotDesign.Spacing.xxs) {
+                        ForEach(weeks.indices, id: \.self) { column in
+                            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                                monthLabel(column: column, weeks: weeks)
+                                    .fixedSize()
+                                    .frame(maxWidth: .infinity, minHeight: 10, maxHeight: 10, alignment: .leading)
+                                ForEach(0..<7, id: \.self) { row in
+                                    heatCell(safeCell(weeks, column: column, row: row))
                                 }
                             }
-                            .frame(height: 10)
-                            ForEach(0..<7, id: \.self) { row in
-                                HStack(spacing: TokenPilotDesign.Spacing.xxs) {
-                                    ForEach(weeks.indices, id: \.self) { column in
-                                        heatCell(safeCell(weeks, column: column, row: row))
-                                    }
-                                }
-                            }
+                            .frame(maxWidth: 20)
                         }
                     }
                 }
 
-                Text(model.t("Local activity, not provider quota"))
-                    .font(TokenPilotDesign.Typography.caption)
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .lineLimit(1)
             }
         }
         .accessibilityElement(children: .combine)
@@ -1041,12 +1046,12 @@ struct HistoryHeatmapCard: View {
         if let cell {
             RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                 .fill(heatColor(level: cell.level))
-                .frame(width: 9, height: 9)
+                .aspectRatio(1, contentMode: .fit)
                 .help("\(cell.dateKey): \(TokenPilotFormatters.compactNumber(cell.tokens)) tok")
         } else {
             RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                 .fill(TokenPilotDesign.surface(.separator).opacity(0.4))
-                .frame(width: 9, height: 9)
+                .aspectRatio(1, contentMode: .fit)
         }
     }
 
@@ -1457,7 +1462,7 @@ struct HistoryHourlyActivityCard: View {
                     }
                 }
 
-                Text(model.t("Local activity by hour of day; local time. Not provider quota."))
+                Text(model.t("Hours in local time."))
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.textTertiary)
                     .lineLimit(2)
@@ -1497,18 +1502,14 @@ struct HistoryFiveHourBlocksCard: View {
                         .lineLimit(1)
 
                     Spacer(minLength: 0)
-
-                    Text(model.t("Local activity, not provider quota"))
-                        .font(TokenPilotDesign.Typography.micro)
-                        .foregroundStyle(TokenPilotDesign.textTertiary)
-                        .lineLimit(1)
                 }
 
                 let peak = blocks.map(\.tokens).max() ?? 0
                 ForEach(Array(blocks.suffix(12).enumerated()), id: \.element.id) { index, block in
                     HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+                        // Proportional: "9월 28일 오후 8:00" is mostly words, and the metric face spread them.
                         Text(blockTimeText(block.start))
-                            .font(TokenPilotDesign.Typography.metricSmall)
+                            .font(TokenPilotDesign.Typography.captionStrong)
                             .monospacedDigit()
                             .foregroundStyle(TokenPilotDesign.textSecondary)
                             .frame(width: 108, alignment: .leading)
@@ -1668,7 +1669,7 @@ struct HistoryBudgetHistoryCard: View {
                                 RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                     .fill(budgetBarColor(day))
                                     .frame(width: 10, height: budgetBarHeight(day))
-                                Text(day.dayLabel)
+                                Text(LocalizedDateLabels.weekday(englishAbbreviation: day.dayLabel, language: model.settings.localization.language))
                                     .font(TokenPilotDesign.Typography.axis)
                                     .foregroundStyle(TokenPilotDesign.textTertiary)
                                     .lineLimit(1)
@@ -1721,11 +1722,6 @@ struct HistoryProviderCacheCard: View {
                         .lineLimit(1)
 
                     Spacer(minLength: 0)
-
-                    Text(model.t("Local activity, not provider quota"))
-                        .font(TokenPilotDesign.Typography.micro)
-                        .foregroundStyle(TokenPilotDesign.textTertiary)
-                        .lineLimit(1)
                 }
 
                 VStack(spacing: TokenPilotDesign.Spacing.sm) {
@@ -1827,7 +1823,7 @@ struct HistoryCacheEfficiencyCard: View {
                                 RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                                     .fill(trendBarColor(day))
                                     .frame(width: 10, height: trendBarHeight(day))
-                                Text(day.dayLabel)
+                                Text(LocalizedDateLabels.weekday(englishAbbreviation: day.dayLabel, language: model.settings.localization.language))
                                     .font(TokenPilotDesign.Typography.axis)
                                     .foregroundStyle(TokenPilotDesign.textTertiary)
                                     .lineLimit(1)
@@ -1896,8 +1892,7 @@ struct HistoryUsageMetricTile: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
-            Text(value)
-                .font(TokenPilotDesign.Typography.metric)
+            MetricValueText(value: value, figureFont: TokenPilotDesign.Typography.metric, wordFont: TokenPilotDesign.Typography.metricWord)
                 .monospacedDigit()
                 .foregroundStyle(TokenPilotDesign.textPrimary)
                 .lineLimit(1)

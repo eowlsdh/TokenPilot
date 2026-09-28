@@ -933,7 +933,7 @@ struct MetricValueText: View {
 
     static func attributed(_ value: String, figureFont: Font, wordFont: Font) -> AttributedString {
         // No figure at all ("사용 불가", "—"): words, so they are not spread out in the number face.
-        guard let match = value.firstMatch(of: /[$€£¥₩]?[0-9][0-9.,]*[%A-Za-z]*/) else {
+        guard let match = value.firstMatch(of: /[$€£¥₩]?[0-9][0-9.,:]*[%A-Za-z]*/) else {
             var whole = AttributedString(value)
             whole.font = value.contains(where: \.isLetter) ? wordFont : figureFont
             return whole

@@ -502,11 +502,18 @@ struct SettingsScreen: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
 
-                        Text("\(model.t("Current menu bar")): \(model.menuBarPreviewText)")
-                            .font(TokenPilotDesign.Typography.metricSmall)
-                            .foregroundStyle(TokenPilotDesign.textSecondary)
-                            .lineLimit(1)
-                            .accessibilityLabel(model.menuBarAccessibilityLabel)
+                        // The label in the text face, the preview in the menu bar's own monospaced one;
+                        // both in the metric face spread "현재 메뉴 막대:" out like a typewriter.
+                        HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.xs) {
+                            Text("\(model.t("Current menu bar")):")
+                                .font(TokenPilotDesign.Typography.caption)
+                            Text(model.menuBarPreviewText)
+                                .font(TokenPilotDesign.Typography.metricSmall)
+                        }
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(model.menuBarAccessibilityLabel)
                     }
                 }
             }
@@ -627,13 +634,19 @@ struct SettingsScreen: View {
             Text(model.t("Select statusline JSON, legacy telemetry, or a session folder. Raw local paths stay hidden after selection."))
                 .font(TokenPilotDesign.Typography.explanation)
                 .foregroundStyle(TokenPilotDesign.textSecondary)
+            // Labelled, and written the same way on every control: the row was bare numbers
+            // ("1,000 1,500 2,000 Custom: 1000") with nothing saying they were a daily request limit.
+            Text(model.t("Daily request limit"))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                .foregroundStyle(TokenPilotDesign.textSecondary)
             HStack {
                 ForEach([1000, 1500, 2000], id: \.self) { cap in
-                    Button("\(cap)") { model.settings.geminiDailyRequestCap = cap }
+                    Button(cap.formatted()) { model.settings.geminiDailyRequestCap = cap }
                         .buttonStyle(.glass)
                         .foregroundStyle(model.settings.geminiDailyRequestCap == cap ? TokenPilotDesign.calm : .secondary)
                 }
-                Stepper(String(format: model.t("Custom: %d"), model.settings.geminiDailyRequestCap), value: $model.settings.geminiDailyRequestCap, in: 1...20_000, step: 100)
+                Stepper(String(format: model.t("Custom: %@"), model.settings.geminiDailyRequestCap.formatted()), value: $model.settings.geminiDailyRequestCap, in: 1...20_000, step: 100)
+                    .monospacedDigit()
             }
             Button(model.t("Check Connection")) { Task { await model.checkConnection(.gemini) } }
                 .buttonStyle(.glass)
@@ -1766,8 +1779,11 @@ struct SettingsScreen: View {
         return TokenPilotDesign.calm
     }
 
+    /// Counts, not the card's own title again ("Provider Diagnostics · 5 needs attention" sat under
+    /// the heading "Provider Diagnostics").
     private var providerDiagnosticsSummaryText: String {
-        "\(model.t("Provider Diagnostics")) · \(attentionProviderCount) \(model.t("needs attention"))"
+        let connected = model.providerDiagnostics.filter { $0.status == .connected }.count
+        return "\(connected) \(model.t("Connected")) · \(attentionProviderCount) \(model.t("needs attention"))"
     }
 
     private var providerDiagnosticsStatusLabel: String {
@@ -2238,9 +2254,12 @@ struct SettingsScreen: View {
 
             let nextAction = model.diagnosticNextActionText(diagnostic)
             let detail = model.diagnosticDetailText(diagnostic)
+            // Emphasised only when there is something to do; a connected provider's "refresh if it
+            // looks stale" read as the loudest line on the card.
+            let needsAction = diagnostic.status != .connected
             Text(nextAction)
-                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
-                .foregroundStyle(TokenPilotDesign.textPrimary)
+                .font(TokenPilotDesign.Typography.caption.weight(needsAction ? .semibold : .regular))
+                .foregroundStyle(needsAction ? TokenPilotDesign.textPrimary : TokenPilotDesign.textSecondary)
             if detail != nextAction {
                 Text(detail)
                     .font(TokenPilotDesign.Typography.explanation)
