@@ -2287,18 +2287,30 @@ struct SettingsScreen: View {
             .sorted { $0.rawValue < $1.rawValue }
     }
 
+    /// The provider's official mark beside its name; a turned-off provider's mark is greyed out, so
+    /// on and off differ in more than the text colour.
     private func providerToggle(_ provider: Provider) -> some View {
-        Toggle(
-            model.providerDisplayName(provider),
+        let isOn = model.isProviderEnabled(provider)
+        return Toggle(
             isOn: Binding(
                 get: { model.isProviderEnabled(provider) },
                 set: { model.setProvider(provider, isEnabled: $0) }
             )
-        )
+        ) {
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                ProviderSignatureMark(provider: provider, size: 16)
+                    .saturation(isOn ? 1 : 0)
+                    .opacity(isOn ? 1 : 0.45)
+                Text(model.providerDisplayName(provider))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
         .toggleStyle(.button)
         .buttonStyle(.glass)
-        .foregroundStyle(model.isProviderEnabled(provider) ? TokenPilotDesign.accent(for: provider) : .secondary)
+        .foregroundStyle(isOn ? TokenPilotDesign.text(.primary) : TokenPilotDesign.text(.secondary))
         .frame(maxWidth: .infinity)
+        .accessibilityLabel(model.providerDisplayName(provider))
     }
 
 

@@ -758,7 +758,7 @@ public enum TokenPilotLocalizer {
     /// SwiftPM keeps a target's resources in a nested `<Package>_<Target>.bundle`, and `build.sh`
     /// copies that bundle into the app whole. Declared in one place because `build.sh` names the
     /// same bundle, and a test asserts the two agree.
-    static let resourceBundleName = "TokenMonitor_TokenApp.bundle"
+    public static let resourceBundleName = "TokenMonitor_TokenApp.bundle"
 
     /// `url(forResource:)` does not descend into a nested bundle, so the catalog `build.sh` checks
     /// for was present in the shipped app and unreadable from it — every string came from the
