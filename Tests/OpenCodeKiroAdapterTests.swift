@@ -909,7 +909,8 @@ final class AllProviderSurfaceParityTests: XCTestCase {
     /// Every provider must survive aggregation, export, and menu-bar rendering. opencode/Kiro were
     /// wired provider-by-provider, so this guards the whole set instead of the two new cases.
     func testEveryProviderSurvivesAggregationAndExport() throws {
-        let now = Date()
+        // Noon, not the real clock: events placed minutes apart fell into yesterday after midnight.
+        let now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
         let snapshots = Provider.allCases.enumerated().map { index, provider -> ProviderSnapshot in
             var snapshot = ProviderSnapshot(provider: provider, dataSource: .localLog)
             snapshot.updatedAt = now
@@ -929,7 +930,7 @@ final class AllProviderSurfaceParityTests: XCTestCase {
             return snapshot
         }
 
-        let usage = AggregationService().aggregate(snapshots: snapshots, period: .today)
+        let usage = AggregationService().aggregate(snapshots: snapshots, period: .today, now: now)
         XCTAssertEqual(usage.providerShare.count, Provider.allCases.count)
         XCTAssertEqual(usage.modelBreakdown.count, Provider.allCases.count)
 

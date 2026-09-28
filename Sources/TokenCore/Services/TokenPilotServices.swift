@@ -2341,8 +2341,12 @@ public enum TokenPilotFormatters {
         String(format: "%.1f\(suffix)", scaled).replacingOccurrences(of: ".0\(suffix)", with: suffix)
     }
 
+    /// Cents for anything a cent or more; four places only below that, so a per-request cost of a
+    /// fraction of a cent does not collapse to $0.00. A fixed four places read "$1.4200".
     public static func cost(_ value: Decimal) -> String {
-        String(format: "$%.4f", NSDecimalNumber(decimal: value).doubleValue)
+        let amount = NSDecimalNumber(decimal: value).doubleValue
+        let magnitude = abs(amount)
+        return String(format: magnitude > 0 && magnitude < 0.01 ? "$%.4f" : "$%.2f", amount)
     }
 
     /// Credits are a provider-defined metering unit, never currency, so this formats a bare number

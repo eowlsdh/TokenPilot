@@ -1983,11 +1983,14 @@ final class TokenPilotViewModel: ObservableObject {
             }
             return t("Run /status in Codex CLI and paste the result.")
         }
-        if connectionService.preferredUsablePath(in: source) != nil {
+        // A connected source read through a bridge or the statusline has no path of its own, and
+        // "Detected paths: 0/0" beside "Connected" read as a contradiction.
+        if connectionService.preferredUsablePath(in: source) != nil || source.status == .connected {
             return "\(t("Detected")) · \(t("Local source"))"
         }
         let found = source.detectedPaths.filter(\.exists).count
         let total = source.detectedPaths.count
+        guard total > 0 else { return t("Run Check Connection to scan local paths.") }
         return "\(t("Detected paths")): \(found)/\(total)"
     }
 

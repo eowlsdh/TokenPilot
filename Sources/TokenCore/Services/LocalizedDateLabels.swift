@@ -47,6 +47,16 @@ public enum LocalizedDateLabels {
         formatter(template: "MMMdjmm", language: language, calendar: calendar).string(from: date)
     }
 
+    /// A weekday stored as an English abbreviation ("Mon", from `AggregationService`, where it is
+    /// also an export field and a stable chart identity) in the app's language ("월", "月", "周一").
+    /// Anything that is not an English weekday abbreviation comes back unchanged.
+    public static func weekday(englishAbbreviation: String, language: TokenPilotLanguage) -> String {
+        let english = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        guard let index = english.firstIndex(of: englishAbbreviation) else { return englishAbbreviation }
+        let symbols = formatter(template: "ccc", language: language, calendar: Calendar(identifier: .gregorian)).shortStandaloneWeekdaySymbols ?? english
+        return symbols.indices.contains(index) ? symbols[index] : englishAbbreviation
+    }
+
     /// Locale the app's own language setting resolves to.
     ///
     /// `.system` deliberately stays on `Locale.autoupdatingCurrent` rather than

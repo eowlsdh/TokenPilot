@@ -857,7 +857,9 @@ struct CapacityDisplayItem: Identifiable {
 
     func resetText(language: TokenPilotLanguage) -> String {
         guard let resetAt else { return localized("No reset", language: language) }
-        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language, now: assessment.observation.observedAt))"
+        // From now, like the live countdown beside it. Measured from when the value was read, the
+        // same card showed "리셋 56분" above "리셋까지 51분 58초", and the gap grew as the reading aged.
+        return "\(localized("Reset", language: language)) \(TokenPilotFormatters.remainingTime(until: resetAt, language: language))"
     }
 
     func observedText(language: TokenPilotLanguage) -> String {

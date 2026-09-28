@@ -230,6 +230,12 @@ public enum TokenPilotLocalizer {
         "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.": [.en: "Allow TokenPilot in System Settings → General → Login Items to finish turning on launch at login.", .ko: "로그인 시 실행을 마치려면 시스템 설정 → 일반 → 로그인 항목에서 TokenPilot을 허용하세요.", .ja: "ログイン時の起動を有効にするには、システム設定 → 一般 → ログイン項目で TokenPilot を許可してください。", .zhHans: "请在“系统设置 → 通用 → 登录项”中允许 TokenPilot，以完成登录时启动的设置。", .zhHant: "請在「系統設定 → 一般 → 登入項目」中允許 TokenPilot，以完成登入時啟動的設定。"],
         "Problem": [.en: "Problem", .ko: "문제", .ja: "問題", .zhHans: "问题", .zhHant: "問題"],
         "Turned off, skipped on refresh": [.en: "Turned off, skipped on refresh", .ko: "꺼짐, 새로고침에서 건너뜀", .ja: "オフ、更新時にスキップ", .zhHans: "已关闭，刷新时跳过", .zhHant: "已關閉，重新整理時略過"],
+        "%dw": [.en: "%dw", .ko: "%d주", .ja: "%d週", .zhHans: "%d周", .zhHant: "%d週"],
+        "DeepSeek is waiting for an API key saved in TokenPilot Keychain or manual balance fallback.": [.en: "DeepSeek is waiting for an API key saved in TokenPilot Keychain or manual balance fallback.", .ko: "DeepSeek은 TokenPilot Keychain에 저장된 API 키나 수동 잔액 입력을 기다리고 있습니다.", .ja: "DeepSeek は TokenPilot のキーチェーンに保存された API キー、または手動の残高入力を待っています。", .zhHans: "DeepSeek 正在等待保存在 TokenPilot 钥匙串中的 API 密钥或手动余额输入。", .zhHant: "DeepSeek 正在等待儲存在 TokenPilot 鑰匙圈中的 API 密鑰或手動餘額輸入。"],
+        "xAI management API is waiting for a key saved in TokenPilot Keychain and explicit provider enablement.": [.en: "xAI management API is waiting for a key saved in TokenPilot Keychain and explicit provider enablement.", .ko: "xAI 관리 API는 TokenPilot Keychain에 저장된 키와 제공자 사용 설정을 기다리고 있습니다.", .ja: "xAI 管理 API は、TokenPilot のキーチェーンに保存されたキーとプロバイダの明示的な有効化を待っています。", .zhHans: "xAI 管理 API 正在等待保存在 TokenPilot 钥匙串中的密钥以及明确启用该提供方。", .zhHant: "xAI 管理 API 正在等待儲存在 TokenPilot 鑰匙圈中的密鑰以及明確啟用該提供方。"],
+        "Daily request limit": [.en: "Daily request limit", .ko: "일일 요청 한도", .ja: "1日のリクエスト上限", .zhHans: "每日请求上限", .zhHant: "每日請求上限"],
+        "Custom: %@": [.en: "Custom: %@", .ko: "사용자 지정: %@", .ja: "カスタム：%@", .zhHans: "自定义：%@", .zhHant: "自定義：%@"],
+        "Hours in local time.": [.en: "Hours in local time.", .ko: "로컬 시간 기준입니다.", .ja: "ローカル時刻基準です。", .zhHans: "按本地时间。", .zhHant: "按本地時間。"],
         "Show limits as": [.en: "Show limits as", .ko: "한도 표시", .ja: "上限の表示", .zhHans: "限额显示方式", .zhHant: "限額顯示方式"],
         "Limit percent": [.en: "Limit percent", .ko: "한도 %", .ja: "上限 %", .zhHans: "限额百分比", .zhHant: "限額百分比"],
         "%d%% left": [.en: "%d%% left", .ko: "%d%% 남음", .ja: "残り %d%%", .zhHans: "剩余 %d%%", .zhHant: "剩餘 %d%%"],
@@ -758,7 +764,7 @@ public enum TokenPilotLocalizer {
     /// SwiftPM keeps a target's resources in a nested `<Package>_<Target>.bundle`, and `build.sh`
     /// copies that bundle into the app whole. Declared in one place because `build.sh` names the
     /// same bundle, and a test asserts the two agree.
-    static let resourceBundleName = "TokenMonitor_TokenApp.bundle"
+    public static let resourceBundleName = "TokenMonitor_TokenApp.bundle"
 
     /// `url(forResource:)` does not descend into a nested bundle, so the catalog `build.sh` checks
     /// for was present in the shipped app and unreadable from it — every string came from the

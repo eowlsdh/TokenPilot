@@ -146,6 +146,9 @@ enum TokenPilotDesign {
         /// numbers in this app came in three sizes and only one of them was a token.
         static let metricCompact = Font.system(size: 12, weight: .semibold, design: .monospaced)
         static let metricSmall = Font.system(size: 11, weight: .semibold, design: .monospaced)
+        /// Words that stand where a `metric` figure would ("Claude Code" as the most used provider):
+        /// the metric's size and weight, in the proportional face.
+        static let metricWord = Font.system(size: 13, weight: .semibold)
         /// `caption` weight for a label that has to win against the value beside it.
         static let captionStrong = Font.system(size: 11, weight: .semibold)
         /// Proportional with `monospacedDigit()` at the call site: at 38 pt a monospaced "." or "%"

@@ -203,7 +203,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "Cl $1.2500")
+        XCTAssertEqual(title, "Cl $1.25")
     }
 
     func testMenuBarPrimaryMetricFallsBackToPercentWhenLocalValueAbsent() {

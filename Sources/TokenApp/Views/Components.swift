@@ -106,11 +106,13 @@ struct CompactProviderStatusRow<Trailing: View>: View {
                     .minimumScaleFactor(0.85)
 
                 if let subtitle, !subtitle.isEmpty {
+                    // Tail truncation: subtitles are sentences as often as names, and cut in the
+                    // middle one read "아직 신뢰할...호가 없습니다".
                     Text(subtitle)
                         .font(TokenPilotDesign.Typography.caption)
                         .foregroundStyle(palette.text(.secondary))
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
                 }
             }
 
@@ -480,6 +482,67 @@ struct TokenPilotSeparator: View {
 }
 
 
+/// Each provider's official mark, drawn the way its own app icon is: a brand-colour tile with a
+/// white glyph, or the provider's own tile where it publishes one. These replaced SF Symbols picked
+/// to suggest each provider (a brain for Claude, a dollar sign for DeepSeek), which read as
+/// placeholders. Sources and colours are listed in docs/provider-marks.md.
+enum ProviderMarkAsset {
+    enum Style {
+        /// A single-colour mark, drawn white on the brand colour.
+        case glyph(background: Color)
+        /// A mark that is already a full tile.
+        case tile
+        /// A full-colour mark on a plain tile, inset by a fraction of the tile.
+        case onTile(background: Color, inset: CGFloat)
+    }
+
+    static func style(for provider: Provider) -> Style {
+        switch provider {
+        case .claude: return .glyph(background: Color(red: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255))
+        case .deepseek: return .glyph(background: Color(red: 0x57 / 255, green: 0x86 / 255, blue: 0xFE / 255))
+        case .minimax: return .glyph(background: Color(red: 0xE7 / 255, green: 0x35 / 255, blue: 0x62 / 255))
+        case .openrouter: return .glyph(background: Color(red: 0x94 / 255, green: 0xA3 / 255, blue: 0xB8 / 255))
+        case .codex, .jetbrains, .opencode: return .glyph(background: .black)
+        case .kiro, .xai, .commandcode: return .tile
+        case .zai: return .onTile(background: .black, inset: 0.14)
+        case .gemini: return .onTile(background: .white, inset: 0.18)
+        }
+    }
+
+    @MainActor static func image(for provider: Provider) -> NSImage? {
+        if let cached = cache[provider] { return cached }
+        let image = bundledImage(named: "ProviderMark-\(provider.rawValue)")
+        cache[provider] = image
+        return image
+    }
+
+    /// TokenPilot's own icon, for the popover header.
+    @MainActor static let appMark: NSImage? = bundledImage(named: "TokenPilotMark")
+
+    @MainActor private static var cache: [Provider: NSImage?] = [:]
+
+    private static func bundledImage(named name: String) -> NSImage? {
+        let url = bundles.lazy.compactMap { bundle in
+            bundle.url(forResource: name, withExtension: "svg") ?? bundle.url(forResource: name, withExtension: "png")
+        }.first
+        return url.flatMap(NSImage.init(contentsOf:))
+    }
+
+    /// The Xcode build copies resources into the app itself; build.sh ships SwiftPM's resource
+    /// bundle inside the app; `swift run` and DEBUG renders find that bundle beside the binary.
+    private static let bundles: [Bundle] = {
+        let name = TokenPilotLocalizer.resourceBundleName
+        var candidates = [Bundle.main.bundleURL]
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent(name))
+        }
+        if let executable = Bundle.main.executableURL {
+            candidates.append(executable.deletingLastPathComponent().appendingPathComponent(name))
+        }
+        return candidates.compactMap(Bundle.init(url:))
+    }()
+}
+
 struct ProviderSignatureMark: View {
     let provider: Provider
     var size: CGFloat = 28
@@ -495,19 +558,12 @@ struct ProviderSignatureMark: View {
     @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
-                .fill(palette.surface(.cardElevated))
-                .overlay(
-                    RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
-                        .stroke(
-                            palette.borderColor(),
-                            lineWidth: palette.borderWidth()
-                        )
-                )
-
-            providerGlyph
-                .scaleEffect(isRevealed ? 1 : 0.78)
+        Group {
+            if let image = ProviderMarkAsset.image(for: provider) {
+                officialMark(image)
+            } else {
+                symbolMark
+            }
         }
         .frame(width: size, height: size)
         .scaleEffect(isRevealed ? 1 : 0.92)
@@ -539,6 +595,58 @@ struct ProviderSignatureMark: View {
         }
     }
 
+    private var tileShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: size * 0.26, style: .continuous)
+    }
+
+    @ViewBuilder
+    private func officialMark(_ image: NSImage) -> some View {
+        ZStack {
+            switch ProviderMarkAsset.style(for: provider) {
+            case .glyph(let background):
+                tileShape.fill(background)
+                Image(nsImage: image)
+                    .renderingMode(.template)
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.white)
+                    .padding(size * 0.22)
+            case .tile:
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFill()
+            case .onTile(let background, let inset):
+                tileShape.fill(background)
+                Image(nsImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .padding(size * inset)
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(tileShape)
+        // A hairline so a black tile does not dissolve into a dark card.
+        .overlay(tileShape.strokeBorder(.white.opacity(0.12), lineWidth: 0.5))
+        .scaleEffect(isRevealed ? 1 : 0.78)
+    }
+
+    private var symbolMark: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
+                .fill(palette.surface(.cardElevated))
+                .overlay(
+                    RoundedRectangle(cornerRadius: size * 0.34, style: .continuous)
+                        .stroke(
+                            palette.borderColor(),
+                            lineWidth: palette.borderWidth()
+                        )
+                )
+
+            providerGlyph
+                .scaleEffect(isRevealed ? 1 : 0.78)
+        }
+    }
+
     private var providerGlyph: some View {
         Image(systemName: provider.iconName)
             .font(.system(size: size * 0.42, weight: .semibold))
@@ -557,25 +665,33 @@ struct TokenPilotBrandMark: View {
     @Environment(\.tokenPilotSemanticPalette) private var palette
 
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
-                .fill(palette.surface(.cardElevated))
-                .overlay(
+        Group {
+            // The app's own icon. A "TP" typed in a monospaced face stood in for it and looked
+            // like a placeholder beside the providers' official marks.
+            if let icon = ProviderMarkAsset.appMark {
+                Image(nsImage: icon)
+                    .resizable()
+                    .interpolation(.high)
+                    .scaledToFit()
+                    .scaleEffect(isRevealed ? 1 : 0.9)
+            } else {
+                ZStack {
                     RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
-                        .stroke(
-                            palette.borderColor(),
-                            lineWidth: palette.borderWidth()
+                        .fill(palette.surface(.cardElevated))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.md, style: .continuous)
+                                .stroke(
+                                    palette.borderColor(),
+                                    lineWidth: palette.borderWidth()
+                                )
                         )
-                )
-            Text("TP")
-                .font(.system(size: 11, weight: .heavy, design: .monospaced))
-                .foregroundStyle(palette.text(.primary))
-            Circle()
-                .fill(palette.status(.calm))
-                .frame(width: 4, height: 4)
-                .offset(x: isRevealed ? 7 : -7, y: -7)
+                    Text("TP")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(palette.text(.primary))
+                }
+            }
         }
-        .frame(width: 24, height: 24)
+        .frame(width: 26, height: 26)
         .onAppear {
             guard !isVisible else { return }
             Self.hasRevealed = true
@@ -816,9 +932,10 @@ struct MetricValueText: View {
     }
 
     static func attributed(_ value: String, figureFont: Font, wordFont: Font) -> AttributedString {
-        guard let match = value.firstMatch(of: /[$€£¥₩]?[0-9][0-9.,]*[%A-Za-z]*/) else {
+        // No figure at all ("사용 불가", "—"): words, so they are not spread out in the number face.
+        guard let match = value.firstMatch(of: /[$€£¥₩]?[0-9][0-9.,:]*[%A-Za-z]*/) else {
             var whole = AttributedString(value)
-            whole.font = figureFont
+            whole.font = value.contains(where: \.isLetter) ? wordFont : figureFont
             return whole
         }
         var figure = AttributedString(match.output)
