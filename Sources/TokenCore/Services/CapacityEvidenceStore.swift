@@ -417,6 +417,44 @@ public struct CapacityEvidenceRecord: Codable, Equatable, Identifiable, Sendable
         )
     }
 
+    /// The same record read at a different moment. Comparing against this is how a bucket decides
+    /// whether a newer observation actually says anything new: `==` is synthesized over every stored
+    /// property, so a field added later is covered without anyone remembering to list it.
+    fileprivate func withObservedAt(_ date: Date) throws -> CapacityEvidenceRecord {
+        if date == observedAt { return self }
+        let digest = try Self.digest(
+            seriesID: seriesID,
+            observedAt: date,
+            resetAt: resetAt,
+            cycleID: cycleID,
+            value: value,
+            authority: authority,
+            stability: stability,
+            consent: consent,
+            freshnessPolicy: freshnessPolicy,
+            comparability: comparability,
+            parserRevision: parserRevision,
+            retention: retention,
+            dayStart: dayStart
+        )
+        return try CapacityEvidenceRecord(
+            recordDigest: digest,
+            seriesID: seriesID,
+            observedAt: date,
+            resetAt: resetAt,
+            cycleID: cycleID,
+            value: value,
+            authority: authority,
+            stability: stability,
+            consent: consent,
+            freshnessPolicy: freshnessPolicy,
+            comparability: comparability,
+            parserRevision: parserRevision,
+            retention: retention,
+            dayStart: dayStart
+        )
+    }
+
     fileprivate func canonicalObject(includeDigest: Bool = true) -> [String: Any] {
         var seriesObject: [String: Any] = [
             "provider": seriesID.provider.rawValue,
@@ -1045,7 +1083,7 @@ public actor CapacityEvidenceStore {
             let raw = try record.asRetention(.raw)
             let key = bucketKey(for: raw)
             if let existing = rawByBucket[key] {
-                rawByBucket[key] = winner(existing, raw)
+                rawByBucket[key] = try repeatsTheSameReading(existing, raw) ? existing : winner(existing, raw)
             } else {
                 rawByBucket[key] = raw
             }
@@ -1074,7 +1112,7 @@ public actor CapacityEvidenceStore {
         for (_, records) in grouped where records.count > Self.maxRecordsPerSeries {
             throw CapacityContractError.invalidValue
         }
-        return merged.sorted(by: evidenceSort)
+        return sortedEvidence(merged)
     }
 
     private func applyCardinality(to incoming: [CapacityEvidenceRecord], existing: [CapacityEvidenceRecord], now: Date) -> (accepted: [CapacityEvidenceRecord], quarantine: [CapacityEvidenceQuarantineEntry]) {
@@ -1084,7 +1122,7 @@ public actor CapacityEvidenceStore {
         var seriesByProvider = Dictionary(grouping: existing.map(\.seriesID), by: { $0.provider })
             .mapValues { Set($0.map(\.canonicalID)) }
 
-        for record in incoming.sorted(by: evidenceSort) {
+        for record in sortedEvidence(incoming) {
             let canonicalID = record.seriesID.canonicalID
             let provider = record.seriesID.provider
             var providerSeries = seriesByProvider[provider, default: []]
@@ -1128,14 +1166,38 @@ public actor CapacityEvidenceStore {
         return "\(record.seriesID.canonicalID)|\(bucket)"
     }
 
+    /// A refresh re-reads the same quota every minute or two, and most of the time only `observedAt`
+    /// has moved. Letting that newer reading take the bucket changed the envelope's content, which
+    /// defeated the unchanged-content check above and re-committed the whole file: measured on a real
+    /// install at four megabytes of primary plus four of backup every ninety seconds, to advance a
+    /// timestamp on three records whose values were identical. A bucket now keeps the reading it has
+    /// until the reading itself changes — a genuinely different value, authority, or reset still wins.
+    private func repeatsTheSameReading(
+        _ existing: CapacityEvidenceRecord,
+        _ incoming: CapacityEvidenceRecord
+    ) throws -> Bool {
+        try incoming.withObservedAt(existing.observedAt) == existing
+    }
+
     private func winner(_ lhs: CapacityEvidenceRecord, _ rhs: CapacityEvidenceRecord) -> CapacityEvidenceRecord {
         if lhs.observedAt != rhs.observedAt { return lhs.observedAt > rhs.observedAt ? lhs : rhs }
         if lhs.winnerPriority != rhs.winnerPriority { return lhs.winnerPriority > rhs.winnerPriority ? lhs : rhs }
         return lhs.recordDigest <= rhs.recordDigest ? lhs : rhs
     }
 
-    private func evidenceSort(_ lhs: CapacityEvidenceRecord, _ rhs: CapacityEvidenceRecord) -> Bool {
-        if lhs.seriesID.canonicalID != rhs.seriesID.canonicalID { return lhs.seriesID.canonicalID < rhs.seriesID.canonicalID }
+    /// Same order as before, with each record's series ID built once. `canonicalID` joins a string on
+    /// every access, and a comparator reading it up to four times per comparison over ~7 000
+    /// records spent ~230 ms (debug) of every commit rebuilding identical strings; keyed, ~15 ms.
+    private func sortedEvidence(_ records: [CapacityEvidenceRecord]) -> [CapacityEvidenceRecord] {
+        records
+            .map { (key: $0.seriesID.canonicalID, record: $0) }
+            .sorted { lhs, rhs in
+                lhs.key != rhs.key ? lhs.key < rhs.key : evidenceTieBreak(lhs.record, rhs.record)
+            }
+            .map(\.record)
+    }
+
+    private func evidenceTieBreak(_ lhs: CapacityEvidenceRecord, _ rhs: CapacityEvidenceRecord) -> Bool {
         if lhs.observedAt != rhs.observedAt { return lhs.observedAt < rhs.observedAt }
         if lhs.retention != rhs.retention { return lhs.retention.rawValue < rhs.retention.rawValue }
         return lhs.recordDigest < rhs.recordDigest
@@ -1747,6 +1809,10 @@ public actor CapacityAlertLegacyMigrationCoordinator {
             byID.removeValue(forKey: removedID)
         }
         for rule in migrated {
+            // A rule the user has edited (revision above the migrated 1) is theirs now. The legacy
+            // source never changes after upgrade, so a re-run — triggered by any global channel
+            // toggle — replaced edited Claude thresholds with the old defaults, silently.
+            if let current = byID[rule.id], current.conditionRevision > 1 { continue }
             byID[rule.id] = rule
         }
         return byID.values.sorted { $0.id < $1.id }
@@ -1943,12 +2009,8 @@ public struct CapacityAlertVisibilityRow: Equatable, Identifiable, Sendable {
     }
 
     private static func percentThresholdLabel(_ threshold: CapacityAlertPercentThreshold) -> String {
-        switch threshold {
-        case .reset: return "Reset"
-        case .fifty: return "50%"
-        case .eighty: return "80%"
-        case .hundred: return "100%"
-        }
+        guard let percent = threshold.percent else { return "Reset" }
+        return "\(percent)%"
     }
 }
 
@@ -2313,6 +2375,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
             let delivered = isNewCycle ? Set<CapacityAlertPercentThreshold>() : (parts?.deliveredThresholds ?? [])
             let previousLastUsed = parts?.lastUsed
             var attempted = false
+            var attemptedReset = false
             let attemptAllowed = canAttempt(previous, now: now)
 
             if isNewCycle {
@@ -2322,9 +2385,11 @@ public struct CapacityAlertTransitionEngine: Sendable {
                 if resetEnabled, hadPriorCycle, hasNewCycle, used < 50, !delivered.contains(.reset), attemptAllowed {
                     attempts.append(percentAttempt(rule: rule, key: key, threshold: .reset, used: used, cycleID: cycleID, assessment: assessment, now: now))
                     attempted = true
+                    attemptedReset = true
                 }
             } else {
-                for threshold in [CapacityAlertPercentThreshold.fifty, .eighty, .hundred] where rule.condition.enabledPercentThresholds.contains(threshold) {
+                // Ascending, so a jump past several thresholds reports them in the order they were crossed.
+                for threshold in rule.condition.enabledPercentThresholds.filter({ !$0.isReset }).sorted() {
                     guard let percent = percentValue(threshold) else { continue }
                     let wasBelow = (previousLastUsed ?? used) < percent
                     if wasBelow, used >= percent, !delivered.contains(threshold), attemptAllowed {
@@ -2339,9 +2404,14 @@ public struct CapacityAlertTransitionEngine: Sendable {
                 continue
             }
 
-            let nextLastUsed = attempted ? previousLastUsed : used
+            // A reset attempt keeps the *previous* cycle active until it is delivered; a successful
+            // outcome advances it (see `applyingDeliveryOutcomes`). Recording the new cycle up front
+            // meant a failed send was never retried — the next pass no longer saw a new cycle — and
+            // the old cycle's `lastUsed` (say 97) blocked every threshold in the new one meanwhile.
+            let nextLastUsed = attemptedReset ? used : (attempted ? previousLastUsed : used)
+            let nextCycleID = attemptedReset ? previousCycle : cycleID
             let status: CapacityAlertDeliveryStatus = attempted ? .pending : .idle
-            states[key] = try? CapacityAlertDeliveryState(key: key, status: status, lastAttemptAt: attempted ? now : previous?.lastAttemptAt, lastSuccessAt: previous?.lastSuccessAt, conditionState: .percent(activeCycleID: cycleID, lastUsed: nextLastUsed, deliveredThresholds: delivered))
+            states[key] = try? CapacityAlertDeliveryState(key: key, status: status, lastAttemptAt: attempted ? now : previous?.lastAttemptAt, lastSuccessAt: previous?.lastSuccessAt, conditionState: .percent(activeCycleID: nextCycleID, lastUsed: nextLastUsed, deliveredThresholds: delivered))
         }
     }
 
@@ -2409,12 +2479,7 @@ public struct CapacityAlertTransitionEngine: Sendable {
     }
 
     private func percentValue(_ threshold: CapacityAlertPercentThreshold) -> Int? {
-        switch threshold {
-        case .reset: return nil
-        case .fifty: return 50
-        case .eighty: return 80
-        case .hundred: return 100
-        }
+        threshold.percent
     }
 }
 
@@ -2528,6 +2593,14 @@ public enum CapacityAlertLegacyMigrator {
         if let existingMarker, existingMarker.sourceSettingsDigest == digest {
             return Result(rules: [], marker: existingMarker, didMigrate: false)
         }
+        // A missing reading is not a change of currency. One stale or failed DeepSeek refresh used to
+        // flip the digest, swap the bound low-balance rule for the pending one (a different ID) and
+        // delete its delivery state; the next good refresh bound it again with no state, and the
+        // same low-balance alert went out a second time — after every network blip or wake.
+        if deepSeekBalance == nil, let existingMarker,
+           existingMarker.migratedRuleIDs.contains(try boundDeepSeekBalanceRuleID()) {
+            return Result(rules: [], marker: existingMarker, didMigrate: false)
+        }
 
         var rules: [CapacityAlertRule] = []
         for legacy in settings.alertRules where legacy.provider == .claude {
@@ -2581,6 +2654,19 @@ public enum CapacityAlertLegacyMigrator {
             states[key] = try? CapacityAlertDeliveryState(key: key, status: .delivered, lastAttemptAt: legacySentAt, lastSuccessAt: legacySentAt, conditionState: .balance(lastKnownBelow: true, crossingGeneration: 0, deliveredCrossingGeneration: 0))
         }
         return states
+    }
+
+    private static func boundDeepSeekBalanceRuleID() throws -> String {
+        // The ID does not include the currency, so any valid one names the same rule.
+        try CapacityAlertRule(
+            provider: .deepseek,
+            seriesID: CapacitySeriesID(provider: .deepseek, providerWindowID: "balance", kind: .balance, unit: .currency),
+            authority: .providerReported,
+            stability: .supported,
+            enabled: true,
+            routing: CapacityAlertRouting(macOS: true, telegram: false, discord: false),
+            condition: .balanceBelow(threshold: 1, currency: "USD", rearmAtOrAboveThreshold: true)
+        ).id
     }
 
     private static func series(for rule: AlertRule) throws -> CapacitySeriesID {

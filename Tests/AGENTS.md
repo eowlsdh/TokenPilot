@@ -34,6 +34,9 @@
 
 ```bash
 make test
-swift test
+swift test --build-system native
 make build-strict
 ```
+
+Bare `swift test` uses swiftbuild (the default from Swift 6.4), which compiles the string catalog
+into `.lproj` folders; the catalog tests then fail. `make test` pins the native build system.

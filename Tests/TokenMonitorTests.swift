@@ -2,6 +2,25 @@ import XCTest
 @testable import TokenCore
 
 final class TokenMonitorTests: XCTestCase {
+    func testLocalizedThroughputFormatIsSafeAcrossLanguages() {
+        // Regression: the ko/ja/zh translations of this key reversed the %@/%d
+        // order vs the English key, so String(format:) bound the String to %d
+        // and the Int to %@ -> EXC_BAD_ACCESS (KERN_INVALID_ADDRESS at 0x3c
+        // when windowMinutes == 60). Positional specifiers keep the mapping
+        // stable regardless of the translation's word order.
+        let key = "~%@ tok/min over the last %d min (est.)"
+        let languages: [TokenPilotLanguage] = [.en, .ko, .ja, .zhHans, .zhHant, .system]
+        for language in languages {
+            let format = TokenPilotLocalizer.localized(key, language: language)
+            let rendered = String(format: format, "1.5K", 60)
+            XCTAssertFalse(rendered.isEmpty, "rendered throughput text must not be empty for \(language)")
+            XCTAssertTrue(rendered.contains("1.5K"), "per-minute value missing for \(language): \(rendered)")
+            XCTAssertTrue(rendered.contains("60"), "window minutes missing for \(language): \(rendered)")
+            XCTAssertFalse(rendered.contains("%@"), "unbound %@ left for \(language): \(rendered)")
+            XCTAssertFalse(rendered.contains("%d"), "unbound %d left for \(language): \(rendered)")
+        }
+    }
+
     func testUsageEventClampsNegativeTokenValues() {
         let event = UsageEvent(
             provider: .claude,
@@ -83,6 +102,14 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_500), "1.5K")
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_000), "1K")
         XCTAssertEqual(TokenPilotFormatters.compactNumber(1_000_000), "1M")
+        // The unit is picked after rounding, so the boundary never reads "1000K" or "1000M".
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_950), "1M")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_949), "999.9K")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999_999_999), "1B")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(1_234_500_000), "1.2B")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(577_737_023), "577.7M")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(999), "999")
+        XCTAssertEqual(TokenPilotFormatters.compactNumber(-1_500), "-1.5K")
     }
 
     func testRemainingTimeFormatterLocalizesUnits() {
@@ -128,7 +155,80 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "5h 18% · 7d 53%")
+        XCTAssertEqual(title, "5h 18%·2h · 7d 53%·5h")
+    }
+
+    func testMenuBarPrimaryMetricTodayTokensOverridesPercentWhenPresent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayTokens: 12_500,
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayTokens
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "Cl 12.5Ktok")
+    }
+
+    func testMenuBarPrimaryMetricTodayCostOverridesPercentWhenPresent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayCostUSD: Decimal(1.25),
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayCost
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "Cl $1.2500")
+    }
+
+    func testMenuBarPrimaryMetricFallsBackToPercentWhenLocalValueAbsent() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+        let snapshot = ProviderSnapshot(
+            provider: .claude,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 82, resetAt: now.addingTimeInterval(7_200)),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 47, resetAt: now.addingTimeInterval(18_720)),
+            todayTokens: 0,
+            todayCostUSD: nil,
+            confidence: .high,
+            dataSource: .officialStatusline
+        )
+        var settings = AppSettings()
+        settings.menuBarPrimaryMetric = .todayTokens
+        settings.localization.language = .en
+
+        let title = MenuBarStatusService().title(
+            snapshots: [snapshot],
+            settings: settings,
+            modeLabel: "LIVE",
+            now: now
+        )
+
+        XCTAssertEqual(title, "5h 18%·2h · 7d 53%·5h")
     }
 
     func testMenuBarTitleFallsBackToDataUnavailableWhenWindowPercentMissing() {
@@ -174,7 +274,7 @@ final class TokenMonitorTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(title, "7d 68% EXP")
+        XCTAssertEqual(title, "7d 68% EXP·5h")
     }
 
     func testMenuBarTitleShowsAntigravityBridgeContextRemainingPercent() {
@@ -331,6 +431,9 @@ final class TokenMonitorTests: XCTestCase {
         settings.menuBarShowsSecondaryProvider = true
         settings.xAI.usageSource = .experimentalOpenCodeBarCLI
         XCTAssertTrue(settings.setProviderEnabled(.xai, isEnabled: true))
+        for provider in [Provider.jetbrains, .minimax, .zai, .openrouter, .commandcode] {
+            _ = settings.setProviderEnabled(provider, isEnabled: true)
+        }
 
         let experimental = ProviderSnapshot(
             provider: .xai,
@@ -358,10 +461,10 @@ final class TokenMonitorTests: XCTestCase {
 
         let segments = service.providerMetricsSegments(snapshots: [experimental, claude], settings: settings, now: now)
         XCTAssertEqual(segments.count, Provider.allCases.count)
-        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro])
+        XCTAssertEqual(segments.map(\.provider), [.xai, .claude, .codex, .gemini, .deepseek, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode])
         XCTAssertEqual(
             segments.map(\.providerShortLabel),
-            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO"]
+            ["GROK CTX", "CLAUDE", "CODEX", "ANTIGRAVITY", "DEEPSEEK", "OPENCODE", "KIRO", "JETBRAINS", "MINIMAX", "ZAI", "OPENROUTER", "CMD"]
         )
         XCTAssertEqual(segments.first?.displayValue, "58%·E")
         XCTAssertTrue(segments.first?.accessibilityLabel.localizedCaseInsensitiveContains("experimental") == true)
@@ -373,7 +476,7 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(staleSegments.first?.displayValue, "58%·ES")
         XCTAssertTrue(staleSegments.first?.accessibilityLabel.localizedCaseInsensitiveContains("stale") == true)
 
-        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans, .zhHant] {
             settings.localization.language = language
             let accessibility = service.accessibilityLabel(
                 snapshots: [staleExperimental, claude],
@@ -388,7 +491,7 @@ final class TokenMonitorTests: XCTestCase {
             XCTAssertTrue(accessibility.contains(String(format: TokenPilotLocalizer.localized("Capacity remaining %d%%", language: language), 58)))
         }
 
-        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans, .zhHant] {
             settings.localization.language = language
             let unavailable = try! XCTUnwrap(
                 service.providerMetricsSegments(snapshots: [claude], settings: settings, now: now).first
@@ -426,7 +529,7 @@ final class TokenMonitorTests: XCTestCase {
             balance: ProviderBalance(currency: "USD", toppedUpBalance: Decimal(string: "12.34")!)
         )
 
-        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans, .zhHant] {
             settings.localization.language = language
             let segment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [snapshot], settings: settings, now: now).first)
             XCTAssertEqual(segment.displayValue, "$12.34 EST STALE")
@@ -461,6 +564,107 @@ final class TokenMonitorTests: XCTestCase {
         let title = service.title(snapshots: [localCodex], settings: settings, modeLabel: "LIVE", now: now)
         XCTAssertEqual(title, "Co Local")
         XCTAssertFalse(title.contains("%"))
+    }
+
+    func testMenuBarLocalActivityShowsStaleMarkerOnlyWhenSnapshotIsStale() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.localization.language = .en
+        settings.menuBarDisplayStyle = .compact
+        settings.menuBarDisplayTarget = .opencode
+        XCTAssertTrue(settings.setProviderEnabled(.opencode, isEnabled: true))
+
+        let fresh = ProviderSnapshot(provider: .opencode, todayTokens: 12_400, confidence: .medium, dataSource: .localLog, isStale: false)
+        XCTAssertEqual(service.title(snapshots: [fresh], settings: settings, modeLabel: "LIVE", now: now), "OC Local")
+
+        let stale = ProviderSnapshot(provider: .opencode, todayTokens: 12_400, confidence: .medium, dataSource: .localLog, isStale: true, statusMessage: "STALE · no opencode activity in 15 minutes")
+        let staleTitle = service.title(snapshots: [stale], settings: settings, modeLabel: "LIVE", now: now)
+        XCTAssertEqual(staleTitle, "OC Local STALE")
+
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarProviderGrouping = .combined
+        settings.menuBarMetricProviders = [.opencode]
+        let freshSegment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [fresh], settings: settings, now: now).first)
+        XCTAssertEqual(freshSegment.displayValue, "12.4Ktok")
+        XCTAssertFalse(freshSegment.displayValue.contains("STALE"))
+
+        let staleSegment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [stale], settings: settings, now: now).first)
+        XCTAssertEqual(staleSegment.displayValue, "12.4Ktok STALE")
+        XCTAssertTrue(staleSegment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Stale", language: .en)))
+    }
+
+    func testMenuBarIdleLocalActivityShowsStaleDashAfterMidnight() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.localization.language = .en
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarProviderGrouping = .combined
+        settings.menuBarMetricProviders = [.opencode]
+        XCTAssertTrue(settings.setProviderEnabled(.opencode, isEnabled: true))
+
+        // Connected local source, zero usage today, data from earlier → idle.
+        let idleFresh = ProviderSnapshot(
+            provider: .opencode,
+            todayTokens: 0,
+            confidence: .medium,
+            dataSource: .localLog,
+            isStale: false,
+            events: [UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-3_600), inputTokens: 1, outputTokens: 1, source: "opencode-session", dataSource: .localLog)]
+        )
+        let freshSegment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [idleFresh], settings: settings, now: now).first)
+        XCTAssertEqual(freshSegment.displayValue, "—")
+        XCTAssertTrue(freshSegment.accessibilityLabel.contains("No usage today"))
+        XCTAssertFalse(freshSegment.displayValue.contains("STALE"))
+
+        let idleStale = ProviderSnapshot(
+            provider: .opencode,
+            todayTokens: 0,
+            confidence: .medium,
+            dataSource: .localLog,
+            isStale: true,
+            statusMessage: "STALE · no opencode activity in 15 minutes",
+            events: [UsageEvent(provider: .opencode, timestamp: now.addingTimeInterval(-3_600), inputTokens: 1, outputTokens: 1, source: "opencode-session", dataSource: .localLog)]
+        )
+        let staleSegment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [idleStale], settings: settings, now: now).first)
+        XCTAssertEqual(staleSegment.displayValue, "— STALE")
+        XCTAssertTrue(staleSegment.accessibilityLabel.contains("No usage today"))
+        XCTAssertTrue(staleSegment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Stale", language: .en)))
+    }
+
+    func testMenuBarShowsCodexRateLimitPercentFromLocalSessionLog() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let service = MenuBarStatusService()
+        var settings = AppSettings()
+        settings.localization.language = .en
+        settings.menuBarDisplayStyle = .providerMetrics
+        settings.menuBarProviderGrouping = .combined
+        settings.menuBarMetricProviders = [.codex]
+        XCTAssertTrue(settings.setProviderEnabled(.codex, isEnabled: true))
+
+        let snapshot = ProviderSnapshot(
+            provider: .codex,
+            fiveHour: LimitWindow(kind: .fiveHour, usedPercent: 43, confidence: .medium, providerWindowID: "rate-limit", durationMinutes: 300),
+            weekly: LimitWindow(kind: .weekly, usedPercent: 32, confidence: .medium, providerWindowID: "rate-limit", durationMinutes: 10_080),
+            todayTokens: 12_400,
+            confidence: .medium,
+            dataSource: .localLog,
+            isExperimental: true,
+            statusMessage: "Codex rate limits · provider-reported · local Codex session log"
+        )
+
+        let segment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [snapshot], settings: settings, now: now).first)
+        // Provider metrics renders provider-reported percents bare (same as Claude), with the
+        // window identity in the accessibility label.
+        XCTAssertEqual(segment.displayValue, "57%")
+        XCTAssertTrue(segment.accessibilityLabel.contains(TokenPilotLocalizer.localized("Provider reported", language: .en)))
+
+        // Without rate-limit windows the same local log stays local activity, not a percent.
+        let plainLocal = ProviderSnapshot(provider: .codex, todayTokens: 12_400, confidence: .medium, dataSource: .localLog, isExperimental: true)
+        let plainSegment = try! XCTUnwrap(service.providerMetricsSegments(snapshots: [plainLocal], settings: settings, now: now).first)
+        XCTAssertFalse(plainSegment.displayValue.contains("%"))
+        XCTAssertEqual(plainSegment.displayValue, "12.4Ktok")
     }
     func testAutomaticCompactPrimaryExcludesEnabledSecondaryProvider() {
         let now = Date(timeIntervalSince1970: 1_800_000_000)
@@ -520,7 +724,7 @@ final class TokenMonitorTests: XCTestCase {
             dataSource: .officialStatusline
         )
 
-        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans] {
+        for language: TokenPilotLanguage in [.en, .ko, .ja, .zhHans, .zhHant] {
             var settings = AppSettings()
             settings.localization.language = language
             settings.menuBarDisplayStyle = .compact
@@ -638,7 +842,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Auto-detected sources: %@"),
                     (.ko, "ko", "자동 감지된 소스: %@"),
                     (.ja, "ja", "自動検出したソース: %@"),
-                    (.zhHans, "zh-Hans", "已自动检测到来源：%@")
+                    (.zhHans, "zh-Hans", "已自动检测到来源：%@"),
+                    (.zhHant, "zh-Hant", "已自動檢測到來源：%@")
                 ]
             ),
             (
@@ -647,7 +852,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Choose Claude source"),
                     (.ko, "ko", "Claude 소스 선택"),
                     (.ja, "ja", "Claude ソースを選択"),
-                    (.zhHans, "zh-Hans", "选择 Claude 数据源")
+                    (.zhHans, "zh-Hans", "选择 Claude 数据源"),
+                    (.zhHant, "zh-Hant", "選擇 Claude 數據源")
                 ]
             ),
             (
@@ -656,7 +862,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Choose Claude statusline JSON or a .claude/projects folder."),
                     (.ko, "ko", "Claude statusline JSON 또는 .claude/projects 폴더를 선택하세요."),
                     (.ja, "ja", "Claude statusline JSON または .claude/projects フォルダを選択してください。"),
-                    (.zhHans, "zh-Hans", "选择 Claude statusline JSON 或 .claude/projects 文件夹。")
+                    (.zhHans, "zh-Hans", "选择 Claude statusline JSON 或 .claude/projects 文件夹。"),
+                    (.zhHant, "zh-Hant", "選擇 Claude statusline JSON 或 .claude/projects 文件夾。")
                 ]
             ),
             (
@@ -665,7 +872,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Connection check complete."),
                     (.ko, "ko", "연결 확인이 완료되었습니다."),
                     (.ja, "ja", "接続確認が完了しました。"),
-                    (.zhHans, "zh-Hans", "连接检查完成。")
+                    (.zhHans, "zh-Hans", "连接检查完成。"),
+                    (.zhHant, "zh-Hant", "連接檢查完成。")
                 ]
             ),
             (
@@ -674,7 +882,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Detected"),
                     (.ko, "ko", "감지됨"),
                     (.ja, "ja", "検出済み"),
-                    (.zhHans, "zh-Hans", "已检测")
+                    (.zhHans, "zh-Hans", "已检测"),
+                    (.zhHant, "zh-Hant", "已檢測")
                 ]
             ),
             (
@@ -683,7 +892,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Detected paths"),
                     (.ko, "ko", "감지된 경로"),
                     (.ja, "ja", "検出済みパス"),
-                    (.zhHans, "zh-Hans", "检测到的路径")
+                    (.zhHans, "zh-Hans", "检测到的路径"),
+                    (.zhHant, "zh-Hant", "檢測到的路徑")
                 ]
             ),
             (
@@ -692,7 +902,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Export Usage"),
                     (.ko, "ko", "사용량 내보내기"),
                     (.ja, "ja", "使用量を書き出し"),
-                    (.zhHans, "zh-Hans", "导出使用量")
+                    (.zhHans, "zh-Hans", "导出使用量"),
+                    (.zhHant, "zh-Hant", "導出使用量")
                 ]
             ),
             (
@@ -701,7 +912,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Exported"),
                     (.ko, "ko", "내보냄"),
                     (.ja, "ja", "書き出し済み"),
-                    (.zhHans, "zh-Hans", "已导出")
+                    (.zhHans, "zh-Hans", "已导出"),
+                    (.zhHant, "zh-Hant", "已導出")
                 ]
             ),
             (
@@ -710,7 +922,8 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Invalid format"),
                     (.ko, "ko", "잘못된 형식"),
                     (.ja, "ja", "無効な形式"),
-                    (.zhHans, "zh-Hans", "格式无效")
+                    (.zhHans, "zh-Hans", "格式无效"),
+                    (.zhHant, "zh-Hant", "格式無效")
                 ]
             ),
             (
@@ -719,13 +932,14 @@ final class TokenMonitorTests: XCTestCase {
                     (.en, "en", "Run Check Connection to scan local paths."),
                     (.ko, "ko", "로컬 경로를 스캔하려면 연결 확인을 실행하세요."),
                     (.ja, "ja", "ローカルパスをスキャンするには接続確認を実行してください。"),
-                    (.zhHans, "zh-Hans", "运行检查连接以扫描本地路径。")
+                    (.zhHans, "zh-Hans", "运行检查连接以扫描本地路径。"),
+                    (.zhHant, "zh-Hant", "運行檢查連接以掃描本地路徑。")
                 ]
             )
         ]
 
         let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
-        let liveTargetKeys = Set(targetKeys.map { $0.key }.filter { viewModelSource.contains("t(\"\($0)\")") })
+        let liveTargetKeys = Set(targetKeys.map { $0.key }.filter { viewModelSource.contains("t(\"\($0)\")") || viewModelSource.contains("key = \"\($0)\"") })
         XCTAssertEqual(liveTargetKeys, Set(targetKeys.map { $0.key }))
 
         let rootURL = try Self.projectRootURL()
@@ -828,18 +1042,22 @@ final class TokenMonitorTests: XCTestCase {
             ("Settings overview", .ko, "설정 요약"),
             ("Settings overview", .ja, "設定の概要"),
             ("Settings overview", .zhHans, "设置概览"),
+            ("Settings overview", .zhHant, "設置概覽"),
             ("Privacy and provider truth", .en, "Privacy and data sources"),
             ("Privacy and provider truth", .ko, "개인정보 및 데이터 출처"),
             ("Privacy and provider truth", .ja, "プライバシーとデータの出所"),
             ("Privacy and provider truth", .zhHans, "隐私与数据来源"),
+            ("Privacy and provider truth", .zhHant, "隱私與數據來源"),
             ("Expanded", .en, "Expanded"),
             ("Expanded", .ko, "펼쳐짐"),
             ("Expanded", .ja, "展開中"),
             ("Expanded", .zhHans, "已展开"),
+            ("Expanded", .zhHant, "已展開"),
             ("Collapsed", .en, "Collapsed"),
             ("Collapsed", .ko, "접힘"),
             ("Collapsed", .ja, "折りたたみ中"),
-            ("Collapsed", .zhHans, "已折叠")
+            ("Collapsed", .zhHans, "已折叠"),
+            ("Collapsed", .zhHant, "已折疊")
         ]
 
         for (key, language, expected) in expectations {
@@ -867,8 +1085,12 @@ final class TokenMonitorTests: XCTestCase {
     func testMenuBarRunsLiveRefreshWithoutWaitingForPopoverOpen() throws {
         let source = try Self.tokenMonitorAppSource()
 
-        XCTAssertTrue(source.contains("private let menuBarTickInterval: TimeInterval = 1"))
-        XCTAssertTrue(source.contains("private let dataRefreshInterval: TimeInterval = 5"))
+        // The tick drives digest checks and the data-refresh gate on a fixed short interval; it must
+        // not require the popover to be open. 30s bounds how often @Published menuBarNow can trigger
+        // a full status-item rebuild (which previously spun the CPU at 1s).
+        XCTAssertTrue(source.contains("private let menuBarTickInterval: TimeInterval = 30"))
+        XCTAssertTrue(source.contains("private var dataRefreshInterval: TimeInterval"))
+        XCTAssertTrue(source.contains("TimeInterval(max(settings.refreshIntervalSeconds, 5))"))
         XCTAssertTrue(source.contains("RunLoop.main.add(timer, forMode: .common)"))
         XCTAssertTrue(source.contains("await refresh(reason: .automaticTimer)"))
         XCTAssertFalse(source.contains("Timer.scheduledTimer(withTimeInterval: menuBarTickInterval"))
@@ -918,9 +1140,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("diagnostic.confidence.localizedLabel(language: model.settings.localization.language)"))
         XCTAssertTrue(source.contains("providerSecretSummary(provider)"))
         XCTAssertTrue(source.contains("private var providerSetupOrder: [Provider]"))
-        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro]"))
+        XCTAssertTrue(source.contains("[.claude, .gemini, .deepseek, .xai, .codex, .opencode, .kiro, .commandcode, .jetbrains, .minimax, .zai, .openrouter]"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .opencode, title: model.t(\"opencode\"))"))
         XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .kiro, title: model.t(\"Kiro\"))"))
+        XCTAssertTrue(source.contains("providerSetupDisclosure(provider: .commandcode, title: model.t(\"Command Code\"))"))
 
         XCTAssertTrue(
             source.contains("ForEach(Provider.allCases) { provider in\n                            providerToggle(provider)"),
@@ -976,9 +1199,9 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(overviewSource.contains("Button(model.t(\"Open Settings\"))"))
         XCTAssertTrue(overviewSource.contains("model.selectedScreen = .settings"))
         XCTAssertFalse(overviewSource.contains("Run Provider Diagnostics in Settings to connect Claude, Codex, or Antigravity."))
-        XCTAssertTrue(historySource.contains("Text(model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\"))"))
-        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
-        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("message: model.t(\"Run Auto-detect or Provider Diagnostics to recover source health.\")"))
+        XCTAssertTrue(historySource.contains("actionLabel: model.t(\"Open Provider Diagnostics\")"))
+        XCTAssertTrue(historySource.contains("action: { model.openProviderDiagnostics() }"))
         XCTAssertTrue(historySource.contains("HistoryCapacityEmptyState(model: model)"))
         XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
     }
@@ -1000,8 +1223,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(historySource.contains("HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)"))
         XCTAssertTrue(historySource.contains("No usage events recorded"))
         XCTAssertTrue(historySource.contains("Capacity signals are available above, but no token usage events are stored for this period."))
-        XCTAssertTrue(historySource.contains("Button(model.t(\"Open Provider Diagnostics\"))"))
-        XCTAssertTrue(historySource.contains("model.selectedScreen = .settings"))
+        XCTAssertTrue(historySource.contains("actionLabel: model.t(\"Open Provider Diagnostics\")"))
+        XCTAssertTrue(historySource.contains("action: { model.openProviderDiagnostics() }"))
         XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: sample.provider, size: 24)"))
         XCTAssertTrue(historySource.contains("ProviderSignatureMark(provider: event.provider, size: 22)"))
         XCTAssertTrue(historySource.contains("SemanticChip("))
@@ -1026,15 +1249,23 @@ final class TokenMonitorTests: XCTestCase {
         let historyCollapsed = historySource.collapsedWhitespace
         let redesignedViewSource = [rootSource, settingsSource, historySource, componentsSource].joined(separator: "\n")
 
-        XCTAssertTrue(appSource.contains(".frame(width: 420, height: 620)"))
-        XCTAssertTrue(rootSource.contains(".frame(width: 420, height: 620)"))
+        // The popover stays a fixed size; it now says so through one token instead of four literals,
+        // so the window and the view inside it cannot drift apart.
+        XCTAssertTrue(appSource.contains("TokenPilotDesign.popoverWidth"))
+        XCTAssertTrue(appSource.contains("TokenPilotDesign.popoverHeight"))
+        XCTAssertTrue(rootSource.contains("TokenPilotDesign.popoverWidth"))
+        XCTAssertTrue(rootSource.contains("TokenPilotDesign.popoverHeight"))
 
         for removedSurface in ["import Charts", "LineMark(", "BarMark(", "AreaMark(", "Chart(", "Daily challenge", "Provider share"] {
             XCTAssertFalse(redesignedViewSource.contains(removedSurface), "Removed dashboard/chart surface should stay absent: \(removedSurface)")
         }
         XCTAssertFalse(redesignedViewSource.localizedCaseInsensitiveContains("dashboard"))
 
-        XCTAssertTrue(settingsCollapsed.contains("consoleSummary sourceSettings notificationSettings privacySettings"))
+        // Most-used sections first; the misleading "1.-6." numbering is gone from the titles.
+        XCTAssertTrue(settingsCollapsed.contains("consoleSummary sourceSettings setupGuide notificationSettings telegramSettings discordSettings generalSettings languageSettings privacySettings"))
+        for numberedTitle in ["1. Source Health", "2. Notifications", "3. Telegram", "4. Discord", "5. Language", "6. Setup Guide"] {
+            XCTAssertFalse(settingsSource.contains(numberedTitle), "numbered section titles were replaced: \(numberedTitle)")
+        }
         XCTAssertTrue(settingsSource.contains("title: model.t(\"Settings overview\")"))
         XCTAssertFalse(settingsSource.contains("Settings disclosure console"))
         XCTAssertTrue(settingsSource.contains("title: model.t(\"Source health\")"))
@@ -1044,8 +1275,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Secrets hidden\")"))
         XCTAssertTrue(settingsSource.contains("Reads local metadata and selected files only; secrets stay hidden; raw paths, prompts, and responses are excluded."))
         XCTAssertTrue(settingsSource.contains("SemanticChip(label: model.t(\"Manual/experimental labels shown\")"))
-        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Source health\")"))
-        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: true, accessibilityLabel: model.t(\"Provider Diagnostics\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: healthNeedsAttention, remembered: remembered(\"source\"), accessibilityLabel: model.t(\"Source health\")"))
+        XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: healthNeedsAttention, remembered: remembered(\"diagnostics\"), accessibilityLabel: model.t(\"Provider Diagnostics\")"))
         XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: privacyDetailsDefaultExpanded"))
         XCTAssertTrue(settingsCollapsed.contains("DisclosureCard( initiallyExpanded: providerDefaultExpanded(provider)"))
         XCTAssertTrue(historyCollapsed.contains("DisclosureCard( padding: 10, initiallyExpanded: true, accessibilityLabel: model.t(\"Recorded capacity signal history\")"))
@@ -1100,17 +1331,27 @@ final class TokenMonitorTests: XCTestCase {
         let settingsSource = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
         let coreModelsSource = try Self.tokenCoreModelsSource()
 
-        XCTAssertTrue(appSource.contains("switch model.settings.menuBarProviderGrouping"))
+        XCTAssertTrue(appSource.contains("let grouping = model.settings.menuBarProviderGrouping"))
+        XCTAssertTrue(appSource.contains("switch grouping"))
+        // The grouping setting governs every layout, not just provider metrics: the text
+        // layouts split into one status item per title segment instead of one wide item.
+        XCTAssertTrue(appSource.contains("reconcileSeparateTitleItems(segments: titleSegments)"))
+        XCTAssertTrue(appSource.contains("removeSeparateTitleItems()"))
+        XCTAssertTrue(appSource.contains("model.menuBarTitleSegments"))
         XCTAssertTrue(appSource.contains("reconcileSeparateMetricItems(segments: segments)"))
         XCTAssertTrue(appSource.contains("removeSeparateMetricItem(for: provider)"))
         XCTAssertTrue(appSource.contains("segments: [segment]"))
-        XCTAssertTrue(appSource.contains("#selector(togglePopover(_:))"))
+        XCTAssertTrue(appSource.contains("#selector(handleStatusItemClick(_:))"))
+        XCTAssertTrue(appSource.contains("togglePopover(button)"))
         XCTAssertTrue(appSource.contains("guard let button = sender as? NSStatusBarButton else { return }"))
         XCTAssertTrue(appSource.contains("if separateMetricItems.isEmpty"))
 
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Combined item\"))"))
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Separate items\"))"))
-        XCTAssertTrue(settingsSource.contains("Text(model.t(\"Each selected provider gets its own menu bar item.\"))"))
+        XCTAssertTrue(settingsSource.contains("model.t(\"Each selected provider gets its own menu bar item.\")"))
+        // "Separate items" applies to the text layouts too, so its explanation has to name what
+        // they split on — the primary and secondary providers, not a checklist.
+        XCTAssertTrue(settingsSource.contains("model.t(\"The primary and secondary providers get their own menu bar items.\")"))
         XCTAssertTrue(settingsSource.contains("Text(model.t(\"Show in menu bar\"))"))
         XCTAssertTrue(settingsSource.contains(".disabled(!model.isProviderEnabled(provider))"))
         XCTAssertTrue(coreModelsSource.contains("menuBarProviderGrouping: MenuBarProviderGrouping = .separate"))
@@ -1121,6 +1362,216 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(visibilitySetter.contains("next.isProviderEnabled(provider)"))
         XCTAssertFalse(visibilitySetter.contains("keychain"))
         XCTAssertFalse(visibilitySetter.contains("refresh("))
+    }
+
+    func testStatusItemRightClickShowsLocalizedContextMenuWithRefreshAndQuit() throws {
+        let appSource = try Self.tokenAppSourceFile("TokenMonitorApp.swift")
+
+        XCTAssertTrue(appSource.contains("button.action = #selector(handleStatusItemClick(_:))"))
+        XCTAssertTrue(appSource.contains("button.sendAction(on: [.leftMouseUp, .rightMouseUp])"))
+        XCTAssertTrue(appSource.contains("eventType == .rightMouseUp || eventType == .rightMouseDown"))
+        XCTAssertTrue(appSource.contains("menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height + 4), in: button)"))
+
+        XCTAssertTrue(appSource.contains("model.t(\"Open TokenPilot\")"))
+        XCTAssertTrue(appSource.contains("model.t(\"Refresh\")"))
+        XCTAssertTrue(appSource.contains("model.t(\"Quit\")"))
+
+        XCTAssertTrue(appSource.contains("await model.refresh(reason: .manual)"))
+        XCTAssertTrue(appSource.contains("NSApp.terminate(nil)"))
+
+        // Left-click must still toggle the popover.
+        XCTAssertTrue(appSource.contains("togglePopover(button)"))
+        XCTAssertFalse(appSource.contains("button.menu = menu"), "Assigning a status item menu would hijack left-click into the menu instead of the popover.")
+    }
+
+    func testHistoryProjectsCardIsOpenCodeLocalActivityOnly() throws {
+        let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
+        let coreSource = try Self.tokenCoreServicesSource()
+
+        XCTAssertTrue(historySource.contains("if !model.historyUsage.projectBreakdown.isEmpty {"))
+        XCTAssertTrue(historySource.contains("HistoryProjectBreakdownCard(shares: model.historyUsage.projectBreakdown, model: model)"))
+        XCTAssertTrue(historySource.contains("model.t(\"Projects\")"))
+
+        // The rollup only groups events that carry a workspace label.
+        XCTAssertTrue(coreSource.contains("event.projectLabel?.trimmingCharacters"))
+        XCTAssertTrue(coreSource.contains("projectBreakdown: projectBreakdown(from: filteredEvents"))
+        XCTAssertTrue(coreSource.contains("guard !key.label.isEmpty else { return nil }"))
+    }
+
+    /// Reset Settings — which *keeps* the credentials — asked before acting, and the four actions
+    /// that destroy a Keychain item did not. Delete sits beside Replace with identical metrics, and
+    /// a Discord webhook cannot be shown again once saved, so a mis-click meant minting a new one.
+    func testEveryKeychainDeletionAsksFirst() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        var checked = 0
+
+        for deletion in ["deleteDeepSeekAPIKey", "deleteAPIKey", "deleteTelegramToken", "deleteDiscordWebhook"] {
+            let body = try XCTUnwrap(source.swiftFunctionBody(named: deletion))
+            XCTAssertTrue(body.contains("keychain.deleteSecret"), "\(deletion) no longer deletes a secret")
+            XCTAssertTrue(
+                body.contains("guard confirmDestructive("),
+                "\(deletion) destroys a Keychain item without asking"
+            )
+            checked += 1
+        }
+
+        XCTAssertEqual(checked, 4)
+        // Nothing else in the app layer may delete a secret without going through one of those.
+        let deletions = source.components(separatedBy: "keychain.deleteSecret").count - 1
+        XCTAssertEqual(deletions, 4, "a new deletion appeared; it needs a confirmation too")
+    }
+
+    /// The heatmap picks its own 4/8/12-week window and the monthly trend its own twelve months.
+    /// Both were also handed the History period picker's filtered events, so with the period on
+    /// "Today" the grid drew 84 cells that could never be filled and the trend drew twelve empty
+    /// months — data the store was holding all along.
+    func testLongWindowChartsReadEveryStoredEventNotThePeriodSlice() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        let lines = source.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+
+        for property in ["historyHeatmapCells", "monthlyTrend"] {
+            let start = try XCTUnwrap(
+                lines.firstIndex { $0.contains("var \(property):") },
+                "\(property) is gone; this guard needs rewriting"
+            )
+            let end = try XCTUnwrap(lines[start...].firstIndex { $0.hasSuffix("    }") })
+            let body = lines[start...end].joined(separator: "\n")
+
+            XCTAssertTrue(
+                body.contains("historyEventsAllTime"),
+                "\(property) carries its own window, so a second period filter can only empty it:\n\(body)"
+            )
+            XCTAssertFalse(body.contains("historyUsage.events"), "\(property) is still period-filtered:\n\(body)")
+        }
+    }
+
+    /// Settings is torn down on every screen switch. A card holding its open state only in `@State`
+    /// closed again on the way back — a provider setup fourteen cards down, mid-paste of a key.
+    func testEverySettingsCardRemembersWhetherItWasOpen() throws {
+        let source = try Self.tokenAppSourceFile("Views/SettingsScreen.swift")
+        let cards = source.components(separatedBy: "DisclosureCard(").count - 1
+        let remembering = source.components(separatedBy: "remembered: remembered(").count - 1
+        XCTAssertGreaterThan(cards, 8, "the scan found almost no cards; check it")
+        XCTAssertEqual(remembering, cards, "a Settings card forgets its state on every screen switch")
+    }
+
+    /// The banner looked the same for "Saved." and "Could not save.", so a failure read as done.
+    /// Every failure goes through `showProblem`, which the banner draws as a warning.
+    func testFailuresReachTheBannerAsProblems() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        XCTAssertGreaterThan(source.components(separatedBy: "showProblem(localizedErrorMessage(error))").count - 1, 10)
+        for plain in ["bannerMessage = localizedErrorMessage(", "bannerMessage = t(\"Could not", "bannerMessage = t(\"Enter ", "bannerMessage = t(\"At least one"] {
+            XCTAssertFalse(source.contains(plain), "a failure is shown as a plain notice: \(plain)")
+        }
+    }
+
+    /// Budget alerts were marked delivered whether or not the notification went out, so a failed
+    /// send used up the one alert that cycle allows.
+    func testOnlyShownAlertsAreMarkedDelivered() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        let budget = try XCTUnwrap(source.swiftFunctionBody(named: "checkBudgetAlerts"))
+        XCTAssertTrue(budget.contains("budgetAlertService.markDelivered(delivered)"))
+        XCTAssertFalse(budget.contains("markDelivered(candidates)"))
+        let milestones = try XCTUnwrap(source.swiftFunctionBody(named: "checkMilestoneNotifications"))
+        XCTAssertFalse(milestones.contains("markNotified(newly)"), "a failed announcement must stay owed")
+    }
+
+    /// `overviewUsage` is the Today aggregate. Weekly and monthly budgets, the streak and lifetime
+    /// milestones read it, so they only ever saw today: 200k a day against a 1M week read 20% on
+    /// Friday, and the weekly and monthly budget alerts could not fire.
+    func testMultiDayFiguresReadEveryStoredEventNotToday() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        for name in ["var budgetGuardrails:", "var activityMilestones:", "var usageStreak:", "func checkBudgetAlerts()"] {
+            let start = try XCTUnwrap(source.range(of: name), "\(name) is gone; this guard needs rewriting")
+            let body = String(source[start.lowerBound...].prefix(900))
+            let end = body.range(of: "\n    }\n").map { String(body[..<$0.upperBound]) } ?? body
+            XCTAssertTrue(end.contains("historyEventsAllTime"), "\(name) must see every stored event:\n\(end)")
+            XCTAssertFalse(end.contains("overviewUsage.events"), "\(name) still reads only today:\n\(end)")
+        }
+    }
+
+    /// A typed-but-unsaved bot token or webhook used to win over the saved one everywhere. Half a
+    /// pasted token left in Settings replaced the working credential for every automatic alert, and
+    /// the only symptom was a rising failed-delivery count. The field is for the button the user
+    /// just pressed; nothing that fires on a timer may read it.
+    func testAutomaticAlertDeliveryNeverUsesAnUnsavedCredentialField() throws {
+        let source = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        for accessor in ["telegramTokenForUse", "discordWebhookForUse"] {
+            let body = try XCTUnwrap(source.swiftFunctionBody(named: accessor))
+            XCTAssertTrue(
+                body.contains("preferringInput,"),
+                "\(accessor) reads the unsaved field unconditionally, so timer-driven sends use it"
+            )
+        }
+
+        let delivery = try XCTUnwrap(source.swiftFunctionBody(named: "deliverCapacity"))
+        XCTAssertTrue(delivery.contains("telegramTokenForUse()"), "delivery must take the saved-only default")
+        XCTAssertTrue(delivery.contains("discordWebhookForUse()"), "delivery must take the saved-only default")
+        XCTAssertFalse(
+            delivery.contains("preferringInput"),
+            "automatic delivery opted into the unsaved field:\n\(delivery)"
+        )
+
+        // A channel must not advertise itself as available on the strength of an unsaved field,
+        // or every alert routed to it fails.
+        let channels = try XCTUnwrap(source.swiftFunctionBody(named: "capacityAlertChannelPreferenceSummary"))
+        XCTAssertFalse(channels.isEmpty)
+        XCTAssertFalse(
+            source.contains("telegramCredentialPresent: hasSavedTelegramToken || "),
+            "channel availability still counts an unsaved token that delivery will not use"
+        )
+        XCTAssertFalse(
+            source.contains("discordCredentialPresent: hasSavedDiscordWebhook || "),
+            "channel availability still counts an unsaved webhook that delivery will not use"
+        )
+    }
+
+    /// A once-per-day attempt tracker sat in front of both digest fire windows and was written
+    /// before the window was ever checked. The first tick after midnight burned the day's only
+    /// attempt outside every schedule anyone would pick, so neither digest ever sent — the weekly
+    /// one could not send at all, because its tracker was per-day and its schedule per-week.
+    ///
+    /// The rule that keeps this fixed: nothing that suppresses a later attempt may run before the
+    /// fire-window gate. Deduplication belongs to the gate, which already has `lastSentAt`.
+    func testNoDigestBurnsItsOnlyAttemptBeforeCheckingTheFireWindow() throws {
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+        var checked = 0
+
+        for function in ["checkDailyDigest", "checkWeeklyDigest"] {
+            let body = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: function))
+            let lines = body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+            let gate = try XCTUnwrap(
+                lines.firstIndex { $0.contains("isInFireWindow") },
+                "\(function) no longer checks a fire window; this guard needs rewriting"
+            )
+            checked += 1
+
+            let suppressors = lines[..<gate].filter {
+                $0.contains("AttemptDay") || $0.contains("saveLastSent(") || $0.contains("Attempted =")
+            }
+            XCTAssertTrue(
+                suppressors.isEmpty,
+                "\(function) records an attempt before it knows whether the schedule was due, "
+                    + "which spends the attempt outside the window:\n" + suppressors.joined(separator: "\n")
+            )
+        }
+
+        XCTAssertEqual(checked, 2, "both digests must be covered")
+    }
+
+    func testStartupPopulatesProviderDiagnosticsWithoutManualCheck() throws {
+        let viewModelSource = try Self.tokenAppSourceFile("ViewModels/TokenPilotViewModel.swift")
+
+        let startup = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "startProductionRuntime"))
+        XCTAssertTrue(startup.contains("await refreshConnectionDiagnostics()"))
+
+        let body = try XCTUnwrap(viewModelSource.swiftFunctionBody(named: "refreshConnectionDiagnostics"))
+        XCTAssertTrue(body.contains("connectionService.checkAll(settings: settings)"))
+        XCTAssertTrue(body.contains("applyDataSources(sources)"))
+        XCTAssertFalse(body.contains("bannerMessage"), "Startup diagnostics must not flash a banner.")
     }
     func testDebugScenarioFixturesInjectProductionViewModelOnlyInDebugAndStayPrivacySafe() throws {
         let rootURL = try Self.projectRootURL()
@@ -1283,21 +1734,22 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(fixtureSource.contains("case .antigravityBridge:"))
         XCTAssertTrue(fixtureSource.contains("stability: .compatibilityBridge"))
 
-        let localizedModes: [(String, String, String, String)] = [
-            ("LIVE", "실시간", "ライブ", "实时"),
-            ("LOCAL", "로컬", "ローカル", "本地"),
-            ("MANUAL", "수동", "手動", "手动"),
-            ("EXPERIMENTAL", "실험적", "実験的", "实验性"),
-            ("BRIDGE", "브리지", "ブリッジ", "桥接"),
-            ("MOCK", "목업", "モック", "模拟"),
-            ("STALE", "오래됨", "古い", "过期")
+        let localizedModes: [(String, String, String, String, String)] = [
+            ("LIVE", "실시간", "ライブ", "实时", "實時"),
+            ("LOCAL", "로컬", "ローカル", "本地", "本地"),
+            ("MANUAL", "수동", "手動", "手动", "手動"),
+            ("EXPERIMENTAL", "실험적", "実験的", "实验性", "實驗性"),
+            ("BRIDGE", "브리지", "ブリッジ", "桥接", "橋接"),
+            ("MOCK", "목업", "モック", "模拟", "模擬"),
+            ("STALE", "오래됨", "古い", "过期", "過期")
         ]
 
-        for (key, ko, ja, zhHans) in localizedModes {
+        for (key, ko, ja, zhHans, zhHant) in localizedModes {
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .en), key)
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ko), ko)
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .ja), ja)
             XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .zhHans), zhHans)
+            XCTAssertEqual(TokenPilotLocalizer.localized(key, language: .zhHant), zhHant)
         }
     }
 
@@ -1516,9 +1968,10 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertEqual(recoverySummary.rows.first?.recoveryCode, "runtimeRecoveryRequired")
 
         let nonEnglishCopies: [(TokenPilotLanguage, String)] = [
-            (.ko, "수용량 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."),
+            (.ko, "한도 런타임 복구가 필요합니다. 안전 기본값이 활성화되어 있습니다."),
             (.ja, "容量ランタイムの復旧が必要です。安全な既定値が有効です。"),
-            (.zhHans, "需要恢复容量运行时；安全默认值已启用。")
+            (.zhHans, "需要恢复容量运行时；安全默认值已启用。"),
+            (.zhHant, "需要恢復容量運行時；安全默認值已啓用。")
         ]
         for (language, expected) in nonEnglishCopies {
             let localizedCopy = TokenPilotLocalizer.localized(recoveryMessageKey, language: language)
@@ -1538,9 +1991,10 @@ final class TokenMonitorTests: XCTestCase {
         let messageKey = "Codex legacy capacity alerts are unsupported for delivery."
         let expectedCopies: [(language: TokenPilotLanguage, locale: String, value: String)] = [
             (.en, "en", messageKey),
-            (.ko, "ko", "Codex 레거시 수용량 알림은 전달을 지원하지 않습니다."),
+            (.ko, "ko", "Codex 레거시 한도 알림은 전달을 지원하지 않습니다."),
             (.ja, "ja", "Codex レガシー容量アラートは配信に対応していません。"),
-            (.zhHans, "zh-Hans", "Codex 旧版容量提醒不支持投递。")
+            (.zhHans, "zh-Hans", "Codex 旧版容量提醒不支持投递。"),
+            (.zhHant, "zh-Hant", "Codex 舊版容量提醒不支持投遞。")
         ]
 
         XCTAssertTrue(fixtureSource.contains("case .alertsUnsupportedCodexLegacy:"))
@@ -1592,15 +2046,17 @@ final class TokenMonitorTests: XCTestCase {
         let historySource = try Self.tokenAppSourceFile("Views/HistoryScreen.swift")
 
         XCTAssertTrue(overviewSource.contains("var remainingPercent: Int? { Int(presentation.data[\"remainingPercent\"] ?? \"\") }"))
-        XCTAssertTrue(overviewSource.contains("var progressPercent: Int? {\n        valueKind == .percent ? remainingPercent : nil\n    }"))
-        XCTAssertTrue(overviewSource.contains("return \"\\(remainingPercent)%\""))
+        // Remaining is still the default, and the number now says which it is.
+        XCTAssertTrue(overviewSource.contains("var percentDisplay: CapacityPercentDisplay = .remaining"))
+        XCTAssertTrue(overviewSource.contains("valueKind == .percent ? shownPercent : nil"))
+        XCTAssertTrue(overviewSource.contains("let format = percentDisplay == .used ? \"%d%% used\" : \"%d%% left\""))
         XCTAssertTrue(overviewSource.contains("value: item.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("value: primary.primaryValue(language: language)"))
         XCTAssertTrue(overviewSource.contains("percent: progressPercent"))
-        XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
+        XCTAssertTrue(overviewSource.contains("accessibilityLabel: localized(\"Limit percent\", language: language)"))
         XCTAssertTrue(overviewSource.contains("primary.progressAccessibilityValue(language: language)"))
-        XCTAssertTrue(historySource.contains("Text(String(format: model.t(\"Remaining %d%%\"), sample.remainingPercent))"))
-        XCTAssertTrue(historySource.contains("percent: sample.remainingPercent"))
+        XCTAssertTrue(historySource.contains("MetricValueText(value: shownValue"))
+        XCTAssertTrue(historySource.contains("percent: shownPercent"))
         XCTAssertTrue(historySource.contains("\"\\(model.t(\"Remaining\")) \\(sample.remainingPercent)%, \\(model.t(\"Used\")) \\(sample.usedPercent)%\""))
     }
 
@@ -2569,8 +3025,8 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(source.contains("let stateValue = localized(isExpanded ? \"Expanded\" : \"Collapsed\", language: language)"))
         XCTAssertTrue(source.contains(".accessibilityValue(\"\\(accessibilityValue), \\(stateValue)\")"))
         XCTAssertTrue(source.contains(".accessibilityValue(stateValue)"))
-        XCTAssertTrue(source.contains("accessibilityLabel: localized(\"Remaining capacity\", language: language)"))
-        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(provider.displayName, language: language)) \\(localized(\"Remaining capacity\", language: language))\""))
+        XCTAssertTrue(source.contains("accessibilityLabel: localized(\"Limit percent\", language: language)"))
+        XCTAssertTrue(source.contains("accessibilityLabel: \"\\(localized(provider.displayName, language: language)) \\(localized(\"Limit percent\", language: language))\""))
     }
 
     func testG004LocalizationKeysHaveRuntimeAndCatalogParity() throws {
@@ -2764,6 +3220,53 @@ final class TokenMonitorTests: XCTestCase {
         XCTAssertTrue(TokenPilotLocalizer.localized("xAI API billing is separate from Grok web subscription limits.", language: .en).contains("separate from Grok web subscription limits"))
     }
 
+    func testGeneralSettingsAndMenuStringsHaveRuntimeAndCatalogParity() throws {
+        let keys = [
+            "General",
+            "Launch at login",
+            "Starts TokenPilot automatically when you log in so usage stays monitored and alerts keep working without opening the app.",
+            "Starts when you log in",
+            "Starts manually",
+            "Could not enable launch at login",
+            "Could not disable launch at login",
+            "Open TokenPilot",
+            "Quit",
+            "Version",
+            "Refresh",
+            "Projects",
+            "Show all projects",
+            "Show fewer projects"
+        ]
+        let languages: [(TokenPilotLanguage, String)] = [
+            (.en, "en"),
+            (.ko, "ko"),
+            (.ja, "ja"),
+            (.zhHans, "zh-Hans"),
+            (.zhHant, "zh-Hant")
+        ]
+        let catalogURL = try Self.projectRootURL()
+            .appendingPathComponent("Sources/TokenApp/Resources/Localizable.xcstrings")
+        let catalogData = try Data(contentsOf: catalogURL)
+        let catalogRoot = try XCTUnwrap(JSONSerialization.jsonObject(with: catalogData) as? [String: Any])
+        let catalogStrings = try XCTUnwrap(catalogRoot["strings"] as? [String: Any])
+
+        for key in keys {
+            let entry = try XCTUnwrap(catalogStrings[key] as? [String: Any], "Missing catalog key \(key)")
+            let localizations = try XCTUnwrap(entry["localizations"] as? [String: Any], "Missing localizations for \(key)")
+
+            for (language, locale) in languages {
+                let runtimeValue = TokenPilotLocalizer.localized(key, language: language)
+                let localization = try XCTUnwrap(localizations[locale] as? [String: Any], "Missing catalog locale \(locale): \(key)")
+                let stringUnit = try XCTUnwrap(localization["stringUnit"] as? [String: Any], "Missing stringUnit \(locale): \(key)")
+                let catalogValue = try XCTUnwrap(stringUnit["value"] as? String, "Missing catalog value \(locale): \(key)")
+
+                XCTAssertFalse(runtimeValue.isEmpty, "Empty runtime string for \(locale): \(key)")
+                XCTAssertFalse(catalogValue.isEmpty, "Empty catalog string for \(locale): \(key)")
+                XCTAssertEqual(catalogValue, runtimeValue, "Runtime/catalog mismatch for \(locale): \(key)")
+            }
+        }
+    }
+
     private func data(_ string: String) -> Data {
         Data(string.utf8)
     }
@@ -2828,5 +3331,65 @@ private extension String {
             index = nextIndex
         }
         return nil
+    }
+}
+
+final class ActivityHeatmapTests: XCTestCase {
+    private func event(provider: Provider, daysAgo: Int, tokens: Int, from now: Date) -> UsageEvent {
+        let calendar = Calendar.current
+        let date = calendar.date(byAdding: .day, value: -daysAgo, to: now) ?? now
+        let total = max(tokens, 0)
+        return UsageEvent(
+            provider: provider,
+            timestamp: date,
+            inputTokens: total,
+            outputTokens: 0,
+            source: "heatmap-test",
+            dataSource: .localLog
+        )
+    }
+
+    func testHeatmapCellsCoverTrailingWindowAndBucketIntensity() {
+        let now = Date()
+        let service = AggregationService()
+        let events = [
+            event(provider: .opencode, daysAgo: 0, tokens: 4_000, from: now),
+            event(provider: .opencode, daysAgo: 1, tokens: 2_000, from: now),
+            event(provider: .opencode, daysAgo: 2, tokens: 500, from: now),
+        ]
+
+        let cells = service.heatmapCells(from: events, days: 14, now: now)
+        XCTAssertEqual(cells.count, 14)
+
+        let byDate = Dictionary(uniqueKeysWithValues: cells.map { ($0.dateKey, $0) })
+        let today = byDate[Self.dateKey(from: now)]
+        XCTAssertEqual(today?.tokens, 4_000)
+        XCTAssertEqual(today?.level, 4)
+
+        let dayAgo = byDate[Self.dateKey(from: Calendar.current.date(byAdding: .day, value: -1, to: now)!)]
+        XCTAssertEqual(dayAgo?.level, 2)
+
+        let twoDaysAgo = byDate[Self.dateKey(from: Calendar.current.date(byAdding: .day, value: -2, to: now)!)]
+        XCTAssertEqual(twoDaysAgo?.level, 1)
+
+        // Days outside the window are absent even when events exist.
+        let cellsShort = service.heatmapCells(from: events, days: 2, now: now)
+        XCTAssertEqual(cellsShort.count, 2)
+        XCTAssertNil(cellsShort.first { $0.dateKey == Self.dateKey(from: now.addingTimeInterval(-3 * 24 * 3600)) })
+    }
+
+    func testHeatmapCellsHaveZeroLevelForQuietDays() {
+        let now = Date()
+        let service = AggregationService()
+        let cells = service.heatmapCells(from: [], days: 7, now: now)
+        XCTAssertEqual(cells.count, 7)
+        XCTAssertTrue(cells.allSatisfy { $0.tokens == 0 && $0.level == 0 })
+    }
+
+    private static func dateKey(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: date)
     }
 }

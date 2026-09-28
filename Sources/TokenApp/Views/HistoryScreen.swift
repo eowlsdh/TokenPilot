@@ -28,6 +28,30 @@ private enum HistorySourceLabelFormatter {
     }
 }
 
+/// The event-scanning values one History body pass needs, computed once.
+private struct HistoryDerived {
+    let monthlyTrend: [MonthlyUsageBar]
+    let requestHistoryTrend: RequestHistoryTrend
+    let hourlyActivity: HourlyActivitySummary
+    let fiveHourBlocks: [FiveHourUsageBlock]
+    let cacheEfficiency: CacheEfficiencySummary
+    let providerCacheEfficiency: ProviderCacheEfficiencySummary
+    let costEfficiency: CostEfficiencySummary
+    let budgetHistoryTrend: BudgetHistoryTrend
+
+    @MainActor
+    init(model: TokenPilotViewModel) {
+        monthlyTrend = model.monthlyTrend
+        requestHistoryTrend = model.requestHistoryTrend
+        hourlyActivity = model.hourlyActivity
+        fiveHourBlocks = model.fiveHourBlocks
+        cacheEfficiency = model.cacheEfficiency
+        providerCacheEfficiency = model.providerCacheEfficiency
+        costEfficiency = model.costEfficiency
+        budgetHistoryTrend = model.budgetHistoryTrend
+    }
+}
+
 struct HistoryScreen: View {
     @ObservedObject var model: TokenPilotViewModel
 
@@ -39,7 +63,38 @@ struct HistoryScreen: View {
         model.capacityPresentations.count + model.limitHistorySamples.count
     }
 
+    /// Group badges show how much is folded away, so a collapsed group never hides its own weight.
+    private func trendCardCount(_ derived: HistoryDerived) -> Int {
+        var count = 1 // the heatmap always renders
+        if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if derived.monthlyTrend.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if derived.requestHistoryTrend.totalRequests > 0 { count += 1 }
+        if derived.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) { count += 1 }
+        if !derived.fiveHourBlocks.isEmpty { count += 1 }
+        return count
+    }
+
+    private func efficiencyCardCount(_ derived: HistoryDerived) -> Int {
+        var count = 0
+        if derived.cacheEfficiency.hasCacheActivity { count += 1 }
+        if derived.providerCacheEfficiency.hasAnyActivity { count += 1 }
+        if derived.costEfficiency.hasAnyActivity { count += 1 }
+        if derived.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) { count += 1 }
+        return count
+    }
+
+    private var breakdownCardCount: Int {
+        var count = 1 // the timeline always renders
+        if !model.historyUsage.modelBreakdown.isEmpty { count += 1 }
+        if !model.historyUsage.projectBreakdown.isEmpty { count += 1 }
+        return count
+    }
+
     var body: some View {
+        // Read once per pass. Each of these rescans the period's events, and the card counts and the
+        // cards themselves read them again — three or four full scans each, on every publish.
+        let derived = HistoryDerived(model: model)
+
         ScrollView(.vertical, showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: TokenPilotDesign.sectionSpacing) {
                 TokenPilotSectionHeader(
@@ -80,18 +135,75 @@ struct HistoryScreen: View {
                 if model.historyUsage.events.isEmpty {
                     HistoryEmptyState(hasLimitSignals: hasCapacitySignals, model: model)
                 } else {
+                    // The summary and the export stay in the open; everything else lives in a group
+                    // so this screen opens as four headers instead of fifteen stacked charts.
                     HistoryUsageSummaryCard(model: model)
-                    if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
-                        HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
+
+                    if trendCardCount(derived) > 0 {
+                        CollapsibleSection(
+                            title: model.t("Trends"),
+                            systemImage: "chart.xyaxis.line",
+                            badge: "\(trendCardCount(derived))",
+                            initiallyExpanded: true
+                        ) {
+                            if model.historyUsage.sevenDayBars.contains(where: { $0.tokens > 0 }) {
+                                HistorySevenDayTrendCard(bars: model.historyUsage.sevenDayBars, model: model)
+                            }
+                            if derived.monthlyTrend.contains(where: { $0.tokens > 0 }) {
+                                HistoryMonthlyTrendCard(bars: derived.monthlyTrend, model: model)
+                            }
+                            if derived.requestHistoryTrend.totalRequests > 0 {
+                                HistoryRequestTrendCard(trend: derived.requestHistoryTrend, model: model)
+                            }
+                            if derived.hourlyActivity.buckets.contains(where: { $0.tokens > 0 }) {
+                                HistoryHourlyActivityCard(summary: derived.hourlyActivity, model: model)
+                            }
+                            if !derived.fiveHourBlocks.isEmpty {
+                                HistoryFiveHourBlocksCard(blocks: derived.fiveHourBlocks, model: model)
+                            }
+                            HistoryHeatmapCard(cells: model.historyHeatmapCells, model: model)
+                        }
                     }
-                    if !model.historyUsage.modelBreakdown.isEmpty {
-                        HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
+
+                    if efficiencyCardCount(derived) > 0 {
+                        CollapsibleSection(
+                            title: model.t("Efficiency"),
+                            systemImage: "bolt.badge.clock",
+                            badge: "\(efficiencyCardCount(derived))"
+                        ) {
+                            if derived.cacheEfficiency.hasCacheActivity {
+                                HistoryCacheEfficiencyCard(efficiency: derived.cacheEfficiency, model: model)
+                            }
+                            if derived.providerCacheEfficiency.hasAnyActivity {
+                                HistoryProviderCacheCard(summary: derived.providerCacheEfficiency, model: model)
+                            }
+                            if derived.costEfficiency.hasAnyActivity {
+                                HistoryCostEfficiencyCard(efficiency: derived.costEfficiency, model: model)
+                            }
+                            if derived.budgetHistoryTrend.days.contains(where: { $0.hasActivity }) {
+                                HistoryBudgetHistoryCard(trend: derived.budgetHistoryTrend, model: model)
+                            }
+                        }
                     }
-                    HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)
+
+                    CollapsibleSection(
+                        title: model.t("Breakdown"),
+                        systemImage: "list.bullet.rectangle",
+                        badge: "\(breakdownCardCount)"
+                    ) {
+                        if !model.historyUsage.modelBreakdown.isEmpty {
+                            HistoryModelBreakdownCard(shares: model.historyUsage.modelBreakdown, model: model)
+                        }
+                        if !model.historyUsage.projectBreakdown.isEmpty {
+                            HistoryProjectBreakdownCard(shares: model.historyUsage.projectBreakdown, model: model)
+                        }
+                        HistoryUsageTimelineCard(events: model.historyUsage.events, model: model)
+                    }
+
                     HistoryExportCard(model: model)
                 }
             }
-            .padding(.bottom, 6)
+            .padding(.bottom, TokenPilotDesign.Spacing.sm)
         }
     }
 }
@@ -104,7 +216,7 @@ struct CurrentCapacitySignalCard: View {
     var body: some View {
         let visibleItems = Array(items.prefix(3))
 
-        GlassCard(padding: 10, surface: .cardElevated) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact, surface: .cardElevated) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Current capacity evidence"), systemImage: "checkmark.seal")
@@ -139,7 +251,7 @@ struct CurrentCapacitySignalCard: View {
 
     private var items: [CapacityDisplayItem] {
         Array(zip(assessments, presentations))
-            .map { CapacityDisplayItem(assessment: $0.0, presentation: $0.1) }
+            .map { CapacityDisplayItem(assessment: $0.0, presentation: $0.1, percentDisplay: model.settings.capacityPercentDisplay) }
             .sorted {
                 if $0.observedAt != $1.observedAt {
                     return $0.observedAt > $1.observedAt
@@ -166,8 +278,7 @@ struct CurrentCapacitySignalCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.78)
 
-                    Text(item.primaryValue(language: model.settings.localization.language))
-                        .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                    MetricValueText(value: item.primaryValue(language: model.settings.localization.language), figureFont: TokenPilotDesign.Typography.metric.weight(.heavy), wordFont: TokenPilotDesign.Typography.captionStrong)
                         .monospacedDigit()
                         .foregroundStyle(item.progressColor)
                         .lineLimit(1)
@@ -189,9 +300,36 @@ struct CurrentCapacitySignalCard: View {
                     accessibilityValue: item.progressAccessibilityValue(language: model.settings.localization.language)
                 )
             }
+
+            liveSignalMetadata(for: item)
         }
         .accessibilityElement(children: actionIsButton(item) ? .contain : .combine)
         .accessibilityLabel(accessibilityLabel(for: item))
+    }
+
+    @ViewBuilder
+    private func liveSignalMetadata(for item: CapacityDisplayItem) -> some View {
+        let language = model.settings.localization.language
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            if let resetAt = item.resetAt, resetAt > Date() {
+                HStack(spacing: TokenPilotDesign.Spacing.xs) {
+                    Text(model.t("Reset in"))
+                    LiveResetCountdown(resetAt: resetAt)
+                }
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.textTertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+            }
+            let paceText = item.paceText(language: language)
+            if !paceText.isEmpty {
+                Text(paceText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(item.paceZoneColor)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.74)
+            }
+        }
     }
 
     @ViewBuilder
@@ -270,7 +408,7 @@ struct CurrentCapacitySignalCard: View {
                 }
                 .font(TokenPilotDesign.Typography.micro)
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.glass)
             .controlSize(.small)
             .accessibilityLabel("\(model.t("Action")): \(actionTitle(for: item))")
             .focusable()
@@ -421,8 +559,7 @@ struct HistoryLimitSignalRow: View {
                 Spacer(minLength: 0)
 
                 VStack(alignment: .trailing, spacing: TokenPilotDesign.Spacing.xs) {
-                    Text(String(format: model.t("Remaining %d%%"), sample.remainingPercent))
-                        .font(.system(size: 13, weight: .heavy, design: .monospaced))
+                    MetricValueText(value: shownValue, figureFont: TokenPilotDesign.Typography.metric.weight(.heavy), wordFont: TokenPilotDesign.Typography.captionStrong)
                         .monospacedDigit()
                         .foregroundStyle(TokenPilotDesign.riskColor(sample.usedPercent))
                         .lineLimit(1)
@@ -433,7 +570,7 @@ struct HistoryLimitSignalRow: View {
             }
 
             ProgressLine(
-                percent: sample.remainingPercent,
+                percent: shownPercent,
                 color: TokenPilotDesign.riskColor(sample.usedPercent),
                 accessibilityLabel: limitTitle,
                 accessibilityValue: progressAccessibilityValue
@@ -451,8 +588,19 @@ struct HistoryLimitSignalRow: View {
         [
             "\(model.t("Provenance")): \(sourceLabel)",
             "\(model.t("Confidence")): \(sample.confidence.localizedLabel(language: model.settings.localization.language))",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
         ].joined(separator: " · ")
+    }
+
+    /// Follows Settings › Show limits as, like the capacity card above it; this row alone said
+    /// "Remaining 23%" while the card said "77% used".
+    private var shownPercent: Int {
+        model.settings.capacityPercentDisplay.shown(remaining: sample.remainingPercent, used: sample.usedPercent)
+    }
+
+    private var shownValue: String {
+        let format = model.settings.capacityPercentDisplay == .used ? "%d%% used" : "%d%% left"
+        return String(format: model.t(format), shownPercent)
     }
 
     private var progressAccessibilityValue: String {
@@ -463,7 +611,7 @@ struct HistoryLimitSignalRow: View {
     private var limitStatusCue: some View {
         if sample.usedPercent >= 70 {
             StatusBadge(
-                label: "\(model.t("Risk")) \(sample.usedPercent)%",
+                label: model.t("Risk"),
                 color: TokenPilotDesign.riskColor(sample.usedPercent),
                 systemImage: "exclamationmark.triangle"
             )
@@ -474,12 +622,12 @@ struct HistoryLimitSignalRow: View {
         [
             model.t(sample.provider.displayName),
             sample.window.localizedLabel(language: model.settings.localization.language),
-            String(format: model.t("Remaining %d%%"), sample.remainingPercent),
-            "\(model.t("Risk")) \(sample.usedPercent)%",
+            shownValue,
+            sample.usedPercent >= 70 ? model.t("Risk") : nil,
             "\(model.t("Provenance")): \(sourceLabel)",
             sample.confidence.localizedLabel(language: model.settings.localization.language),
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
-        ].joined(separator: ", ")
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(sample.timestamp, language: model.settings.localization.language))"
+        ].compactMap { $0 }.joined(separator: ", ")
     }
 
     private var sourceLabel: String {
@@ -504,7 +652,7 @@ struct HistorySevenDayTrendCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Last 7 days"), systemImage: "chart.bar")
@@ -562,11 +710,11 @@ private struct HistoryTrendBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
             GeometryReader { geometry in
                 VStack(spacing: 0) {
                     Spacer(minLength: 0)
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
                         .fill(isPeak ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
                         .frame(height: max(geometry.size.height * fillRatio, bar.tokens > 0 ? 2 : 1))
                 }
@@ -582,11 +730,352 @@ private struct HistoryTrendBar: View {
     }
 }
 
+struct HistoryRequestTrendCard: View {
+    let trend: RequestHistoryTrend
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var peakCount: Int {
+        max(trend.days.map(\.requestCount).max() ?? 0, 1)
+    }
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Requests trend"), systemImage: "bolt.badge.clock")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(TokenPilotFormatters.compactNumber(trend.totalRequests))
+                        .font(TokenPilotDesign.Typography.metricCompact)
+                        .monospacedDigit()
+                        .foregroundStyle(TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
+
+                HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
+                    ForEach(trend.days) { bar in
+                        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                            GeometryReader { geometry in
+                                VStack(spacing: 0) {
+                                    Spacer(minLength: 0)
+                                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                                        .fill(bar.requestCount == peakCount && bar.requestCount > 0 ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
+                                        .frame(height: max(geometry.size.height * fillRatio(bar), bar.requestCount > 0 ? 2 : 1))
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+
+                            Text(bar.dayLabel)
+                                .font(TokenPilotDesign.Typography.micro)
+                                .foregroundStyle(TokenPilotDesign.textSecondary)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                .frame(height: 38)
+
+                Text(summaryText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(model.t("Requests trend")), \(TokenPilotFormatters.compactNumber(trend.totalRequests))")
+    }
+
+    private func fillRatio(_ bar: DailyRequestBar) -> Double {
+        guard bar.requestCount > 0 else { return 0 }
+        return max(Double(bar.requestCount) / Double(peakCount), 0.06)
+    }
+
+    private var summaryText: String {
+        guard let peak = trend.peakDayLabel else { return model.t("Local activity, not provider quota") }
+        return "\(model.t("Peak")): \(peak) · \(model.t("Local activity, not provider quota"))"
+    }
+}
+
+struct HistoryMonthlyTrendCard: View {
+    let bars: [MonthlyUsageBar]
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var peakTokens: Int {
+        max(bars.map(\.tokens).max() ?? 0, 1)
+    }
+
+    private var total: Int {
+        bars.reduce(0) { $0 + $1.tokens }
+    }
+
+    private var activeMonths: Int {
+        bars.filter { $0.tokens > 0 }.count
+    }
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Monthly trend"), systemImage: "chart.bar.xaxis")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    SemanticChip(
+                        label: TokenPilotFormatters.compactNumber(total),
+                        systemImage: "number",
+                        role: .neutral
+                    )
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.sm) {
+                        ForEach(bars) { bar in
+                            HistoryMonthlyBar(bar: bar, peakTokens: peakTokens, isPeak: bar.tokens == peakTokens && bar.tokens > 0, model: model)
+                        }
+                    }
+                }
+                .frame(height: 38)
+
+                Text(summaryText)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var summaryText: String {
+        "\(activeMonths)/\(bars.count) \(model.t("active months")) · \(model.t("Local activity, not provider quota"))"
+    }
+
+    private var accessibilitySummary: String {
+        let detail = bars
+            .map { "\($0.monthLabel) \(TokenPilotFormatters.compactNumber($0.tokens))" }
+            .joined(separator: ", ")
+        return "\(model.t("Monthly trend")), \(TokenPilotFormatters.compactNumber(total)), \(detail)"
+    }
+}
+
+private struct HistoryMonthlyBar: View {
+    let bar: MonthlyUsageBar
+    let peakTokens: Int
+    let isPeak: Bool
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var fillRatio: Double {
+        guard bar.tokens > 0 else { return 0 }
+        return max(Double(bar.tokens) / Double(peakTokens), 0.06)
+    }
+
+    var body: some View {
+        VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+            GeometryReader { geometry in
+                VStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                        .fill(isPeak ? TokenPilotDesign.calm : TokenPilotDesign.trust.opacity(0.55))
+                        .frame(height: max(geometry.size.height * fillRatio, bar.tokens > 0 ? 2 : 1))
+                }
+                .frame(maxWidth: .infinity)
+            }
+
+            Text(monthLabelText)
+                .font(TokenPilotDesign.Typography.micro)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(bar.monthLabel), \(TokenPilotFormatters.compactNumber(bar.tokens)) \(model.t("tok"))")
+    }
+
+    private var monthLabelText: String {
+        let parts = bar.monthLabel.split(separator: "-")
+        guard parts.count == 2, let year = parts.first, let month = parts.last else { return bar.monthLabel }
+        let shortMonth = monthName(Int(month))
+        return "\(shortMonth) '\(year.suffix(2))"
+    }
+
+    private func monthName(_ month: Int?) -> String {
+        LocalizedDateLabels.monthAbbreviation(monthNumber: month, language: model.settings.localization.language)
+    }
+}
+
+struct HistoryHeatmapCard: View {
+    let cells: [UsageHeatCell]
+    @ObservedObject var model: TokenPilotViewModel
+
+    private var grid: [[UsageHeatCell]] {
+        guard !cells.isEmpty else { return [] }
+        let calendar = Calendar.current
+        // Group by ISO week so columns are Mon..Sun like GitHub's contribution graph.
+        // One shared formatter and one keyed lookup. This built a DateFormatter per cell and, for
+        // each of the 84 slots, flattened every group and scanned it — on every body pass.
+        let grouped = Dictionary(grouping: cells) { cell -> Date in
+            let date = Self.dateFormatter.date(from: cell.dateKey) ?? Date()
+            return calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date)) ?? date
+        }
+        let byKey = Dictionary(cells.map { ($0.dateKey, $0) }, uniquingKeysWith: { first, _ in first })
+        let weeks = grouped.keys.sorted()
+        return weeks.map { week in
+            (0..<7).compactMap { dayOffset in
+                guard let date = calendar.date(byAdding: .day, value: dayOffset, to: week) else { return nil }
+                return byKey[Self.dateFormatter.string(from: date)]
+            }
+        }
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private var totalTokens: Int {
+        cells.reduce(0) { $0 + $1.tokens }
+    }
+
+    var body: some View {
+        let weeks = grid
+        return GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Activity heatmap"), systemImage: "square.grid.3x3.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Picker(model.t("Heatmap range"), selection: $model.heatmapWeeks) {
+                        Text("4w").tag(4)
+                        Text("8w").tag(8)
+                        Text("12w").tag(12)
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(maxWidth: 150)
+                }
+
+                if weeks.isEmpty {
+                    EmptyInlineState(text: model.t("Local activity, not provider quota"))
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xxs) {
+                            HStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                ForEach(weeks.indices, id: \.self) { column in
+                                    monthLabel(column: column, weeks: weeks)
+                                        .frame(width: 9, alignment: .leading)
+                                }
+                            }
+                            .frame(height: 10)
+                            ForEach(0..<7, id: \.self) { row in
+                                HStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                    ForEach(weeks.indices, id: \.self) { column in
+                                        heatCell(safeCell(weeks, column: column, row: row))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Text(model.t("Local activity, not provider quota"))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .lineLimit(1)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private func safeCell(_ weeks: [[UsageHeatCell]], column: Int, row: Int) -> UsageHeatCell? {
+        guard column >= 0, column < weeks.count else { return nil }
+        let week = weeks[column]
+        guard row >= 0, row < week.count else { return nil }
+        return week[row]
+    }
+
+    @ViewBuilder
+    private func monthLabel(column: Int, weeks: [[UsageHeatCell]]) -> some View {
+        let month = monthOfWeek(column: column, weeks: weeks)
+        if month == nil {
+            Color.clear
+        } else {
+            Text(month ?? "")
+                .font(TokenPilotDesign.Typography.axis)
+                .foregroundStyle(TokenPilotDesign.textTertiary)
+                .lineLimit(1)
+        }
+    }
+
+    private func monthOfWeek(column: Int, weeks: [[UsageHeatCell]]) -> String? {
+        guard column >= 0, column < weeks.count else { return nil }
+        guard let firstCell = weeks[column].first else { return nil }
+        guard let date = Self.dateFormatter.date(from: firstCell.dateKey) else { return nil }
+        let language = model.settings.localization.language
+        let previousMonth: String?
+        if column > 0, column - 1 < weeks.count, let prevCell = weeks[column - 1].first,
+           let prevDate = Self.dateFormatter.date(from: prevCell.dateKey) {
+            previousMonth = LocalizedDateLabels.monthAbbreviation(for: prevDate, language: language)
+        } else {
+            previousMonth = nil
+        }
+        let month = LocalizedDateLabels.monthAbbreviation(for: date, language: language)
+        return month == previousMonth ? nil : month
+    }
+
+    @ViewBuilder
+    private func heatCell(_ cell: UsageHeatCell?) -> some View {
+        if let cell {
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                .fill(heatColor(level: cell.level))
+                .frame(width: 9, height: 9)
+                .help("\(cell.dateKey): \(TokenPilotFormatters.compactNumber(cell.tokens)) tok")
+        } else {
+            RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                .fill(TokenPilotDesign.surface(.separator).opacity(0.4))
+                .frame(width: 9, height: 9)
+        }
+    }
+
+    private func heatColor(level: Int) -> Color {
+        switch level {
+        case 0: return TokenPilotDesign.surface(.separator).opacity(0.5)
+        case 1: return TokenPilotDesign.trust.opacity(0.30)
+        case 2: return TokenPilotDesign.trust.opacity(0.50)
+        case 3: return TokenPilotDesign.trust.opacity(0.72)
+        default: return TokenPilotDesign.calm.opacity(0.85)
+        }
+    }
+
+    private var accessibilitySummary: String {
+        "\(model.t("Activity heatmap")), \(model.heatmapWeeks)w, \(TokenPilotFormatters.compactNumber(totalTokens)) tok"
+    }
+}
+
     struct HistoryModelBreakdownCard: View {
         let shares: [ModelUsageShare]
         @ObservedObject var model: TokenPilotViewModel
 
         @State private var showingAllModels = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
 
         private var visibleShares: [ModelUsageShare] {
             showingAllModels ? Array(shares.prefix(12)) : Array(shares.prefix(4))
@@ -595,7 +1084,7 @@ private struct HistoryTrendBar: View {
         private var hasMore: Bool { shares.count > 4 }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Models"), systemImage: "cpu")
@@ -619,12 +1108,19 @@ private struct HistoryTrendBar: View {
                 }
 
                 if hasMore {
-                    Button(showingAllModels ? model.t("Show fewer models") : model.t("Show all models")) {
-                        withAnimation(.easeInOut(duration: 0.18)) { showingAllModels.toggle() }
+                    // A text-only 11pt strip that the keyboard never reached and that animated under
+                    // Reduce Motion: the rows past the fifth were unreachable without a trackpad.
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showingAllModels.toggle() }
+                    } label: {
+                        Text(showingAllModels ? model.t("Show fewer models") : model.t("Show all models"))
+                            .padding(.vertical, TokenPilotDesign.Spacing.sm)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .font(TokenPilotDesign.Typography.caption)
                     .foregroundStyle(TokenPilotDesign.calm)
+                    .focusable()
                 }
             }
         }
@@ -638,7 +1134,7 @@ private struct HistoryModelRow: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
                 Circle()
                     .fill(TokenPilotDesign.accent(for: share.provider))
@@ -692,11 +1188,134 @@ private struct HistoryModelRow: View {
     }
 }
 
+struct HistoryProjectBreakdownCard: View {
+    let shares: [ProjectUsageShare]
+    @ObservedObject var model: TokenPilotViewModel
+
+    @State private var showingAllProjects = false
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.tokenPilotReduceMotionOverride) private var reduceMotionOverride
+
+    private var reduceMotion: Bool {
+        reduceMotionOverride ?? systemReduceMotion
+    }
+
+    private var visibleShares: [ProjectUsageShare] {
+        showingAllProjects ? Array(shares.prefix(12)) : Array(shares.prefix(4))
+    }
+
+    private var hasMore: Bool { shares.count > 4 }
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Projects"), systemImage: "folder")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    SemanticChip(
+                        label: "\(shares.count)",
+                        systemImage: "list.number",
+                        role: .neutral
+                    )
+                }
+
+                VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                    ForEach(visibleShares) { share in
+                        HistoryProjectRow(share: share, model: model)
+                    }
+                }
+
+                if hasMore {
+                    // A text-only 11pt strip that the keyboard never reached and that animated under
+                    // Reduce Motion: the rows past the fifth were unreachable without a trackpad.
+                    Button {
+                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) { showingAllProjects.toggle() }
+                    } label: {
+                        Text(showingAllProjects ? model.t("Show fewer projects") : model.t("Show all projects"))
+                            .padding(.vertical, TokenPilotDesign.Spacing.sm)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.calm)
+                    .focusable()
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.t("Projects"))
+    }
+}
+
+private struct HistoryProjectRow: View {
+    let share: ProjectUsageShare
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.xs) {
+            HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.sm) {
+                Circle()
+                    .fill(TokenPilotDesign.accent(for: share.provider))
+                    .frame(width: 7, height: 7)
+
+                Text(share.label)
+                    .font(TokenPilotDesign.Typography.label)
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                Spacer(minLength: TokenPilotDesign.Spacing.sm)
+
+                Text(TokenPilotFormatters.compactNumber(share.tokens))
+                    .font(TokenPilotDesign.Typography.metric)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.textPrimary)
+            }
+
+            HStack(spacing: TokenPilotDesign.Spacing.sm) {
+                ProgressView(value: Double(share.tokenPercent), total: 100)
+                    .progressViewStyle(.linear)
+                    .tint(TokenPilotDesign.accent(for: share.provider))
+                    .frame(height: 3)
+
+                Text("\(share.tokenPercent)%")
+                    .font(TokenPilotDesign.Typography.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(TokenPilotDesign.textSecondary)
+                    .frame(width: 34, alignment: .trailing)
+            }
+
+            Text(detailText)
+                .font(TokenPilotDesign.Typography.caption)
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(share.label), \(share.tokenPercent)%, \(detailText)")
+    }
+
+    private var detailText: String {
+        var parts = [
+            model.providerDisplayName(share.provider),
+            "\(share.requestCount) \(model.t("Requests"))"
+        ]
+        if let cost = share.estimatedCostUSD, cost > 0 {
+            parts.append("\(TokenPilotFormatters.cost(cost)) \(model.t("est."))")
+        }
+        return parts.joined(separator: " · ")
+    }
+}
+
 struct HistoryUsageSummaryCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Usage event summary"), systemImage: "number")
@@ -754,6 +1373,16 @@ struct HistoryUsageSummaryCard: View {
                         value: metrics.busiestHour.map { "\($0):00" } ?? "—"
                     )
                 }
+
+                if let coverageStart = model.historyCoverageStart {
+                    Label(
+                        String(format: model.t("Stored history begins %@. Earlier activity is not in these totals."), coverageStart.formatted(.dateTime.month().day().hour().minute())),
+                        systemImage: "clock.arrow.circlepath"
+                    )
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.text(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .accessibilityElement(children: .combine)
@@ -781,6 +1410,486 @@ struct HistoryUsageSummaryCard: View {
     }
 }
 
+struct HistoryHourlyActivityCard: View {
+    let summary: HourlyActivitySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Hourly activity"), systemImage: "clock.badge")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let peakHour = summary.peakHour {
+                        Text("\(model.t("Peak")) \(peakHour):00")
+                            .font(TokenPilotDesign.Typography.metricSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.calm)
+                            .lineLimit(1)
+                    }
+                }
+
+                let peak = summary.buckets.map(\.tokens).max() ?? 0
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
+                        ForEach(summary.buckets, id: \.hour) { bucket in
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                                    .fill(hourColor(bucket, peak: peak))
+                                    .frame(width: 8, height: hourHeight(bucket, peak: peak))
+                                if bucket.hour % 6 == 0 {
+                                    Text("\(bucket.hour)")
+                                        .font(TokenPilotDesign.Typography.axis)
+                                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                                        .lineLimit(1)
+                                } else {
+                                    Color.clear.frame(height: 9)
+                                }
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(bucket.hour):00, \(TokenPilotFormatters.compactNumber(bucket.tokens)) \(model.t("tok"))")
+                        }
+                    }
+                }
+
+                Text(model.t("Local activity by hour of day; local time. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func hourHeight(_ bucket: HourlyActivityBucket, peak: Int) -> CGFloat {
+        guard peak > 0 else { return 2 }
+        let ratio = Double(bucket.tokens) / Double(peak)
+        return max(CGFloat(ratio) * 40, 2)
+    }
+
+    /// Intensity, not risk. The busiest hour is by definition at ratio 1.0, so painting the top of
+    /// the ramp in the danger colour meant a normal working afternoon rendered in the same red the
+    /// card above uses for "Critical" quota. This is the heatmap's ramp: it says *how much*, and
+    /// leaves *how risky* to the surfaces that actually know.
+    private func hourColor(_ bucket: HourlyActivityBucket, peak: Int) -> Color {
+        let ratio = peak > 0 ? Double(bucket.tokens) / Double(peak) : 0
+        return TokenPilotDesign.activityIntensity(ratio)
+    }
+}
+
+struct HistoryFiveHourBlocksCard: View {
+    let blocks: [FiveHourUsageBlock]
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("5-hour blocks"), systemImage: "clock.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                let peak = blocks.map(\.tokens).max() ?? 0
+                ForEach(Array(blocks.suffix(12).enumerated()), id: \.element.id) { index, block in
+                    HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.sm) {
+                        Text(blockTimeText(block.start))
+                            .font(TokenPilotDesign.Typography.metricSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .frame(width: 108, alignment: .leading)
+                            .lineLimit(1)
+
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(TokenPilotDesign.surface(.separator))
+                                    .frame(width: proxy.size.width)
+                                Capsule()
+                                    .fill(blockColor(block, peak: peak))
+                                    .frame(width: max(proxy.size.width * blockWidth(block, peak: peak), 2))
+                            }
+                        }
+                        .frame(height: 8)
+
+                        Text(TokenPilotFormatters.compactNumber(block.tokens))
+                            .font(TokenPilotDesign.Typography.metricSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textPrimary)
+                            .frame(width: 56, alignment: .trailing)
+                            .lineLimit(1)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(blockTimeText(block.start)), \(TokenPilotFormatters.compactNumber(block.tokens)) \(model.t("tok"))")
+                }
+
+                Text(model.t("Fixed 5-hour buckets aligned to local midnight, oldest first."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func blockTimeText(_ start: Date) -> String {
+        LocalizedDateLabels.dayAndTime(for: start, language: model.settings.localization.language)
+    }
+
+    private func blockWidth(_ block: FiveHourUsageBlock, peak: Int) -> Double {
+        guard peak > 0 else { return 0 }
+        return Double(block.tokens) / Double(peak)
+    }
+
+    /// See `hourColor`: these bars report volume, and the app's risk colours belong to quota.
+    private func blockColor(_ block: FiveHourUsageBlock, peak: Int) -> Color {
+        let ratio = peak > 0 ? Double(block.tokens) / Double(peak) : 0
+        return TokenPilotDesign.activityIntensity(ratio)
+    }
+}
+
+struct HistoryCostEfficiencyCard: View {
+    let efficiency: CostEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cost efficiency"), systemImage: "centsign.circle")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    if let costPerRequest = efficiency.costPerRequestUSD {
+                        Text("\(TokenPilotFormatters.cost(costPerRequest)) / \(model.t("request"))")
+                            .font(TokenPilotDesign.Typography.metricSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(TokenPilotDesign.textSecondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md),
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md),
+                        GridItem(.flexible(), spacing: TokenPilotDesign.Spacing.md)
+                    ],
+                    alignment: .leading,
+                    spacing: TokenPilotDesign.Spacing.md
+                ) {
+                    HistoryUsageMetricTile(
+                        label: model.t("Per request"),
+                        value: tokensPerRequestText
+                    )
+                    HistoryUsageMetricTile(
+                        label: model.t("Output share"),
+                        value: "\(outputRatioPercent)%"
+                    )
+                    HistoryUsageMetricTile(
+                        label: model.t("Total cost"),
+                        value: totalCostText
+                    )
+                }
+
+                Text(model.t("Averages over local activity; recorded cost only. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Cost efficiency")), \(model.t("Per request")) \(tokensPerRequestText), " +
+            "\(model.t("Output share")) \(outputRatioPercent)%, \(model.t("Total cost")) \(totalCostText)"
+        )
+    }
+
+    private var tokensPerRequestText: String {
+        guard efficiency.requestCount > 0 else { return "—" }
+        return TokenPilotFormatters.compactNumber(Int(efficiency.tokensPerRequest.rounded())) + " " + model.t("tok")
+    }
+
+    private var outputRatioPercent: Int {
+        Int((efficiency.outputTokenRatio * 100).rounded())
+    }
+
+    private var totalCostText: String {
+        guard let total = efficiency.totalCostUSD else { return "—" }
+        return TokenPilotFormatters.cost(total)
+    }
+}
+
+struct HistoryBudgetHistoryCard: View {
+    let trend: BudgetHistoryTrend
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Budget history"), systemImage: "chart.bar.fill")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text("\(trend.exceededCount) \(model.t("exceeded"))")
+                        .font(TokenPilotDesign.Typography.metricSmall)
+                        .monospacedDigit()
+                        .foregroundStyle(trend.exceededCount > 0 ? TokenPilotDesign.status(.warning) : TokenPilotDesign.textSecondary)
+                        .lineLimit(1)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
+                        ForEach(trend.days) { day in
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                                    .fill(budgetBarColor(day))
+                                    .frame(width: 10, height: budgetBarHeight(day))
+                                Text(day.dayLabel)
+                                    .font(TokenPilotDesign.Typography.axis)
+                                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                                    .lineLimit(1)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(day.dayLabel), \(TokenPilotFormatters.compactNumber(day.tokens)) \(model.t("tok")), \(day.percent)%")
+                        }
+                    }
+                }
+                .frame(height: 34)
+                .padding(.top, TokenPilotDesign.Spacing.xxs)
+
+                Text(model.t("Daily local tokens vs the configured daily budget. Not provider quota."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            "\(model.t("Budget history")): \(trend.exceededCount) \(model.t("exceeded")), \(trend.activeDayCount) \(model.t("active days"))"
+        )
+    }
+
+    private func budgetBarHeight(_ day: DailyBudgetUsage) -> CGFloat {
+        guard day.hasActivity else { return 2 }
+        return max(CGFloat(day.percent) * 0.3, 2)
+    }
+
+    private func budgetBarColor(_ day: DailyBudgetUsage) -> Color {
+        guard day.hasActivity else { return TokenPilotDesign.surface(.separator).opacity(0.5) }
+        if day.exceeded { return TokenPilotDesign.status(.danger) }
+        if day.percent >= 80 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.trust
+    }
+}
+
+struct HistoryProviderCacheCard: View {
+    let summary: ProviderCacheEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cache by provider"), systemImage: "square.stack.3d.up")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(model.t("Local activity, not provider quota"))
+                        .font(TokenPilotDesign.Typography.micro)
+                        .foregroundStyle(TokenPilotDesign.textTertiary)
+                        .lineLimit(1)
+                }
+
+                VStack(spacing: TokenPilotDesign.Spacing.sm) {
+                    ForEach(summary.providers.prefix(6)) { row in
+                        providerRow(row)
+                    }
+                }
+
+                Text(model.t("Share of context reads served from cache per provider. Local activity; cache discount ratios vary by provider."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(model.t("Cache by provider"))
+    }
+
+    private func providerRow(_ row: ProviderCacheEfficiency) -> some View {
+        HStack(spacing: TokenPilotDesign.Spacing.sm) {
+            Text(model.providerDisplayName(row.provider))
+                .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                .lineLimit(1)
+                .frame(width: 90, alignment: .leading)
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(TokenPilotDesign.surface(.separator))
+                        .frame(width: proxy.size.width)
+                    Capsule()
+                        .fill(hitRateColor(row.hitRate))
+                        .frame(width: max(proxy.size.width * CGFloat(row.hitRate), 2))
+                }
+            }
+            .frame(height: 8)
+
+            Text("\(Int((row.hitRate * 100).rounded()))%")
+                .font(TokenPilotDesign.Typography.metricSmall)
+                .monospacedDigit()
+                .foregroundStyle(hitRateColor(row.hitRate))
+                .frame(width: 34, alignment: .trailing)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(model.providerDisplayName(row.provider)), \(Int((row.hitRate * 100).rounded()))%")
+    }
+
+    private func hitRateColor(_ rate: Double) -> Color {
+        if rate >= 0.6 { return TokenPilotDesign.calm }
+        if rate >= 0.3 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.status(.danger)
+    }
+}
+
+struct HistoryCacheEfficiencyCard: View {
+    let efficiency: CacheEfficiencySummary
+    @ObservedObject var model: TokenPilotViewModel
+
+    var body: some View {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
+            VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
+                HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
+                    Label(model.t("Cache efficiency"), systemImage: "arrow.triangle.2.circlepath")
+                        .font(TokenPilotDesign.Typography.cardTitle)
+                        .foregroundStyle(TokenPilotDesign.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer(minLength: 0)
+
+                    Text(hitRateText)
+                        .font(TokenPilotDesign.Typography.metricCompact)
+                        .monospacedDigit()
+                        .foregroundStyle(hitRateColor)
+                        .lineLimit(1)
+                }
+
+                ProgressLine(
+                    percent: hitRatePercent,
+                    color: hitRateColor,
+                    accessibilityLabel: model.t("Cache hit rate"),
+                    accessibilityValue: "\(hitRatePercent)%"
+                )
+
+                HStack(spacing: TokenPilotDesign.Spacing.lg) {
+                    Text("\(model.t("Read")) \(TokenPilotFormatters.compactNumber(efficiency.cacheReadTokens))")
+                    Text("\(model.t("Write")) \(TokenPilotFormatters.compactNumber(efficiency.cacheCreationTokens))")
+                }
+                .font(TokenPilotDesign.Typography.caption)
+                .monospacedDigit()
+                .foregroundStyle(TokenPilotDesign.textSecondary)
+                .lineLimit(1)
+
+                if model.cacheTrend.days.contains(where: { $0.hasActivity }) {
+                    HStack(alignment: .bottom, spacing: TokenPilotDesign.Spacing.xxs) {
+                        ForEach(model.cacheTrend.days, id: \.dayLabel) { day in
+                            VStack(spacing: TokenPilotDesign.Spacing.xxs) {
+                                RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.xxs, style: .continuous)
+                                    .fill(trendBarColor(day))
+                                    .frame(width: 10, height: trendBarHeight(day))
+                                Text(day.dayLabel)
+                                    .font(TokenPilotDesign.Typography.axis)
+                                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                                    .lineLimit(1)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("\(day.dayLabel), \(Int((day.hitRate * 100).rounded()))%")
+                        }
+                    }
+                    .padding(.top, TokenPilotDesign.Spacing.xxs)
+                }
+
+                if model.cacheTrend.isDegrading {
+                    Label(model.t("Cache hit rate is degrading"), systemImage: "exclamationmark.triangle.fill")
+                        .font(TokenPilotDesign.Typography.caption.weight(.semibold))
+                        .foregroundStyle(TokenPilotDesign.status(.warning))
+                        .lineLimit(1)
+                }
+
+                Text(model.t("Share of context reads served from cache. Local activity; cache discount ratios vary by provider."))
+                    .font(TokenPilotDesign.Typography.caption)
+                    .foregroundStyle(TokenPilotDesign.textTertiary)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            "\(model.t("Cache efficiency")): \(hitRateText), " +
+            "\(model.t("Read")) \(TokenPilotFormatters.compactNumber(efficiency.cacheReadTokens)), " +
+            "\(model.t("Write")) \(TokenPilotFormatters.compactNumber(efficiency.cacheCreationTokens))"
+        )
+    }
+
+    private var hitRatePercent: Int {
+        Int((efficiency.cacheHitRate * 100).rounded())
+    }
+
+    private var hitRateText: String {
+        "\(hitRatePercent)%"
+    }
+
+    private var hitRateColor: Color {
+        switch hitRatePercent {
+        case 60...: return TokenPilotDesign.calm
+        case 30..<60: return TokenPilotDesign.status(.warning)
+        default: return TokenPilotDesign.textTertiary
+        }
+    }
+
+    private func trendBarHeight(_ day: DailyCacheRate) -> CGFloat {
+        guard day.hasActivity else { return 2 }
+        return max(CGFloat(day.hitRate) * 24, 2)
+    }
+
+    private func trendBarColor(_ day: DailyCacheRate) -> Color {
+        guard day.hasActivity else { return TokenPilotDesign.surface(.separator).opacity(0.5) }
+        if day.hitRate >= 0.6 { return TokenPilotDesign.calm }
+        if day.hitRate >= 0.3 { return TokenPilotDesign.status(.warning) }
+        return TokenPilotDesign.status(.danger)
+    }
+}
+
 struct HistoryUsageMetricTile: View {
     let label: String
     let value: String
@@ -800,8 +1909,8 @@ struct HistoryUsageMetricTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 6)
+        .padding(.horizontal, TokenPilotDesign.Spacing.sm)
+        .padding(.vertical, TokenPilotDesign.Spacing.sm)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(TokenPilotDesign.surface(.cardMuted))
         .clipShape(RoundedRectangle(cornerRadius: TokenPilotDesign.Radius.sm, style: .continuous))
@@ -817,7 +1926,7 @@ struct HistoryUsageTimelineCard: View {
     }
 
     var body: some View {
-        GlassCard(padding: 10) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.lg) {
                 HStack(alignment: .firstTextBaseline, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Recent usage"), systemImage: "clock.arrow.circlepath")
@@ -911,7 +2020,7 @@ struct HistoryUsageEventRow: View {
         [
             eventDetail,
             "\(model.t("Provenance")): \(sourceLabel)",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
             qualifierText
         ].joined(separator: " · ")
     }
@@ -932,7 +2041,7 @@ struct HistoryUsageEventRow: View {
             "\(model.t("Total")) \(TokenPilotFormatters.compactNumber(event.totalTokens))",
             eventDetail,
             "\(model.t("Provenance")): \(sourceLabel)",
-            "\(model.t("Recorded")) \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
+            "\(model.t("Recorded")): \(TokenPilotFormatters.clock(event.timestamp, language: model.settings.localization.language))",
             qualifierText
         ].joined(separator: ", ")
     }
@@ -947,7 +2056,7 @@ struct HistoryExportCard: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard(padding: 10, surface: .cardMuted) {
+        GlassCard(padding: TokenPilotDesign.cardPaddingCompact, surface: .cardMuted) {
             VStack(alignment: .leading, spacing: TokenPilotDesign.Spacing.md) {
                 HStack(alignment: .center, spacing: TokenPilotDesign.Spacing.md) {
                     Label(model.t("Export"), systemImage: "square.and.arrow.down")
@@ -967,8 +2076,8 @@ struct HistoryExportCard: View {
                     .frame(width: 112)
                     .focusable()
 
-                    Button(model.t("Save")) { model.exportHistory() }
-                        .buttonStyle(.borderedProminent)
+                    Button(model.t("Export…")) { model.exportHistory() }
+                        .buttonStyle(.glassProminent)
                         .controlSize(.small)
                         .tint(TokenPilotDesign.trust)
                         .focusable()
@@ -992,34 +2101,13 @@ struct HistoryCapacityEmptyState: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "checkmark.seal")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(TokenPilotDesign.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(model.t("No capacity signals yet"))
-                        .font(TokenPilotDesign.Typography.cardTitle)
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Text(model.t("Run Auto-detect or Provider Diagnostics to recover source health."))
-                        .font(TokenPilotDesign.Typography.caption)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(model.t("Open Provider Diagnostics")) {
-                        model.selectedScreen = .settings
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(TokenPilotDesign.calm)
-                    .focusable()
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
+        EmptyStateCard(
+            icon: "checkmark.seal",
+            title: model.t("No capacity signals yet"),
+            message: model.t("Run Auto-detect or Provider Diagnostics to recover source health."),
+            actionLabel: model.t("Open Provider Diagnostics"),
+            action: { model.openProviderDiagnostics() }
+        )
     }
 }
 
@@ -1028,33 +2116,12 @@ struct HistoryEmptyState: View {
     @ObservedObject var model: TokenPilotViewModel
 
     var body: some View {
-        GlassCard {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: hasLimitSignals ? "doc.text.magnifyingglass" : "tray")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(hasLimitSignals ? TokenPilotDesign.calm : TokenPilotDesign.textSecondary)
-                    .frame(width: 28, height: 28)
-                    .background(TokenPilotDesign.surface(.cardMuted))
-                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(model.t("No usage events recorded"))
-                        .font(TokenPilotDesign.Typography.cardTitle)
-                        .foregroundStyle(TokenPilotDesign.textPrimary)
-                    Text(model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."))
-                        .font(TokenPilotDesign.Typography.caption)
-                        .foregroundStyle(TokenPilotDesign.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Button(model.t("Open Provider Diagnostics")) {
-                        model.selectedScreen = .settings
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(TokenPilotDesign.calm)
-                    .focusable()
-                }
-            }
-        }
-        .accessibilityElement(children: .contain)
+        EmptyStateCard(
+            icon: hasLimitSignals ? "doc.text.magnifyingglass" : "tray",
+            title: model.t("No usage events recorded"),
+            message: model.t(hasLimitSignals ? "Capacity signals are available above, but no token usage events are stored for this period." : "Token totals come only from stored usage events."),
+            actionLabel: model.t("Open Provider Diagnostics"),
+            action: { model.openProviderDiagnostics() }
+        )
     }
 }

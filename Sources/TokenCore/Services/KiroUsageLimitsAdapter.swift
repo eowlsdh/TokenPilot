@@ -222,7 +222,7 @@ public struct KiroUsageLimitsObserver: Sendable {
 
         for candidate in candidates {
             if let percent = percentUsed(in: candidate) {
-                return KiroUsageLimits(usedPercent: percent, resetAt: resetDate(in: candidate) ?? resetDate(in: root), observedAt: now)
+                return KiroUsageLimits(usedPercent: percent, resetAt: resetDate(in: candidate, now: now) ?? resetDate(in: root, now: now), observedAt: now)
             }
         }
         return nil
@@ -230,7 +230,10 @@ public struct KiroUsageLimitsObserver: Sendable {
 
     private static func percentUsed(in object: [String: Any]) -> Int? {
         if let direct = doubleValue(object["percent_used"]) ?? doubleValue(object["percentUsed"]) {
-            return Int(direct.rounded())
+            // `percent_used` is normally an integer percentage, but a deployment may report a
+            // fraction (0..1) instead. Normalize like the codex session parser so 0.5 means 50%.
+            let normalized = direct > 0 && direct < 1 ? direct * 100 : direct
+            return Int(normalized.rounded())
         }
         // Derive from raw counts when the API reports usage and limit instead of a percentage.
         let used = doubleValue(object["currentUsageWithPrecision"])
@@ -245,12 +248,16 @@ public struct KiroUsageLimitsObserver: Sendable {
         return Int(((used / total) * 100).rounded())
     }
 
-    private static func resetDate(in object: [String: Any]) -> Date? {
+    private static func resetDate(in object: [String: Any], now: Date) -> Date? {
         for key in ["next_date_reset", "nextDateReset", "resets_at", "resetAt"] {
             if let date = kiroUsageDate(object[key]) { return date }
         }
+        // Day precision only, so it is anchored to the start of today. `Date() + N days` gave a
+        // different instant on every poll, which reads as a new cycle each time: thresholds never
+        // arm, and a reset alert can fire on every refresh.
         if let days = doubleValue(object["days_until_reset"]) ?? doubleValue(object["daysUntilReset"]), days >= 0 {
-            return Calendar.current.date(byAdding: .day, value: Int(days.rounded()), to: Date())
+            let calendar = Calendar.current
+            return calendar.date(byAdding: .day, value: Int(days.rounded()), to: calendar.startOfDay(for: now))
         }
         return nil
     }

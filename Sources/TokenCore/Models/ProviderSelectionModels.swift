@@ -217,17 +217,24 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
     public var enabledProviders: Set<Provider>
     public var providerModes: [Provider: ProviderMode]
     public var customPaths: [Provider: String]
+    /// Security-scoped bookmark per provider source folder.
+    ///
+    /// A sandboxed build (the App Store entitlements) can only read what the user selected, so a
+    /// chosen folder is stored as a read-only bookmark next to its path and re-opened on each read.
+    public var customBookmarks: [Provider: Data]
     public var scanDisabledProviders: Bool
 
     public init(
         enabledProviders: Set<Provider> = [.claude, .codex, .gemini, .deepseek],
         providerModes: [Provider: ProviderMode] = [:],
         customPaths: [Provider: String] = [:],
+        customBookmarks: [Provider: Data] = [:],
         scanDisabledProviders: Bool = false
     ) {
         self.enabledProviders = enabledProviders
         self.providerModes = providerModes
         self.customPaths = customPaths
+        self.customBookmarks = customBookmarks
         self.scanDisabledProviders = scanDisabledProviders
     }
 
@@ -235,6 +242,7 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
         case enabledProviders
         case providerModes
         case customPaths
+        case customBookmarks
         case scanDisabledProviders
     }
 
@@ -244,6 +252,7 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
         enabledProviders = Self.decodeProviderSet(from: container, forKey: .enabledProviders) ?? defaults.enabledProviders
         providerModes = Self.decodeProviderMap(ProviderMode.self, from: container, forKey: .providerModes) ?? [:]
         customPaths = Self.decodeProviderMap(String.self, from: container, forKey: .customPaths) ?? [:]
+        customBookmarks = Self.decodeProviderMap(Data.self, from: container, forKey: .customBookmarks) ?? [:]
         scanDisabledProviders = try container.decodeIfPresent(Bool.self, forKey: .scanDisabledProviders) ?? false
     }
 
@@ -252,6 +261,7 @@ public struct MonitoredProviderSettings: Codable, Equatable, Sendable {
         try container.encode(enabledProviders, forKey: .enabledProviders)
         try container.encode(providerModes, forKey: .providerModes)
         try container.encode(customPaths, forKey: .customPaths)
+        try container.encode(customBookmarks, forKey: .customBookmarks)
         try container.encode(scanDisabledProviders, forKey: .scanDisabledProviders)
     }
 

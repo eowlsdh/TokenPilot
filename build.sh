@@ -6,16 +6,24 @@ BUILD_DIR="$PROJECT_DIR/build"
 APP_DIR="$BUILD_DIR/TokenPilot.app"
 ZIP_PATH="$BUILD_DIR/TokenPilot.zip"
 INFO_TEMPLATE="$PROJECT_DIR/Resources/Info.plist"
+PROJECT_SPEC="$PROJECT_DIR/project.yml"
 PRIVACY_MANIFEST="$PROJECT_DIR/Resources/PrivacyInfo.xcprivacy"
 APP_ICON_FILE="$PROJECT_DIR/Resources/TokenPilot.icns"
 RESOURCE_BUNDLE_NAME="TokenMonitor_TokenApp.bundle"
+# SwiftPM의 기본 빌드 시스템(swiftbuild, Swift 6.4+)은 문자열 카탈로그를 .lproj로 컴파일해
+# 앱이 런타임에 읽는 Localizable.xcstrings 원본을 남기지 않는다. 앱이 새 방식을 읽게 될 때까지
+# native로 고정한다. Makefile과 CI도 같은 값을 쓴다.
+SWIFT_BUILD_SYSTEM="native"
 
 printf '🔨 TokenPilot 앱 빌드 중...\n\n'
 
 # 1. Swift 릴리스 빌드
 echo "📦 Step 1: Swift 릴리스 빌드..."
 cd "$PROJECT_DIR"
-swift build -c release
+swift build -c release --build-system "$SWIFT_BUILD_SYSTEM"
+# 방금 빌드한 출력 폴더. release 출력 위치를 추측하면 빌드 시스템이 바뀐 뒤
+# 남아 있는 예전 빌드의 실행 파일이나 리소스를 조용히 담을 수 있었다.
+BIN_DIR="$(swift build -c release --build-system "$SWIFT_BUILD_SYSTEM" --show-bin-path)"
 
 # 2. 앱 번들 디렉토리 구조 생성
 echo "📂 Step 2: 앱 번들 구조 생성..."
@@ -25,7 +33,7 @@ mkdir -p "$APP_DIR/Contents/Resources"
 
 # 3. 실행 파일 복사
 echo "📋 Step 3: 실행 파일 복사..."
-BUILT_EXECUTABLE="$PROJECT_DIR/.build/release/TokenMonitor"
+BUILT_EXECUTABLE="$BIN_DIR/TokenMonitor"
 if [[ ! -x "$BUILT_EXECUTABLE" ]]; then
     echo "❌ 릴리스 실행 파일을 찾지 못했습니다: $BUILT_EXECUTABLE" >&2
     exit 1
@@ -35,18 +43,8 @@ chmod +x "$APP_DIR/Contents/MacOS/TokenMonitor"
 
 # 4. SwiftPM 리소스 번들 복사(Localizable.xcstrings 포함)
 echo "🧩 Step 4: SwiftPM 리소스 번들 복사..."
-RESOURCE_BUNDLE=""
-for candidate in \
-    "$PROJECT_DIR"/.build/*/release/$RESOURCE_BUNDLE_NAME \
-    "$PROJECT_DIR"/.build/release/$RESOURCE_BUNDLE_NAME
- do
-    if [[ -d "$candidate" ]]; then
-        RESOURCE_BUNDLE="$candidate"
-        break
-    fi
- done
-
-if [[ -z "$RESOURCE_BUNDLE" ]]; then
+RESOURCE_BUNDLE="$BIN_DIR/$RESOURCE_BUNDLE_NAME"
+if [[ ! -d "$RESOURCE_BUNDLE" ]]; then
     echo "❌ SwiftPM 리소스 번들을 찾지 못했습니다: $RESOURCE_BUNDLE_NAME" >&2
     exit 1
 fi
@@ -72,15 +70,38 @@ cp "$APP_ICON_FILE" "$APP_DIR/Contents/Resources/TokenPilot.icns"
 
 # 6. Info.plist 생성: Xcode용 Resources/Info.plist를 단일 원본으로 사용
 echo "⚙️  Step 6: Info.plist 생성..."
-python3 - "$INFO_TEMPLATE" "$APP_DIR/Contents/Info.plist" <<'PY'
+python3 - "$INFO_TEMPLATE" "$APP_DIR/Contents/Info.plist" "$PROJECT_SPEC" <<'PY'
 import plistlib
+import re
 import sys
 from pathlib import Path
 
 template = Path(sys.argv[1])
 destination = Path(sys.argv[2])
+spec = Path(sys.argv[3])
 with template.open('rb') as handle:
     plist = plistlib.load(handle)
+
+
+def spec_setting(name):
+    """Read a build setting from project.yml.
+
+    The version used to be written out here as a literal as well as in project.yml, so the
+    bundle this script produces and the one Xcode produces could disagree about what they
+    were — and an App Store build number that silently goes backwards is rejected. Failing
+    loudly beats a default: a quiet fallback would just recreate the drift.
+    """
+    match = re.search(rf'^\s*{name}:\s*"?([^"\s#]+)"?\s*$', spec.read_text(encoding='utf-8'), re.M)
+    if not match:
+        raise SystemExit(f'{name} not found in {spec}; build.sh and project.yml must agree on the version')
+    return match.group(1)
+
+
+marketing_version = spec_setting('MARKETING_VERSION')
+bundle_version = spec_setting('CURRENT_PROJECT_VERSION')
+# The minimum OS was a literal here while project.yml declared its own; two floors that could
+# drift meant this bundle and Xcode's could disagree about which Macs they run on.
+minimum_system_version = spec_setting('macOS')
 
 plist.update({
     'CFBundleExecutable': 'TokenMonitor',
@@ -89,9 +110,9 @@ plist.update({
     'CFBundleIdentifier': 'com.tokenpilot.macos',
     'CFBundleIconFile': 'TokenPilot',
     'CFBundleIconName': 'AppIcon',
-    'CFBundleShortVersionString': '1.0.0',
-    'CFBundleVersion': '1',
-    'LSMinimumSystemVersion': '14.0',
+    'CFBundleShortVersionString': marketing_version,
+    'CFBundleVersion': bundle_version,
+    'LSMinimumSystemVersion': minimum_system_version,
     'LSUIElement': True,
     'NSHumanReadableCopyright': 'Copyright © 2026 TokenPilot. All rights reserved.',
 })
@@ -135,8 +156,17 @@ else
         done
     fi
 
+    # Entitlements are selectable so the sandboxed App Store configuration can be built and tested
+    # locally: TOKENPILOT_ENTITLEMENTS=Resources/TokenPilot-AppStore.entitlements ./build.sh
+    ENTITLEMENTS_FILE="${TOKENPILOT_ENTITLEMENTS:-$PROJECT_DIR/Resources/TokenPilot.entitlements}"
+    ENTITLEMENTS_ARGS=()
+    if [ -f "$ENTITLEMENTS_FILE" ]; then
+        ENTITLEMENTS_ARGS=(--entitlements "$ENTITLEMENTS_FILE")
+        echo "   entitlements: $(basename "$ENTITLEMENTS_FILE")"
+    fi
+
     if [ -n "$SIGN_IDENTITY" ] && codesign --force --deep --options runtime --timestamp=none \
-        --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null; then
+        "${ENTITLEMENTS_ARGS[@]}" --sign "$SIGN_IDENTITY" "$APP_DIR" 2>/dev/null; then
         SIGN_AUTHORITY="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^Authority=' | head -1 | cut -d= -f2-)"
         SIGN_TEAM="$(codesign -dvvv "$APP_DIR" 2>&1 | grep '^TeamIdentifier=' | head -1 | cut -d= -f2-)"
         echo "   서명 신원: ${SIGN_AUTHORITY:-unknown}"

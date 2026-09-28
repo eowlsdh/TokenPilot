@@ -104,7 +104,27 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                 relevantKinds: ["ide_sessions", "cli_sessions"],
                 snapshot: snapshot
             )
+        case .commandcode:
+            let roots = commandCodeProjectRoots(from: candidates)
+            let snapshot = await CommandCodeLocalSessionAdapter(
+                projectRoots: roots.isEmpty ? nil : roots
+            ).snapshot(settings: settings)
+            return classifyFileBackedProvider(
+                provider: provider,
+                settings: settings,
+                candidates: candidates,
+                relevantKinds: ["projects"],
+                snapshot: snapshot
+            )
+        case .jetbrains, .minimax, .zai, .openrouter:
+            return classifyCredentialBackedProvider(provider: provider, settings: settings)
         }
+    }
+
+    private func commandCodeProjectRoots(from candidates: [ProviderPathCandidate]) -> [URL] {
+        candidates
+            .filter { $0.provider == .commandcode && $0.kind == "projects" && $0.exists }
+            .map { URL(fileURLWithPath: $0.path) }
     }
 
     private func openCodeDatabaseURLs(from candidates: [ProviderPathCandidate]) -> [URL] {
@@ -133,7 +153,8 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .codex: preferredKinds = ["sessions", "archived_sessions", "history", "root"]
         case .opencode: preferredKinds = ["database", "database_next", "legacy_messages"]
         case .kiro: preferredKinds = ["ide_sessions", "cli_sessions", "root"]
-        case .deepseek, .xai: preferredKinds = []
+        case .commandcode: preferredKinds = ["projects", "root"]
+        case .deepseek, .xai, .jetbrains, .minimax, .zai, .openrouter: preferredKinds = []
         }
 
         return source.detectedPaths.first {
@@ -163,7 +184,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
                     next.geminiTelemetrySourceBookmarkData = nil
                     adopted.append(.gemini)
                 }
-            case .codex, .deepseek, .xai, .opencode, .kiro:
+            case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
                 // Codex/opencode/Kiro read their own default session roots; DeepSeek/xAI use Keychain/local setup instead of token paths.
                 continue
             }
@@ -367,6 +388,31 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         )
     }
 
+    private func classifyCredentialBackedProvider(provider: Provider, settings: AppSettings) -> ProviderDataSource {
+        let configured = isAPIKeyConfigured(provider: provider, settings: settings)
+        return ProviderDataSource(
+            provider: provider,
+            isEnabled: settings.isProviderEnabled(provider),
+            mode: configured ? .auto : .custom,
+            detectedPaths: [],
+            customPath: nil,
+            lastScanAt: Date(),
+            status: settings.isProviderEnabled(provider) ? (configured ? .connected : .manual) : .disabled,
+            confidence: configured ? .medium : .manual,
+            statusMessage: configured ? "API key saved in Keychain" : "API key required"
+        )
+    }
+
+    private func isAPIKeyConfigured(provider: Provider, settings: AppSettings) -> Bool {
+        switch provider {
+        case .minimax, .zai, .openrouter:
+            let account = "\(provider.rawValue).apiKey"
+            return (try? KeychainService().readSecret(account: account))?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        default:
+            return false
+        }
+    }
+
     private func codexSessionRoots(from candidates: [ProviderPathCandidate]) -> [URL] {
         candidates
             .filter { ["sessions", "archived_sessions"].contains($0.kind) && $0.exists && $0.readable }
@@ -451,7 +497,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .gemini:
             let path = settings.geminiTelemetryLogPath.trimmingCharacters(in: .whitespacesAndNewlines)
             return path.isEmpty ? nil : path
-        case .codex, .deepseek, .xai, .opencode, .kiro:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             return nil
         }
     }
@@ -470,7 +516,7 @@ public final class DataSourceConnectionService: @unchecked Sendable {
         case .gemini:
             let name = URL(fileURLWithPath: resolvedPath).lastPathComponent.lowercased()
             kind = name == "antigravity-statusline.json" || resolvedPath.lowercased().contains("/antigravity-statusline") ? "antigravity_statusline" : "telemetry"
-        case .codex, .deepseek, .xai, .opencode, .kiro:
+        case .codex, .deepseek, .xai, .opencode, .kiro, .jetbrains, .minimax, .zai, .openrouter, .commandcode:
             kind = "manual"
         }
         return ProviderPathCandidate(
