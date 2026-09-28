@@ -97,8 +97,11 @@ final class ProviderDepthTests: XCTestCase {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
 
+        // Yesterday noon: at the real clock, a run just after midnight put the 130-minute-old
+        // session in the previous day, where it is not "today's" session and reads as no data.
+        let noon = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date().addingTimeInterval(-86_400)) ?? Date()
         func snapshot(minutesAgo: Int) async throws -> ProviderSnapshot {
-            let at = Date().addingTimeInterval(-Double(minutesAgo) * 60)
+            let at = noon.addingTimeInterval(-Double(minutesAgo) * 60)
             let stamp = ISO8601DateFormatter().string(from: at)
             let line = "{\"timestamp\":\"\(stamp)\",\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":12,\"output_tokens\":3,\"cached_input_tokens\":2,\"reasoning_output_tokens\":1}}}\n"
             let file = directory.appendingPathComponent("session-\(minutesAgo).jsonl")
@@ -109,7 +112,7 @@ final class ProviderDepthTests: XCTestCase {
             var settings = AppSettings()
             settings.codexEnabled = true
             let adapter = CodexLocalSessionAdapter(sessionRoots: [directory])
-            return await adapter.snapshot(settings: settings)
+            return await adapter.snapshot(settings: settings, now: noon)
         }
 
         let fresh = try await snapshot(minutesAgo: 2)

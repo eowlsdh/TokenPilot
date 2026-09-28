@@ -345,7 +345,8 @@ final class TokenPilotServicesTests: XCTestCase {
     }
 
     func testAggregatedProjectBreakdownRanksOpenCodeProjectsAndSkipsUnlabeled() {
-        let now = Date()
+        // Noon, not the real clock: events minutes apart straddled midnight when run just after it.
+        let now = Calendar.current.date(bySettingHour: 12, minute: 0, second: 0, of: Date()) ?? Date()
         let service = AggregationService()
         let events = [
             openCodeEvent(project: "TokenPilot", input: 5_000, output: 1_000, cost: 0.4, at: now),

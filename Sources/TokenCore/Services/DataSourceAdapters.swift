@@ -2104,6 +2104,12 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
     }
 
     public func snapshot(settings: AppSettings) async -> ProviderSnapshot {
+        await snapshot(settings: settings, now: Date())
+    }
+
+    /// `now` is injectable so a test can fix the day: "today" starts at local midnight, and a
+    /// session written minutes earlier falls into yesterday when the suite runs just after it.
+    func snapshot(settings: AppSettings, now: Date) async -> ProviderSnapshot {
         guard settings.codexEnabled else {
             return ProviderSnapshot(provider: .codex, confidence: .low, statusMessage: "Disabled")
         }
@@ -2132,7 +2138,6 @@ public final class CodexLocalSessionAdapter: ProviderAdapter, Sendable {
         }
         let roots = resolution.roots
         let allFiles = candidateFiles(in: roots, allowedExtensions: ["jsonl"], maxFiles: maxSessionFiles * 3)
-        let now = Date()
         let calendar = Calendar.current
         let todayStart = calendar.startOfDay(for: now)
         let files = relevantCodexSessionFiles(from: allFiles, now: now)
